@@ -36,6 +36,13 @@ describe('PublicUrlSecurityPolicy', () => {
     });
   });
 
+  it('rejects mixed public and private DNS answers', async () => {
+    const policy = new PublicUrlSecurityPolicy(options, async () => ['93.184.216.34', '10.0.0.7']);
+    await expect(policy.assertAllowed('https://example.com/path')).rejects.toMatchObject({
+      code: 'BLOCKED_ADDRESS',
+    });
+  });
+
   it('canonicalizes an approved URL', async () => {
     const policy = new PublicUrlSecurityPolicy(options, async () => ['93.184.216.34']);
     await expect(policy.assertAllowed('https://Example.COM/docs#section')).resolves.toEqual({

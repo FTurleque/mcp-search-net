@@ -7,7 +7,18 @@ description: >
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'
-tools: ['read_file', 'list_dir', 'file_search', 'grep_search', 'semantic_search', 'insert_edit_into_file', 'replace_string_in_file', 'run_in_terminal', 'get_errors']
+tools:
+  [
+    'read_file',
+    'list_dir',
+    'file_search',
+    'grep_search',
+    'semantic_search',
+    'insert_edit_into_file',
+    'replace_string_in_file',
+    'run_in_terminal',
+    'get_errors',
+  ]
 ---
 
 # MCP Bug Fixer
@@ -47,6 +58,7 @@ Entrée JSON-RPC → Validation presentation/mcp
 ```
 
 À chaque frontière, vérifie :
+
 - Les invariants TypeScript strict et `exactOptionalPropertyTypes`
 - La présence de validation hostile-input (URL, DNS, redirects, contenu)
 - La propagation correcte des codes d'erreur stables publics
@@ -54,13 +66,13 @@ Entrée JSON-RPC → Validation presentation/mcp
 
 ### Étape 3 — Analyse par couche
 
-| Couche | Fichiers à inspecter | Défaillances courantes |
-|--------|---------------------|------------------------|
-| `domain` | `src/domain/models/`, `src/domain/services/`, `src/domain/errors/` | Logique de ranking, sélection de contenu, validation de texte |
-| `application` | `src/application/use-cases/`, `src/application/ports/`, `src/application/services/` | Orchestration, contrats de ports, requête de recherche |
-| `infrastructure` | `src/infrastructure/security/`, `src/infrastructure/http/`, `src/infrastructure/fetch/`, `src/infrastructure/cache/`, `src/infrastructure/search/` | SSRF, redirects, SQLite, SearXNG, Crawl4AI, configuration |
-| `presentation` | `src/presentation/mcp/` | Schémas Zod, mapping d'erreurs, fallbacks texte compacts |
-| `bootstrap` | `src/bootstrap/` | Composition DI, cycle de vie STDIO, shutdown |
+| Couche           | Fichiers à inspecter                                                                                                                               | Défaillances courantes                                        |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `domain`         | `src/domain/models/`, `src/domain/services/`, `src/domain/errors/`                                                                                 | Logique de ranking, sélection de contenu, validation de texte |
+| `application`    | `src/application/use-cases/`, `src/application/ports/`, `src/application/services/`                                                                | Orchestration, contrats de ports, requête de recherche        |
+| `infrastructure` | `src/infrastructure/security/`, `src/infrastructure/http/`, `src/infrastructure/fetch/`, `src/infrastructure/cache/`, `src/infrastructure/search/` | SSRF, redirects, SQLite, SearXNG, Crawl4AI, configuration     |
+| `presentation`   | `src/presentation/mcp/`                                                                                                                            | Schémas Zod, mapping d'erreurs, fallbacks texte compacts      |
+| `bootstrap`      | `src/bootstrap/`                                                                                                                                   | Composition DI, cycle de vie STDIO, shutdown                  |
 
 ## Correction
 

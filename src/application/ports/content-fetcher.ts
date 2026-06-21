@@ -1,5 +1,5 @@
-import type { FetchedContent } from '../../domain/models/content.js';
+import type { FetchedContent, RenderMode } from '../../domain/models/content.js';
 
 export interface ContentFetcher {
-  fetch(url: string): Promise<FetchedContent>;
+  fetch(url: string, renderMode: RenderMode): Promise<FetchedContent>;
 }

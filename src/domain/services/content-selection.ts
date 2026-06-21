@@ -1,123 +1,167 @@
-import type { SelectedContent } from '../models/content.js';
+import type { ContentSection, SelectedContent } from '../models/content.js';
 
 interface MarkdownSection {
   readonly heading: string;
   readonly body: string;
   readonly index: number;
+  readonly tokens: readonly string[];
 }
+
+const MAX_SECTION_CHARACTERS = 5_000;
 
 export function selectRelevantContent(
   markdown: string,
   query: string | undefined,
-  maxChars: number,
+  maxCharacters: number,
+  maxSections: number,
 ): SelectedContent {
-  const normalized = normalizeMarkdown(markdown);
-  const sections = splitMarkdown(normalized);
+  const sections = splitMarkdown(normalizeMarkdown(markdown));
   const terms = tokenize(query ?? '');
+  const averageLength = Math.max(
+    1,
+    sections.reduce((total, section) => total + section.tokens.length, 0) / sections.length,
+  );
 
-  const selected =
-    terms.length === 0
-      ? sections
-      : sections
-          .map((section) => ({ section, score: scoreSection(section, terms) }))
-          .filter(({ score }) => score > 0)
-          .sort(
-            (left, right) => right.score - left.score || left.section.index - right.section.index,
-          )
-          .slice(0, 12)
-          .sort((left, right) => left.section.index - right.section.index)
-          .map(({ section }) => section);
+  const ranked = sections
+    .map((section) => ({
+      section,
+      score:
+        terms.length === 0
+          ? 1 / (section.index + 1)
+          : bm25(section, sections, terms, averageLength),
+    }))
+    .filter(({ score }) => terms.length === 0 || score > 0)
+    .sort((left, right) => right.score - left.score || left.section.index - right.section.index)
+    .slice(0, maxSections);
 
-  const usefulSections = selected.length === 0 ? sections.slice(0, 3) : selected;
-  const rendered = usefulSections.map(renderSection).join('\n\n').trim();
-  const truncated = rendered.length > maxChars;
-  const limited = truncated ? truncateAtBoundary(rendered, maxChars) : rendered;
+  if (ranked.length === 0) {
+    return {
+      sections: [],
+      markdown: '',
+      truncated: false,
+      sectionTruncated: false,
+      noRelevantSection: true,
+    };
+  }
+
+  let remaining = maxCharacters;
+  let contentTruncated = ranked.length < sections.length;
+  let sectionTruncated = false;
+  const selected: ContentSection[] = [];
+
+  for (const { section, score } of ranked) {
+    if (selected.length > 0) remaining -= 2;
+    if (remaining <= 0) {
+      contentTruncated = true;
+      break;
+    }
+    const rendered = renderSection(section);
+    const sectionBudget = Math.min(MAX_SECTION_CHARACTERS, remaining);
+    const truncated = rendered.length > sectionBudget;
+    const value = truncated ? truncateAtBoundary(rendered, sectionBudget) : rendered;
+    if (truncated) sectionTruncated = true;
+    selected.push({
+      heading: stripHeadingMarker(section.heading),
+      markdown: value,
+      score: Number(score.toFixed(6)),
+      truncated,
+    });
+    remaining -= value.length;
+  }
 
   return {
-    markdown: limited,
-    sectionHeadings: usefulSections.map((section) => section.heading).filter(Boolean),
-    truncated,
+    sections: selected,
+    markdown: selected.map((section) => section.markdown).join('\n\n'),
+    truncated: contentTruncated || sectionTruncated,
+    sectionTruncated,
+    noRelevantSection: false,
   };
+}
+
+function bm25(
+  section: MarkdownSection,
+  corpus: readonly MarkdownSection[],
+  terms: readonly string[],
+  averageLength: number,
+): number {
+  const k1 = 1.2;
+  const b = 0.75;
+  const headingTokens = tokenize(section.heading);
+  const codeBonus = /```[\s\S]*?```/u.test(section.body) ? 0.2 : 0;
+  return terms.reduce((score, term) => {
+    const frequency = section.tokens.filter((token) => token === term).length;
+    if (frequency === 0) return score;
+    const documents = corpus.filter((candidate) => candidate.tokens.includes(term)).length;
+    const idf = Math.log(1 + (corpus.length - documents + 0.5) / (documents + 0.5));
+    const normalized =
+      (frequency * (k1 + 1)) /
+      (frequency + k1 * (1 - b + b * (section.tokens.length / averageLength)));
+    const titleBonus = headingTokens.includes(term) ? 1.5 : 0;
+    const versionBonus = /^v?\d+(?:\.\d+)+$/u.test(term) ? 0.5 : 0;
+    return score + idf * normalized + titleBonus + versionBonus;
+  }, codeBonus);
 }
 
 function splitMarkdown(markdown: string): readonly MarkdownSection[] {
-  const lines = markdown.split('\n');
   const sections: MarkdownSection[] = [];
   let heading = '';
   let body: string[] = [];
-  let index = 0;
-
+  let inCode = false;
   const flush = (): void => {
     const value = body.join('\n').trim();
     if (heading !== '' || value !== '') {
-      sections.push({ heading, body: value, index });
-      index += 1;
+      sections.push({
+        heading,
+        body: value,
+        index: sections.length,
+        tokens: tokenize(`${heading} ${value}`),
+      });
     }
     body = [];
   };
-
-  for (const line of lines) {
-    const match = /^(#{1,6})\s+(.+)$/.exec(line);
-    if (match !== null) {
+  for (const line of markdown.split('\n')) {
+    if (/^\s*```/u.test(line)) inCode = !inCode;
+    const match = inCode ? null : /^(#{1,6})\s+(.+)$/u.exec(line);
+    if (match === null) body.push(line);
+    else {
       flush();
       heading = `${match[1] ?? '#'} ${match[2]?.trim() ?? ''}`;
-    } else {
-      body.push(line);
     }
   }
   flush();
-
-  return sections.length === 0 ? [{ heading: '', body: markdown, index: 0 }] : sections;
-}
-
-function scoreSection(section: MarkdownSection, terms: readonly string[]): number {
-  const heading = section.heading.toLocaleLowerCase();
-  const body = section.body.toLocaleLowerCase();
-  return terms.reduce((score, term) => {
-    const headingMatches = countOccurrences(heading, term);
-    const bodyMatches = Math.min(countOccurrences(body, term), 20);
-    return score + headingMatches * 8 + bodyMatches;
-  }, 0);
+  return sections.length === 0
+    ? [{ heading: '', body: markdown, index: 0, tokens: tokenize(markdown) }]
+    : sections;
 }
 
 function tokenize(value: string): readonly string[] {
-  return [
-    ...new Set(
-      value
-        .toLocaleLowerCase()
-        .normalize('NFKD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .split(/[^\p{L}\p{N}]+/u)
-        .filter((term) => term.length >= 3),
-    ),
-  ];
-}
-
-function countOccurrences(haystack: string, needle: string): number {
-  let count = 0;
-  let offset = 0;
-  while ((offset = haystack.indexOf(needle, offset)) !== -1) {
-    count += 1;
-    offset += needle.length;
-  }
-  return count;
+  return value
+    .normalize('NFKD')
+    .toLocaleLowerCase()
+    .replace(/[\u0300-\u036f]/gu, '')
+    .split(/[^\p{L}\p{N}.]+/u)
+    .filter((term) => term.length >= 2);
 }
 
 function renderSection(section: MarkdownSection): string {
   return [section.heading, section.body].filter(Boolean).join('\n\n');
 }
 
+function stripHeadingMarker(value: string): string {
+  return value.replace(/^#{1,6}\s+/u, '');
+}
+
 function normalizeMarkdown(value: string): string {
   return value
-    .replace(/\r\n?/g, '\n')
-    .replace(/\n{4,}/g, '\n\n\n')
+    .replace(/\r\n?/gu, '\n')
+    .replace(/\n{4,}/gu, '\n\n\n')
     .trim();
 }
 
-function truncateAtBoundary(value: string, maxChars: number): string {
-  if (maxChars <= 1) return '…';
-  const candidate = value.slice(0, maxChars - 1);
-  const newline = candidate.lastIndexOf('\n');
-  const boundary = newline >= Math.floor(maxChars * 0.7) ? newline : candidate.length;
-  return `${candidate.slice(0, boundary).trimEnd()}…`;
+function truncateAtBoundary(value: string, maxCharacters: number): string {
+  if (maxCharacters <= 1) return '…'.slice(0, maxCharacters);
+  const candidate = value.slice(0, maxCharacters - 1);
+  const boundary = Math.max(candidate.lastIndexOf('\n'), candidate.lastIndexOf(' '));
+  const end = boundary >= Math.floor(maxCharacters * 0.7) ? boundary : candidate.length;
+  return `${candidate.slice(0, end).trimEnd()}…`;
 }

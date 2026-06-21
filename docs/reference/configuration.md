@@ -26,6 +26,10 @@ Le lanceur définit automatiquement le fichier utilisateur et le jeton local par
 - `limits` : budgets des résultats, extraits, Markdown et liens ;
 - `security.allowedPorts` : ports Web publics acceptés ;
 - `security.allowHttp` : autorisation de HTTP ;
+- `security.maxDownloadBytes` : limite absolue, au maximum 10 Mio ;
+- `security.maxRedirects` : limite de redirections, au maximum 5 ;
+- `security.maxConcurrency` et `minimumDelayMs` : pression maximale sur les sites cibles ;
+- `security.respectRobotsTxt` : contrôle de `robots.txt` avant téléchargement ;
 - `officialSourcesPath` : registre YAML relatif à la configuration ;
 - `logging.level` : niveau de log structuré sur `stderr`.
 

@@ -7,7 +7,21 @@ description: >
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'
-tools: ['read_file', 'list_dir', 'file_search', 'grep_search', 'semantic_search', 'insert_edit_into_file', 'replace_string_in_file', 'create_file', 'run_in_terminal', 'get_errors', 'validate_cves', 'run_subagent']
+tools:
+  [
+    'read_file',
+    'list_dir',
+    'file_search',
+    'grep_search',
+    'semantic_search',
+    'insert_edit_into_file',
+    'replace_string_in_file',
+    'create_file',
+    'run_in_terminal',
+    'get_errors',
+    'validate_cves',
+    'run_subagent',
+  ]
 ---
 
 # MCP Feature Engineer
@@ -40,13 +54,13 @@ Traduis la demande en critères testables et concrets :
 
 Identifie quelle(s) couche(s) sont affectées et dans quel ordre :
 
-| Impact | Couche | Fichiers types |
-|--------|--------|----------------|
-| Modèles / règles | `domain` | `src/domain/models/`, `src/domain/services/` |
-| Orchestration | `application` | `src/application/use-cases/`, `src/application/ports/` |
-| Providers / persistence | `infrastructure` | `src/infrastructure/fetch/`, `search/`, `cache/`, `security/` |
-| Exposition MCP | `presentation/mcp` | `src/presentation/mcp/` |
-| Composition | `bootstrap` | `src/bootstrap/container.ts` |
+| Impact                  | Couche             | Fichiers types                                                |
+| ----------------------- | ------------------ | ------------------------------------------------------------- |
+| Modèles / règles        | `domain`           | `src/domain/models/`, `src/domain/services/`                  |
+| Orchestration           | `application`      | `src/application/use-cases/`, `src/application/ports/`        |
+| Providers / persistence | `infrastructure`   | `src/infrastructure/fetch/`, `search/`, `cache/`, `security/` |
+| Exposition MCP          | `presentation/mcp` | `src/presentation/mcp/`                                       |
+| Composition             | `bootstrap`        | `src/bootstrap/container.ts`                                  |
 
 **Règle** : toute dépendance externe (HTTP, DNS, SQLite, config) passe par un **port** défini en `application/ports/`. Le domain ne connaît pas l'infrastructure.
 

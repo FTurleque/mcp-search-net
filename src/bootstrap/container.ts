@@ -3,6 +3,7 @@ import { SearchWeb } from '../application/use-cases/search-web.js';
 import { SqliteCacheRepository } from '../infrastructure/cache/sqlite-cache-repository.js';
 import type { LoadedConfiguration } from '../infrastructure/config/load-configuration.js';
 import { Crawl4aiContentFetcher } from '../infrastructure/fetch/crawl4ai-content-fetcher.js';
+import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.js';
 import { StructuredLogger } from '../infrastructure/logging/structured-logger.js';
 import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-security-policy.js';
 import { SearxngSearchProvider } from '../infrastructure/search/searxng-search-provider.js';
@@ -15,6 +16,15 @@ export function createContainer(loaded: LoadedConfiguration) {
   const clock = new SystemClock();
   const cache = new SqliteCacheRepository(config.cache.path, clock, config.cache.maxEntries);
   const securityPolicy = new PublicUrlSecurityPolicy(config.security);
+  const secureGateway = new SecureHttpGateway(securityPolicy, {
+    timeoutMs: config.crawl4ai.timeoutMs,
+    maxBytes: config.security.maxDownloadBytes,
+    maxRedirects: config.security.maxRedirects,
+    maxConcurrency: config.security.maxConcurrency,
+    minimumDelayMs: config.security.minimumDelayMs,
+    respectRobotsTxt: config.security.respectRobotsTxt,
+    userAgent: `${config.application.name}/${config.application.version}`,
+  });
   const searchProvider = new SearxngSearchProvider(
     config.searxng.baseUrl,
     config.searxng.timeoutMs,
@@ -23,13 +33,14 @@ export function createContainer(loaded: LoadedConfiguration) {
     config.crawl4ai.baseUrl,
     config.crawl4ai.timeoutMs,
     loaded.crawl4aiApiToken,
+    secureGateway,
   );
   const searchWeb = new SearchWeb(searchProvider, cache, loaded.officialSources, {
     cacheTtlMs: config.cache.searchTtlMs,
     providerOversampling: config.limits.providerOversampling,
     maxSnippetChars: config.limits.maxSnippetChars,
   });
-  const fetchUrl = new FetchUrl(contentFetcher, cache, securityPolicy, clock, {
+  const fetchUrl = new FetchUrl(contentFetcher, cache, securityPolicy, loaded.officialSources, {
     cacheTtlMs: config.cache.fetchTtlMs,
     maxLinks: config.limits.maxLinks,
   });

@@ -26,9 +26,11 @@ La V2 (catalogue documentaire, FTS5, synchronisation, versions, embeddings) doit
 | Phase 0 — Validation reproductible | ✅ Terminée le 21 juin 2026 | Node 24.17.0, `npm ci`, CI, SearXNG épinglé et sain     |
 | Phase 1 — Contrat MCP commun       | ✅ Terminée le 21 juin 2026 | 51 tests déterministes et test réel `search_web` réussi |
 | Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi      |
-| Phase 3 et suivantes               | ⏳ À réaliser               | Non démarrées dans ce lot                               |
+| Phase 3 — `fetch_url`              | ✅ Terminée le 21 juin 2026 | 87 tests déterministes, extraction multi-format et BM25 |
+| Phase 4 — Sécurité réseau          | ✅ Terminée le 21 juin 2026 | Passerelle épinglée, redirections/limites testées       |
+| Phase 5 et suivantes               | ⏳ À réaliser               | Non démarrées                                           |
 
-Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md) et de la [phase 2](validation-phase-2.md).
+Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md), de la [phase 2](validation-phase-2.md) et des [phases 3 et 4](validation-phase-3-4.md).
 
 ## État vérifié au moment de l'audit
 
@@ -143,42 +145,46 @@ Zones principales : `src/domain/models`, `src/presentation/mcp/schemas`, `src/pr
 
 ### Phase 3 — Terminer `fetch_url` et la réduction du contexte (P0)
 
+**Statut : ✅ TERMINÉE — validée le 21 juin 2026.**
+
 #### Contrat et formats
 
-- [ ] Renommer `maxChars` en `maxCharacters` et ajouter `maxSections` (défaut 5, maximum absolu 10).
-- [ ] Ajouter `renderMode: static | auto`, défaut `static`, sans accepter de JavaScript, hook, cookie, proxy, fichier ou authentification fourni par l'appelant.
-- [ ] Retourner `requestedUrl`, `finalUrl`, `canonicalUrl`, `domain`, `contentType`, `sourceStatus`, `fetchedAt`, `extractionMode`, `truncated`, `sectionCount` et un tableau de sections structurées.
-- [ ] Définir et tester le comportement HTML, Markdown, texte, JSON, XML, YAML, README, PDF textuel, `robots.txt`, `sitemap.xml` et `llms.txt`.
-- [ ] Retourner explicitement `UNSUPPORTED_CONTENT_TYPE` ou `OCR_REQUIRED_NOT_SUPPORTED` pour les formats hors V1.
+- [x] Renommer `maxChars` en `maxCharacters` et ajouter `maxSections` (défaut 5, maximum absolu 10).
+- [x] Ajouter `renderMode: static | auto`, défaut `static`, sans accepter de JavaScript, hook, cookie, proxy, fichier ou authentification fourni par l'appelant.
+- [x] Retourner `requestedUrl`, `finalUrl`, `canonicalUrl`, `domain`, `contentType`, `sourceStatus`, `fetchedAt`, `extractionMode`, `truncated`, `sectionCount` et un tableau de sections structurées.
+- [x] Définir et tester le comportement HTML, Markdown, texte, JSON, XML, YAML, README, PDF textuel, `robots.txt`, `sitemap.xml` et `llms.txt`.
+- [x] Retourner explicitement `UNSUPPORTED_CONTENT_TYPE` ou `OCR_REQUIRED_NOT_SUPPORTED` pour les formats hors V1.
 
 #### Extraction et sélection
 
-- [ ] En mode `auto`, tenter `static`, puis seulement le rendu natif Crawl4AI si le contenu est inexploitable ; produire `JAVASCRIPT_FALLBACK_USED`.
-- [ ] Nettoyer ou vérifier la suppression des scripts, styles, menus, publicités, iframes, formulaires, contenu invisible et bannières répétitives.
-- [ ] Découper selon les titres tout en gardant les blocs de code avec leur section.
-- [ ] Implémenter une sélection locale BM25, avec bonus titre/sous-titre, bloc de code et version explicitement demandée.
-- [ ] Appliquer 5 000 caractères maximum par section, puis les limites globales de sections et de caractères.
-- [ ] Ne plus retourner silencieusement les trois premières sections lorsqu'aucune section n'est pertinente ; utiliser le comportement et l'avertissement `NO_RELEVANT_SECTION` définis par le contrat.
-- [ ] Produire `CONTENT_TRUNCATED` et `SECTION_TRUNCATED` séparément.
-- [ ] Conserver la date réelle de récupération dans le cache au lieu de recréer `fetchedAt` à chaque lecture.
+- [x] En mode `auto`, tenter `static`, puis seulement le rendu natif Crawl4AI si le contenu est inexploitable ; produire `JAVASCRIPT_FALLBACK_USED`.
+- [x] Nettoyer ou vérifier la suppression des scripts, styles, menus, publicités, iframes, formulaires, contenu invisible et bannières répétitives.
+- [x] Découper selon les titres tout en gardant les blocs de code avec leur section.
+- [x] Implémenter une sélection locale BM25, avec bonus titre/sous-titre, bloc de code et version explicitement demandée.
+- [x] Appliquer 5 000 caractères maximum par section, puis les limites globales de sections et de caractères.
+- [x] Ne plus retourner silencieusement les trois premières sections lorsqu'aucune section n'est pertinente ; utiliser le comportement et l'avertissement `NO_RELEVANT_SECTION` défini par le contrat.
+- [x] Produire `CONTENT_TRUNCATED` et `SECTION_TRUNCATED` séparément.
+- [x] Conserver la date réelle de récupération dans le cache au lieu de recréer `fetchedAt` à chaque lecture.
 
 **Condition de sortie :** AC-05/06/09 passent sur un corpus multi-format sans aucun appel de LLM.
 
 ### Phase 4 — Fermer les risques de sécurité réseau (P0)
 
+**Statut : ✅ TERMINÉE — validée le 21 juin 2026.**
+
 Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl4AI.
 
-- [ ] Contrôler chaque redirection **avant** la connexion suivante : protocole, identifiants, port, nom, toutes les réponses DNS et adresse IP.
-- [ ] Ne pas considérer la validation actuelle de `resolvedUrl` comme suffisante : elle intervient après que Crawl4AI a déjà récupéré la cible finale.
-- [ ] Choisir et documenter le mécanisme effectif : suivi de redirections dans une passerelle contrôlée, redirections désactivées côté extracteur, ou proxy de sortie appliquant la politique à chaque saut.
-- [ ] Réduire le risque de DNS rebinding entre le processus MCP et Crawl4AI, idéalement par contrôle d'egress/proxy et règles réseau du conteneur.
-- [ ] Imposer 5 redirections maximum.
-- [ ] Imposer une taille de téléchargement de 10 Mo par défaut et interrompre le transfert avant dépassement.
-- [ ] Imposer un timeout absolu de 20 secondes par défaut ; la configuration actuelle de Crawl4AI est de 90 secondes.
-- [ ] Activer explicitement le respect de `robots.txt` pour les opérations concernées.
-- [ ] Limiter la concurrence et ajouter une temporisation raisonnable pour les sites cibles.
-- [ ] Vérifier que les liens retournés sont eux aussi normalisés et qu'aucune donnée locale, variable d'environnement ou secret ne peut apparaître dans la réponse.
-- [ ] Ajouter les tests protocoles interdits, IPv4/IPv6 réservées, DNS mixte public/privé, redirection privée à chaque saut, rebinding simulé, taille, timeout et injection dans le contenu.
+- [x] Contrôler chaque redirection **avant** la connexion suivante : protocole, identifiants, port, nom, toutes les réponses DNS et adresse IP.
+- [x] Ne pas considérer la validation actuelle de `resolvedUrl` comme suffisante : Crawl4AI ne reçoit plus l'URL publique.
+- [x] Choisir et documenter le mécanisme effectif : suivi de redirections dans une passerelle contrôlée avec connexion épinglée.
+- [x] Réduire le risque de DNS rebinding entre le processus MCP et Crawl4AI par épinglage de l'adresse approuvée ; Crawl4AI traite uniquement une URL `data:` neutralisée.
+- [x] Imposer 5 redirections maximum.
+- [x] Imposer une taille de téléchargement de 10 Mo par défaut et interrompre le transfert avant dépassement.
+- [x] Imposer un timeout absolu de 20 secondes par défaut.
+- [x] Activer explicitement le respect de `robots.txt` pour les opérations concernées.
+- [x] Limiter la concurrence et ajouter une temporisation raisonnable pour les sites cibles.
+- [x] Vérifier que les liens retournés sont eux aussi normalisés et qu'aucune donnée locale, variable d'environnement ou secret ne peut apparaître dans la réponse.
+- [x] Ajouter les tests protocoles interdits, IPv4/IPv6 réservées, DNS mixte public/privé, redirection privée à chaque saut, rebinding simulé, taille, timeout et injection dans le contenu.
 
 **Condition de sortie :** AC-11 passe avec des tests démontrant qu'aucune requête n'atteint la cible bloquée.
 

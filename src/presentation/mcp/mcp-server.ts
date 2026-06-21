@@ -33,6 +33,8 @@ export function createMcpServer(dependencies: McpServerDependencies): McpServer 
   const fetchSchemas = createFetchUrlSchemas(
     dependencies.config.limits.defaultFetchChars,
     dependencies.config.limits.maxFetchChars,
+    dependencies.config.limits.defaultFetchSections,
+    dependencies.config.limits.maxFetchSections,
   );
 
   server.registerTool(
@@ -99,7 +101,9 @@ export function createMcpServer(dependencies: McpServerDependencies): McpServer 
           return dependencies.fetchUrl.execute({
             url: input.url,
             ...(input.query === undefined ? {} : { query: input.query }),
-            maxChars: input.maxChars,
+            maxCharacters: input.maxCharacters,
+            maxSections: input.maxSections,
+            renderMode: input.renderMode,
           });
         },
         validateResponse: (response) => {
@@ -131,11 +135,11 @@ function formatSearchText(response: ToolResponse<SearchResponse>): string {
 }
 
 function formatFetchText(response: ToolResponse<FetchResponse>): string {
-  const heading = response.data.title ?? response.data.resolvedUrl;
+  const heading = response.data.title ?? response.data.finalUrl;
   const lines = [
     `fetch_url ${response.status}: ${heading}`,
     `requestId=${response.requestId} cache=${response.metadata.cacheStatus}`,
-    `Source: ${response.data.resolvedUrl}`,
+    `Source: ${response.data.finalUrl}`,
   ];
   response.warnings.forEach((warning) => lines.push(`Warning ${warning.code}: ${warning.message}`));
   lines.push('', response.data.markdown);

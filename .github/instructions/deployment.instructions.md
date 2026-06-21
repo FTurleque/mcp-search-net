@@ -48,10 +48,10 @@ services:
 
 ### Binding réseau
 
-| Environnement | SearXNG et Crawl4AI |
-|---------------|---------------------|
-| Développement | `127.0.0.1` (loopback uniquement) |
-| Full Compose | Réseau interne Docker `internal: true` |
+| Environnement | SearXNG et Crawl4AI                    |
+| ------------- | -------------------------------------- |
+| Développement | `127.0.0.1` (loopback uniquement)      |
+| Full Compose  | Réseau interne Docker `internal: true` |
 
 ```yaml
 # ✅ Dev — loopback uniquement
@@ -85,7 +85,7 @@ security_opt:
 ```yaml
 # ✅ Healthcheck défini pour chaque service critique
 healthcheck:
-  test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+  test: ['CMD-SHELL', 'wget -qO- http://localhost:8080/healthz || exit 1']
   interval: 30s
   timeout: 10s
   retries: 3
@@ -135,7 +135,7 @@ permissions: write-all
 
 ```yaml
 # ✅ Actions communauté pinnées avec hash de commit
-- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
 # ❌ Tag seul — non épinglé
 - uses: actions/checkout@v4
@@ -152,7 +152,7 @@ permissions: write-all
 services:
   app:
     environment:
-      - SEARXNG_API_KEY=${SEARXNG_API_KEY}  # depuis .env local ou CI secret
+      - SEARXNG_API_KEY=${SEARXNG_API_KEY} # depuis .env local ou CI secret
 
 # ❌ Secret en dur
 environment:

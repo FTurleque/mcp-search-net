@@ -67,10 +67,7 @@ function findBlockedRule(command) {
       /\bRemove-Item\b[^\r\n]*(?=.*-Recurse)(?=.*-Force)/iu,
       'Remove-Item -Recurse -Force est bloqué.',
     ],
-    [
-      /\brd\s+\/s\s+\/q\b/iu,
-      'rd /s /q (suppression récursive silencieuse) est bloqué.',
-    ],
+    [/\brd\s+\/s\s+\/q\b/iu, 'rd /s /q (suppression récursive silencieuse) est bloqué.'],
 
     // ── Docker destructif ───────────────────────────────────────────────────────
     [
@@ -89,7 +86,7 @@ function findBlockedRule(command) {
     // ── Infrastructure cloud ────────────────────────────────────────────────────
     [
       /\b(?:terraform|tofu)\s+destroy\b/iu,
-      'La destruction d\'infrastructure requiert une autorisation explicite.',
+      "La destruction d'infrastructure requiert une autorisation explicite.",
     ],
     [
       /\bkubectl\s+delete\b/iu,
@@ -101,10 +98,7 @@ function findBlockedRule(command) {
       /\b(?:npm|pnpm|yarn)\s+publish\b/iu,
       'La publication de packages requiert une autorisation explicite.',
     ],
-    [
-      /\bgh\s+repo\s+delete\b/iu,
-      'La suppression de dépôt GitHub est bloquée.',
-    ],
+    [/\bgh\s+repo\s+delete\b/iu, 'La suppression de dépôt GitHub est bloquée.'],
     [
       /\bgh\s+(?:release|tag)\s+(?:create|delete)\b/iu,
       'La création ou suppression de releases/tags requiert une autorisation explicite.',
@@ -128,4 +122,3 @@ function deny(reason) {
     `${JSON.stringify({ permissionDecision: 'deny', permissionDecisionReason: reason })}\n`,
   );
 }
-

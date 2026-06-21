@@ -36,12 +36,12 @@ lastReviewed: '2026-06-21'
 
 ## Statut des tests live (à indiquer explicitement)
 
-| Test | Disponible | Résultat |
-|------|-----------|----------|
-| SearXNG (`RUN_LIVE_SEARXNG=1`) | ☐ oui / ☐ non | ... |
-| Crawl4AI (`RUN_LIVE_CRAWL4AI=1`) | ☐ oui / ☐ non | ... |
-| Install Windows | ☐ oui / ☐ non | ... |
-| IntelliJ Copilot | ☐ oui / ☐ non | ... |
+| Test                             | Disponible    | Résultat |
+| -------------------------------- | ------------- | -------- |
+| SearXNG (`RUN_LIVE_SEARXNG=1`)   | ☐ oui / ☐ non | ...      |
+| Crawl4AI (`RUN_LIVE_CRAWL4AI=1`) | ☐ oui / ☐ non | ...      |
+| Install Windows                  | ☐ oui / ☐ non | ...      |
+| IntelliJ Copilot                 | ☐ oui / ☐ non | ...      |
 
 **Important** : un test live non exécuté n'est pas considéré comme passé.
 

@@ -44,6 +44,8 @@ export const applicationConfigSchema = z
         maxSnippetChars: z.number().int().min(50).max(2_000),
         defaultFetchChars: z.number().int().min(1_000).max(100_000),
         maxFetchChars: z.number().int().min(1_000).max(250_000),
+        defaultFetchSections: z.number().int().min(1).max(10),
+        maxFetchSections: z.number().int().min(1).max(10),
         maxLinks: z.number().int().min(0).max(500),
       })
       .strict(),
@@ -51,6 +53,11 @@ export const applicationConfigSchema = z
       .object({
         allowedPorts: z.array(z.number().int().min(1).max(65_535)).min(1),
         allowHttp: z.boolean(),
+        maxDownloadBytes: z.number().int().min(1_024).max(10_485_760),
+        maxRedirects: z.number().int().min(0).max(5),
+        maxConcurrency: z.number().int().min(1).max(16),
+        minimumDelayMs: z.number().int().min(0).max(10_000),
+        respectRobotsTxt: z.boolean(),
       })
       .strict(),
     officialSourcesPath: z.string().min(1),
@@ -74,6 +81,13 @@ export const applicationConfigSchema = z
         code: 'custom',
         path: ['limits', 'defaultFetchChars'],
         message: 'Must not exceed maxFetchChars',
+      });
+    }
+    if (config.limits.defaultFetchSections > config.limits.maxFetchSections) {
+      context.addIssue({
+        code: 'custom',
+        path: ['limits', 'defaultFetchSections'],
+        message: 'Must not exceed maxFetchSections',
       });
     }
   });

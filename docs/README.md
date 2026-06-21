@@ -30,5 +30,6 @@
 - [Feuille de route vers une V1 pleinement opérationnelle](planning/roadmap-v1-operationnelle.md)
 - [Rapport de validation des phases 0 et 1](planning/validation-phase-0-1.md)
 - [Rapport de validation de la phase 2](planning/validation-phase-2.md)
+- [Rapport de validation des phases 3 et 4](planning/validation-phase-3-4.md)
 
-La documentation décrit la V1. L’indexation documentaire, FTS/BM25, les embeddings et la synchronisation restent hors périmètre.
+La documentation décrit la V1. L’indexation d’un catalogue documentaire, FTS/BM25 persistant, les embeddings et la synchronisation restent hors périmètre ; le BM25 local de `fetch_url` sert uniquement à sélectionner les sections de la page courante.

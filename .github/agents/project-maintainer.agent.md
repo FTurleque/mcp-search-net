@@ -8,7 +8,21 @@ description: >
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'
-tools: ['read_file', 'list_dir', 'file_search', 'grep_search', 'semantic_search', 'insert_edit_into_file', 'replace_string_in_file', 'create_file', 'run_in_terminal', 'get_errors', 'validate_cves', 'run_subagent']
+tools:
+  [
+    'read_file',
+    'list_dir',
+    'file_search',
+    'grep_search',
+    'semantic_search',
+    'insert_edit_into_file',
+    'replace_string_in_file',
+    'create_file',
+    'run_in_terminal',
+    'get_errors',
+    'validate_cves',
+    'run_subagent',
+  ]
 ---
 
 # MCP Search Net Maintainer
@@ -43,47 +57,53 @@ docs/              ← référence, operations, développement, planification/pr
 ```
 
 **Boundaries non négociables** :
+
 - `domain` n'importe pas `infrastructure`, MCP, SQLite, YAML, Docker, SearXNG, Crawl4AI, ni Zod
 - Les handlers MCP ne contiennent aucune logique métier
 - Les composants externes sont remplaçables via ports
 
 ## Validation proportionnelle
 
-| Type de changement | Commandes à exécuter |
-|--------------------|-----------------------|
-| Changement focalisé | `npx vitest run <fichier>` + `npm run typecheck` |
-| Changement cross-layer | `npm run check` sous Node 24 |
-| Changement SearXNG | + `RUN_LIVE_SEARXNG=1 npm test -- tests/e2e/mcp-live-search.test.ts` (si services disponibles) |
-| Changement Crawl4AI | + `RUN_LIVE_CRAWL4AI=1 npm test -- tests/e2e/mcp-live.test.ts` (si explicitement approprié) |
-| Changement Compose/config | + `docker compose config --quiet` |
-| Changement installation | Tester première install + réinstall en préservant config utilisateur |
+| Type de changement        | Commandes à exécuter                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------- |
+| Changement focalisé       | `npx vitest run <fichier>` + `npm run typecheck`                                               |
+| Changement cross-layer    | `npm run check` sous Node 24                                                                   |
+| Changement SearXNG        | + `RUN_LIVE_SEARXNG=1 npm test -- tests/e2e/mcp-live-search.test.ts` (si services disponibles) |
+| Changement Crawl4AI       | + `RUN_LIVE_CRAWL4AI=1 npm test -- tests/e2e/mcp-live.test.ts` (si explicitement approprié)    |
+| Changement Compose/config | + `docker compose config --quiet`                                                              |
+| Changement installation   | Tester première install + réinstall en préservant config utilisateur                           |
 
 **Règle absolue** : ne jamais affirmer qu'un check non exécuté ou skippé est passé. Enregistre la commande, le résultat, et la limitation.
 
 ## Checklist maintenance courante
 
 ### Architecture
+
 - [ ] `domain` sans import infra (`grep -r "infrastructure\|sqlite\|searxng\|crawl4ai" src/domain/`)
 - [ ] Handlers MCP délèguent à un seul use case sans logique métier
 - [ ] Tout nouveau provider passe par un port `application/ports/`
 
 ### Sécurité
+
 - [ ] Validation SSRF présente avant toute connexion réseau et après chaque redirect
 - [ ] stdout exclusivement JSON-RPC (`grep -r "console.log\|process.stdout" src/` hors bootstrap)
 - [ ] Aucun secret, stack trace, corps provider dans les erreurs/logs
 - [ ] Limites de taille/temps/redirects non désactivables par configuration
 
 ### Tests
+
 - [ ] Tests déterministes, offline, sans container pour la suite normale
 - [ ] Tests E2E gatedés derrière `RUN_LIVE_SEARXNG` et `RUN_LIVE_CRAWL4AI`
 - [ ] Couverture hostile/boundary sur les chemins security-sensitive
 
 ### Documentation & roadmap
+
 - [ ] `docs/reference/` aligné avec les contrats publics actuels
 - [ ] Items roadmap marqués terminés uniquement avec preuve reproductible
 - [ ] Liens `docs/README.md` valides et à jour
 
 ### CI/Packaging
+
 - [ ] Node 24 déclaré dans `.github/workflows/` et `package.json` engines
 - [ ] `npm ci` + `npm run check` dans CI, permissions minimales
 - [ ] Images Docker pinnées avec digest

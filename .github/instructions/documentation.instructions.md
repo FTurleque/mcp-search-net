@@ -19,8 +19,9 @@ lastReviewed: '2026-06-21'
 - Les noms de fichiers, commandes, paramètres, et valeurs de configuration sont en `code inline`.
 - Les sections longues utilisent des titres H2/H3 avec ancres descriptives.
 
-```markdown
+````markdown
 <!-- ✅ Correct — français, commande copiable -->
+
 ## Installation
 
 Exécute le script d'installation depuis le répertoire du projet :
@@ -28,11 +29,15 @@ Exécute le script d'installation depuis le répertoire du projet :
 ```powershell
 .\scripts\install-user.ps1
 ```
+````
 
 <!-- ❌ Incorrect — anglais, commande non copiable -->
+
 ## Setup
+
 Run the install script.
-```
+
+````
 
 ## Contenu et précision
 
@@ -47,7 +52,7 @@ Renvoie jusqu'à 10 résultats de recherche avec URL, titre et extrait.
 <!-- ❌ Comportement futur présenté comme actuel -->
 ## Outil `search_web`
 Renvoie les résultats avec analyse sémantique et scoring de pertinence.
-```
+````
 
 ### Séparer clairement état actuel, planifié, et limites connues
 
@@ -62,13 +67,13 @@ Utiliser des admonitions ou des sections distinctes :
 
 ## Organisation par dossier
 
-| Dossier | Contenu |
-|---------|---------|
-| `docs/reference/` | Contrats publics, configuration, architecture, sécurité |
-| `docs/operations/` | Troubleshooting opérationnel, mise à jour, résolution de problèmes |
-| `docs/development/` | Guide contributeur, testing, outils de développement |
-| `docs/getting-started/` | Installation, premier usage, intégration IDE |
-| `docs/planning/` | Roadmap, preuves de validation, décisions d'architecture |
+| Dossier                 | Contenu                                                            |
+| ----------------------- | ------------------------------------------------------------------ |
+| `docs/reference/`       | Contrats publics, configuration, architecture, sécurité            |
+| `docs/operations/`      | Troubleshooting opérationnel, mise à jour, résolution de problèmes |
+| `docs/development/`     | Guide contributeur, testing, outils de développement               |
+| `docs/getting-started/` | Installation, premier usage, intégration IDE                       |
+| `docs/planning/`        | Roadmap, preuves de validation, décisions d'architecture           |
 
 **Règle** : toute nouvelle page utilisateur est listée dans `docs/README.md` avec une courte description.
 
@@ -80,9 +85,11 @@ Utiliser des admonitions ou des sections distinctes :
 
 ```markdown
 <!-- ✅ Lien relatif valide -->
+
 Voir [configuration de référence](../reference/configuration.md#limites-de-contenu).
 
 <!-- ❌ Lien absolu fragile -->
+
 Voir [configuration](https://github.com/user/mcp-search-net/blob/main/docs/reference/configuration.md).
 ```
 
@@ -95,22 +102,24 @@ Voir [configuration](https://github.com/user/mcp-search-net/blob/main/docs/refer
 
 ```markdown
 <!-- ✅ Item avec preuve -->
+
 - [x] **Cache SQLite opérationnel**
   - Preuve : `npx vitest run tests/infrastructure/sqlite-cache-repository.test.ts` — 12 tests passed
   - Date : 2026-06-15
 
 <!-- ❌ Item sans preuve -->
+
 - [x] Cache SQLite opérationnel
 ```
 
 ## Mise à jour obligatoire
 
-| Modification du code | Documentation à mettre à jour |
-|----------------------|-------------------------------|
-| Nouveau paramètre outil | `docs/reference/tools.md` |
-| Nouveau champ de configuration | `docs/reference/configuration.md` |
-| Nouveau code d'erreur public | `docs/reference/tools.md#codes-derreur` |
-| Nouveau service ou container | `docs/reference/architecture.md` |
-| Nouvelle variable d'environnement | `docs/reference/configuration.md` |
-| Nouvelle limitation de sécurité | `docs/reference/security.md` |
-| Phase roadmap complétée | `docs/planning/roadmap-v1-operationnelle.md` + `docs/planning/validation-phase-X.md` |
+| Modification du code              | Documentation à mettre à jour                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------------ |
+| Nouveau paramètre outil           | `docs/reference/tools.md`                                                            |
+| Nouveau champ de configuration    | `docs/reference/configuration.md`                                                    |
+| Nouveau code d'erreur public      | `docs/reference/tools.md#codes-derreur`                                              |
+| Nouveau service ou container      | `docs/reference/architecture.md`                                                     |
+| Nouvelle variable d'environnement | `docs/reference/configuration.md`                                                    |
+| Nouvelle limitation de sécurité   | `docs/reference/security.md`                                                         |
+| Phase roadmap complétée           | `docs/planning/roadmap-v1-operationnelle.md` + `docs/planning/validation-phase-X.md` |

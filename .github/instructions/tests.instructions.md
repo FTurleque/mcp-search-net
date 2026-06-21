@@ -32,6 +32,7 @@ it('appelle isPrivateAddress avec la bonne regex', () => {
 ### Déterminisme et isolation offline
 
 Les tests ordinaires (hors E2E) doivent passer :
+
 - **Sans accès réseau**
 - **Sans container Docker** (SearXNG, Crawl4AI, SQLite en mode in-memory)
 - **Sans variable d'environnement spéciale**
@@ -48,11 +49,13 @@ it.skipIf(!RUN_LIVE)('search_web avec SearXNG réel', async () => { ... });
 ## Structure des tests par couche
 
 ### Domain (`tests/domain/`)
+
 - Données de test inline ou fixtures JSON sans imports infra
 - Aucun mock, spy, ou stub nécessaire (code déterministe pur)
 - Couvrir les valeurs limites des modèles et règles métier
 
 ### Application (`tests/application/`)
+
 - Injecter des doubles de test pour chaque port (search provider, cache, fetcher, clock, resolver)
 - Tester les use cases en isolation totale des fournisseurs réels
 - Vérifier la propagation des erreurs stables depuis les ports
@@ -60,18 +63,20 @@ it.skipIf(!RUN_LIVE)('search_web avec SearXNG réel', async () => { ... });
 ```typescript
 // ✅ Injection de doubles
 const fakeProvider: SearchProvider = {
-  search: vi.fn().mockResolvedValue({ results: [], warnings: [] })
+  search: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
 };
 const useCase = new SearchWebUseCase(fakeProvider, fakeCache, fakeClock);
 ```
 
 ### Infrastructure (`tests/infrastructure/`)
+
 - Utiliser des serveurs HTTP de test (`vi.mock`, `msw`, ou serveur Express local) pour les providers
 - Injecter des résolveurs DNS de test pour les contrôles SSRF
 - SQLite : utiliser `:memory:` pour l'isolation entre tests
 - Couvrir : nominal, timeout, réponse malformée, limite de taille, redirect bloqué
 
 ### Présentation (`tests/presentation/`)
+
 - Tester le mapping schéma Zod → use case → réponse MCP
 - Vérifier que les handlers sont fins (aucune logique métier)
 - Vérifier tous les codes d'erreur publics stables
@@ -80,22 +85,23 @@ const useCase = new SearchWebUseCase(fakeProvider, fakeCache, fakeClock);
 
 Pour toute modification de `src/infrastructure/security/`, `http/`, ou `fetch/`, ajouter des tests couvrant :
 
-| Catégorie | Cas à couvrir |
-|-----------|---------------|
-| URLs bloquées | Loopback, privé, link-local, protocole non-HTTPS, credentials dans URL, port non standard |
-| Redirects | Redirect vers IP privée, chaîne de redirects > max, redirect vers autre protocole |
-| DNS rebinding | Hostname résolu vers IP privée après validation initiale |
-| Taille | Réponse > MAX_BYTES abortée avant réception complète |
-| Timeout | Connexion et lecture bornées indépendamment |
-| Contenu hostile | Instructions de page non réinjectées, Markdown sanitisé |
+| Catégorie       | Cas à couvrir                                                                             |
+| --------------- | ----------------------------------------------------------------------------------------- |
+| URLs bloquées   | Loopback, privé, link-local, protocole non-HTTPS, credentials dans URL, port non standard |
+| Redirects       | Redirect vers IP privée, chaîne de redirects > max, redirect vers autre protocole         |
+| DNS rebinding   | Hostname résolu vers IP privée après validation initiale                                  |
+| Taille          | Réponse > MAX_BYTES abortée avant réception complète                                      |
+| Timeout         | Connexion et lecture bornées indépendamment                                               |
+| Contenu hostile | Instructions de page non réinjectées, Markdown sanitisé                                   |
 
 **Règle** : chaque test SSRF doit prouver que la cible bloquée n'est **jamais contactée** :
 
 ```typescript
 // ✅ Preuve de non-contact
 const fetchSpy = vi.spyOn(globalThis, 'fetch');
-await expect(useCase.execute({ url: 'http://169.254.169.254/meta-data' }))
-  .rejects.toMatchObject({ code: 'URL_BLOCKED' });
+await expect(useCase.execute({ url: 'http://169.254.169.254/meta-data' })).rejects.toMatchObject({
+  code: 'URL_BLOCKED',
+});
 expect(fetchSpy).not.toHaveBeenCalled();
 ```
 
@@ -112,8 +118,10 @@ Vérifier systématiquement dans les tests d'intégration :
 ```typescript
 // ✅ Vérification de séparation stdout/stderr
 const stdoutChunks: Buffer[] = [];
-const stdoutSpy = vi.spyOn(process.stdout, 'write')
-  .mockImplementation((chunk) => { stdoutChunks.push(Buffer.from(chunk)); return true; });
+const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+  stdoutChunks.push(Buffer.from(chunk));
+  return true;
+});
 
 await handler.handle(request);
 
@@ -124,8 +132,8 @@ for (const chunk of stdoutChunks) {
 
 ## Validation proportionnelle
 
-| Portée du changement | Commande |
-|---------------------|----------|
-| Un fichier test | `npx vitest run tests/<path>` |
-| Une couche | `npx vitest run tests/<layer>/` |
-| Changement cross-layer | `npm run check` sous Node 24 |
+| Portée du changement   | Commande                        |
+| ---------------------- | ------------------------------- |
+| Un fichier test        | `npx vitest run tests/<path>`   |
+| Une couche             | `npx vitest run tests/<layer>/` |
+| Changement cross-layer | `npm run check` sous Node 24    |

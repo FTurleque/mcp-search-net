@@ -8,7 +8,16 @@ description: >
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'
-tools: ['read_file', 'list_dir', 'file_search', 'grep_search', 'semantic_search', 'run_in_terminal', 'get_errors']
+tools:
+  [
+    'read_file',
+    'list_dir',
+    'file_search',
+    'grep_search',
+    'semantic_search',
+    'run_in_terminal',
+    'get_errors',
+  ]
 ---
 
 # MCP Release Guardian
@@ -49,6 +58,7 @@ npm run check           # lint + typecheck + build + tests déterministes
 ### 3. Contrats MCP publics
 
 Vérifie que `docs/reference/tools.md` correspond exactement au code :
+
 - Schémas `search_web` et `fetch_url` — paramètres, types, optionnalité
 - Codes d'erreur stables — liste exhaustive dans la doc
 - Champs de réponse — `requestId`, `sourceUrl`, `cacheStatus`, `warnings` présents
@@ -57,6 +67,7 @@ Vérifie que `docs/reference/tools.md` correspond exactement au code :
 ### 4. Sécurité
 
 Vérifie sans exécuter de connexions réseau :
+
 - Validation SSRF présente avant toute connexion (`src/infrastructure/security/`)
 - Aucun `console.log` ou `process.stdout.write` hors bootstrap dans `src/`
 - Docker : images pinnées avec digest dans `Dockerfile` et `compose.yaml`

@@ -8,7 +8,7 @@ searxng:
 
 crawl4ai:
   baseUrl: http://127.0.0.1:11235
-  timeoutMs: 90000
+  timeoutMs: 20000
   apiTokenEnvironmentVariable: CRAWL4AI_API_TOKEN
   apiToken: mcp-search-local-development-token
 
@@ -25,11 +25,18 @@ limits:
   maxSnippetChars: 500
   defaultFetchChars: 12000
   maxFetchChars: 30000
+  defaultFetchSections: 5
+  maxFetchSections: 10
   maxLinks: 50
 
 security:
   allowedPorts: [80, 443]
   allowHttp: true
+  maxDownloadBytes: 10485760
+  maxRedirects: 5
+  maxConcurrency: 4
+  minimumDelayMs: 250
+  respectRobotsTxt: true
 
 officialSourcesPath: official-sources.yml
 

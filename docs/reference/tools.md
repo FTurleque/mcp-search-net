@@ -70,9 +70,23 @@ Le nombre demandé ne peut pas dépasser la limite applicative. La langue et la 
 
 ## `fetch_url`
 
-Entrées conceptuelles : URL publique obligatoire, termes de pertinence optionnels et budget de caractères borné. Sortie structurée : URL finale, titre, Markdown sélectionné, liens conservés et métadonnées d’extraction/cache.
+Entrées :
 
-Une URL peut être refusée avant tout accès réseau. Une page dynamique peut nécessiter plus de temps qu’une page HTML statique. Les PDF textuels sont possibles selon les capacités de Crawl4AI ; l’OCR est hors périmètre.
+| Champ           | Défaut   | Contraintes                                    |
+| --------------- | -------- | ---------------------------------------------- |
+| `url`           | —        | URL HTTP(S) publique connue                    |
+| `query`         | absente  | 2 à 500 caractères, utilisés par le BM25 local |
+| `maxCharacters` | `12000`  | de 1 000 à 30 000                              |
+| `maxSections`   | `5`      | de 1 à 10                                      |
+| `renderMode`    | `static` | `static` ou `auto`                             |
+
+La sortie contient `requestedUrl`, `finalUrl`, `canonicalUrl`, `domain`, `contentType`, `sourceStatus`, `fetchedAt`, `extractionMode`, `truncated`, `sectionCount`, `sections`, le Markdown assemblé et les liens publics validés. Chaque section expose son titre, son Markdown, son score local et son état de troncature.
+
+Le sélecteur local utilise BM25, renforce les correspondances dans les titres, les blocs de code et les versions demandées, limite chaque section à 5 000 caractères, puis applique les budgets globaux. Une requête sans correspondance renvoie une liste vide et `NO_RELEVANT_SECTION`, jamais les premières sections arbitraires.
+
+Les formats V1 sont HTML, Markdown/README, texte, JSON, XML, YAML, `robots.txt`, `sitemap.xml`, `llms.txt` et PDF textuel. Un PDF sans couche texte produit `OCR_REQUIRED_NOT_SUPPORTED`; un autre format non textuel produit `UNSUPPORTED_CONTENT_TYPE`.
+
+En mode `auto`, le rendu natif n'est tenté qu'après une extraction statique insuffisante. Crawl4AI reçoit alors une URL `data:` contenant le HTML déjà téléchargé et neutralisé, jamais l'URL publique. L'avertissement `JAVASCRIPT_FALLBACK_USED` rend ce chemin visible.
 
 ## Annotations et erreurs
 

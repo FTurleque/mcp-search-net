@@ -24,22 +24,28 @@ lastReviewed: '2026-06-21'
 ```typescript
 // ✅ Correct
 type CacheStatus = 'hit' | 'miss' | 'bypass';
-interface SearchResult { readonly url: string; readonly title: string; }
+interface SearchResult {
+  readonly url: string;
+  readonly title: string;
+}
 
 // ❌ Incorrect
 type CacheStatus = string;
-interface SearchResult { url?: string | undefined; title?: string | undefined; }
+interface SearchResult {
+  url?: string | undefined;
+  title?: string | undefined;
+}
 ```
 
 ### Boundaries de couches — règle d'import
 
-| Couche | Peut importer | Ne peut jamais importer |
-|--------|--------------|------------------------|
-| `domain` | Rien d'externe | `infrastructure`, `presentation`, MCP SDK, SQLite, YAML, Zod, SearXNG, Crawl4AI |
-| `application` | `domain` | `infrastructure`, MCP SDK, SQLite, HTTP, DNS |
-| `infrastructure` | `domain`, `application/ports` | `presentation`, `bootstrap` |
-| `presentation/mcp` | `domain`, `application` | `infrastructure` directement (via use cases) |
-| `bootstrap` | Tout | (point de composition uniquement) |
+| Couche             | Peut importer                 | Ne peut jamais importer                                                         |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------- |
+| `domain`           | Rien d'externe                | `infrastructure`, `presentation`, MCP SDK, SQLite, YAML, Zod, SearXNG, Crawl4AI |
+| `application`      | `domain`                      | `infrastructure`, MCP SDK, SQLite, HTTP, DNS                                    |
+| `infrastructure`   | `domain`, `application/ports` | `presentation`, `bootstrap`                                                     |
+| `presentation/mcp` | `domain`, `application`       | `infrastructure` directement (via use cases)                                    |
+| `bootstrap`        | Tout                          | (point de composition uniquement)                                               |
 
 **Vérification** : `grep -r "from.*infrastructure" src/domain/` doit retourner vide.
 
@@ -63,6 +69,7 @@ import { Crawl4AIContentFetcher } from '../../infrastructure/fetch/crawl4ai-cont
 ## Handlers MCP — règle de finesse
 
 Les handlers `presentation/mcp/` suivent exactement ce patron :
+
 1. Parser et valider les arguments d'entrée (schéma Zod)
 2. Invoquer **un seul** use case
 3. Valider et formater la réponse (envelope + fallback texte compact)
@@ -117,6 +124,7 @@ catch (error) {
 ## Déterminisme du domaine
 
 Le code `src/domain/` ne doit contenir **aucune dépendance cachée** vers :
+
 - L'heure (`Date.now()`, `new Date()`) → injecter via port `Clock`
 - Le hasard (`Math.random()`) → injecter ou éviter
 - DNS, filesystem, réseau → strictement interdit

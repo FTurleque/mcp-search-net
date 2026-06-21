@@ -57,13 +57,21 @@ function buildReminders(paths) {
     if (/(?:^|[\\/])\.github[\\/]instructions(?:[\\/]|$)/iu.test(path)) {
       reminders.add('- Validate instruction front matter and confirm applyTo targets are correct.');
     }
-    if (/(?:^|[\\/])(?:scripts[\\/]validate-copilot-config\.mjs|\.github[\\/]hooks)(?:[\\/]|$)/iu.test(path)) {
+    if (
+      /(?:^|[\\/])(?:scripts[\\/]validate-copilot-config\.mjs|\.github[\\/]hooks)(?:[\\/]|$)/iu.test(
+        path,
+      )
+    ) {
       reminders.add('- Run npm run check:copilot to verify front matters and hook JSON integrity.');
     }
     if (/(?:^|[\\/])src[\\/]infrastructure[\\/](?:security|http|fetch)(?:[\\/]|$)/iu.test(path)) {
       reminders.add('- Add hostile/boundary tests and ensure blocked targets are never contacted.');
     }
-    if (/(?:^|[\\/])(?:compose\.yaml|Dockerfile|config[\\/]|scripts[\\/]|\.github[\\/]workflows)(?:[\\/]|$)/iu.test(path)) {
+    if (
+      /(?:^|[\\/])(?:compose\.yaml|Dockerfile|config[\\/]|scripts[\\/]|\.github[\\/]workflows)(?:[\\/]|$)/iu.test(
+        path,
+      )
+    ) {
       reminders.add('- Recheck deployment hardening, secret handling, and reproducible commands.');
     }
   }
@@ -71,4 +79,3 @@ function buildReminders(paths) {
   reminders.add('- Run npm run check before completion for cross-layer or tooling updates.');
   return [...reminders];
 }
-

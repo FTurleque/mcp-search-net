@@ -53,6 +53,15 @@ export class RequestTimeoutError extends ApplicationError {
   }
 }
 
+export class TooManyRedirectsError extends ApplicationError {
+  public constructor(
+    message = 'The maximum number of redirects was exceeded',
+    options?: ErrorOptions,
+  ) {
+    super(message, 'TOO_MANY_REDIRECTS', options);
+  }
+}
+
 export class ResponseTooLargeError extends ApplicationError {
   public constructor(message = 'The response exceeds the allowed size', options?: ErrorOptions) {
     super(message, 'RESPONSE_TOO_LARGE', options);

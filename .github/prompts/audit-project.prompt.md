@@ -22,27 +22,32 @@ lastReviewed: '2026-06-21'
 ### Périmètre d'audit
 
 #### Architecture
+
 - Frontières hexagonales : `domain` sans import infra, handlers MCP sans logique métier
 - Ports application pour chaque dépendance externe
 - Composition dans `bootstrap/` uniquement
 
 #### Tests et CI
+
 - Suite déterministe offline complète (`npm run check`)
 - Tests E2E opt-in derrière variables d'environnement
 - Couverture hostile/boundary sur chemins security-sensitive
 - CI : Node 24, `npm ci`, `npm run check`, permissions minimales
 
 #### Contrats publics
+
 - `search_web` et `fetch_url` : schémas Zod alignés avec `docs/reference/tools.md`
 - Codes d'erreur stables documentés et cohérents avec le code
 - Champs de réponse obligatoires présents
 
 #### Documentation
+
 - `docs/reference/` : contrats, configuration, architecture, sécurité
 - `docs/planning/` : roadmap avec preuves pour chaque item ✓
 - Liens dans `docs/README.md` valides
 
 #### Roadmap
+
 - Items marqués terminés avec condition de sortie démontrée
 - Items bloqués avec raison documentée
 

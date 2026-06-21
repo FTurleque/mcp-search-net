@@ -16,6 +16,7 @@ lastReviewed: '2026-06-21'
 ## Périmètre d'audit
 
 > **Indique** le domaine prioritaire ou laisse vide pour un audit complet :
+>
 > - [ ] SSRF et validation URL (`src/infrastructure/security/`)
 > - [ ] Budgets et limites (taille, timeout, redirects, concurrence)
 > - [ ] Isolation Crawl4AI (`src/infrastructure/fetch/`)

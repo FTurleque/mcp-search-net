@@ -9,7 +9,17 @@ description: >
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'
-tools: ['read_file', 'list_dir', 'file_search', 'grep_search', 'semantic_search', 'run_in_terminal', 'validate_cves', 'run_subagent']
+tools:
+  [
+    'read_file',
+    'list_dir',
+    'file_search',
+    'grep_search',
+    'semantic_search',
+    'run_in_terminal',
+    'validate_cves',
+    'run_subagent',
+  ]
 ---
 
 # MCP Security Auditor
@@ -31,6 +41,7 @@ Tu effectues des audits de sécurité en **lecture seule stricte**. Tu ne modifi
 Fichiers cibles : `src/infrastructure/security/`, `src/infrastructure/http/`, `src/infrastructure/fetch/`
 
 Vérifier :
+
 - Validation SSRF **avant** toute connexion TCP, pas après
 - Validation **après chaque redirect** et contre chaque adresse résolue (DNS rebinding)
 - Rejet des protocoles non-HTTPS (`file://`, `ftp://`, `data://`, etc.)
@@ -43,6 +54,7 @@ Vérifier :
 ### Domaine 2 — Budgets et limites
 
 Vérifier que ces limites sont côté serveur et non désactivables :
+
 - Nombre maximum de résultats `search_web`
 - Taille maximum de contenu `fetch_url` (octets) — abort **avant** d'atteindre la limite
 - Timeout réseau global et par connexion

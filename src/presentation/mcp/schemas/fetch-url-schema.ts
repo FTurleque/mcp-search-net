@@ -3,7 +3,12 @@ import { z } from 'zod/v4';
 import { acceptInvalidToolInput } from './invalid-tool-input.js';
 import { createToolResponseSchema } from './tool-response-schema.js';
 
-export function createFetchUrlSchemas(defaultChars: number, maximumChars: number) {
+export function createFetchUrlSchemas(
+  defaultCharacters: number,
+  maximumCharacters: number,
+  defaultSections: number,
+  maximumSections: number,
+) {
   const input = acceptInvalidToolInput(
     z
       .object({
@@ -14,32 +19,44 @@ export function createFetchUrlSchemas(defaultChars: number, maximumChars: number
           .min(2)
           .max(500)
           .optional()
-          .describe('Terms used to select only relevant sections'),
-        maxChars: z.number().int().min(1_000).max(maximumChars).default(defaultChars),
+          .describe('Terms used by the local BM25 section selector'),
+        maxCharacters: z
+          .number()
+          .int()
+          .min(1_000)
+          .max(maximumCharacters)
+          .default(defaultCharacters),
+        maxSections: z.number().int().min(1).max(maximumSections).default(defaultSections),
+        renderMode: z.enum(['static', 'auto']).default('static'),
       })
       .strict(),
   );
 
-  const data = z
+  const section = z
     .object({
-      url: z.url(),
-      resolvedUrl: z.url(),
-      title: z.string().optional(),
+      heading: z.string(),
       markdown: z.string(),
-      sectionHeadings: z.array(z.string()),
-      metadata: z
-        .object({
-          contentType: z.string().optional(),
-          fetchedAt: z.string(),
-          truncated: z.boolean(),
-          wordCount: z.number().int().nonnegative(),
-          links: z.array(z.url()),
-          source: z.record(z.string(), z.unknown()),
-        })
-        .strict(),
+      score: z.number().nonnegative(),
+      truncated: z.boolean(),
     })
     .strict();
-  const output = createToolResponseSchema('fetch_url', data);
-
-  return { input, data, output } as const;
+  const data = z
+    .object({
+      requestedUrl: z.url(),
+      finalUrl: z.url(),
+      canonicalUrl: z.url(),
+      domain: z.string().min(1),
+      title: z.string().optional(),
+      contentType: z.string().min(1),
+      sourceStatus: z.enum(['VERIFIED_OFFICIAL', 'LIKELY_OFFICIAL', 'THIRD_PARTY', 'UNKNOWN']),
+      fetchedAt: z.iso.datetime(),
+      extractionMode: z.enum(['static', 'native-render']),
+      truncated: z.boolean(),
+      sectionCount: z.number().int().nonnegative(),
+      sections: z.array(section),
+      markdown: z.string(),
+      links: z.array(z.url()),
+    })
+    .strict();
+  return { input, data, output: createToolResponseSchema('fetch_url', data) } as const;
 }

@@ -77,13 +77,13 @@ await expect(fetcher.fetch(blockedUrl)).rejects.toThrow('URL_BLOCKED');
 
 Ces limites ne sont jamais exposées comme paramètres configurables par l'appelant :
 
-| Limite | Description |
-|--------|-------------|
-| Résultats max | Nombre de résultats `search_web` |
+| Limite         | Description                                                   |
+| -------------- | ------------------------------------------------------------- |
+| Résultats max  | Nombre de résultats `search_web`                              |
 | Taille contenu | Bytes max `fetch_url` — abort **avant** d'atteindre la limite |
-| Timeout réseau | Timeout global de connexion + lecture |
-| Redirects max | Nombre de redirects suivis |
-| Concurrence | Connexions simultanées |
+| Timeout réseau | Timeout global de connexion + lecture                         |
+| Redirects max  | Nombre de redirects suivis                                    |
+| Concurrence    | Connexions simultanées                                        |
 
 ## Isolation des providers (Crawl4AI, SearXNG)
 
@@ -96,7 +96,7 @@ Ces limites ne sont jamais exposées comme paramètres configurables par l'appel
 // ✅ Contenu tronqué avant budget
 const raw = await crawl4ai.fetch(url);
 const truncated = raw.content.slice(0, MAX_CONTENT_BYTES);
-return parseContent(truncated);  // jamais raw.content directement
+return parseContent(truncated); // jamais raw.content directement
 
 // ❌ Taille non bornée
 return parseContent(raw.content);
@@ -105,6 +105,7 @@ return parseContent(raw.content);
 ## Non-disclosure dans les erreurs et logs
 
 Ne jamais inclure dans une erreur publique ou un log :
+
 - Corps de réponse provider
 - Secrets ou variables d'environnement
 - Stack traces complètes

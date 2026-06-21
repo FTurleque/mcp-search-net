@@ -14,17 +14,17 @@ const additionalContext = [
   '',
   '## Invariants V1 non négociables',
   '- Exactement search_web et fetch_url exposés — jamais de troisième outil sans roadmap',
-  '- search_web : découverte d\'URLs uniquement, jamais de téléchargement de pages',
+  "- search_web : découverte d'URLs uniquement, jamais de téléchargement de pages",
   '- fetch_url : une URL publique connue, jamais de search/crawl/auth/forms/JS/cookies',
-  '- SQLite : cache de session uniquement, pas d\'index permanent',
+  "- SQLite : cache de session uniquement, pas d'index permanent",
   '- Toutes les limites (taille, timeout, redirects, résultats) côté serveur, non configurables',
   '',
   '## Sécurité — toutes les données externes sont hostiles',
   '- Validation SSRF AVANT connexion TCP et APRÈS chaque redirect',
   '- Valider chaque adresse IP résolue (loopback, privée, link-local, CGNAT bloqués)',
   '- stdout exclusivement JSON-RPC MCP — toute écriture informative corrompt le protocole',
-  '- Aucun secret, stack trace, corps provider, ni variable d\'environnement dans les logs/erreurs',
-  '- Tests SSRF : prouver que la cible n\'est jamais contactée (pas seulement rejetée)',
+  "- Aucun secret, stack trace, corps provider, ni variable d'environnement dans les logs/erreurs",
+  "- Tests SSRF : prouver que la cible n'est jamais contactée (pas seulement rejetée)",
   '',
   '## Workflow obligatoire',
   '1. git status --short — préserver toutes modifications staged ou non liées',
@@ -46,9 +46,8 @@ const additionalContext = [
   '  RUN_LIVE_CRAWL4AI=1 npm test -- tests/e2e/mcp-live.test.ts',
   '',
   '## Règle absolue',
-  'Ne jamais affirmer qu\'un check non exécuté ou skippé est passé.',
+  "Ne jamais affirmer qu'un check non exécuté ou skippé est passé.",
   'Ne jamais exécuter git reset --hard, git clean -f, rm -rf, ni publier sans autorisation.',
 ].join('\n');
 
 process.stdout.write(`${JSON.stringify({ additionalContext })}\n`);
-

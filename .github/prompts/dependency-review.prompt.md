@@ -25,21 +25,25 @@ lastReviewed: '2026-06-21'
 ## Périmètre d'analyse
 
 ### npm — dépendances runtime
+
 - Vulnérabilités CVE avec score CVSS et vecteur d'exploitation
 - Versions avec breaking changes connus vers la cible compatible Node 24
 - Dépendances non maintenues (dernière release > 18 mois)
 - Packages superflus ou remplaçables par des modules Node natifs
 
 ### npm — dépendances dev
+
 - Mêmes critères de sécurité
 - Versions d'outils (eslint, vitest, typescript) avec support Node 24 confirmé
 
 ### Docker
+
 - `Dockerfile` : base image avec digest SHA256 (pas seulement un tag)
 - `compose.yaml` : images services avec digest SHA256
 - Versions de SearXNG et Crawl4AI — changelog de sécurité récent
 
 ### CI / GitHub Actions
+
 - `.github/workflows/ci.yml` : actions de la communauté pinnées avec hash de commit
 - Permissions déclarées minimales
 

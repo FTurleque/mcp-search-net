@@ -31,14 +31,19 @@ describe.runIf(live)('live MCP fetch', () => {
       arguments: {
         url: 'https://example.com',
         query: 'documentation examples',
-        maxChars: 4_000,
+        maxCharacters: 4_000,
+        maxSections: 5,
+        renderMode: 'static',
       },
     });
 
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
-      title: 'Example Domain',
-      resolvedUrl: 'https://example.com/',
+      data: {
+        title: 'Example Domain',
+        finalUrl: 'https://example.com/',
+        sectionCount: expect.any(Number),
+      },
     });
   });
 });
