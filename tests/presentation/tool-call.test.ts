@@ -15,6 +15,7 @@ import {
 } from '../../src/domain/errors/domain-errors.js';
 import { TOOL_ERROR_CODES } from '../../src/domain/models/tool-response.js';
 import { StructuredLogger } from '../../src/infrastructure/logging/structured-logger.js';
+import { sanitizeLogValue } from '../../src/infrastructure/logging/structured-logger.js';
 import { executeToolCall, toPublicToolError } from '../../src/presentation/mcp/tool-call.js';
 
 describe('executeToolCall', () => {
@@ -47,7 +48,7 @@ describe('executeToolCall', () => {
         metadata: { cacheStatus: 'HIT' },
       });
       const records = writes.map((line) => JSON.parse(line) as Record<string, unknown>);
-      expect(records.map((record) => record['message'])).toEqual([
+      expect(records.map((record) => record['event'])).toEqual([
         'tool_call_started',
         'tool_call_completed',
       ]);
@@ -57,6 +58,20 @@ describe('executeToolCall', () => {
     } finally {
       stderr.mockRestore();
     }
+  });
+
+  it('redacts nested credentials and bearer values recursively', () => {
+    expect(
+      sanitizeLogValue({
+        nested: { apiKey: 'abc', safe: 'Bearer top-secret', deeper: [{ cookie: 'session' }] },
+      }),
+    ).toEqual({
+      nested: {
+        apiKey: '[redacted]',
+        safe: 'Bearer [redacted]',
+        deeper: [{ cookie: '[redacted]' }],
+      },
+    });
   });
 
   it('builds a versioned partial response with correlated warnings', async () => {

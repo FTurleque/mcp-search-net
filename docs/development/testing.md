@@ -21,6 +21,8 @@ Elle commence par `npm run check:runtime` et s'arrête immédiatement avec un me
 
 Les tests réseau réels doivent être explicitement activés afin que la suite ordinaire reste déterministe. Vérifier aussi qu’aucun log applicatif n’est écrit sur `stdout`.
 
+La suite déterministe couvre SQLite réel (migrations, validateurs, expiration, stale, corruption, pruning et concurrence), les événements/redactions et la séparation JSON-RPC `stdout` / diagnostics `stderr`.
+
 ## Installation Windows
 
-Après `npm run check`, lancer la configuration IntelliJ `MCP - Install user (Windows)`, vérifier `%LOCALAPPDATA%\mcp-search-net\VERSION`, puis contrôler les conteneurs et les deux outils dans Copilot. Une seconde installation doit conserver un changement manuel fait dans `config\application.yml`.
+Le cycle automatisable est `scripts/test-installation.ps1 -NodeRuntimeSource <dossier-node-24>`. Il effectue une première installation, une réinstallation, vérifie la conservation de configuration/données, teste `-KeepData`, puis la désinstallation complète dans un profil temporaire.

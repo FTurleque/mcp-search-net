@@ -9,6 +9,15 @@ interface MarkdownSection {
 
 const MAX_SECTION_CHARACTERS = 5_000;
 
+export function extractDocumentSections(
+  markdown: string,
+): readonly { readonly heading: string; readonly markdown: string }[] {
+  return splitMarkdown(normalizeMarkdown(markdown)).map((section) => ({
+    heading: stripHeadingMarker(section.heading),
+    markdown: renderSection(section),
+  }));
+}
+
 export function selectRelevantContent(
   markdown: string,
   query: string | undefined,

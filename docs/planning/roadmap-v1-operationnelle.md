@@ -28,9 +28,12 @@ La V2 (catalogue documentaire, FTS5, synchronisation, versions, embeddings) doit
 | Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi      |
 | Phase 3 — `fetch_url`              | ✅ Terminée le 21 juin 2026 | 87 tests déterministes, extraction multi-format et BM25 |
 | Phase 4 — Sécurité réseau          | ✅ Terminée le 21 juin 2026 | Passerelle épinglée, redirections/limites testées       |
-| Phase 5 et suivantes               | ⏳ À réaliser               | Non démarrées                                           |
+| Phase 5 — Cache résilient          | ✅ Terminée le 21 juin 2026 | SQLite typé, revalidation et stale fallback             |
+| Phase 6 — Observabilité            | ✅ Terminée le 21 juin 2026 | Événements corrélés et redaction récursive              |
+| Phase 7 — Déploiement              | ✅ Terminée le 21 juin 2026 | Compose complet/hybride et cycle Windows validés        |
+| Phase 8 et suivantes               | ⏳ À réaliser               | Non démarrées                                           |
 
-Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md), de la [phase 2](validation-phase-2.md) et des [phases 3 et 4](validation-phase-3-4.md).
+Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md), de la [phase 2](validation-phase-2.md), des [phases 3 et 4](validation-phase-3-4.md) et des [phases 5 à 7](validation-phase-5-7.md).
 
 ## État vérifié au moment de l'audit
 
@@ -62,17 +65,17 @@ Légende : ✅ satisfait par le code actuel ; 🟡 partiel ; ❌ non satisfait ;
 
 | Critère                                                  | État | Écart principal                                                                                                               |
 | -------------------------------------------------------- | :--: | ----------------------------------------------------------------------------------------------------------------------------- |
-| AC-01 — démarrage avec Docker Compose                    |  ❌  | Compose ne définit que SearXNG et Crawl4AI, pas le service MCP ; SearXNG n'est pas démarré lors de l'audit.                   |
+| AC-01 — démarrage avec Docker Compose                    |  ✅  | Trois services définis ; image MCP, dépendances saines et initialisation STDIO conteneurisée validées.                        |
 | AC-02 — détection par Copilot dans IntelliJ              |  ⚪  | Installation et exemple documentés, mais aucune preuve de test réel conservée.                                                |
 | AC-03 — seulement deux outils                            |  ✅  | Les deux outils sont déclarés et un test STDIO vérifie leurs noms.                                                            |
 | AC-04 — cinq résultats de recherche par défaut           |  ✅  | Défaut configuré à 5 et maximum configuré à 10.                                                                               |
-| AC-05 — cinq sections et 12 000 caractères par défaut    |  ❌  | Budget de caractères présent ; `maxSections` absent et sélection interne pouvant garder 12 sections.                          |
+| AC-05 — cinq sections et 12 000 caractères par défaut    |  ✅  | Défauts et maxima absolus validés par schéma et tests.                                                                         |
 | AC-06 — conservation des URL sources                     |  ✅  | Les sorties actuelles conservent les URL demandée/finale et les URL de recherche ; à préserver lors de la refonte du contrat. |
-| AC-07 — classification des sources officielles           |  🟡  | Classification binaire `official`; statuts complets et registre de référence manquants.                                       |
-| AC-08 — suppression des doublons                         |  🟡  | Déduplication élémentaire ; paramètres de suivi et normalisation canonique complète non traités.                              |
-| AC-09 — HTML, Markdown et PDF textuel                    |  ⚪  | Fonction déléguée à Crawl4AI, sans tests réels multi-formats ni erreurs spécifiques OCR/type.                                 |
-| AC-10 — cache SQLite et statut exposé                    |  🟡  | Cache présent, mais seulement un booléen `cached`; aucun `MISS`, `STALE_FALLBACK` ou `DISABLED`.                              |
-| AC-11 — blocage local, privé et redirections dangereuses |  🟡  | URL initiale et finale contrôlées, mais l'URL finale est revalidée après sa récupération par Crawl4AI.                        |
+| AC-07 — classification des sources officielles           |  ✅  | Quatre statuts, registre de référence et organisations GitHub contrôlées.                                                      |
+| AC-08 — suppression des doublons                         |  ✅  | Canonicalisation, retrait du tracking et déduplication déterministe testés.                                                    |
+| AC-09 — HTML, Markdown et PDF textuel                    |  ✅  | Corpus multi-format, PDF textuel et erreurs OCR/type testés sans LLM.                                                          |
+| AC-10 — cache SQLite et statut exposé                    |  ✅  | `HIT`, `MISS`, `STALE_FALLBACK`, `DISABLED`, validateurs et modes dégradés testés.                                             |
+| AC-11 — blocage local, privé et redirections dangereuses |  ✅  | Passerelle épinglée validant chaque saut avant connexion, avec limites et tests SSRF.                                          |
 | AC-12 — aucun LLM/API payante requis                     |  ✅  | Aucun LLM ni SDK commercial dans le code ou les dépendances.                                                                  |
 | AC-13 — lecture seule et aucun accès au projet           |  ✅  | Seuls la configuration et le cache local sont lus/écrits par le serveur.                                                      |
 | AC-14 — tests unitaires, sécurité et E2E au vert         |  ❌  | Suite non exécutée avec le bon Node et couverture très inférieure aux scénarios du cahier des charges.                        |
@@ -190,39 +193,45 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 
 ### Phase 5 — Compléter le cache et les modes dégradés (P0)
 
-- [ ] Séparer clairement les enregistrements de recherche et de contenu, ou fournir une couche typée équivalente aux tables du chapitre 11.
-- [ ] Stocker URL finale, titre, type, contenu nettoyé, sections, code HTTP, date de récupération, expiration, `ETag`, `Last-Modified` et hash.
-- [ ] Utiliser les validateurs HTTP lorsque disponibles et recalculer le hash en leur absence.
-- [ ] Aligner les TTL par défaut : recherche 60 min, documentation 24 h, README 6 h, sitemap 24 h, erreur temporaire 5 min.
-- [ ] Ajouter `cache.enabled` et un mode de poursuite sans cache configurable.
-- [ ] Ne plus supprimer immédiatement toute entrée expirée : permettre sa lecture contrôlée pour `STALE_FALLBACK`.
-- [ ] En cas de fournisseur indisponible, retourner une entrée expirée autorisée avec `STALE_CACHE_USED` et `status: partial`.
-- [ ] Masquer les détails SQLite dans les réponses tout en journalisant un événement sûr.
-- [ ] Ajouter des tests SQLite réels : migrations, HIT/MISS, expiration, corruption de payload, pruning, concurrence, cache indisponible et stale fallback.
+**Statut : ✅ TERMINÉE — validée le 21 juin 2026.**
+
+- [x] Séparer clairement les enregistrements de recherche et de contenu, ou fournir une couche typée équivalente aux tables du chapitre 11.
+- [x] Stocker URL finale, titre, type, contenu nettoyé, sections, code HTTP, date de récupération, expiration, `ETag`, `Last-Modified` et hash.
+- [x] Utiliser les validateurs HTTP lorsque disponibles et recalculer le hash en leur absence.
+- [x] Aligner les TTL par défaut : recherche 60 min, documentation 24 h, README 6 h, sitemap 24 h, erreur temporaire 5 min.
+- [x] Ajouter `cache.enabled` et un mode de poursuite sans cache configurable.
+- [x] Ne plus supprimer immédiatement toute entrée expirée : permettre sa lecture contrôlée pour `STALE_FALLBACK`.
+- [x] En cas de fournisseur indisponible, retourner une entrée expirée autorisée avec `STALE_CACHE_USED` et `status: partial`.
+- [x] Masquer les détails SQLite dans les réponses tout en journalisant un événement sûr.
+- [x] Ajouter des tests SQLite réels : migrations, HIT/MISS, expiration, corruption de payload, pruning, concurrence, cache indisponible et stale fallback.
 
 **Condition de sortie :** AC-10 passe et chaque réponse expose un statut de cache exact.
 
 ### Phase 6 — Journalisation et observabilité (P1)
 
-- [ ] Émettre les événements stables : `server_started`, `tool_call_started`, `tool_call_completed`, `tool_call_failed`, `cache_hit`, `cache_miss`, `search_provider_called`, `content_fetcher_called`, `url_blocked`, `response_truncated`.
-- [ ] Inclure `requestId`, outil, durée, domaine, statut HTTP, cache, tailles, nombre de résultats/sections et code d'erreur selon l'événement.
-- [ ] Vérifier récursivement la suppression des secrets, pas seulement les clés de premier niveau.
-- [ ] Ne jamais journaliser le contenu complet, les en-têtes d'autorisation, les variables d'environnement ou une stack trace sur la sortie MCP.
-- [ ] Ajouter un test capturant séparément `stdout` et `stderr` afin de prouver que `stdout` reste exclusivement JSON-RPC.
+**Statut : ✅ TERMINÉE — validée le 21 juin 2026.**
+
+- [x] Émettre les événements stables : `server_started`, `tool_call_started`, `tool_call_completed`, `tool_call_failed`, `cache_hit`, `cache_miss`, `search_provider_called`, `content_fetcher_called`, `url_blocked`, `response_truncated`.
+- [x] Inclure `requestId`, outil, durée, domaine, statut HTTP, cache, tailles, nombre de résultats/sections et code d'erreur selon l'événement.
+- [x] Vérifier récursivement la suppression des secrets, pas seulement les clés de premier niveau.
+- [x] Ne jamais journaliser le contenu complet, les en-têtes d'autorisation, les variables d'environnement ou une stack trace sur la sortie MCP.
+- [x] Ajouter un test capturant séparément `stdout` et `stderr` afin de prouver que `stdout` reste exclusivement JSON-RPC.
 
 **Condition de sortie :** un appel peut être suivi de bout en bout par `requestId` sans fuite de contenu ou de secret.
 
 ### Phase 7 — Achever configuration, Compose et installation (P0)
 
-- [ ] Implémenter la priorité de configuration : valeurs internes sûres, YAML, variables d'environnement, paramètres d'outil bornés.
-- [ ] S'assurer que les maxima absolus ne peuvent pas être augmentés par YAML ; le schéma actuel autorise notamment jusqu'à 250 000 caractères.
-- [ ] Ajouter au Compose un service `mcp-search-net` construit depuis le Dockerfile.
-- [ ] En exécution complète, placer SearXNG et Crawl4AI sur un réseau interne non publié ; persister séparément cache MCP et données des composants.
-- [ ] Ajouter les dépendances de santé et un comportement explicite lorsque SearXNG ou Crawl4AI est indisponible.
-- [ ] Définir un lanceur STDIO conteneurisé utilisable par Copilot, sans TTY et sans texte parasite sur `stdout`.
-- [ ] Conserver aussi le mode développement hybride : façade depuis IntelliJ, services liés uniquement à `127.0.0.1`.
-- [ ] Valider l'installation utilisateur sur un profil propre, puis une seconde installation en prouvant la conservation de la configuration et des données.
-- [ ] Tester la désinstallation avec et sans `-KeepData`.
+**Statut : ✅ TERMINÉE — validée le 21 juin 2026.**
+
+- [x] Implémenter la priorité de configuration : valeurs internes sûres, YAML, variables d'environnement, paramètres d'outil bornés.
+- [x] S'assurer que les maxima absolus ne peuvent pas être augmentés par YAML ; le maximum de contenu est désormais 30 000 caractères.
+- [x] Ajouter au Compose un service `mcp-search-net` construit depuis le Dockerfile.
+- [x] En exécution complète, placer SearXNG et Crawl4AI sur un réseau interne non publié ; persister séparément cache MCP et données des composants.
+- [x] Ajouter les dépendances de santé et un comportement explicite lorsque SearXNG ou Crawl4AI est indisponible.
+- [x] Définir un lanceur STDIO conteneurisé utilisable par Copilot, sans TTY et sans texte parasite sur `stdout`.
+- [x] Conserver aussi le mode développement hybride : façade depuis IntelliJ, services liés uniquement à `127.0.0.1`.
+- [x] Valider l'installation utilisateur sur un profil propre, puis une seconde installation en prouvant la conservation de la configuration et des données.
+- [x] Tester la désinstallation avec et sans `-KeepData`.
 
 **Condition de sortie :** le mode hybride et le mode Compose complet sont tous deux documentés, reproductibles et testés.
 
@@ -255,18 +264,18 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 
 ## Checklist finale de livraison
 
-- [ ] Node 24 actif ; `npm ci` et `npm run check` réussissent.
+- [x] Node 24 actif ; `npm ci` et `npm run check` réussissent.
 - [ ] CI verte sur le commit candidat.
 - [ ] Les trois services Compose sont présents ; leurs healthchecks sont verts.
-- [ ] `search_web` et `fetch_url` passent les tests E2E réels.
-- [ ] Tous les scénarios SSRF prouvent l'absence de connexion vers la cible interdite.
-- [ ] Les limites absolues restent effectives malgré une configuration ou une entrée hostile.
-- [ ] Chaque réponse contient `schemaVersion`, `requestId`, avertissements séparés, métadonnées et statut de cache.
-- [ ] Aucune sortie libre n'est écrite sur `stdout`.
-- [ ] L'installation Windows et la mise à jour conservatrice sont validées sur un profil propre.
+- [x] `search_web` et `fetch_url` passent les tests E2E réels.
+- [x] Tous les scénarios SSRF prouvent l'absence de connexion vers la cible interdite.
+- [x] Les limites absolues restent effectives malgré une configuration ou une entrée hostile.
+- [x] Chaque réponse contient `schemaVersion`, `requestId`, avertissements séparés, métadonnées et statut de cache.
+- [x] Aucune sortie libre n'est écrite sur `stdout`.
+- [x] L'installation Windows et la mise à jour conservatrice sont validées sur un profil propre.
 - [ ] Copilot dans IntelliJ détecte uniquement les deux outils et peut les appeler.
 - [ ] La documentation, les ADR, la traçabilité et le rapport de benchmark correspondent au binaire livré.
-- [ ] Aucun composant V2 n'a été introduit dans la base V1.
+- [x] Aucun composant V2 n'a été introduit dans la base V1.
 
 ## Définition de « V1 pleinement opérationnelle »
 

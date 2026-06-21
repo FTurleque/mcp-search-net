@@ -38,8 +38,10 @@ Une installation existante conserve `config\application.yml`, `config\official-s
 ├── data\                cache SQLite
 ├── docs\                copie de cette documentation
 ├── runtime\              Node.js portable
-├── compose.yaml
+├── compose.yaml         mode complet, services internes
+├── compose.hybrid.yaml  ports loopback pour le mode hybride
 ├── mcp.json.example
+├── mcp.container.json.example
 └── VERSION
 ```
 
@@ -54,6 +56,18 @@ Le lanceur stable à déclarer dans Copilot est `%LOCALAPPDATA%\mcp-search-net\b
 ```
 
 SearXNG écoute uniquement sur `127.0.0.1:8888` et Crawl4AI sur `127.0.0.1:11235`.
+
+## Mode Compose complet
+
+Le lanceur conteneurisé démarre les dépendances sans publier leurs ports, puis attache le serveur MCP en STDIO sans TTY :
+
+```text
+%LOCALAPPDATA%\mcp-search-net\bin\mcp-search-net-container.cmd
+```
+
+Utiliser `mcp.container.json.example` dans Copilot. Le réseau `backend` est interne ; seul SearXNG et le MCP disposent aussi du réseau d'egress nécessaire. Les volumes `mcp-cache`, `searxng-cache` et `crawl4ai-data` sont séparés.
+
+Le mode hybride reste le défaut de `mcp-search-net-services.cmd` : la façade MCP s'exécute depuis IntelliJ/Node portable et les deux dépendances sont liées uniquement à `127.0.0.1`.
 
 ## Mise à jour et désinstallation
 

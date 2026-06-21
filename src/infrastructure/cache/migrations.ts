@@ -22,4 +22,12 @@ export const migrations: readonly Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_cache_access ON cache_entries(last_accessed_at);
     `,
   },
+  {
+    version: 2,
+    sql: `
+      ALTER TABLE cache_entries ADD COLUMN etag TEXT;
+      ALTER TABLE cache_entries ADD COLUMN last_modified TEXT;
+      ALTER TABLE cache_entries ADD COLUMN content_hash TEXT;
+    `,
+  },
 ];

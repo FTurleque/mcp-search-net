@@ -1,7 +1,8 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'mcp-search-net'),
-    [switch]$KeepData
+    [switch]$KeepData,
+    [switch]$SkipServices
 )
 
 Set-StrictMode -Version Latest
@@ -20,12 +21,12 @@ if (-not (Test-Path -LiteralPath $InstallRoot)) {
 
 $Docker = Get-Command docker -ErrorAction SilentlyContinue
 $ComposeFile = Join-Path $InstallRoot 'compose.yaml'
-if (($null -ne $Docker) -and (Test-Path -LiteralPath $ComposeFile)) {
-    & $Docker.Source compose -f $ComposeFile down
+if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $ComposeFile)) {
+    & $Docker.Source compose -p mcp-search-net-user -f $ComposeFile down
 }
 
 if ($KeepData) {
-    foreach ($name in @('app', 'bin', 'docs', 'runtime', 'compose.yaml', '.env.example', 'mcp.json.example', 'VERSION')) {
+    foreach ($name in @('app', 'bin', 'docs', 'runtime', 'src', 'compose.yaml', 'compose.hybrid.yaml', 'Dockerfile', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json', '.env.example', 'mcp.json.example', 'mcp.container.json.example', 'VERSION')) {
         $target = Join-Path $InstallRoot $name
         if ((Test-Path -LiteralPath $target) -and $PSCmdlet.ShouldProcess($target, 'Supprimer')) {
             Remove-Item -LiteralPath $target -Recurse -Force

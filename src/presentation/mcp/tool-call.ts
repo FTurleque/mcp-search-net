@@ -18,7 +18,7 @@ import type { StructuredLogger } from '../../infrastructure/logging/structured-l
 export interface ToolCallOptions<T> {
   readonly tool: ToolName;
   readonly logger: StructuredLogger;
-  readonly execute: () => Promise<ToolExecution<T>>;
+  readonly execute: (requestId: string) => Promise<ToolExecution<T>>;
   readonly validateResponse: (response: ToolResponse<T>) => ToolResponse<T>;
   readonly formatText: (response: ToolResponse<T>) => string;
   readonly requestIdFactory?: () => string;
@@ -29,10 +29,10 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
   const requestId = (options.requestIdFactory ?? randomUUID)();
   const monotonicNow = options.monotonicNow ?? performance.now.bind(performance);
   const startedAt = monotonicNow();
-  options.logger.info('tool_call_started', { requestId, tool: options.tool });
+  options.logger.record('tool_call_started', { requestId, tool: options.tool });
 
   try {
-    const execution = await options.execute();
+    const execution = await options.execute(requestId);
     const durationMs = elapsedMilliseconds(startedAt, monotonicNow());
     const response: ToolResponse<T> = {
       schemaVersion: '1.0',
@@ -61,13 +61,14 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
       );
     }
 
-    options.logger.info('tool_call_completed', {
+    options.logger.record('tool_call_completed', {
       requestId,
       tool: options.tool,
       durationMs,
       cacheStatus: execution.cacheStatus,
       status: execution.status,
       warningCount: execution.warnings.length,
+      ...summarizeData(execution.data),
     });
     return {
       content: [{ type: 'text', text: options.formatText(validated) }],
@@ -82,7 +83,7 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
       error: { ...publicError, requestId },
       metadata: { tool: options.tool, durationMs },
     };
-    options.logger.error('tool_call_failed', {
+    options.logger.record('tool_call_failed', {
       requestId,
       tool: options.tool,
       durationMs,
@@ -100,6 +101,19 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
       isError: true,
     };
   }
+}
+
+function summarizeData(value: unknown): Readonly<Record<string, unknown>> {
+  if (value === null || typeof value !== 'object') return {};
+  const record = value as Record<string, unknown>;
+  return {
+    ...(Array.isArray(record['results']) ? { resultCount: record['results'].length } : {}),
+    ...(Array.isArray(record['sections']) ? { sectionCount: record['sections'].length } : {}),
+    ...(typeof record['markdown'] === 'string'
+      ? { outputCharacters: record['markdown'].length }
+      : {}),
+    ...(typeof record['domain'] === 'string' ? { domain: record['domain'] } : {}),
+  };
 }
 
 export function toPublicToolError(error: unknown): {

@@ -1,4 +1,5 @@
 import type { CacheRepository } from '../ports/cache-repository.js';
+import type { OperationContext, Telemetry } from '../ports/telemetry.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
 import type { SearchProvider, SearchProviderResponse } from '../ports/search-provider.js';
 import { createSearchCacheKey, normalizeSearchRequest } from '../services/search-request.js';
@@ -13,6 +14,7 @@ import type {
   ToolResponseStatus,
   ToolWarningDescriptor,
 } from '../../domain/models/tool-response.js';
+import { ApplicationError } from '../../domain/errors/domain-errors.js';
 import {
   matchesDomain,
   rankAndDeduplicate,
@@ -37,28 +39,62 @@ export class SearchWeb {
     private readonly cache: CacheRepository,
     private readonly officialSources: OfficialSourceRegistry,
     private readonly options: SearchWebOptions,
+    private readonly telemetry?: Telemetry,
   ) {}
 
-  public async execute(request: SearchRequest): Promise<ToolExecution<SearchResponse>> {
+  public async execute(
+    request: SearchRequest,
+    context: OperationContext = {},
+  ): Promise<ToolExecution<SearchResponse>> {
     const normalizedRequest = normalizeSearchRequest(request);
     const key = createSearchCacheKey(normalizedRequest, this.officialSources.version(), {
       providerOversampling: this.options.providerOversampling,
       maxSnippetChars: this.options.maxSnippetChars,
     });
-    const cached = await this.cache.get<CachedSearchValue>('search', key);
+    const cached = await this.cache.get<CachedSearchValue>('search', key, { allowStale: true });
 
-    if (cached !== undefined) {
+    if (cached !== undefined && !cached.stale) {
+      this.telemetry?.record('cache_hit', {
+        requestId: context.requestId,
+        tool: 'search_web',
+        cache: 'search',
+      });
       return execution(cached.value, 'HIT');
     }
+    this.telemetry?.record('cache_miss', {
+      requestId: context.requestId,
+      tool: 'search_web',
+      cache: 'search',
+      staleAvailable: cached !== undefined,
+    });
 
-    const firstResponse = await this.searchProvider(normalizedRequest, normalizedRequest.language);
-    const shouldFallback =
-      firstResponse.results.length === 0 &&
-      !normalizedRequest.language.toLowerCase().startsWith('en');
-    const providerResponse = shouldFallback
-      ? await this.searchProvider(normalizedRequest, 'en')
-      : firstResponse;
-
+    let firstResponse: SearchProviderResponse;
+    let providerResponse: SearchProviderResponse;
+    let shouldFallback: boolean;
+    try {
+      firstResponse = await this.searchProvider(
+        normalizedRequest,
+        normalizedRequest.language,
+        context,
+      );
+      shouldFallback =
+        firstResponse.results.length === 0 &&
+        !normalizedRequest.language.toLowerCase().startsWith('en');
+      providerResponse = shouldFallback
+        ? await this.searchProvider(normalizedRequest, 'en', context)
+        : firstResponse;
+    } catch (error) {
+      if (cached !== undefined && isTransientProviderError(error)) {
+        this.telemetry?.record('cache_hit', {
+          requestId: context.requestId,
+          tool: 'search_web',
+          cache: 'search',
+          stale: true,
+        });
+        return staleExecution(cached.value);
+      }
+      throw error;
+    }
     const candidates = providerResponse.results
       .map((result) => {
         const officialSource = this.officialSources.findByUrl(result.url);
@@ -110,19 +146,41 @@ export class SearchWeb {
     };
 
     await this.cache.set('search', key, value, this.options.cacheTtlMs);
-    return execution(value, 'MISS');
+    return execution(value, this.cache.enabled === false ? 'DISABLED' : 'MISS');
   }
 
-  private searchProvider(
+  private async searchProvider(
     request: NormalizedSearchRequest,
     language: string,
+    context: OperationContext,
   ): Promise<SearchProviderResponse> {
-    return this.provider.search({
-      query: request.query,
-      language,
-      ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
-      limit: request.maxResults * this.options.providerOversampling,
-    });
+    const startedAt = performance.now();
+    try {
+      const response = await this.provider.search({
+        query: request.query,
+        language,
+        ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
+        limit: request.maxResults * this.options.providerOversampling,
+      });
+      this.telemetry?.record('search_provider_called', {
+        requestId: context.requestId,
+        tool: 'search_web',
+        durationMs: Number((performance.now() - startedAt).toFixed(3)),
+        status: 'success',
+        resultCount: response.results.length,
+        unresponsiveEngineCount: response.unresponsiveEngines.length,
+      });
+      return response;
+    } catch (error) {
+      this.telemetry?.record('search_provider_called', {
+        requestId: context.requestId,
+        tool: 'search_web',
+        durationMs: Number((performance.now() - startedAt).toFixed(3)),
+        status: 'failed',
+        code: error instanceof ApplicationError ? error.code : 'INTERNAL_ERROR',
+      });
+      throw error;
+    }
   }
 }
 
@@ -179,7 +237,7 @@ function createWarnings(context: {
 
 function execution(
   value: CachedSearchValue,
-  cacheStatus: 'HIT' | 'MISS',
+  cacheStatus: 'HIT' | 'MISS' | 'DISABLED',
 ): ToolExecution<SearchResponse> {
   return {
     status: value.status,
@@ -188,6 +246,28 @@ function execution(
     provider: 'searxng',
     data: value.data,
   };
+}
+
+function staleExecution(value: CachedSearchValue): ToolExecution<SearchResponse> {
+  return {
+    ...execution(value, 'MISS'),
+    status: 'partial',
+    cacheStatus: 'STALE_FALLBACK',
+    warnings: [
+      ...value.warnings,
+      {
+        code: 'STALE_CACHE_USED',
+        message: 'An expired search response was used because the provider is unavailable',
+      },
+    ],
+  };
+}
+
+function isTransientProviderError(error: unknown): boolean {
+  return (
+    error instanceof ApplicationError &&
+    ['SEARCH_PROVIDER_UNAVAILABLE', 'REQUEST_TIMEOUT', 'HTTP_ERROR'].includes(error.code)
+  );
 }
 
 function mergeUnresponsiveEngines(

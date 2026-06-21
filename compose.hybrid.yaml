@@ -1,0 +1,8 @@
+services:
+  searxng:
+    ports:
+      - '127.0.0.1:8888:8080'
+
+  crawl4ai:
+    ports:
+      - '127.0.0.1:11235:11235'

@@ -25,7 +25,7 @@ async function main(): Promise<void> {
   });
   process.once('exit', () => container.cache.close());
 
-  container.logger.info('MCP server starting', {
+  container.logger.record('server_started', {
     name: loaded.application.application.name,
     version: loaded.application.application.version,
   });

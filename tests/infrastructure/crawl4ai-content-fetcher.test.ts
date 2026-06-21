@@ -29,6 +29,7 @@ describe('Crawl4aiContentFetcher', () => {
       crawl,
     );
     const result = await fetcher.fetch('https://example.com/docs', 'static');
+    if ('notModified' in result) throw new Error('Expected fetched content');
     expect(result).toMatchObject({
       title: 'Docs',
       finalUrl: 'https://example.com/docs',
@@ -39,6 +40,8 @@ describe('Crawl4aiContentFetcher', () => {
     expect(result.markdown).toContain('# Guide');
     expect(result.markdown).not.toContain('steal');
     expect(result.links).toEqual(['https://example.com/next']);
+    expect(result.contentHash).toMatch(/^[a-f0-9]{64}$/u);
+    expect(result.documentSections.map((section) => section.heading)).toContain('Guide');
     expect(crawl).not.toHaveBeenCalled();
   });
 
@@ -95,6 +98,30 @@ describe('Crawl4aiContentFetcher', () => {
       extractionMode: 'native-render',
       markdown: expect.stringContaining('Rendered'),
     });
+  });
+
+  it('sends safe HTTP validators and maps 304 without re-extracting content', async () => {
+    const download = vi.fn(async () => ({
+      requestedUrl: 'https://example.com/docs',
+      finalUrl: 'https://example.com/docs',
+      status: 304,
+      headers: {},
+      body: new Uint8Array(),
+    }));
+    const gateway = { download } as unknown as SecureHttpGateway;
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', 1_000, undefined, gateway);
+    await expect(
+      fetcher.fetch('https://example.com/docs', 'static', {
+        etag: '"v1"',
+        lastModified: 'Sun, 21 Jun 2026 00:00:00 GMT',
+        contentHash: 'abc',
+      }),
+    ).resolves.toEqual({ notModified: true });
+    expect(download).toHaveBeenCalledWith(
+      'https://example.com/docs',
+      { 'if-none-match': '"v1"', 'if-modified-since': 'Sun, 21 Jun 2026 00:00:00 GMT' },
+      { tool: 'fetch_url' },
+    );
   });
 
   it('returns explicit errors for binary and invalid PDF content', async () => {

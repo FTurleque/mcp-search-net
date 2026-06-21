@@ -135,9 +135,22 @@ Copy-UserConfig (Join-Path $RepositoryRoot 'config\official-sources.yml') (Join-
 Copy-UserConfig (Join-Path $RepositoryRoot 'config\searxng\settings.yml') (Join-Path $SearxConfigRoot 'settings.yml')
 
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'compose.yaml') -Destination (Join-Path $InstallRoot 'compose.yaml') -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'compose.hybrid.yaml') -Destination (Join-Path $InstallRoot 'compose.hybrid.yaml') -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'Dockerfile') -Destination (Join-Path $InstallRoot 'Dockerfile') -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Destination (Join-Path $InstallRoot 'package.json') -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package-lock.json') -Destination (Join-Path $InstallRoot 'package-lock.json') -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'tsconfig.json') -Destination (Join-Path $InstallRoot 'tsconfig.json') -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'tsconfig.build.json') -Destination (Join-Path $InstallRoot 'tsconfig.build.json') -Force
+$InstalledSource = Join-Path $InstallRoot 'src'
+Assert-PathInsideInstallRoot $InstalledSource
+if (Test-Path -LiteralPath $InstalledSource) {
+    Remove-Item -LiteralPath $InstalledSource -Recurse -Force
+}
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'src') -Destination $InstalledSource -Recurse
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot '.env.example') -Destination (Join-Path $InstallRoot '.env.example') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net.cmd') -Destination $BinRoot -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net-services.cmd') -Destination $BinRoot -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net-container.cmd') -Destination $BinRoot -Force
 
 $InstalledDocs = Join-Path $InstallRoot 'docs'
 Assert-PathInsideInstallRoot $InstalledDocs
@@ -168,6 +181,22 @@ $McpExample = [ordered]@{
     $Utf8WithoutBom
 )
 
+$ContainerLauncher = Join-Path $BinRoot 'mcp-search-net-container.cmd'
+$ContainerExample = [ordered]@{
+    servers = [ordered]@{
+        'mcp-search-net-container' = [ordered]@{
+            command = 'cmd.exe'
+            args = @('/d', '/s', '/c', "`"$ContainerLauncher`"")
+            env = [ordered]@{ MCP_SEARCH_HOME = $InstallRoot }
+        }
+    }
+}
+[System.IO.File]::WriteAllText(
+    (Join-Path $InstallRoot 'mcp.container.json.example'),
+    (($ContainerExample | ConvertTo-Json -Depth 5) + "`r`n"),
+    $Utf8WithoutBom
+)
+
 Write-Host "Installation terminée. Lanceur MCP : $Launcher"
 Write-Host "Exemple Copilot : $(Join-Path $InstallRoot 'mcp.json.example')"
 
@@ -177,7 +206,7 @@ if ($StartServices) {
         throw 'Docker est absent du PATH. Installez ou démarrez Docker Desktop, puis relancez avec -StartServices.'
     }
     Write-Host 'Démarrage de SearXNG et Crawl4AI...'
-    Invoke-NativeCommand $Docker.Source 'compose' '-f' (Join-Path $InstallRoot 'compose.yaml') 'up' '-d'
+    Invoke-NativeCommand $Docker.Source 'compose' '-p' 'mcp-search-net-user' '-f' (Join-Path $InstallRoot 'compose.yaml') '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') 'up' '-d' '--wait' 'searxng' 'crawl4ai'
 }
 
 if ($RunAfterInstall) {

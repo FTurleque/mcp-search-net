@@ -4,6 +4,7 @@ import { isIP } from 'node:net';
 import type { UrlSecurityPolicy } from '../../application/ports/url-security-policy.js';
 import type { ApprovedUrl } from '../../domain/models/public-url.js';
 import { UrlSecurityError } from '../../domain/errors/domain-errors.js';
+import type { Telemetry } from '../../application/ports/telemetry.js';
 
 export type AddressResolver = (hostname: string) => Promise<readonly string[]>;
 
@@ -16,9 +17,27 @@ export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
   public constructor(
     private readonly options: PublicUrlSecurityOptions,
     private readonly resolver: AddressResolver = resolveAll,
+    private readonly telemetry?: Telemetry,
   ) {}
 
-  public async assertAllowed(value: string): Promise<ApprovedUrl> {
+  public async assertAllowed(
+    value: string,
+    context: { readonly requestId?: string; readonly tool?: 'search_web' | 'fetch_url' } = {},
+  ): Promise<ApprovedUrl> {
+    try {
+      return await this.validate(value);
+    } catch (error) {
+      this.telemetry?.record('url_blocked', {
+        requestId: context.requestId,
+        tool: context.tool ?? 'fetch_url',
+        domain: safeHostname(value),
+        code: error instanceof UrlSecurityError ? error.code : 'INVALID_URL',
+      });
+      throw error;
+    }
+  }
+
+  private async validate(value: string): Promise<ApprovedUrl> {
     let url: URL;
     try {
       url = new URL(value);
@@ -68,6 +87,14 @@ export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
     url.hostname = hostname;
     url.hash = '';
     return { value: url.toString(), hostname, addresses };
+  }
+}
+
+function safeHostname(value: string): string | undefined {
+  try {
+    return new URL(value).hostname || undefined;
+  } catch {
+    return undefined;
   }
 }
 

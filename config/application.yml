@@ -13,9 +13,15 @@ crawl4ai:
   apiToken: mcp-search-local-development-token
 
 cache:
+  enabled: true
+  continueOnError: true
   path: ../.data/cache.sqlite
-  searchTtlMs: 900000
-  fetchTtlMs: 21600000
+  searchTtlMs: 3600000
+  documentationTtlMs: 86400000
+  readmeTtlMs: 21600000
+  sitemapTtlMs: 86400000
+  temporaryErrorTtlMs: 300000
+  staleRetentionMs: 604800000
   maxEntries: 2000
 
 limits:

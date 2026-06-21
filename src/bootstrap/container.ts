@@ -1,5 +1,9 @@
 import { FetchUrl } from '../application/use-cases/fetch-url.js';
 import { SearchWeb } from '../application/use-cases/search-web.js';
+import { DisabledCacheRepository } from '../application/ports/cache-repository.js';
+import type { CacheRepository } from '../application/ports/cache-repository.js';
+import { CacheUnavailableError } from '../domain/errors/domain-errors.js';
+import { SafeCacheRepository } from '../infrastructure/cache/safe-cache-repository.js';
 import { SqliteCacheRepository } from '../infrastructure/cache/sqlite-cache-repository.js';
 import type { LoadedConfiguration } from '../infrastructure/config/load-configuration.js';
 import { Crawl4aiContentFetcher } from '../infrastructure/fetch/crawl4ai-content-fetcher.js';
@@ -14,8 +18,8 @@ export function createContainer(loaded: LoadedConfiguration) {
   const config = loaded.application;
   const logger = new StructuredLogger(config.logging.level);
   const clock = new SystemClock();
-  const cache = new SqliteCacheRepository(config.cache.path, clock, config.cache.maxEntries);
-  const securityPolicy = new PublicUrlSecurityPolicy(config.security);
+  const cache = createCache(loaded, clock, logger);
+  const securityPolicy = new PublicUrlSecurityPolicy(config.security, undefined, logger);
   const secureGateway = new SecureHttpGateway(securityPolicy, {
     timeoutMs: config.crawl4ai.timeoutMs,
     maxBytes: config.security.maxDownloadBytes,
@@ -35,16 +39,55 @@ export function createContainer(loaded: LoadedConfiguration) {
     loaded.crawl4aiApiToken,
     secureGateway,
   );
-  const searchWeb = new SearchWeb(searchProvider, cache, loaded.officialSources, {
-    cacheTtlMs: config.cache.searchTtlMs,
-    providerOversampling: config.limits.providerOversampling,
-    maxSnippetChars: config.limits.maxSnippetChars,
-  });
-  const fetchUrl = new FetchUrl(contentFetcher, cache, securityPolicy, loaded.officialSources, {
-    cacheTtlMs: config.cache.fetchTtlMs,
-    maxLinks: config.limits.maxLinks,
-  });
+  const searchWeb = new SearchWeb(
+    searchProvider,
+    cache,
+    loaded.officialSources,
+    {
+      cacheTtlMs: config.cache.searchTtlMs,
+      providerOversampling: config.limits.providerOversampling,
+      maxSnippetChars: config.limits.maxSnippetChars,
+    },
+    logger,
+  );
+  const fetchUrl = new FetchUrl(
+    contentFetcher,
+    cache,
+    securityPolicy,
+    loaded.officialSources,
+    {
+      documentationTtlMs: config.cache.documentationTtlMs,
+      readmeTtlMs: config.cache.readmeTtlMs,
+      sitemapTtlMs: config.cache.sitemapTtlMs,
+      maxLinks: config.limits.maxLinks,
+    },
+    logger,
+  );
   const mcpServer = createMcpServer({ searchWeb, fetchUrl, config, logger });
 
   return { cache, logger, mcpServer } as const;
+}
+
+function createCache(
+  loaded: LoadedConfiguration,
+  clock: SystemClock,
+  logger: StructuredLogger,
+): CacheRepository {
+  const config = loaded.application.cache;
+  if (!config.enabled) return new DisabledCacheRepository();
+  try {
+    return new SafeCacheRepository(
+      new SqliteCacheRepository(config.path, clock, config.maxEntries, config.staleRetentionMs),
+      config.continueOnError,
+      logger,
+    );
+  } catch (error) {
+    logger.error('cache_unavailable', {
+      operation: 'open',
+      error: error instanceof Error ? { name: error.name } : 'unknown',
+    });
+    if (!config.continueOnError)
+      throw new CacheUnavailableError('The cache cannot be opened', { cause: error });
+    return new DisabledCacheRepository();
+  }
 }

@@ -5,8 +5,6 @@ services:
     # SearXNG 2026.6.20-fd42d4fda, validated on 2026-06-21.
     image: docker.io/searxng/searxng@sha256:d0f6ccf9d3faab5bba07bb6bbeb533c47dd4ace648ed5a0f8830e10eb96b7082
     restart: unless-stopped
-    ports:
-      - '127.0.0.1:8888:8080'
     volumes:
       - ./config/searxng/settings.yml:/etc/searxng/settings.yml:ro
       - searxng-cache:/var/cache/searxng
@@ -27,15 +25,18 @@ services:
       timeout: 8s
       retries: 10
       start_period: 20s
+    networks:
+      - backend
+      - egress
 
   crawl4ai:
     image: unclecode/crawl4ai:0.9.0
     restart: unless-stopped
-    ports:
-      - '127.0.0.1:11235:11235'
     environment:
       CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-mcp-search-local-development-token}
     shm_size: 1gb
+    volumes:
+      - crawl4ai-data:/home/appuser/.cache
     cap_drop:
       - ALL
     security_opt:
@@ -50,6 +51,46 @@ services:
       timeout: 8s
       retries: 12
       start_period: 60s
+    networks:
+      - backend
+
+  mcp-search-net:
+    profiles: ['stdio']
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-search-net:1.0.0
+    stdin_open: true
+    tty: false
+    environment:
+      MCP_SEARCH_CONFIG: /app/config/application.docker.yml
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-mcp-search-local-development-token}
+    volumes:
+      - ./config/application.docker.yml:/app/config/application.docker.yml:ro
+      - ./config/official-sources.yml:/app/config/official-sources.yml:ro
+      - mcp-cache:/app/.data
+    depends_on:
+      searxng:
+        condition: service_healthy
+      crawl4ai:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - backend
+      - egress
 
 volumes:
   searxng-cache:
+  crawl4ai-data:
+  mcp-cache:
+
+networks:
+  backend:
+    internal: true
+  egress:

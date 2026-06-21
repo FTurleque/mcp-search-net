@@ -56,17 +56,20 @@ export function createMcpServer(dependencies: McpServerDependencies): McpServer 
       return executeToolCall({
         tool: 'search_web',
         logger: dependencies.logger,
-        execute: async () => {
+        execute: async (requestId) => {
           if (isInvalidToolInput(input)) throw new InvalidArgumentError();
-          return dependencies.searchWeb.execute({
-            query: input.query,
-            sourcePolicy: input.sourcePolicy,
-            allowedDomains: input.allowedDomains,
-            excludedDomains: input.excludedDomains,
-            language: input.language,
-            ...(input.timeRange === undefined ? {} : { timeRange: input.timeRange }),
-            maxResults: input.maxResults,
-          });
+          return dependencies.searchWeb.execute(
+            {
+              query: input.query,
+              sourcePolicy: input.sourcePolicy,
+              allowedDomains: input.allowedDomains,
+              excludedDomains: input.excludedDomains,
+              language: input.language,
+              ...(input.timeRange === undefined ? {} : { timeRange: input.timeRange }),
+              maxResults: input.maxResults,
+            },
+            { requestId },
+          );
         },
         validateResponse: (response) => {
           searchSchemas.output.parse(response);
@@ -96,15 +99,18 @@ export function createMcpServer(dependencies: McpServerDependencies): McpServer 
       return executeToolCall({
         tool: 'fetch_url',
         logger: dependencies.logger,
-        execute: async () => {
+        execute: async (requestId) => {
           if (isInvalidToolInput(input)) throw new InvalidArgumentError();
-          return dependencies.fetchUrl.execute({
-            url: input.url,
-            ...(input.query === undefined ? {} : { query: input.query }),
-            maxCharacters: input.maxCharacters,
-            maxSections: input.maxSections,
-            renderMode: input.renderMode,
-          });
+          return dependencies.fetchUrl.execute(
+            {
+              url: input.url,
+              ...(input.query === undefined ? {} : { query: input.query }),
+              maxCharacters: input.maxCharacters,
+              maxSections: input.maxSections,
+              renderMode: input.renderMode,
+            },
+            { requestId },
+          );
         },
         validateResponse: (response) => {
           fetchSchemas.output.parse(response);

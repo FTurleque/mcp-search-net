@@ -70,4 +70,29 @@ describe('PublicUrlSecurityPolicy', () => {
       code: 'DNS_RESOLUTION_FAILED',
     });
   });
+
+  it('emits a correlated url_blocked event without the full URL', async () => {
+    const events: { event: string; data?: Readonly<Record<string, unknown>> }[] = [];
+    const policy = new PublicUrlSecurityPolicy(options, async () => ['127.0.0.1'], {
+      record: (event, data) => events.push({ event, ...(data === undefined ? {} : { data }) }),
+    });
+    await expect(
+      policy.assertAllowed('https://example.com/private?token=secret', {
+        requestId: 'request-1',
+        tool: 'fetch_url',
+      }),
+    ).rejects.toBeDefined();
+    expect(events).toEqual([
+      {
+        event: 'url_blocked',
+        data: {
+          requestId: 'request-1',
+          tool: 'fetch_url',
+          domain: 'example.com',
+          code: 'BLOCKED_ADDRESS',
+        },
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toContain('token=secret');
+  });
 });

@@ -42,14 +42,18 @@ export class SecureHttpGateway {
     private readonly options: SecureHttpGatewayOptions,
   ) {}
 
-  public async download(value: string): Promise<DownloadedResource> {
+  public async download(
+    value: string,
+    conditionalHeaders: Readonly<Record<string, string>> = {},
+    context: { readonly requestId?: string; readonly tool?: 'fetch_url' } = {},
+  ): Promise<DownloadedResource> {
     const deadline = Date.now() + this.options.timeoutMs;
     await this.acquire(deadline);
     try {
       if (this.options.respectRobotsTxt && !new URL(value).pathname.endsWith('/robots.txt')) {
-        await this.assertRobotsAllowed(value, deadline);
+        await this.assertRobotsAllowed(value, deadline, context);
       }
-      return await this.follow(value, value, 0, deadline);
+      return await this.follow(value, value, 0, deadline, conditionalHeaders, context);
     } finally {
       this.release();
     }
@@ -60,31 +64,52 @@ export class SecureHttpGateway {
     currentUrl: string,
     redirects: number,
     deadline: number,
+    conditionalHeaders: Readonly<Record<string, string>> = {},
+    context: { readonly requestId?: string; readonly tool?: 'fetch_url' } = {},
   ): Promise<DownloadedResource> {
     if (redirects > this.options.maxRedirects) throw new TooManyRedirectsError();
-    const approved = await withDeadline(this.securityPolicy.assertAllowed(currentUrl), deadline);
+    const approved = await withDeadline(
+      this.securityPolicy.assertAllowed(currentUrl, context),
+      deadline,
+    );
     await this.throttle(new URL(approved.value).origin, deadline);
-    const response = await this.requestPinned(approved, deadline);
+    const sameOrigin = new URL(approved.value).origin === new URL(requestedUrl).origin;
+    const response = await this.requestPinned(
+      approved,
+      deadline,
+      sameOrigin ? conditionalHeaders : {},
+    );
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers['location'];
       if (location === undefined)
         throw new HttpError('Redirect response has no Location header', response.status);
       const target = new URL(location, approved.value).toString();
       // The next URL is validated at the start of follow, before any connection is opened.
-      return this.follow(requestedUrl, target, redirects + 1, deadline);
+      return this.follow(
+        requestedUrl,
+        target,
+        redirects + 1,
+        deadline,
+        conditionalHeaders,
+        context,
+      );
     }
-    if (response.status < 200 || response.status >= 300) {
+    if (response.status !== 304 && (response.status < 200 || response.status >= 300)) {
       throw new HttpError(`Remote server returned HTTP ${response.status}`, response.status);
     }
     return { requestedUrl, finalUrl: approved.value, ...response };
   }
 
-  private async assertRobotsAllowed(value: string, deadline: number): Promise<void> {
+  private async assertRobotsAllowed(
+    value: string,
+    deadline: number,
+    context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
+  ): Promise<void> {
     const url = new URL(value);
     const robotsUrl = new URL('/robots.txt', url.origin).toString();
     let resource: DownloadedResource;
     try {
-      resource = await this.follow(robotsUrl, robotsUrl, 0, deadline);
+      resource = await this.follow(robotsUrl, robotsUrl, 0, deadline, {}, context);
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) return;
       // A temporarily unavailable robots file does not grant access silently.
@@ -99,6 +124,7 @@ export class SecureHttpGateway {
   private requestPinned(
     approved: Awaited<ReturnType<UrlSecurityPolicy['assertAllowed']>>,
     deadline: number,
+    conditionalHeaders: Readonly<Record<string, string>>,
   ): Promise<Omit<DownloadedResource, 'requestedUrl' | 'finalUrl'>> {
     const url = new URL(approved.value);
     const address = approved.addresses[0];
@@ -126,6 +152,7 @@ export class SecureHttpGateway {
               'text/html,text/plain,text/markdown,application/json,application/xml,application/pdf;q=0.9,*/*;q=0.1',
             'accept-encoding': 'identity',
             'user-agent': this.options.userAgent,
+            ...conditionalHeaders,
           },
           lookup,
           ...(url.protocol === 'https:' ? { servername: url.hostname } : {}),

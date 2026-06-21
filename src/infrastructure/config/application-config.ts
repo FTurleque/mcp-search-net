@@ -13,59 +13,101 @@ export const applicationConfigSchema = z
         name: z.string().min(1),
         version: z.string().min(1),
       })
-      .strict(),
+      .strict()
+      .default({ name: 'mcp-search-net', version: '1.0.0' }),
     searxng: z
       .object({
-        baseUrl: httpUrlSchema,
-        timeoutMs: durationSchema,
+        baseUrl: httpUrlSchema.default('http://127.0.0.1:8888'),
+        timeoutMs: durationSchema.max(20_000).default(15_000),
       })
-      .strict(),
+      .strict()
+      .default({ baseUrl: 'http://127.0.0.1:8888', timeoutMs: 15_000 }),
     crawl4ai: z
       .object({
-        baseUrl: httpUrlSchema,
-        timeoutMs: durationSchema,
+        baseUrl: httpUrlSchema.default('http://127.0.0.1:11235'),
+        timeoutMs: durationSchema.max(20_000).default(20_000),
         apiTokenEnvironmentVariable: z.string().min(1).optional(),
         apiToken: z.string().min(16).optional(),
       })
-      .strict(),
+      .strict()
+      .default({ baseUrl: 'http://127.0.0.1:11235', timeoutMs: 20_000 }),
     cache: z
       .object({
-        path: z.string().min(1),
-        searchTtlMs: durationSchema,
-        fetchTtlMs: durationSchema,
-        maxEntries: z.number().int().min(10).max(1_000_000),
+        enabled: z.boolean().default(true),
+        continueOnError: z.boolean().default(true),
+        path: z.string().min(1).default('../.data/cache.sqlite'),
+        searchTtlMs: durationSchema.default(3_600_000),
+        documentationTtlMs: durationSchema.default(86_400_000),
+        readmeTtlMs: durationSchema.default(21_600_000),
+        sitemapTtlMs: durationSchema.default(86_400_000),
+        temporaryErrorTtlMs: durationSchema.default(300_000),
+        staleRetentionMs: durationSchema.default(604_800_000),
+        maxEntries: z.number().int().min(10).max(100_000).default(2_000),
       })
-      .strict(),
+      .strict()
+      .default({
+        enabled: true,
+        continueOnError: true,
+        path: '../.data/cache.sqlite',
+        searchTtlMs: 3_600_000,
+        documentationTtlMs: 86_400_000,
+        readmeTtlMs: 21_600_000,
+        sitemapTtlMs: 86_400_000,
+        temporaryErrorTtlMs: 300_000,
+        staleRetentionMs: 604_800_000,
+        maxEntries: 2_000,
+      }),
     limits: z
       .object({
-        defaultSearchResults: z.number().int().min(1).max(10),
-        maxSearchResults: z.number().int().min(1).max(20),
-        providerOversampling: z.number().int().min(1).max(10),
-        maxSnippetChars: z.number().int().min(50).max(2_000),
-        defaultFetchChars: z.number().int().min(1_000).max(100_000),
-        maxFetchChars: z.number().int().min(1_000).max(250_000),
-        defaultFetchSections: z.number().int().min(1).max(10),
-        maxFetchSections: z.number().int().min(1).max(10),
-        maxLinks: z.number().int().min(0).max(500),
+        defaultSearchResults: z.number().int().min(1).max(10).default(5),
+        maxSearchResults: z.number().int().min(1).max(10).default(10),
+        providerOversampling: z.number().int().min(1).max(10).default(3),
+        maxSnippetChars: z.number().int().min(50).max(500).default(500),
+        defaultFetchChars: z.number().int().min(1_000).max(30_000).default(12_000),
+        maxFetchChars: z.number().int().min(1_000).max(30_000).default(30_000),
+        defaultFetchSections: z.number().int().min(1).max(10).default(5),
+        maxFetchSections: z.number().int().min(1).max(10).default(10),
+        maxLinks: z.number().int().min(0).max(50).default(50),
       })
-      .strict(),
+      .strict()
+      .default({
+        defaultSearchResults: 5,
+        maxSearchResults: 10,
+        providerOversampling: 3,
+        maxSnippetChars: 500,
+        defaultFetchChars: 12_000,
+        maxFetchChars: 30_000,
+        defaultFetchSections: 5,
+        maxFetchSections: 10,
+        maxLinks: 50,
+      }),
     security: z
       .object({
-        allowedPorts: z.array(z.number().int().min(1).max(65_535)).min(1),
-        allowHttp: z.boolean(),
-        maxDownloadBytes: z.number().int().min(1_024).max(10_485_760),
-        maxRedirects: z.number().int().min(0).max(5),
-        maxConcurrency: z.number().int().min(1).max(16),
-        minimumDelayMs: z.number().int().min(0).max(10_000),
-        respectRobotsTxt: z.boolean(),
+        allowedPorts: z.array(z.number().int().min(1).max(65_535)).min(1).default([80, 443]),
+        allowHttp: z.boolean().default(true),
+        maxDownloadBytes: z.number().int().min(1_024).max(10_485_760).default(10_485_760),
+        maxRedirects: z.number().int().min(0).max(5).default(5),
+        maxConcurrency: z.number().int().min(1).max(16).default(4),
+        minimumDelayMs: z.number().int().min(0).max(10_000).default(250),
+        respectRobotsTxt: z.boolean().default(true),
       })
-      .strict(),
-    officialSourcesPath: z.string().min(1),
+      .strict()
+      .default({
+        allowedPorts: [80, 443],
+        allowHttp: true,
+        maxDownloadBytes: 10_485_760,
+        maxRedirects: 5,
+        maxConcurrency: 4,
+        minimumDelayMs: 250,
+        respectRobotsTxt: true,
+      }),
+    officialSourcesPath: z.string().min(1).default('official-sources.yml'),
     logging: z
       .object({
-        level: z.enum(['debug', 'info', 'warning', 'error']),
+        level: z.enum(['debug', 'info', 'warning', 'error']).default('info'),
       })
-      .strict(),
+      .strict()
+      .default({ level: 'info' }),
   })
   .strict()
   .superRefine((config, context) => {

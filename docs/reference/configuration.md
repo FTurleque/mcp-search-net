@@ -16,13 +16,18 @@ Dans l’installation, modifier `%LOCALAPPDATA%\mcp-search-net\config`. L’inst
 
 - `MCP_SEARCH_CONFIG` remplace le chemin du fichier applicatif ;
 - `CRAWL4AI_API_TOKEN` remplace le jeton configuré.
+- `MCP_SEARCH_SEARXNG_URL` et `MCP_SEARCH_CRAWL4AI_URL` remplacent les endpoints ;
+- `MCP_SEARCH_CACHE_PATH`, `MCP_SEARCH_CACHE_ENABLED` et `MCP_SEARCH_CACHE_CONTINUE_ON_ERROR` contrôlent le cache ;
+- `MCP_SEARCH_LOG_LEVEL` remplace le niveau de journalisation.
 
-Le lanceur définit automatiquement le fichier utilisateur et le jeton local par défaut lorsqu’ils sont absents.
+La priorité est : valeurs internes sûres, YAML, variables d'environnement, puis paramètres d'outil bornés. Toutes les surcharges repassent par Zod ; elles ne peuvent pas augmenter les maxima absolus.
 
 ## Paramètres applicatifs
 
 - `searxng` et `crawl4ai` : URL et délai ;
-- `cache` : chemin SQLite, TTL et nombre maximal d’entrées ;
+- `cache.enabled` : active ou désactive SQLite ;
+- `cache.continueOnError` : poursuit avec `cacheStatus: DISABLED` si SQLite devient indisponible ;
+- `cache` : chemin SQLite, rétention stale, nombre maximal d’entrées et TTL (recherche 60 min, documentation 24 h, README 6 h, sitemap 24 h, erreur temporaire 5 min) ;
 - `limits` : budgets des résultats, extraits, Markdown et liens ;
 - `security.allowedPorts` : ports Web publics acceptés ;
 - `security.allowHttp` : autorisation de HTTP ;
@@ -33,7 +38,7 @@ Le lanceur définit automatiquement le fichier utilisateur et le jeton local par
 - `officialSourcesPath` : registre YAML relatif à la configuration ;
 - `logging.level` : niveau de log structuré sur `stderr`.
 
-La configuration est validée par Zod au démarrage. Une clé obligatoire invalide arrête le processus avec un message structuré ; aucune valeur silencieuse n’est inventée.
+La configuration est validée par Zod au démarrage. Les maxima absolus sont 10 résultats, 10 sections, 30 000 caractères, 50 liens, 10 Mio, 5 redirections et 20 secondes. Une valeur invalide arrête le processus avec un message structuré.
 
 ## Registre officiel
 

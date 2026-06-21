@@ -3,7 +3,13 @@ import { dirname } from 'node:path';
 
 import Database from 'better-sqlite3';
 
-import type { CacheRecord, CacheRepository } from '../../application/ports/cache-repository.js';
+import type {
+  CacheGetOptions,
+  CacheNamespace,
+  CacheRecord,
+  CacheRepository,
+  CacheValidators,
+} from '../../application/ports/cache-repository.js';
 import type { Clock } from '../../application/ports/clock.js';
 import { migrations } from './migrations.js';
 
@@ -11,21 +17,37 @@ interface CacheRow {
   readonly payload: string;
   readonly created_at: number;
   readonly expires_at: number;
+  readonly etag: string | null;
+  readonly last_modified: string | null;
+  readonly content_hash: string | null;
 }
 
 export class SqliteCacheRepository implements CacheRepository {
+  public readonly enabled = true;
   private readonly database: Database.Database;
   private readonly selectStatement: Database.Statement<[string, string], CacheRow>;
   private readonly touchStatement: Database.Statement<[number, string, string]>;
   private readonly deleteStatement: Database.Statement<[string, string]>;
   private readonly upsertStatement: Database.Statement<
-    [string, string, string, number, number, number, number]
+    [
+      string,
+      string,
+      string,
+      number,
+      number,
+      number,
+      number,
+      string | null,
+      string | null,
+      string | null,
+    ]
   >;
 
   public constructor(
     path: string,
     private readonly clock: Clock,
     private readonly maxEntries: number,
+    private readonly staleRetentionMs: number,
   ) {
     mkdirSync(dirname(path), { recursive: true });
     this.database = new Database(path);
@@ -33,9 +55,8 @@ export class SqliteCacheRepository implements CacheRepository {
     this.database.pragma('synchronous = NORMAL');
     this.database.pragma('busy_timeout = 5000');
     this.applyMigrations();
-
     this.selectStatement = this.database.prepare(
-      'SELECT payload, created_at, expires_at FROM cache_entries WHERE namespace = ? AND cache_key = ?',
+      'SELECT payload, created_at, expires_at, etag, last_modified, content_hash FROM cache_entries WHERE namespace = ? AND cache_key = ?',
     );
     this.touchStatement = this.database.prepare(
       'UPDATE cache_entries SET last_accessed_at = ? WHERE namespace = ? AND cache_key = ?',
@@ -45,27 +66,35 @@ export class SqliteCacheRepository implements CacheRepository {
     );
     this.upsertStatement = this.database.prepare(`
       INSERT INTO cache_entries (
-        namespace, cache_key, payload, created_at, expires_at, last_accessed_at, size_bytes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        namespace, cache_key, payload, created_at, expires_at, last_accessed_at, size_bytes,
+        etag, last_modified, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(namespace, cache_key) DO UPDATE SET
         payload = excluded.payload,
         created_at = excluded.created_at,
         expires_at = excluded.expires_at,
         last_accessed_at = excluded.last_accessed_at,
-        size_bytes = excluded.size_bytes
+        size_bytes = excluded.size_bytes,
+        etag = excluded.etag,
+        last_modified = excluded.last_modified,
+        content_hash = excluded.content_hash
     `);
   }
 
-  public get<T>(namespace: string, key: string): Promise<CacheRecord<T> | undefined> {
+  public get<T>(
+    namespace: CacheNamespace,
+    key: string,
+    options: CacheGetOptions = {},
+  ): Promise<CacheRecord<T> | undefined> {
     const row = this.selectStatement.get(namespace, key);
     if (row === undefined) return Promise.resolve(undefined);
-
     const now = this.clock.now().getTime();
-    if (row.expires_at <= now) {
+    const stale = row.expires_at <= now;
+    if (stale && options.allowStale !== true) return Promise.resolve(undefined);
+    if (row.expires_at + this.staleRetentionMs <= now) {
       this.deleteStatement.run(namespace, key);
       return Promise.resolve(undefined);
     }
-
     let value: T;
     try {
       value = JSON.parse(row.payload) as T;
@@ -78,13 +107,23 @@ export class SqliteCacheRepository implements CacheRepository {
       value,
       createdAt: new Date(row.created_at),
       expiresAt: new Date(row.expires_at),
+      stale,
+      ...(row.etag === null ? {} : { etag: row.etag }),
+      ...(row.last_modified === null ? {} : { lastModified: row.last_modified }),
+      ...(row.content_hash === null ? {} : { contentHash: row.content_hash }),
     });
   }
 
-  public set<T>(namespace: string, key: string, value: T, ttlMs: number): Promise<void> {
+  public set<T>(
+    namespace: CacheNamespace,
+    key: string,
+    value: T,
+    ttlMs: number,
+    validators: CacheValidators = {},
+  ): Promise<void> {
     const payload = JSON.stringify(value);
     const now = this.clock.now().getTime();
-    const transaction = this.database.transaction(() => {
+    this.database.transaction(() => {
       this.upsertStatement.run(
         namespace,
         key,
@@ -93,14 +132,16 @@ export class SqliteCacheRepository implements CacheRepository {
         now + ttlMs,
         now,
         Buffer.byteLength(payload),
+        validators.etag ?? null,
+        validators.lastModified ?? null,
+        validators.contentHash ?? null,
       );
       this.pruneSync(now);
-    });
-    transaction();
+    })();
     return Promise.resolve();
   }
 
-  public delete(namespace: string, key: string): Promise<void> {
+  public delete(namespace: CacheNamespace, key: string): Promise<void> {
     this.deleteStatement.run(namespace, key);
     return Promise.resolve();
   }
@@ -124,29 +165,26 @@ export class SqliteCacheRepository implements CacheRepository {
     const recordMigration = this.database.prepare(
       'INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)',
     );
-    const migrate = this.database.transaction(() => {
+    this.database.transaction(() => {
       for (const migration of migrations) {
         if (hasMigration.get(migration.version) !== undefined) continue;
         this.database.exec(migration.sql);
         recordMigration.run(migration.version, this.clock.now().getTime());
       }
-    });
-    migrate();
+    })();
   }
 
   private pruneSync(now: number): number {
-    const expired = this.database
+    const obsolete = this.database
       .prepare('DELETE FROM cache_entries WHERE expires_at <= ?')
-      .run(now);
+      .run(now - this.staleRetentionMs);
     const overflow = this.database
       .prepare(
         `DELETE FROM cache_entries WHERE rowid IN (
-          SELECT rowid FROM cache_entries
-          ORDER BY last_accessed_at DESC
-          LIMIT -1 OFFSET ?
-        )`,
+        SELECT rowid FROM cache_entries ORDER BY last_accessed_at DESC LIMIT -1 OFFSET ?
+      )`,
       )
       .run(this.maxEntries);
-    return expired.changes + overflow.changes;
+    return obsolete.changes + overflow.changes;
   }
 }

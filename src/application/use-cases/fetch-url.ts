@@ -1,16 +1,20 @@
 import { createHash } from 'node:crypto';
 
 import type { CacheRepository } from '../ports/cache-repository.js';
+import type { OperationContext, Telemetry } from '../ports/telemetry.js';
 import type { ContentFetcher } from '../ports/content-fetcher.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
 import type { UrlSecurityPolicy } from '../ports/url-security-policy.js';
 import type { FetchRequest, FetchResponse, FetchedContent } from '../../domain/models/content.js';
+import { ApplicationError } from '../../domain/errors/domain-errors.js';
 import type { SourceStatus } from '../../domain/models/search.js';
 import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import { selectRelevantContent } from '../../domain/services/content-selection.js';
 
 export interface FetchUrlOptions {
-  readonly cacheTtlMs: number;
+  readonly documentationTtlMs: number;
+  readonly readmeTtlMs: number;
+  readonly sitemapTtlMs: number;
   readonly maxLinks: number;
 }
 
@@ -21,21 +25,100 @@ export class FetchUrl {
     private readonly securityPolicy: UrlSecurityPolicy,
     private readonly officialSources: OfficialSourceRegistry,
     private readonly options: FetchUrlOptions,
+    private readonly telemetry?: Telemetry,
   ) {}
 
-  public async execute(request: FetchRequest): Promise<ToolExecution<FetchResponse>> {
-    const approved = await this.securityPolicy.assertAllowed(request.url);
+  public async execute(
+    request: FetchRequest,
+    context: OperationContext = {},
+  ): Promise<ToolExecution<FetchResponse>> {
+    const securityContext = {
+      ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+      tool: 'fetch_url' as const,
+    };
+    const approved = await this.securityPolicy.assertAllowed(request.url, securityContext);
     const key = createHash('sha256')
       .update(
         JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 3 }),
       )
       .digest('hex');
-    const cached = await this.cache.get<FetchedContent>('fetch', key);
-    const content = cached?.value ?? (await this.fetcher.fetch(approved.value, request.renderMode));
-    const final = await this.securityPolicy.assertAllowed(content.finalUrl);
-    const canonical = await safeApprovedUrl(content.canonicalUrl, final.value, this.securityPolicy);
-
-    if (cached === undefined) await this.cache.set('fetch', key, content, this.options.cacheTtlMs);
+    const cached = await this.cache.get<FetchedContent>('content', key, { allowStale: true });
+    let content: FetchedContent;
+    let cacheStatus: ToolExecution<FetchResponse>['cacheStatus'];
+    let staleFallback = false;
+    if (cached !== undefined && !cached.stale) {
+      this.telemetry?.record('cache_hit', {
+        requestId: context.requestId,
+        tool: 'fetch_url',
+        cache: 'content',
+      });
+      content = cached.value;
+      cacheStatus = 'HIT';
+    } else {
+      this.telemetry?.record('cache_miss', {
+        requestId: context.requestId,
+        tool: 'fetch_url',
+        cache: 'content',
+        staleAvailable: cached !== undefined,
+      });
+      const startedAt = performance.now();
+      try {
+        const fetched = await this.fetcher.fetch(approved.value, request.renderMode, {
+          ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+          ...(cached?.etag === undefined ? {} : { etag: cached.etag }),
+          ...(cached?.lastModified === undefined ? {} : { lastModified: cached.lastModified }),
+          ...(cached?.contentHash === undefined ? {} : { contentHash: cached.contentHash }),
+        });
+        this.telemetry?.record('content_fetcher_called', {
+          requestId: context.requestId,
+          tool: 'fetch_url',
+          domain: approved.hostname,
+          durationMs: Number((performance.now() - startedAt).toFixed(3)),
+          status: 'success',
+          notModified: 'notModified' in fetched,
+          statusCode: 'notModified' in fetched ? 304 : fetched.statusCode,
+          inputBytes:
+            'notModified' in fetched || typeof fetched.metadata['bytes'] !== 'number'
+              ? undefined
+              : fetched.metadata['bytes'],
+        });
+        content = 'notModified' in fetched ? requireCachedValue(cached) : fetched;
+        cacheStatus =
+          'notModified' in fetched ? 'HIT' : this.cache.enabled === false ? 'DISABLED' : 'MISS';
+        await this.cache.set('content', key, content, cacheTtl(content, this.options), {
+          ...(content.etag === undefined ? {} : { etag: content.etag }),
+          ...(content.lastModified === undefined ? {} : { lastModified: content.lastModified }),
+          contentHash: content.contentHash,
+        });
+        if (this.cache.enabled === false) cacheStatus = 'DISABLED';
+      } catch (error) {
+        this.telemetry?.record('content_fetcher_called', {
+          requestId: context.requestId,
+          tool: 'fetch_url',
+          domain: approved.hostname,
+          durationMs: Number((performance.now() - startedAt).toFixed(3)),
+          status: 'failed',
+          code: error instanceof ApplicationError ? error.code : 'INTERNAL_ERROR',
+        });
+        if (cached === undefined || !isTransientProviderError(error)) throw error;
+        content = cached.value;
+        cacheStatus = 'STALE_FALLBACK';
+        staleFallback = true;
+        this.telemetry?.record('cache_hit', {
+          requestId: context.requestId,
+          tool: 'fetch_url',
+          cache: 'content',
+          stale: true,
+        });
+      }
+    }
+    const final = await this.securityPolicy.assertAllowed(content.finalUrl, securityContext);
+    const canonical = await safeApprovedUrl(
+      content.canonicalUrl,
+      final.value,
+      this.securityPolicy,
+      securityContext,
+    );
 
     const selected = selectRelevantContent(
       content.markdown,
@@ -47,6 +130,7 @@ export class FetchUrl {
       content.links,
       this.options.maxLinks,
       this.securityPolicy,
+      securityContext,
     );
     const sourceStatus = classifySource(final.value, this.officialSources);
     const data: FetchResponse = {
@@ -66,6 +150,11 @@ export class FetchUrl {
       links,
     };
     const warnings: ToolWarningDescriptor[] = [];
+    if (staleFallback)
+      warnings.push({
+        code: 'STALE_CACHE_USED',
+        message: 'Expired content was used because the content provider is unavailable',
+      });
     if (final.value !== approved.value)
       warnings.push({
         code: 'REDIRECTED_URL',
@@ -80,6 +169,14 @@ export class FetchUrl {
       warnings.push({
         code: 'NO_RELEVANT_SECTION',
         message: 'No section matched the requested query',
+      });
+    if (selected.truncated)
+      this.telemetry?.record('response_truncated', {
+        requestId: context.requestId,
+        tool: 'fetch_url',
+        domain: final.hostname,
+        sectionCount: selected.sections.length,
+        outputCharacters: selected.markdown.length,
       });
     if (selected.truncated)
       warnings.push({
@@ -99,7 +196,7 @@ export class FetchUrl {
     return {
       status: warnings.length === 0 ? 'success' : 'partial',
       warnings,
-      cacheStatus: cached === undefined ? 'MISS' : 'HIT',
+      cacheStatus,
       provider:
         content.extractionMode === 'native-render' ? 'secure-gateway+crawl4ai' : 'secure-gateway',
       data,
@@ -107,13 +204,36 @@ export class FetchUrl {
   }
 }
 
+function requireCachedValue(
+  record: { readonly value: FetchedContent } | undefined,
+): FetchedContent {
+  if (record === undefined) throw new Error('A 304 response requires a cached value');
+  return record.value;
+}
+
+function cacheTtl(content: FetchedContent, options: FetchUrlOptions): number {
+  const path = new URL(content.finalUrl).pathname.toLowerCase();
+  if (path.endsWith('/readme') || /\/readme(?:\.[a-z0-9]+)?$/u.test(path))
+    return options.readmeTtlMs;
+  if (path.endsWith('/sitemap.xml')) return options.sitemapTtlMs;
+  return options.documentationTtlMs;
+}
+
+function isTransientProviderError(error: unknown): boolean {
+  return (
+    error instanceof ApplicationError &&
+    ['CONTENT_PROVIDER_UNAVAILABLE', 'REQUEST_TIMEOUT', 'HTTP_ERROR'].includes(error.code)
+  );
+}
+
 async function safeApprovedUrl(
   value: string,
   fallback: string,
   policy: UrlSecurityPolicy,
+  context: NonNullable<Parameters<UrlSecurityPolicy['assertAllowed']>[1]>,
 ): Promise<string> {
   try {
-    return (await policy.assertAllowed(value)).value;
+    return (await policy.assertAllowed(value, context)).value;
   } catch {
     return fallback;
   }
@@ -123,12 +243,13 @@ async function filterApprovedLinks(
   values: readonly string[],
   maximum: number,
   policy: UrlSecurityPolicy,
+  context: NonNullable<Parameters<UrlSecurityPolicy['assertAllowed']>[1]>,
 ): Promise<readonly string[]> {
   const accepted: string[] = [];
   for (const value of [...new Set(values)]) {
     if (accepted.length >= maximum) break;
     try {
-      accepted.push((await policy.assertAllowed(value)).value);
+      accepted.push((await policy.assertAllowed(value, context)).value);
     } catch {
       /* Blocked links are never exposed. */
     }

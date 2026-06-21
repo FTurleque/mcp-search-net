@@ -17,12 +17,23 @@ export interface FetchedContent {
   readonly canonicalUrl: string;
   readonly title?: string;
   readonly markdown: string;
+  readonly documentSections: readonly { readonly heading: string; readonly markdown: string }[];
   readonly contentType: string;
   readonly fetchedAt: string;
   readonly extractionMode: ExtractionMode;
+  readonly statusCode: number;
+  readonly etag?: string;
+  readonly lastModified?: string;
+  readonly contentHash: string;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly links: readonly string[];
 }
+
+export interface NotModifiedContent {
+  readonly notModified: true;
+}
+
+export type ContentFetchResult = FetchedContent | NotModifiedContent;
 
 export interface ContentSection {
   readonly heading: string;

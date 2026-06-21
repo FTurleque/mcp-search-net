@@ -1,19 +1,27 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CacheRecord, CacheRepository } from '../../src/application/ports/cache-repository.js';
+import { DisabledCacheRepository } from '../../src/application/ports/cache-repository.js';
 import type { OfficialSourceRegistry } from '../../src/application/ports/official-source-registry.js';
 import type { SearchProvider } from '../../src/application/ports/search-provider.js';
 import { SearchWeb } from '../../src/application/use-cases/search-web.js';
 import type { OfficialSource } from '../../src/domain/models/official-source.js';
 import type { ProviderSearchResult, SearchRequest } from '../../src/domain/models/search.js';
+import { ExternalServiceError } from '../../src/domain/errors/domain-errors.js';
 
 class MemoryCache implements CacheRepository {
   private readonly values = new Map<string, unknown>();
-  public async get<T>(namespace: string, key: string): Promise<CacheRecord<T> | undefined> {
+  private stale = false;
+  public async get<T>(
+    namespace: string,
+    key: string,
+    options?: { allowStale?: boolean },
+  ): Promise<CacheRecord<T> | undefined> {
     const value = this.values.get(`${namespace}:${key}`) as T | undefined;
+    if (this.stale && options?.allowStale !== true) return undefined;
     return value === undefined
       ? undefined
-      : { value, createdAt: new Date(0), expiresAt: new Date(999_999_999_999) };
+      : { value, createdAt: new Date(0), expiresAt: new Date(999_999_999_999), stale: this.stale };
   }
   public async set<T>(namespace: string, key: string, value: T): Promise<void> {
     this.values.set(`${namespace}:${key}`, value);
@@ -23,6 +31,9 @@ class MemoryCache implements CacheRepository {
     return 0;
   }
   public close(): void {}
+  public markStale(): void {
+    this.stale = true;
+  }
 }
 
 const official: OfficialSource = {
@@ -177,6 +188,48 @@ describe('SearchWeb', () => {
     expect(response.data.results).toHaveLength(1);
     expect(response.status).toBe('partial');
     expect(response.warnings.map((warning) => warning.code)).toContain('RESULTS_TRUNCATED');
+  });
+
+  it('uses an expired value when SearXNG is unavailable', async () => {
+    const cache = new MemoryCache();
+    const warm = new SearchWeb(
+      { search: async () => ({ results: baseResults, total: 2, unresponsiveEngines: [] }) },
+      cache,
+      registry,
+      { cacheTtlMs: 1, providerOversampling: 3, maxSnippetChars: 500 },
+    );
+    await warm.execute(baseRequest);
+    cache.markStale();
+    const degraded = new SearchWeb(
+      {
+        search: async () => {
+          throw new ExternalServiceError('down', 'searxng');
+        },
+      },
+      cache,
+      registry,
+      { cacheTtlMs: 1, providerOversampling: 3, maxSnippetChars: 500 },
+    );
+    const response = await degraded.execute(baseRequest);
+    expect(response.cacheStatus).toBe('STALE_FALLBACK');
+    expect(response.status).toBe('partial');
+    expect(response.warnings.map((warning) => warning.code)).toContain('STALE_CACHE_USED');
+  });
+
+  it('reports DISABLED when configured without cache', async () => {
+    const events: { event: string; data?: Readonly<Record<string, unknown>> }[] = [];
+    const useCase = new SearchWeb(
+      { search: async () => ({ results: baseResults, total: 2, unresponsiveEngines: [] }) },
+      new DisabledCacheRepository(),
+      registry,
+      { cacheTtlMs: 1_000, providerOversampling: 3, maxSnippetChars: 500 },
+      { record: (event, data) => events.push({ event, ...(data === undefined ? {} : { data }) }) },
+    );
+    await expect(
+      useCase.execute(baseRequest, { requestId: 'request-search' }),
+    ).resolves.toMatchObject({ cacheStatus: 'DISABLED' });
+    expect(events.map(({ event }) => event)).toEqual(['cache_miss', 'search_provider_called']);
+    expect(events.every(({ data }) => data?.['requestId'] === 'request-search')).toBe(true);
   });
 });
 

@@ -14,7 +14,8 @@ export interface LoadedConfiguration {
 
 export async function loadConfiguration(configPath: string): Promise<LoadedConfiguration> {
   const absoluteConfigPath = resolve(configPath);
-  const application = await loadYaml(absoluteConfigPath, applicationConfigSchema);
+  const yamlApplication = await loadYaml(absoluteConfigPath, applicationConfigSchema);
+  const application = applicationConfigSchema.parse(applyEnvironmentOverrides(yamlApplication));
   const officialPath = resolve(dirname(absoluteConfigPath), application.officialSourcesPath);
   const officialFile = await loadYaml(officialPath, officialSourcesFileSchema);
   const tokenFromEnvironment =
@@ -35,4 +36,42 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
     officialSources: new OfficialSourceYamlRegistry(officialFile),
     ...(crawl4aiApiToken === undefined ? {} : { crawl4aiApiToken }),
   };
+}
+
+function applyEnvironmentOverrides(application: ApplicationConfig): unknown {
+  const searxngUrl = process.env['MCP_SEARCH_SEARXNG_URL'];
+  const crawl4aiUrl = process.env['MCP_SEARCH_CRAWL4AI_URL'];
+  const cachePath = process.env['MCP_SEARCH_CACHE_PATH'];
+  const logLevel = process.env['MCP_SEARCH_LOG_LEVEL'];
+  const cacheEnabled = environmentBoolean('MCP_SEARCH_CACHE_ENABLED');
+  const continueOnError = environmentBoolean('MCP_SEARCH_CACHE_CONTINUE_ON_ERROR');
+  return {
+    ...application,
+    searxng: {
+      ...application.searxng,
+      ...(searxngUrl === undefined ? {} : { baseUrl: searxngUrl }),
+    },
+    crawl4ai: {
+      ...application.crawl4ai,
+      ...(crawl4aiUrl === undefined ? {} : { baseUrl: crawl4aiUrl }),
+    },
+    cache: {
+      ...application.cache,
+      ...(cachePath === undefined ? {} : { path: cachePath }),
+      ...(cacheEnabled === undefined ? {} : { enabled: cacheEnabled }),
+      ...(continueOnError === undefined ? {} : { continueOnError }),
+    },
+    logging: {
+      ...application.logging,
+      ...(logLevel === undefined ? {} : { level: logLevel }),
+    },
+  };
+}
+
+function environmentBoolean(name: string): boolean | undefined {
+  const value = process.env[name];
+  if (value === undefined) return undefined;
+  if (value === '1' || value.toLowerCase() === 'true') return true;
+  if (value === '0' || value.toLowerCase() === 'false') return false;
+  return value as unknown as boolean;
 }

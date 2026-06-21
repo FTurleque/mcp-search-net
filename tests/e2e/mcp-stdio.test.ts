@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { spawn } from 'node:child_process';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -63,4 +64,52 @@ describe('MCP STDIO server', () => {
     expect(invalidContent[0]).toMatchObject({ type: 'text' });
     expect(invalidContent[0]?.text).toContain('(INVALID_ARGUMENT)');
   });
+
+  it('keeps stdout as JSON-RPC and writes structured diagnostics only to stderr', async () => {
+    const child = spawn(process.execPath, [resolve('dist/bootstrap/main.js')], {
+      env: {
+        ...process.env,
+        MCP_SEARCH_CONFIG: resolve('config/application.yml'),
+        CRAWL4AI_API_TOKEN: 'test-token-that-must-not-leak',
+      },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.stdin.write(
+      `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'stdio-proof', version: '1.0.0' } } })}\n`,
+    );
+    await waitUntil(() => stdout.includes('"id":1'));
+    child.kill();
+    await new Promise<void>((resolveExit) => child.once('exit', () => resolveExit()));
+
+    const stdoutRecords = stdout
+      .trim()
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const stderrRecords = stderr
+      .trim()
+      .split(/\r?\n/u)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(stdoutRecords).toHaveLength(1);
+    expect(stdoutRecords[0]).toMatchObject({ jsonrpc: '2.0', id: 1 });
+    expect(stderrRecords.some((record) => record['event'] === 'server_started')).toBe(true);
+    expect(stderr).not.toContain('test-token-that-must-not-leak');
+  });
 });
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for MCP output');
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
+  }
+}

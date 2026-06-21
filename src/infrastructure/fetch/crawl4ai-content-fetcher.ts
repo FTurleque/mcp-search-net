@@ -1,7 +1,14 @@
+import { createHash } from 'node:crypto';
+
 import { z } from 'zod/v4';
 
 import type { ContentFetcher } from '../../application/ports/content-fetcher.js';
-import type { FetchedContent, RenderMode } from '../../domain/models/content.js';
+import type {
+  ContentFetchResult,
+  FetchedContent,
+  RenderMode,
+} from '../../domain/models/content.js';
+import type { ContentFetchContext } from '../../application/ports/content-fetcher.js';
 import {
   ExternalServiceError,
   ExtractionError,
@@ -9,6 +16,7 @@ import {
   UnsupportedContentTypeError,
 } from '../../domain/errors/domain-errors.js';
 import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
+import { extractDocumentSections } from '../../domain/services/content-selection.js';
 import { fetchJson } from '../http/http-utils.js';
 import type { DownloadedResource } from './secure-http-gateway.js';
 import type { SecureHttpGateway } from './secure-http-gateway.js';
@@ -43,8 +51,16 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     private readonly fetchImplementation: typeof fetch = fetch,
   ) {}
 
-  public async fetch(url: string, renderMode: RenderMode): Promise<FetchedContent> {
-    const resource = await this.gateway.download(url);
+  public async fetch(
+    url: string,
+    renderMode: RenderMode,
+    context: ContentFetchContext = {},
+  ): Promise<ContentFetchResult> {
+    const resource = await this.gateway.download(url, createConditionalHeaders(context), {
+      ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+      tool: 'fetch_url',
+    });
+    if (resource.status === 304) return { notModified: true };
     const contentType = detectContentType(resource);
     const decoded = await decodeResource(resource, contentType);
     let markdown = decoded.markdown;
@@ -64,9 +80,16 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       canonicalUrl: decoded.canonicalUrl ?? resource.finalUrl,
       ...(decoded.title === undefined ? {} : { title: decoded.title }),
       markdown,
+      documentSections: extractDocumentSections(markdown),
       contentType,
       fetchedAt: new Date().toISOString(),
       extractionMode,
+      statusCode: resource.status,
+      ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
+      ...(resource.headers['last-modified'] === undefined
+        ? {}
+        : { lastModified: resource.headers['last-modified'] }),
+      contentHash: createHash('sha256').update(resource.body).digest('hex'),
       metadata: {
         status: resource.status,
         bytes: resource.body.byteLength,
@@ -110,6 +133,17 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     if (typeof result.markdown === 'string') return result.markdown;
     return result.markdown?.fit_markdown ?? result.markdown?.raw_markdown ?? '';
   }
+}
+
+function createConditionalHeaders(context: ContentFetchContext): Readonly<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  if (isSafeHeaderValue(context.etag)) headers['if-none-match'] = context.etag;
+  if (isSafeHeaderValue(context.lastModified)) headers['if-modified-since'] = context.lastModified;
+  return headers;
+}
+
+function isSafeHeaderValue(value: string | undefined): value is string {
+  return value !== undefined && value.length <= 1_024 && !/[\r\n]/u.test(value);
 }
 
 interface DecodedContent {

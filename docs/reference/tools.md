@@ -26,6 +26,8 @@ interface ToolResponse<T> {
 
 `durationMs` est mesuré avec une horloge monotone. Le même `requestId` relie la réponse, les avertissements et les événements structurés écrits sur `stderr`.
 
+`cacheStatus` vaut `HIT` pour une entrée fraîche ou revalidée en HTTP 304, `MISS` après appel fournisseur, `STALE_FALLBACK` lorsqu'une entrée expirée remplace un fournisseur indisponible, et `DISABLED` lorsque le cache est désactivé ou que le mode dégradé poursuit après une panne SQLite. Le stale fallback ajoute `STALE_CACHE_USED` et force `status: partial`.
+
 Le champ textuel MCP est un résumé compact : liste numérotée avec URL pour `search_web`, ou source suivie du Markdown sélectionné pour `fetch_url`. Il ne s'agit plus d'une copie JSON de `structuredContent`.
 
 ## `search_web`

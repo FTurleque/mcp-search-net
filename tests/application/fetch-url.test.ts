@@ -2,12 +2,30 @@ import { describe, expect, it } from 'vitest';
 
 import { FetchUrl } from '../../src/application/use-cases/fetch-url.js';
 import type { CacheRecord, CacheRepository } from '../../src/application/ports/cache-repository.js';
+import { DisabledCacheRepository } from '../../src/application/ports/cache-repository.js';
+import type { FetchedContent } from '../../src/domain/models/content.js';
+import { ExternalServiceError } from '../../src/domain/errors/domain-errors.js';
 
 class NoCache implements CacheRepository {
   public async get<T>(): Promise<CacheRecord<T> | undefined> {
     return undefined;
   }
   public async set(): Promise<void> {}
+  public async delete(): Promise<void> {}
+  public async prune(): Promise<number> {
+    return 0;
+  }
+  public close(): void {}
+}
+
+class ContentCache implements CacheRepository {
+  public constructor(public record: CacheRecord<FetchedContent>) {}
+  public async get<T>(): Promise<CacheRecord<T> | undefined> {
+    return this.record as CacheRecord<T>;
+  }
+  public async set<T>(_namespace: string, _key: string, value: T): Promise<void> {
+    this.record = { ...this.record, value: value as FetchedContent, stale: false };
+  }
   public async delete(): Promise<void> {}
   public async prune(): Promise<number> {
     return 0;
@@ -26,9 +44,12 @@ describe('FetchUrl', () => {
             canonicalUrl: url,
             title: 'Documentation',
             markdown: '# Intro\n\nOther.\n\n## Cache\n\nSQLite cache transactions.',
+            documentSections: [],
             contentType: 'text/html',
             fetchedAt: '2026-06-20T00:00:00.000Z',
             extractionMode: 'static' as const,
+            statusCode: 200,
+            contentHash: 'hash',
             metadata: { language: 'en' },
             links: ['https://example.com/next'],
           };
@@ -41,7 +62,7 @@ describe('FetchUrl', () => {
         },
       },
       { findByUrl: () => undefined, findForQuery: () => [], list: () => [], version: () => '1' },
-      { cacheTtlMs: 1_000, maxLinks: 10 },
+      { documentationTtlMs: 1_000, readmeTtlMs: 1_000, sitemapTtlMs: 1_000, maxLinks: 10 },
     );
 
     const response = await useCase.execute({
@@ -68,9 +89,12 @@ describe('FetchUrl', () => {
             finalUrl: url,
             canonicalUrl: url,
             markdown: '# Safe\n\nPublic documentation content.',
+            documentSections: [],
             contentType: 'text/html',
             fetchedAt: '2026-06-21T00:00:00.000Z',
             extractionMode: 'static',
+            statusCode: 200,
+            contentHash: 'hash',
             metadata: { secret: 'must-not-leak' },
             links: ['https://example.com/ok', 'http://127.0.0.1/private'],
           };
@@ -84,7 +108,7 @@ describe('FetchUrl', () => {
         },
       },
       { findByUrl: () => undefined, findForQuery: () => [], list: () => [], version: () => '1' },
-      { cacheTtlMs: 1_000, maxLinks: 10 },
+      { documentationTtlMs: 1_000, readmeTtlMs: 1_000, sitemapTtlMs: 1_000, maxLinks: 10 },
     );
     const response = await useCase.execute({
       url: 'https://example.com',
@@ -95,4 +119,129 @@ describe('FetchUrl', () => {
     expect(response.data.links).toEqual(['https://example.com/ok']);
     expect(JSON.stringify(response.data)).not.toContain('must-not-leak');
   });
+
+  it('uses stale content when the provider is unavailable', async () => {
+    const content = fetchedContent();
+    const cache = new ContentCache({
+      value: content,
+      createdAt: new Date(0),
+      expiresAt: new Date(1),
+      stale: true,
+      etag: '"v1"',
+      contentHash: content.contentHash,
+    });
+    const useCase = createCachedUseCase(cache, async () => {
+      throw new ExternalServiceError('down', 'crawl4ai');
+    });
+    const response = await useCase.execute({
+      url: content.requestedUrl,
+      maxCharacters: 2_000,
+      maxSections: 5,
+      renderMode: 'static',
+    });
+    expect(response.cacheStatus).toBe('STALE_FALLBACK');
+    expect(response.status).toBe('partial');
+    expect(response.warnings.map((warning) => warning.code)).toContain('STALE_CACHE_USED');
+  });
+
+  it('revalidates stale content with HTTP validators', async () => {
+    const content = fetchedContent();
+    const cache = new ContentCache({
+      value: content,
+      createdAt: new Date(0),
+      expiresAt: new Date(1),
+      stale: true,
+      etag: '"v1"',
+      lastModified: 'Sun, 21 Jun 2026 00:00:00 GMT',
+      contentHash: content.contentHash,
+    });
+    let received: unknown;
+    const useCase = createCachedUseCase(cache, async (_url, _mode, context) => {
+      received = context;
+      return { notModified: true as const };
+    });
+    const response = await useCase.execute({
+      url: content.requestedUrl,
+      maxCharacters: 2_000,
+      maxSections: 5,
+      renderMode: 'static',
+    });
+    expect(received).toMatchObject({ etag: '"v1"', contentHash: content.contentHash });
+    expect(response.cacheStatus).toBe('HIT');
+    expect(cache.record.stale).toBe(false);
+  });
+
+  it('reports DISABLED when configured without cache', async () => {
+    const useCase = createCachedUseCase(new DisabledCacheRepository(), async () =>
+      fetchedContent(),
+    );
+    const response = await useCase.execute({
+      url: 'https://example.com/docs',
+      maxCharacters: 2_000,
+      maxSections: 5,
+      renderMode: 'static',
+    });
+    expect(response.cacheStatus).toBe('DISABLED');
+  });
+
+  it('emits correlated fetch and truncation events', async () => {
+    const events: { event: string; data?: Readonly<Record<string, unknown>> }[] = [];
+    const content = { ...fetchedContent(), markdown: `# Docs\n\n${'content '.repeat(1_000)}` };
+    const useCase = createCachedUseCase(new DisabledCacheRepository(), async () => content, {
+      record: (event, data) => events.push({ event, ...(data === undefined ? {} : { data }) }),
+    });
+    await useCase.execute(
+      { url: content.requestedUrl, maxCharacters: 1_000, maxSections: 5, renderMode: 'static' },
+      { requestId: 'request-fetch' },
+    );
+    expect(events.map(({ event }) => event)).toEqual([
+      'cache_miss',
+      'content_fetcher_called',
+      'response_truncated',
+    ]);
+    expect(events.every(({ data }) => data?.['requestId'] === 'request-fetch')).toBe(true);
+  });
 });
+
+function fetchedContent(): FetchedContent {
+  return {
+    requestedUrl: 'https://example.com/docs',
+    finalUrl: 'https://example.com/docs',
+    canonicalUrl: 'https://example.com/docs',
+    title: 'Docs',
+    markdown: '# Docs\n\nPublic cached documentation.',
+    contentType: 'text/html',
+    documentSections: [{ heading: 'Docs', markdown: '# Docs\n\nPublic cached documentation.' }],
+    fetchedAt: '2026-06-21T00:00:00.000Z',
+    extractionMode: 'static',
+    statusCode: 200,
+    etag: '"v1"',
+    contentHash: 'abc',
+    metadata: {},
+    links: [],
+  };
+}
+
+function createCachedUseCase(
+  cache: CacheRepository,
+  fetch: ConstructorParameters<typeof FetchUrl>[0]['fetch'],
+  telemetry?: ConstructorParameters<typeof FetchUrl>[5],
+): FetchUrl {
+  return new FetchUrl(
+    { fetch },
+    cache,
+    {
+      async assertAllowed(url) {
+        return { value: url, hostname: 'example.com', addresses: ['93.184.216.34'] };
+      },
+    },
+    { findByUrl: () => undefined, findForQuery: () => [], list: () => [], version: () => '1' },
+    {
+      documentationTtlMs: 86_400_000,
+      readmeTtlMs: 21_600_000,
+      sitemapTtlMs: 86_400_000,
+      maxLinks: 10,
+    },
+    telemetry,
+  );
+}
