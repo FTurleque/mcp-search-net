@@ -8,10 +8,7 @@ description: >
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'
-tools:
-  - codebase
-  - runCommands
-  - problems
+tools: ['read_file', 'list_dir', 'file_search', 'grep_search', 'semantic_search', 'run_in_terminal', 'get_errors']
 ---
 
 # MCP Release Guardian

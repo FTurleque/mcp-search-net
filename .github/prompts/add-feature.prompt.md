@@ -1,16 +1,10 @@
 ---
 name: Add Feature
-description: >
+description: >-
   Implémente une nouvelle fonctionnalité end-to-end dans mcp-search-net avec
   architecture, contrats de sécurité, couverture de tests et documentation alignés.
 mode: agent
 agent: feature-engineer
-tools:
-  - codebase
-  - editFiles
-  - runCommands
-  - fetch
-  - problems
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'

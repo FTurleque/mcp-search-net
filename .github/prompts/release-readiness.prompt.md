@@ -1,15 +1,11 @@
 ---
 name: Release Readiness
-description: >
+description: >-
   Évalue la readiness de release V1 de mcp-search-net en lecture seule stricte :
   tests, critères d'acceptation AC-01 à AC-15, packaging, sécurité, installation
   Windows et documentation. Rend un verdict GO / NO-GO documenté et actionnable.
 mode: agent
 agent: release-guardian
-tools:
-  - codebase
-  - runCommands
-  - problems
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'

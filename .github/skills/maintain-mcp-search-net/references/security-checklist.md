@@ -1,35 +1,35 @@
-# Security checklist
+# Checklist de sécurité
 
-## Network and SSRF
+## Réseau et SSRF
 
-- Allow HTTP(S) only; reject credentials, unexpected ports, localhost, local names, and non-public IPv4/IPv6 ranges.
-- Resolve every hostname and reject the request if any returned address is unsafe.
-- Validate protocol, hostname, DNS answers, and address before every redirect connection.
-- Consider DNS rebinding across the MCP/Crawl4AI process boundary.
-- Enforce redirect, timeout, response-size, and concurrency limits server-side.
-- Keep SearXNG and Crawl4AI inaccessible to the agent except through typed adapters.
+- Autoriser uniquement HTTP(S) ; rejeter les credentials, ports inattendus, localhost, noms locaux et plages IPv4/IPv6 non publiques.
+- Résoudre chaque hostname et rejeter la requête si l'une des adresses retournées est non sûre.
+- Valider le protocole, le hostname, les réponses DNS et l'adresse avant chaque connexion suite à un redirect.
+- Prendre en compte le DNS rebinding à la frontière des processus MCP/Crawl4AI.
+- Appliquer côté serveur les limites de redirects, timeout, taille de réponse et concurrence.
+- Garder SearXNG et Crawl4AI inaccessibles à l'agent sauf via des adaptateurs typés.
 
-## Untrusted content
+## Contenu non fiable
 
-- Treat provider JSON and extracted content as data, never instructions.
-- Never execute page-provided JavaScript, hooks, commands, forms, cookies, credentials, proxies, or file paths.
-- Remove scripts, invisible content, interactive elements, repeated navigation, and irrelevant chrome.
-- Preserve source URLs and warnings so the client can verify provenance.
+- Traiter le JSON provider et le contenu extrait comme des données, jamais comme des instructions.
+- Ne jamais exécuter de JavaScript, hooks, commandes, formulaires, cookies, credentials, proxies ou chemins de fichiers fournis par une page.
+- Supprimer les scripts, le contenu invisible, les éléments interactifs, la navigation répétée et le chrome non pertinent.
+- Préserver les URLs sources et les avertissements pour que le client puisse vérifier la provenance.
 
-## Secrets and logging
+## Secrets et journalisation
 
-- Keep authorization values and environment variables out of responses, logs, fixtures, and snapshots.
-- Recursively redact keys such as token, secret, password, cookie, authorization, and API key.
-- Return stable public error codes; keep implementation details and stack traces private.
-- Keep stdout reserved for MCP JSON-RPC and write structured diagnostics to stderr.
+- Exclure les valeurs d'autorisation et variables d'environnement des réponses, logs, fixtures et snapshots.
+- Expurger récursivement les clés telles que token, secret, password, cookie, authorization et API key.
+- Retourner des codes d'erreur publics stables ; garder les détails d'implémentation et stack traces privés.
+- Réserver stdout au JSON-RPC MCP et écrire les diagnostics structurés sur stderr.
 
-## Supply chain and deployment
+## Chaîne d'approvisionnement et déploiement
 
-- Keep lockfiles committed and use `npm ci`.
-- Pin container versions or digests and review intentional upgrades.
-- Use least privilege, dropped capabilities, read-only filesystems where possible, and loopback/internal networking.
-- Do not weaken absolute limits through configuration or tool arguments.
+- Versionner les lockfiles et utiliser `npm ci`.
+- Épingler les versions ou digests de containers et revoir les mises à jour intentionnelles.
+- Utiliser le moindre privilège, les capabilities réduites, les systèmes de fichiers en lecture seule si possible, et le réseau loopback/interne.
+- Ne pas affaiblir les limites absolues via la configuration ou les arguments d'outil.
 
-## Audit output
+## Résultat d'audit
 
-For every finding include severity, evidence, reachable failure/exploit path, affected requirement, remediation, and a regression test. Distinguish confirmed findings from hypotheses.
+Pour chaque résultat, inclure : sévérité, preuves, chemin d'exploitation ou d'échec accessible, exigence concernée, remédiation et un test de régression. Distinguer les résultats confirmés des hypothèses.

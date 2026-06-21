@@ -1,17 +1,11 @@
 ---
 name: Continue Roadmap
-description: >
+description: >-
   Implémente la prochaine phase incomplète de la roadmap mcp-search-net avec tests,
   preuves de validation et mise à jour explicite du statut. Chaque item n'est marqué
   terminé qu'avec sa condition de sortie démontrée.
 mode: agent
 agent: project-maintainer
-tools:
-  - codebase
-  - editFiles
-  - runCommands
-  - fetch
-  - problems
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'

@@ -1,15 +1,11 @@
 ---
 name: Dependency Review
-description: >
+description: >-
   Analyse en lecture seule les dépendances npm et images container de mcp-search-net :
   vulnérabilités connues, composants obsolètes, incompatibilités Node 24, et pinning
   de digest Docker. Produit un plan de mise à jour priorisé sans modifier ni installer.
 mode: agent
 agent: security-auditor
-tools:
-  - codebase
-  - runCommands
-  - fetch
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'

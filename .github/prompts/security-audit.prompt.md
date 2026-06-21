@@ -1,16 +1,11 @@
 ---
 name: Security Audit
-description: >
+description: >-
   Audit de sécurité lecture seule de mcp-search-net : SSRF, DNS rebinding,
   redirects, budgets de contenu, isolation Crawl4AI, injection de prompt,
   cache, logging, Docker, dépendances et secrets.
 mode: agent
 agent: security-auditor
-tools:
-  - codebase
-  - runCommands
-  - fetch
-  - problems
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'

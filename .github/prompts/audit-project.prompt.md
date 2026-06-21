@@ -1,15 +1,11 @@
 ---
 name: Audit Project
-description: >
+description: >-
   Audit de santé complète du dépôt mcp-search-net en lecture seule : architecture,
   sécurité, tests, documentation et alignement roadmap. Produit un rapport de findings
   ordonné par sévérité avec preuves exactes et plan de maintenance priorisé.
 mode: agent
 agent: project-maintainer
-tools:
-  - codebase
-  - runCommands
-  - problems
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'

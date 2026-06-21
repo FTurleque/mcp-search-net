@@ -8,12 +8,7 @@ description: >
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'
-tools:
-  - codebase
-  - editFiles
-  - runCommands
-  - fetch
-  - problems
+tools: ['read_file', 'list_dir', 'file_search', 'grep_search', 'semantic_search', 'insert_edit_into_file', 'replace_string_in_file', 'create_file', 'run_in_terminal', 'get_errors', 'validate_cves', 'run_subagent']
 ---
 
 # MCP Search Net Maintainer

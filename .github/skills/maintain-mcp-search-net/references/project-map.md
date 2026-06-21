@@ -1,26 +1,26 @@
-# Project map
+# Carte du projet
 
 ## Architecture
 
-- `src/domain`: models, errors, URL-independent ranking and content-selection rules. No MCP, HTTP, SQLite, YAML, Docker, SearXNG, or Crawl4AI imports.
-- `src/application`: use cases and ports. Orchestrates domain behavior through interfaces.
-- `src/infrastructure`: SearXNG, Crawl4AI, SQLite, DNS/URL security, configuration, time, and structured logging.
-- `src/presentation/mcp`: MCP schemas, handlers, common response envelope, and compact text fallbacks.
-- `src/bootstrap`: dependency composition, STDIO connection, lifecycle, and shutdown.
-- `tests`: mirrors the source layers; live E2E tests are explicitly opt-in.
-- `config`: application profiles, official-source registry, and SearXNG settings.
-- `docs`: getting started, reference, operations, development, and planning evidence.
+- `src/domain` : modèles, erreurs, règles de ranking et de sélection de contenu indépendantes des URLs. Aucun import MCP, HTTP, SQLite, YAML, Docker, SearXNG ou Crawl4AI.
+- `src/application` : use cases et ports. Orchestre le comportement domain via des interfaces.
+- `src/infrastructure` : SearXNG, Crawl4AI, SQLite, sécurité DNS/URL, configuration, horloge et journalisation structurée.
+- `src/presentation/mcp` : schémas MCP, handlers, enveloppe de réponse commune et fallbacks texte compacts.
+- `src/bootstrap` : composition des dépendances, connexion STDIO, cycle de vie et arrêt.
+- `tests` : reflète les couches sources ; les tests E2E live sont explicitement opt-in.
+- `config` : profils d'application, registre des sources officielles et paramètres SearXNG.
+- `docs` : démarrage, référence, opérations, développement et preuves de planification.
 
-## Stable boundaries
+## Frontières stables
 
-- V1 exposes exactly `search_web` and `fetch_url`.
-- SQLite is a cache, not a permanent document index.
-- The server uses no internal LLM and no mandatory paid API.
-- `search_web` discovers URLs and never fetches result pages.
-- `fetch_url` reads one known public URL and never performs a search or autonomous crawl.
-- MCP stdout contains JSON-RPC only.
+- V1 expose exactement `search_web` et `fetch_url`.
+- SQLite est un cache, pas un index de documents permanent.
+- Le serveur n'utilise aucun LLM interne ni API payante obligatoire.
+- `search_web` découvre des URLs et ne télécharge jamais les pages de résultats.
+- `fetch_url` lit une seule URL publique connue et n'effectue jamais de recherche ni de crawl autonome.
+- stdout MCP contient uniquement du JSON-RPC.
 
-## Commands
+## Commandes
 
 ```powershell
 npm run check:runtime
@@ -34,13 +34,13 @@ docker compose config --quiet
 docker compose ps
 ```
 
-Node.js 24 is mandatory. Use focused Vitest paths during iteration and `npm run check` before completion.
+Node.js 24 est obligatoire. Utiliser des chemins Vitest ciblés pendant l'itération et `npm run check` avant de terminer.
 
-## Primary references
+## Références principales
 
-- Roadmap: `docs/planning/roadmap-v1-operationnelle.md`
-- Tool contracts: `docs/reference/tools.md`
-- Architecture: `docs/reference/architecture.md`
-- Security: `docs/reference/security.md`
-- Testing: `docs/development/testing.md`
-- Troubleshooting: `docs/operations/troubleshooting.md`
+- Roadmap : `docs/planning/roadmap-v1-operationnelle.md`
+- Contrats des outils : `docs/reference/tools.md`
+- Architecture : `docs/reference/architecture.md`
+- Sécurité : `docs/reference/security.md`
+- Tests : `docs/development/testing.md`
+- Dépannage : `docs/operations/troubleshooting.md`

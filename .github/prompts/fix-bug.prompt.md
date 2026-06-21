@@ -1,15 +1,10 @@
 ---
 name: Fix Bug
-description: >
+description: >-
   Reproduit et corrige un défaut de mcp-search-net avec analyse de cause racine,
   test de régression ciblé et impact minimal sur les contrats publics.
 mode: agent
 agent: bug-fixer
-tools:
-  - codebase
-  - editFiles
-  - runCommands
-  - problems
 owner: mcp-search-net
 version: 1.1.0
 lastReviewed: '2026-06-21'
