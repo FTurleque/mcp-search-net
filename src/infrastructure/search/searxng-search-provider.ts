@@ -16,8 +16,11 @@ const resultSchema = z
     engine: z.string().optional(),
     engines: z.array(z.string()).optional(),
     score: z.number().optional(),
-    publishedDate: z.union([z.string(), z.date()]).optional(),
-    pubdate: z.string().optional(),
+    publishedDate: z.union([z.string(), z.date()]).nullish(),
+    pubdate: z.string().nullish(),
+    updatedDate: z.union([z.string(), z.date()]).nullish(),
+    language: z.string().nullish(),
+    lang: z.string().nullish(),
   })
   .loose();
 
@@ -57,15 +60,16 @@ export class SearxngSearchProvider implements SearchProvider {
     );
     const parsed = responseSchema.safeParse(json);
     if (!parsed.success) {
-      throw new ExternalServiceError(
-        `searxng response does not match its contract: ${parsed.error.message}`,
-        'searxng',
-      );
+      throw new ExternalServiceError('searxng response does not match its contract', 'searxng', {
+        cause: parsed.error,
+      });
     }
 
     return {
       results: parsed.data.results.slice(0, request.limit).map((result) => {
         const publishedAt = toPublishedAt(result.publishedDate ?? result.pubdate);
+        const updatedAt = toPublishedAt(result.updatedDate);
+        const detectedLanguage = result.language ?? result.lang ?? undefined;
         return {
           title: decodeSnippet(result.title),
           url: result.url,
@@ -73,6 +77,8 @@ export class SearxngSearchProvider implements SearchProvider {
           ...(result.score === undefined ? {} : { score: result.score }),
           engines: result.engines ?? (result.engine === undefined ? [] : [result.engine]),
           ...(publishedAt === undefined ? {} : { publishedAt }),
+          ...(updatedAt === undefined ? {} : { updatedAt }),
+          ...(detectedLanguage === undefined ? {} : { detectedLanguage }),
         };
       }),
       ...(parsed.data.number_of_results === undefined
@@ -101,8 +107,8 @@ function decodeSnippet(value: string): string {
     .trim();
 }
 
-function toPublishedAt(value: string | Date | undefined): string | undefined {
-  if (value === undefined) return undefined;
+function toPublishedAt(value: string | Date | null | undefined): string | undefined {
+  if (value === undefined || value === null) return undefined;
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }

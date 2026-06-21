@@ -3,11 +3,16 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 import type { FetchUrl } from '../../application/use-cases/fetch-url.js';
 import type { SearchWeb } from '../../application/use-cases/search-web.js';
-import { ApplicationError } from '../../domain/errors/domain-errors.js';
+import { InvalidArgumentError } from '../../domain/errors/domain-errors.js';
+import type { FetchResponse } from '../../domain/models/content.js';
+import type { SearchResponse } from '../../domain/models/search.js';
+import type { ToolResponse } from '../../domain/models/tool-response.js';
 import type { ApplicationConfig } from '../../infrastructure/config/application-config.js';
 import type { StructuredLogger } from '../../infrastructure/logging/structured-logger.js';
 import { createFetchUrlSchemas } from './schemas/fetch-url-schema.js';
+import { isInvalidToolInput } from './schemas/invalid-tool-input.js';
 import { createSearchWebSchemas } from './schemas/search-web-schema.js';
+import { executeToolCall } from './tool-call.js';
 
 export interface McpServerDependencies {
   readonly searchWeb: SearchWeb;
@@ -36,7 +41,7 @@ export function createMcpServer(dependencies: McpServerDependencies): McpServer 
       title: 'Search the public Web',
       description:
         'Search public web pages through a local SearXNG instance. Official documentation sources are ranked first and all results preserve their URLs and provenance.',
-      inputSchema: searchSchemas.input.shape,
+      inputSchema: searchSchemas.input,
       outputSchema: searchSchemas.output.shape,
       annotations: {
         readOnlyHint: true,
@@ -46,27 +51,27 @@ export function createMcpServer(dependencies: McpServerDependencies): McpServer 
       },
     },
     async (input) => {
-      try {
-        const output = searchSchemas.output.parse(
-          await dependencies.searchWeb.execute({
+      return executeToolCall({
+        tool: 'search_web',
+        logger: dependencies.logger,
+        execute: async () => {
+          if (isInvalidToolInput(input)) throw new InvalidArgumentError();
+          return dependencies.searchWeb.execute({
             query: input.query,
-            ...(input.language === undefined ? {} : { language: input.language }),
+            sourcePolicy: input.sourcePolicy,
+            allowedDomains: input.allowedDomains,
+            excludedDomains: input.excludedDomains,
+            language: input.language,
             ...(input.timeRange === undefined ? {} : { timeRange: input.timeRange }),
             maxResults: input.maxResults,
-            officialOnly: input.officialOnly,
-          }),
-        );
-        dependencies.logger.info('search_web completed', {
-          resultCount: output.results.length,
-          cached: output.metadata.cached,
-        });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(output) }],
-          structuredContent: output,
-        };
-      } catch (error) {
-        return toolError('search_web', error, dependencies.logger);
-      }
+          });
+        },
+        validateResponse: (response) => {
+          searchSchemas.output.parse(response);
+          return response;
+        },
+        formatText: formatSearchText,
+      });
     },
   );
 
@@ -76,7 +81,7 @@ export function createMcpServer(dependencies: McpServerDependencies): McpServer 
       title: 'Fetch a public URL',
       description:
         'Fetch one known public HTTP(S) URL through the local Crawl4AI service, preserve metadata and links, select relevant Markdown sections, and enforce a strict content budget.',
-      inputSchema: fetchSchemas.input.shape,
+      inputSchema: fetchSchemas.input,
       outputSchema: fetchSchemas.output.shape,
       annotations: {
         readOnlyHint: true,
@@ -86,26 +91,23 @@ export function createMcpServer(dependencies: McpServerDependencies): McpServer 
       },
     },
     async (input) => {
-      try {
-        const output = fetchSchemas.output.parse(
-          await dependencies.fetchUrl.execute({
+      return executeToolCall({
+        tool: 'fetch_url',
+        logger: dependencies.logger,
+        execute: async () => {
+          if (isInvalidToolInput(input)) throw new InvalidArgumentError();
+          return dependencies.fetchUrl.execute({
             url: input.url,
             ...(input.query === undefined ? {} : { query: input.query }),
             maxChars: input.maxChars,
-          }),
-        );
-        dependencies.logger.info('fetch_url completed', {
-          cached: output.metadata.cached,
-          truncated: output.metadata.truncated,
-          outputChars: output.markdown.length,
-        });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(output) }],
-          structuredContent: output,
-        };
-      } catch (error) {
-        return toolError('fetch_url', error, dependencies.logger);
-      }
+          });
+        },
+        validateResponse: (response) => {
+          fetchSchemas.output.parse(response);
+          return response;
+        },
+        formatText: formatFetchText,
+      });
     },
   );
 
@@ -116,12 +118,26 @@ export async function connectStdio(server: McpServer): Promise<void> {
   await server.connect(new StdioServerTransport());
 }
 
-function toolError(tool: string, error: unknown, logger: StructuredLogger) {
-  const message = error instanceof ApplicationError ? error.message : 'Unexpected internal error';
-  const code = error instanceof ApplicationError ? error.code : 'INTERNAL_ERROR';
-  logger.error(`${tool} failed`, { code, error: error instanceof Error ? error : String(error) });
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify({ error: { code, message } }) }],
-    isError: true,
-  };
+function formatSearchText(response: ToolResponse<SearchResponse>): string {
+  const lines = [
+    `search_web ${response.status}: ${response.data.results.length} result(s)`,
+    `requestId=${response.requestId} cache=${response.metadata.cacheStatus}`,
+  ];
+  response.data.results.forEach((result, index) => {
+    lines.push(`${index + 1}. ${result.title}`, `   ${result.url}`);
+  });
+  response.warnings.forEach((warning) => lines.push(`Warning ${warning.code}: ${warning.message}`));
+  return lines.join('\n');
+}
+
+function formatFetchText(response: ToolResponse<FetchResponse>): string {
+  const heading = response.data.title ?? response.data.resolvedUrl;
+  const lines = [
+    `fetch_url ${response.status}: ${heading}`,
+    `requestId=${response.requestId} cache=${response.metadata.cacheStatus}`,
+    `Source: ${response.data.resolvedUrl}`,
+  ];
+  response.warnings.forEach((warning) => lines.push(`Warning ${warning.code}: ${warning.message}`));
+  lines.push('', response.data.markdown);
+  return lines.join('\n');
 }

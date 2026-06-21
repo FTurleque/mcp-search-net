@@ -19,6 +19,17 @@ Les principaux écarts bloquants concernent :
 
 La V2 (catalogue documentaire, FTS5, synchronisation, versions, embeddings) doit rester hors de cette feuille de route.
 
+## Suivi d'avancement
+
+| Phase                              | Statut                      | Validation                                              |
+| ---------------------------------- | --------------------------- | ------------------------------------------------------- |
+| Phase 0 — Validation reproductible | ✅ Terminée le 21 juin 2026 | Node 24.17.0, `npm ci`, CI, SearXNG épinglé et sain     |
+| Phase 1 — Contrat MCP commun       | ✅ Terminée le 21 juin 2026 | 51 tests déterministes et test réel `search_web` réussi |
+| Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi      |
+| Phase 3 et suivantes               | ⏳ À réaliser               | Non démarrées dans ce lot                               |
+
+Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md) et de la [phase 2](validation-phase-2.md).
+
 ## État vérifié au moment de l'audit
 
 ### Ce qui est déjà en place
@@ -71,56 +82,62 @@ Toutes les cases ci-dessous appartiennent à la V1. Les priorités indiquent l'o
 
 ### Phase 0 — Rendre la validation reproductible (P0)
 
-- [ ] Activer Node.js 24 LTS avant toute validation et vérifier `node --version`.
-- [ ] Ajouter un précontrôle explicite du runtime pour que `npm run check` échoue immédiatement avec un message utile si Node 24 n'est pas actif.
-- [ ] Exécuter `npm ci`, puis conserver un premier rapport complet de `npm run check`.
-- [ ] Ajouter une CI sous Node 24 exécutant au minimum `npm ci` et `npm run check`.
-- [ ] Épingler SearXNG sur une version ou un digest validé au lieu de `latest`.
-- [ ] Démarrer SearXNG, vérifier son healthcheck et effectuer une requête JSON directe.
+**Statut : ✅ TERMINÉE — validée le 21 juin 2026.**
+
+- [x] Activer Node.js 24 LTS avant toute validation et vérifier `node --version`.
+- [x] Ajouter un précontrôle explicite du runtime pour que `npm run check` échoue immédiatement avec un message utile si Node 24 n'est pas actif.
+- [x] Exécuter `npm ci`, puis conserver un premier rapport complet de `npm run check`.
+- [x] Ajouter une CI sous Node 24 exécutant au minimum `npm ci` et `npm run check`.
+- [x] Épingler SearXNG sur une version ou un digest validé au lieu de `latest`.
+- [x] Démarrer SearXNG, vérifier son healthcheck et effectuer une requête JSON directe.
 
 **Condition de sortie :** un clone propre peut compiler et exécuter la suite déterministe avec une seule version documentée de Node.
 
 ### Phase 1 — Aligner le contrat MCP commun (P0)
 
+**Statut : ✅ TERMINÉE — validée le 21 juin 2026.**
+
 Zones principales : `src/domain/models`, `src/presentation/mcp/schemas`, `src/presentation/mcp/mcp-server.ts`.
 
-- [ ] Créer l'enveloppe `ToolResponse<T>` avec `schemaVersion: "1.0"`, `requestId`, `status`, `warnings`, `metadata` et `data`.
-- [ ] Générer un `requestId` unique pour chaque appel et le propager aux logs, avertissements et erreurs.
-- [ ] Mesurer `durationMs` avec une horloge monotone.
-- [ ] Exposer `cacheStatus` avec exactement `HIT`, `MISS`, `STALE_FALLBACK` ou `DISABLED`.
-- [ ] Séparer les avertissements des erreurs et implémenter tous les codes stables des annexes A.1/A.2.
-- [ ] Mapper les erreurs Zod, DNS, HTTP, timeout, taille, type de contenu, cache et fournisseurs vers les codes V1 ; ne jamais convertir une erreur attendue en `INTERNAL_ERROR`.
-- [ ] Produire, en plus de `structuredContent`, un repli textuel compact et lisible plutôt qu'une simple sérialisation JSON complète.
-- [ ] Ajouter des tests de schéma et de contrat MCP pour les succès, succès partiels, avertissements et erreurs.
+- [x] Créer l'enveloppe `ToolResponse<T>` avec `schemaVersion: "1.0"`, `requestId`, `status`, `warnings`, `metadata` et `data`.
+- [x] Générer un `requestId` unique pour chaque appel et le propager aux logs, avertissements et erreurs.
+- [x] Mesurer `durationMs` avec une horloge monotone.
+- [x] Exposer `cacheStatus` avec exactement `HIT`, `MISS`, `STALE_FALLBACK` ou `DISABLED`.
+- [x] Séparer les avertissements des erreurs et implémenter tous les codes stables des annexes A.1/A.2.
+- [x] Mapper les erreurs Zod, DNS, HTTP, timeout, taille, type de contenu, cache et fournisseurs vers les codes V1 ; ne jamais convertir une erreur attendue en `INTERNAL_ERROR`.
+- [x] Produire, en plus de `structuredContent`, un repli textuel compact et lisible plutôt qu'une simple sérialisation JSON complète.
+- [x] Ajouter des tests de schéma et de contrat MCP pour les succès, succès partiels, avertissements et erreurs.
 
 **Condition de sortie :** les deux outils partagent la même enveloppe versionnée et chaque branche d'erreur possède un code stable testé.
 
 ### Phase 2 — Terminer `search_web` (P0)
 
+**Statut : ✅ TERMINÉE — validée le 21 juin 2026.**
+
 #### Entrée et politiques
 
-- [ ] Remplacer `officialOnly` par `sourcePolicy: strict | prefer | any`, défaut `prefer`.
-- [ ] Ajouter `allowedDomains` et `excludedDomains`, limités à 20, avec comparaison DNS par frontière de domaine ; les exclusions restent prioritaires.
-- [ ] Ajouter `week` à `timeRange`.
-- [ ] Appliquer `fr-FR` par défaut et le repli anglais avec `FALLBACK_LANGUAGE_USED` lorsque nécessaire.
-- [ ] Rejeter les caractères de contrôle dans `query` et normaliser tous les champs avant de créer la clé de cache.
+- [x] Remplacer `officialOnly` par `sourcePolicy: strict | prefer | any`, défaut `prefer`.
+- [x] Ajouter `allowedDomains` et `excludedDomains`, limités à 20, avec comparaison DNS par frontière de domaine ; les exclusions restent prioritaires.
+- [x] Ajouter `week` à `timeRange`.
+- [x] Appliquer `fr-FR` par défaut et le repli anglais avec `FALLBACK_LANGUAGE_USED` lorsque nécessaire.
+- [x] Rejeter les caractères de contrôle dans `query` et normaliser tous les champs avant de créer la clé de cache.
 
 #### Normalisation, classification et classement
 
-- [ ] Retirer les fragments et les paramètres de suivi connus (`utm_*`, `gclid`, `fbclid`, etc.).
-- [ ] Canonicaliser hôte, port implicite, slash final et paramètres avant déduplication, sans modifier abusivement les paramètres fonctionnels.
-- [ ] Remplacer le booléen `official` par `VERIFIED_OFFICIAL`, `LIKELY_OFFICIAL`, `THIRD_PARTY` ou `UNKNOWN`.
-- [ ] Considérer un domaine passé dans `allowedDomains` comme `VERIFIED_OFFICIAL` pour l'appel courant.
-- [ ] Étendre le registre aux sources du benchmark : JetBrains, Java/OpenJDK, Maven, Quarkus, JavaFX, Oracle et Sonar, en plus des entrées existantes.
-- [ ] Ajouter la reconnaissance contrôlée des organisations GitHub officielles.
-- [ ] Produire un score déterministe borné entre 0 et 1 ; documenter bonus/malus et rappeler qu'il ne s'agit pas d'une probabilité de vérité.
-- [ ] Appliquer les politiques de source après classement et générer `NO_RESULTS`, `NO_VERIFIED_OFFICIAL_SOURCE`, `NON_OFFICIAL_RESULTS_INCLUDED` et `RESULTS_TRUNCATED` aux bons endroits.
+- [x] Retirer les fragments et les paramètres de suivi connus (`utm_*`, `gclid`, `fbclid`, etc.).
+- [x] Canonicaliser hôte, port implicite, slash final et paramètres avant déduplication, sans modifier abusivement les paramètres fonctionnels.
+- [x] Remplacer le booléen `official` par `VERIFIED_OFFICIAL`, `LIKELY_OFFICIAL`, `THIRD_PARTY` ou `UNKNOWN`.
+- [x] Considérer un domaine passé dans `allowedDomains` comme `VERIFIED_OFFICIAL` pour l'appel courant.
+- [x] Étendre le registre aux sources du benchmark : JetBrains, Java/OpenJDK, Maven, Quarkus, JavaFX, Oracle et Sonar, en plus des entrées existantes.
+- [x] Ajouter la reconnaissance contrôlée des organisations GitHub officielles.
+- [x] Produire un score déterministe borné entre 0 et 1 ; documenter bonus/malus et rappeler qu'il ne s'agit pas d'une probabilité de vérité.
+- [x] Appliquer les politiques de source après classement et générer `NO_RESULTS`, `NO_VERIFIED_OFFICIAL_SOURCE`, `NON_OFFICIAL_RESULTS_INCLUDED` et `RESULTS_TRUNCATED` aux bons endroits.
 
 #### Sortie
 
-- [ ] Aligner chaque résultat sur le cahier des charges : `domain`, `sourceStatus`, score borné, dates uniquement lorsqu'elles existent et langue détectée lorsqu'elle est disponible.
-- [ ] Vérifier que `search_web` ne récupère jamais automatiquement les pages trouvées.
-- [ ] Tester toutes les clés de cache influentes, les trois politiques, les filtres de domaines, la déduplication et le classement stable en cas d'égalité.
+- [x] Aligner chaque résultat sur le cahier des charges : `domain`, `sourceStatus`, score borné, dates uniquement lorsqu'elles existent et langue détectée lorsqu'elle est disponible.
+- [x] Vérifier que `search_web` ne récupère jamais automatiquement les pages trouvées.
+- [x] Tester toutes les clés de cache influentes, les trois politiques, les filtres de domaines, la déduplication et le classement stable en cas d'égalité.
 
 **Condition de sortie :** les scénarios du chapitre 7 et AC-04/06/07/08 passent avec fixtures SearXNG enregistrées.
 

@@ -2,7 +2,8 @@ name: mcp-search-net
 
 services:
   searxng:
-    image: docker.io/searxng/searxng:latest
+    # SearXNG 2026.6.20-fd42d4fda, validated on 2026-06-21.
+    image: docker.io/searxng/searxng@sha256:d0f6ccf9d3faab5bba07bb6bbeb533c47dd4ace648ed5a0f8830e10eb96b7082
     restart: unless-stopped
     ports:
       - '127.0.0.1:8888:8080'

@@ -1,0 +1,4 @@
+interface:
+  display_name: 'MCP Search Net Maintainer'
+  short_description: 'Maintain, audit, secure, and evolve the MCP server'
+  default_prompt: 'Use $maintain-mcp-search-net to audit the repository and propose the safest next maintenance action.'

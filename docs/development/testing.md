@@ -8,6 +8,8 @@ npm run check
 
 Cette commande enchaîne typecheck, ESLint, contrôle Prettier, compilation et Vitest. Elle doit réussir avant une installation ou une contribution.
 
+Elle commence par `npm run check:runtime` et s'arrête immédiatement avec un message explicite si le runtime actif n'est pas Node.js 24. La CI exécute `npm ci` puis cette même commande sous Node 24.
+
 ## Niveaux
 
 - domaine : classement officiel, sélection Markdown et budgets ;

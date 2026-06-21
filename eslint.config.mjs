@@ -27,6 +27,10 @@ export default tseslint.config(
     },
   },
   {
+    ...tseslint.configs.disableTypeChecked,
+    files: ['scripts/**/*.mjs', '.github/**/*.mjs'],
+  },
+  {
     files: ['tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'off',

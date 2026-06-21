@@ -2,7 +2,7 @@
 
 ## `search_web`
 
-Recherche des pages via SearXNG. Le serveur suréchantillonne les résultats, favorise les sources du registre officiel, limite les extraits et conserve URL, titre, moteur et métadonnées.
+Recherche des pages via SearXNG. Le serveur suréchantillonne les résultats, favorise les sources du registre officiel, limite les extraits et conserve URL, domaine, statut, score, moteur et métadonnées.
 
 Exemples de demandes à Copilot :
 
@@ -11,6 +11,8 @@ Exemples de demandes à Copilot :
 - « Recherche en français les changements Node.js LTS. »
 
 Les résultats du Web restent non fiables même lorsqu’ils sont marqués officiels : l’indicateur vient du registre local.
+
+Utiliser `sourcePolicy: strict` pour ne conserver que les sources vérifiées, `prefer` pour les favoriser sans exclure le reste, ou `any` pour ne pas filtrer par statut. `allowedDomains` limite la recherche à des domaines choisis ; `excludedDomains` reste toujours prioritaire.
 
 ## `fetch_url`
 

@@ -35,6 +35,10 @@ export class OfficialSourceYamlRegistry implements OfficialSourceRegistry {
         );
       }
 
+      const githubOrganizations = [
+        ...new Set(source.githubOrganizations.map((organization) => organization.toLowerCase())),
+      ].sort(compareText);
+
       return {
         id: source.id,
         name: source.name,
@@ -42,6 +46,7 @@ export class OfficialSourceYamlRegistry implements OfficialSourceRegistry {
         baseUrl: baseUrl.toString(),
         ...(pathPrefix === undefined ? {} : { pathPrefix }),
         includeSubdomains: source.includeSubdomains,
+        githubOrganizations,
         keywords: source.keywords,
         priority: source.priority,
         enabled: source.enabled,
@@ -61,8 +66,9 @@ export class OfficialSourceYamlRegistry implements OfficialSourceRegistry {
       .filter((source) => source.enabled)
       .find(
         (source) =>
-          domainMatches(url.hostname, source.domain, source.includeSubdomains) &&
-          (source.pathPrefix === undefined || pathMatches(url.pathname, source.pathPrefix)),
+          (domainMatches(url.hostname, source.domain, source.includeSubdomains) &&
+            (source.pathPrefix === undefined || pathMatches(url.pathname, source.pathPrefix))) ||
+          githubOrganizationMatches(url, source.githubOrganizations),
       );
   }
 
@@ -107,4 +113,18 @@ function pathMatches(pathname: string, prefix: string): boolean {
   if (prefix === '/') return true;
   const normalized = pathname.replace(/\/+$/, '');
   return normalized === prefix || normalized.startsWith(`${prefix}/`);
+}
+
+function githubOrganizationMatches(url: URL, organizations: readonly string[]): boolean {
+  const hostname = url.hostname.toLowerCase().replace(/\.$/u, '');
+  if (hostname !== 'github.com' && hostname !== 'www.github.com') return false;
+  const organization = url.pathname
+    .split('/')
+    .find((segment) => segment !== '')
+    ?.toLowerCase();
+  return organization !== undefined && organizations.includes(organization);
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }

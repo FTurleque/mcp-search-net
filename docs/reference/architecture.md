@@ -24,6 +24,6 @@ Le domaine ne dépend ni du SDK MCP, ni de SearXNG, Crawl4AI, SQLite, Docker, YA
 
 ## Flux
 
-`search_web` valide l’entrée, consulte le cache, interroge SearXNG, normalise et classe les résultats, puis applique le budget de sortie. `fetch_url` valide l’URL et sa résolution DNS, consulte le cache, appelle la façade Crawl4AI, sélectionne les sections Markdown et limite la réponse.
+`search_web` normalise l'entrée avant de construire sa clé de cache, consulte le cache, interroge SearXNG, tente l'anglais si la langue demandée ne retourne rien, normalise les URL, classifie et déduplique les sources, applique les filtres/politiques puis le budget de sortie. Il ne récupère jamais le contenu des pages trouvées. `fetch_url` valide l’URL et sa résolution DNS, consulte le cache, appelle la façade Crawl4AI, sélectionne les sections Markdown et limite la réponse.
 
 Les futurs ports documentaires V2 peuvent être ajoutés sans modifier le domaine V1, mais aucune indexation, synchronisation ou recherche multi-document n’est implémentée ici.

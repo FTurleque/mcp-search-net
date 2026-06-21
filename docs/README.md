@@ -23,9 +23,12 @@
 
 - [Guide de développement](development/guide.md)
 - [Tests](development/testing.md)
+- [Boîte à outils IA Copilot](development/copilot-ai-toolkit.md)
 
 ## Planification
 
 - [Feuille de route vers une V1 pleinement opérationnelle](planning/roadmap-v1-operationnelle.md)
+- [Rapport de validation des phases 0 et 1](planning/validation-phase-0-1.md)
+- [Rapport de validation de la phase 2](planning/validation-phase-2.md)
 
 La documentation décrit la V1. L’indexation documentaire, FTS/BM25, les embeddings et la synchronisation restent hors périmètre.

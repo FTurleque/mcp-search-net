@@ -29,7 +29,6 @@ export interface FetchResponse {
   readonly metadata: {
     readonly contentType?: string;
     readonly fetchedAt: string;
-    readonly cached: boolean;
     readonly truncated: boolean;
     readonly wordCount: number;
     readonly links: readonly string[];

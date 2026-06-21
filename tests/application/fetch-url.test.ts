@@ -47,8 +47,9 @@ describe('FetchUrl', () => {
       maxChars: 2_000,
     });
 
-    expect(response.markdown).toContain('## Cache');
-    expect(response.markdown).not.toContain('# Intro');
-    expect(response.metadata.source).toEqual({ language: 'en' });
+    expect(response.data.markdown).toContain('## Cache');
+    expect(response.data.markdown).not.toContain('# Intro');
+    expect(response.data.metadata.source).toEqual({ language: 'en' });
+    expect(response.cacheStatus).toBe('MISS');
   });
 });

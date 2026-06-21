@@ -32,7 +32,7 @@ describe('PublicUrlSecurityPolicy', () => {
   it('rejects hostnames resolving to a private address', async () => {
     const policy = new PublicUrlSecurityPolicy(options, async () => ['192.168.1.10']);
     await expect(policy.assertAllowed('https://example.com/path')).rejects.toMatchObject({
-      code: 'URL_NOT_ALLOWED',
+      code: 'BLOCKED_ADDRESS',
     });
   });
 
@@ -49,5 +49,18 @@ describe('PublicUrlSecurityPolicy', () => {
     const policy = new PublicUrlSecurityPolicy(options, async () => ['93.184.216.34']);
     await expect(policy.assertAllowed('https://user:pass@example.com')).rejects.toBeDefined();
     await expect(policy.assertAllowed('https://example.com:8443')).rejects.toBeDefined();
+  });
+
+  it('maps invalid URLs, protocols and DNS failures to stable codes', async () => {
+    const policy = new PublicUrlSecurityPolicy(options, async () => {
+      throw new Error('dns unavailable');
+    });
+    await expect(policy.assertAllowed('not a url')).rejects.toMatchObject({ code: 'INVALID_URL' });
+    await expect(policy.assertAllowed('file:///etc/passwd')).rejects.toMatchObject({
+      code: 'UNSUPPORTED_PROTOCOL',
+    });
+    await expect(policy.assertAllowed('https://example.com')).rejects.toMatchObject({
+      code: 'DNS_RESOLUTION_FAILED',
+    });
   });
 });

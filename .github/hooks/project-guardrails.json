@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "node .github/hooks/scripts/session-context.mjs",
+        "powershell": "node .github/hooks/scripts/session-context.mjs",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash|powershell",
+        "bash": "node .github/hooks/scripts/guard-dangerous-command.mjs",
+        "powershell": "node .github/hooks/scripts/guard-dangerous-command.mjs",
+        "cwd": ".",
+        "timeoutSec": 5
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "matcher": "edit|create",
+        "bash": "node .github/hooks/scripts/post-sensitive-edit.mjs",
+        "powershell": "node .github/hooks/scripts/post-sensitive-edit.mjs",
+        "cwd": ".",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}

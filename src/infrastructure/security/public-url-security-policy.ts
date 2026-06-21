@@ -23,14 +23,14 @@ export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
     try {
       url = new URL(value);
     } catch (error) {
-      throw new UrlSecurityError('The URL is invalid', { cause: error });
+      throw new UrlSecurityError('The URL is invalid', 'INVALID_URL', { cause: error });
     }
 
     if (url.protocol !== 'https:' && !(this.options.allowHttp && url.protocol === 'http:')) {
-      throw new UrlSecurityError('Only approved HTTP(S) URLs are allowed');
+      throw new UrlSecurityError('Only approved HTTP(S) URLs are allowed', 'UNSUPPORTED_PROTOCOL');
     }
     if (url.username !== '' || url.password !== '') {
-      throw new UrlSecurityError('URLs containing credentials are not allowed');
+      throw new UrlSecurityError('URLs containing credentials are not allowed', 'INVALID_URL');
     }
 
     const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
@@ -56,7 +56,9 @@ export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
       try {
         addresses = await this.resolver(hostname);
       } catch (error) {
-        throw new UrlSecurityError('The hostname cannot be resolved', { cause: error });
+        throw new UrlSecurityError('The hostname cannot be resolved', 'DNS_RESOLUTION_FAILED', {
+          cause: error,
+        });
       }
     }
     if (addresses.length === 0 || addresses.some((address) => !isPublicAddress(address))) {

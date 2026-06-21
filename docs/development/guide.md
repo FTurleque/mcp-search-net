@@ -34,14 +34,15 @@ Ne modifier jamais directement le contenu de `%LOCALAPPDATA%\mcp-search-net\app`
 
 ## Scripts npm
 
-| Commande               | Rôle                       |
-| ---------------------- | -------------------------- |
-| `npm run dev`          | serveur depuis les sources |
-| `npm run build`        | compilation de production  |
-| `npm start`            | serveur compilé            |
-| `npm run typecheck`    | vérification TypeScript    |
-| `npm run lint`         | ESLint                     |
-| `npm run format`       | écriture Prettier          |
-| `npm run format:check` | contrôle Prettier          |
-| `npm test`             | suite Vitest               |
-| `npm run check`        | validation complète        |
+| Commande                | Rôle                       |
+| ----------------------- | -------------------------- |
+| `npm run check:runtime` | vérification de Node 24    |
+| `npm run dev`           | serveur depuis les sources |
+| `npm run build`         | compilation de production  |
+| `npm start`             | serveur compilé            |
+| `npm run typecheck`     | vérification TypeScript    |
+| `npm run lint`          | ESLint                     |
+| `npm run format`        | écriture Prettier          |
+| `npm run format:check`  | contrôle Prettier          |
+| `npm test`              | suite Vitest               |
+| `npm run check`         | validation complète        |

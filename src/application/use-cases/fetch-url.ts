@@ -5,6 +5,7 @@ import type { Clock } from '../ports/clock.js';
 import type { ContentFetcher } from '../ports/content-fetcher.js';
 import type { UrlSecurityPolicy } from '../ports/url-security-policy.js';
 import type { FetchRequest, FetchResponse, FetchedContent } from '../../domain/models/content.js';
+import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import { selectRelevantContent } from '../../domain/services/content-selection.js';
 
 export interface FetchUrlOptions {
@@ -21,7 +22,7 @@ export class FetchUrl {
     private readonly options: FetchUrlOptions,
   ) {}
 
-  public async execute(request: FetchRequest): Promise<FetchResponse> {
+  public async execute(request: FetchRequest): Promise<ToolExecution<FetchResponse>> {
     const approved = await this.securityPolicy.assertAllowed(request.url);
     const key = createHash('sha256').update(approved.value).digest('hex');
     const cached = await this.cache.get<FetchedContent>('fetch', key);
@@ -34,7 +35,7 @@ export class FetchUrl {
     }
 
     const selected = selectRelevantContent(content.markdown, request.query, request.maxChars);
-    return {
+    const data: FetchResponse = {
       url: approved.value,
       resolvedUrl: content.resolvedUrl,
       ...(content.title === undefined ? {} : { title: content.title }),
@@ -43,12 +44,28 @@ export class FetchUrl {
       metadata: {
         ...(content.contentType === undefined ? {} : { contentType: content.contentType }),
         fetchedAt: this.clock.now().toISOString(),
-        cached: cached !== undefined,
         truncated: selected.truncated,
         wordCount: countWords(selected.markdown),
         links: [...new Set(content.links)].slice(0, this.options.maxLinks),
         source: content.metadata,
       },
+    };
+    const warnings: ToolWarningDescriptor[] = [];
+    if (content.resolvedUrl !== approved.value) {
+      warnings.push({
+        code: 'REDIRECTED_URL',
+        message: 'The final URL differs from the requested URL',
+      });
+    }
+    if (selected.truncated) {
+      warnings.push({ code: 'CONTENT_TRUNCATED', message: 'The extracted content was truncated' });
+    }
+    return {
+      status: warnings.length === 0 ? 'success' : 'partial',
+      warnings,
+      cacheStatus: cached === undefined ? 'MISS' : 'HIT',
+      provider: 'crawl4ai',
+      data,
     };
   }
 }

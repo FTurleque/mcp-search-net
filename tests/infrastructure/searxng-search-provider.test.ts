@@ -16,6 +16,9 @@ describe('SearxngSearchProvider', () => {
                 content: 'A &amp; B',
                 engines: ['brave', 'bing'],
                 score: 4.2,
+                publishedDate: null,
+                updatedDate: '2026-06-20T12:00:00Z',
+                language: 'en',
               },
             ],
             unresponsive_engines: [['google', 'timeout']],
@@ -26,18 +29,26 @@ describe('SearxngSearchProvider', () => {
     ) as unknown as typeof fetch;
     const provider = new SearxngSearchProvider('http://127.0.0.1:8888', 1_000, fetchMock);
 
-    const response = await provider.search({ query: 'mcp sdk', language: 'fr', limit: 5 });
+    const response = await provider.search({
+      query: 'mcp sdk',
+      language: 'fr-FR',
+      timeRange: 'week',
+      limit: 5,
+    });
 
     const requestTarget = vi.mocked(fetchMock).mock.calls[0]?.[0];
     expect(requestTarget).toBeInstanceOf(URL);
     const requestedUrl = requestTarget as URL;
     expect(requestedUrl.pathname).toBe('/search');
     expect(requestedUrl.searchParams.get('format')).toBe('json');
-    expect(requestedUrl.searchParams.get('language')).toBe('fr');
+    expect(requestedUrl.searchParams.get('language')).toBe('fr-FR');
+    expect(requestedUrl.searchParams.get('time_range')).toBe('week');
     expect(response.results[0]).toMatchObject({
       title: 'Official docs',
       snippet: 'A & B',
       engines: ['brave', 'bing'],
+      updatedAt: '2026-06-20T12:00:00.000Z',
+      detectedLanguage: 'en',
     });
     expect(response.unresponsiveEngines).toEqual(['google']);
   });

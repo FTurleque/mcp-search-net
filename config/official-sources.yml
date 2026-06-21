@@ -14,6 +14,7 @@ sources:
     baseUrl: https://github.com/modelcontextprotocol/typescript-sdk
     pathPrefix: /modelcontextprotocol/typescript-sdk
     includeSubdomains: false
+    githubOrganizations: [modelcontextprotocol]
     keywords: [mcp sdk, modelcontextprotocol, typescript sdk]
     priority: 95
     enabled: true
@@ -54,6 +55,7 @@ sources:
     domain: docs.docker.com
     baseUrl: https://docs.docker.com/
     includeSubdomains: false
+    githubOrganizations: [docker]
     keywords: [docker, compose, container]
     priority: 85
     enabled: true
@@ -70,6 +72,68 @@ sources:
     domain: docs.github.com
     baseUrl: https://docs.github.com/
     includeSubdomains: false
+    githubOrganizations: [github]
     keywords: [github, copilot, actions]
     priority: 85
+    enabled: true
+  - id: jetbrains
+    name: JetBrains
+    domain: jetbrains.com
+    baseUrl: https://www.jetbrains.com/
+    includeSubdomains: true
+    githubOrganizations: [JetBrains]
+    keywords: [jetbrains, intellij, idea, kotlin]
+    priority: 95
+    enabled: true
+  - id: openjdk
+    name: OpenJDK
+    domain: openjdk.org
+    baseUrl: https://openjdk.org/
+    includeSubdomains: true
+    githubOrganizations: [openjdk]
+    keywords: [java, jdk, openjdk]
+    priority: 95
+    enabled: true
+  - id: maven
+    name: Apache Maven
+    domain: maven.apache.org
+    baseUrl: https://maven.apache.org/
+    includeSubdomains: false
+    keywords: [maven, pom, plugin]
+    priority: 90
+    enabled: true
+  - id: quarkus
+    name: Quarkus
+    domain: quarkus.io
+    baseUrl: https://quarkus.io/
+    includeSubdomains: true
+    githubOrganizations: [quarkusio]
+    keywords: [quarkus, jakarta, java]
+    priority: 90
+    enabled: true
+  - id: javafx
+    name: OpenJFX
+    domain: openjfx.io
+    baseUrl: https://openjfx.io/
+    includeSubdomains: true
+    keywords: [javafx, openjfx, java ui]
+    priority: 90
+    enabled: true
+  - id: oracle
+    name: Oracle Documentation
+    domain: docs.oracle.com
+    baseUrl: https://docs.oracle.com/
+    includeSubdomains: false
+    githubOrganizations: [oracle]
+    keywords: [oracle, java, sql, database]
+    priority: 90
+    enabled: true
+  - id: sonar
+    name: Sonar
+    domain: docs.sonarsource.com
+    baseUrl: https://docs.sonarsource.com/
+    includeSubdomains: false
+    githubOrganizations: [SonarSource]
+    keywords: [sonar, sonarqube, sonarlint]
+    priority: 90
     enabled: true

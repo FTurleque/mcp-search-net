@@ -2,7 +2,7 @@ import { z } from 'zod/v4';
 
 import type { ContentFetcher } from '../../application/ports/content-fetcher.js';
 import type { FetchedContent } from '../../domain/models/content.js';
-import { ExternalServiceError } from '../../domain/errors/domain-errors.js';
+import { ExternalServiceError, ExtractionError } from '../../domain/errors/domain-errors.js';
 import { fetchJson } from '../http/http-utils.js';
 
 const markdownSchema = z.union([
@@ -71,8 +71,9 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       const direct = crawlResultSchema.safeParse(json);
       if (!direct.success) {
         throw new ExternalServiceError(
-          `crawl4ai response does not match its contract: ${envelope.error.message}`,
+          'crawl4ai response does not match its contract',
           'crawl4ai',
+          { cause: envelope.error },
         );
       }
       return mapResult(url, direct.data);
@@ -80,10 +81,9 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
 
     const result = envelope.data.results?.[0] ?? envelope.data.result;
     if (result === undefined) {
-      throw new ExternalServiceError(
-        envelope.data.error ?? 'crawl4ai returned no result',
-        'crawl4ai',
-      );
+      throw new ExternalServiceError('crawl4ai returned no result', 'crawl4ai', {
+        cause: envelope.data.error,
+      });
     }
     return mapResult(url, result);
   }
@@ -91,14 +91,11 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
 
 function mapResult(url: string, result: z.infer<typeof crawlResultSchema>): FetchedContent {
   if (!result.success) {
-    throw new ExternalServiceError(
-      result.error_message ?? 'crawl4ai could not fetch the URL',
-      'crawl4ai',
-    );
+    throw new ExtractionError('crawl4ai could not extract the URL');
   }
   const markdown = extractMarkdown(result.markdown);
   if (markdown.trim() === '') {
-    throw new ExternalServiceError('crawl4ai returned no textual content', 'crawl4ai');
+    throw new ExtractionError('crawl4ai returned no textual content');
   }
 
   const title = asString(result.metadata['title']);

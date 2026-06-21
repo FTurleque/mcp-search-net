@@ -92,6 +92,10 @@ export const officialSourcesFileSchema = z
           baseUrl: z.url(),
           pathPrefix: z.string().startsWith('/').optional(),
           includeSubdomains: z.boolean().default(true),
+          githubOrganizations: z
+            .array(z.string().regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/))
+            .max(20)
+            .default([]),
           keywords: z.array(z.string().min(2)).default([]),
           priority: z.number().int().min(0).max(1_000).default(0),
           enabled: z.boolean().default(true),
