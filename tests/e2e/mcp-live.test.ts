@@ -1,0 +1,44 @@
+import { resolve } from 'node:path';
+
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { afterEach, describe, expect, it } from 'vitest';
+
+const live = process.env['RUN_LIVE_CRAWL4AI'] === '1';
+
+describe.runIf(live)('live MCP fetch', () => {
+  let client: Client | undefined;
+
+  afterEach(async () => {
+    await client?.close();
+  });
+
+  it('fetches a public page through the complete STDIO stack', async () => {
+    client = new Client({ name: 'mcp-search-net-live-test', version: '1.0.0' });
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [resolve('dist/bootstrap/main.js')],
+      env: {
+        MCP_SEARCH_CONFIG: resolve('config/application.yml'),
+        CRAWL4AI_API_TOKEN: 'mcp-search-local-development-token',
+      },
+      stderr: 'pipe',
+    });
+
+    await client.connect(transport);
+    const result = await client.callTool({
+      name: 'fetch_url',
+      arguments: {
+        url: 'https://example.com',
+        query: 'documentation examples',
+        maxChars: 4_000,
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      title: 'Example Domain',
+      resolvedUrl: 'https://example.com/',
+    });
+  });
+});

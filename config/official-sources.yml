@@ -1,0 +1,75 @@
+version: 1
+sources:
+  - id: model-context-protocol
+    name: Model Context Protocol
+    domain: modelcontextprotocol.io
+    baseUrl: https://modelcontextprotocol.io/
+    includeSubdomains: true
+    keywords: [mcp, model context protocol]
+    priority: 100
+    enabled: true
+  - id: mcp-typescript-sdk
+    name: MCP TypeScript SDK
+    domain: github.com
+    baseUrl: https://github.com/modelcontextprotocol/typescript-sdk
+    pathPrefix: /modelcontextprotocol/typescript-sdk
+    includeSubdomains: false
+    keywords: [mcp sdk, modelcontextprotocol, typescript sdk]
+    priority: 95
+    enabled: true
+  - id: nodejs
+    name: Node.js
+    domain: nodejs.org
+    baseUrl: https://nodejs.org/
+    includeSubdomains: true
+    keywords: [node, nodejs, javascript runtime]
+    priority: 90
+    enabled: true
+  - id: typescript
+    name: TypeScript
+    domain: typescriptlang.org
+    baseUrl: https://www.typescriptlang.org/
+    includeSubdomains: true
+    keywords: [typescript, tsconfig]
+    priority: 90
+    enabled: true
+  - id: searxng
+    name: SearXNG
+    domain: docs.searxng.org
+    baseUrl: https://docs.searxng.org/
+    includeSubdomains: false
+    keywords: [searxng, metasearch]
+    priority: 90
+    enabled: true
+  - id: crawl4ai
+    name: Crawl4AI
+    domain: docs.crawl4ai.com
+    baseUrl: https://docs.crawl4ai.com/
+    includeSubdomains: false
+    keywords: [crawl4ai, crawler, markdown extraction]
+    priority: 90
+    enabled: true
+  - id: docker
+    name: Docker
+    domain: docs.docker.com
+    baseUrl: https://docs.docker.com/
+    includeSubdomains: false
+    keywords: [docker, compose, container]
+    priority: 85
+    enabled: true
+  - id: sqlite
+    name: SQLite
+    domain: sqlite.org
+    baseUrl: https://www.sqlite.org/
+    includeSubdomains: true
+    keywords: [sqlite, fts5]
+    priority: 85
+    enabled: true
+  - id: github-docs
+    name: GitHub Docs
+    domain: docs.github.com
+    baseUrl: https://docs.github.com/
+    includeSubdomains: false
+    keywords: [github, copilot, actions]
+    priority: 85
+    enabled: true

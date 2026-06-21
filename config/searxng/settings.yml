@@ -1,0 +1,21 @@
+use_default_settings: true
+
+general:
+  instance_name: mcp-search-net
+
+search:
+  safe_search: 1
+  autocomplete: ''
+  formats:
+    - html
+    - json
+
+server:
+  port: 8080
+  bind_address: 0.0.0.0
+  secret_key: mcp-search-net-local-only-change-for-shared-environments
+  limiter: false
+  image_proxy: false
+
+ui:
+  static_use_hash: true
