@@ -21,7 +21,7 @@ L’installation stable se trouve dans :
 %LOCALAPPDATA%\mcp-search-net
 ```
 
-Le fichier `%LOCALAPPDATA%\mcp-search-net\mcp.json.example` contient la déclaration Copilot avec le chemin absolu correct. Voir [la procédure IntelliJ/Copilot](docs/intellij-copilot.md).
+Le fichier `%LOCALAPPDATA%\mcp-search-net\mcp.json.example` contient la déclaration Copilot avec le chemin absolu correct. Voir [la procédure IntelliJ/Copilot](docs/getting-started/intellij-copilot.md).
 
 Deux configurations partagées sont disponibles dans IntelliJ : `MCP - Install user (Windows)` et `MCP - Install and run (Windows)`.
 
