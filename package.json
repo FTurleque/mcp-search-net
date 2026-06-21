@@ -18,6 +18,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "install:user": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1",
+    "install:user:run": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1 -StartServices -RunAfterInstall",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run build && npm run test"
   },
   "dependencies": {

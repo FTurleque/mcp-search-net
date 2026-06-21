@@ -1,0 +1,37 @@
+application:
+  name: mcp-search-net
+  version: 1.0.0
+
+searxng:
+  baseUrl: http://127.0.0.1:8888
+  timeoutMs: 15000
+
+crawl4ai:
+  baseUrl: http://127.0.0.1:11235
+  timeoutMs: 90000
+  apiTokenEnvironmentVariable: CRAWL4AI_API_TOKEN
+  apiToken: mcp-search-local-development-token
+
+cache:
+  path: ../data/cache.sqlite
+  searchTtlMs: 900000
+  fetchTtlMs: 21600000
+  maxEntries: 2000
+
+limits:
+  defaultSearchResults: 5
+  maxSearchResults: 10
+  providerOversampling: 3
+  maxSnippetChars: 500
+  defaultFetchChars: 12000
+  maxFetchChars: 30000
+  maxLinks: 50
+
+security:
+  allowedPorts: [80, 443]
+  allowHttp: true
+
+officialSourcesPath: official-sources.yml
+
+logging:
+  level: info

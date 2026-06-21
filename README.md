@@ -1,100 +1,47 @@
 # mcp-search-net
 
-Local MCP Web server for GitHub Copilot in IntelliJ IDEA. It exposes only:
+Serveur MCP Web local pour GitHub Copilot dans IntelliJ IDEA. La V1 expose uniquement :
 
-- `search_web`: searches through a local SearXNG instance and ranks official sources first;
-- `fetch_url`: extracts one public URL through Crawl4AI, selects relevant Markdown sections and limits the returned content.
+- `search_web`, avec priorité aux documentations officielles ;
+- `fetch_url`, avec extraction Markdown ciblée et budget de contenu.
 
-The server contains no internal LLM and requires no commercial API.
+Le serveur utilise SearXNG, Crawl4AI et un cache SQLite. Il n’embarque aucun LLM et ne requiert aucune API commerciale.
 
-## Prerequisites
+## Installation Windows recommandée
 
-- Node.js 24 LTS
-- npm
-- Docker with Docker Compose
-- at least 4 GB of memory available to Docker
-
-## Install and build
+Prérequis : Windows 10/11, Docker Desktop et PowerShell. Node.js est téléchargé dans l’espace utilisateur ; aucun droit administrateur ni `PATH` système n’est nécessaire.
 
 ```powershell
-npm install
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-user.ps1 -StartServices
+```
+
+L’installation stable se trouve dans :
+
+```text
+%LOCALAPPDATA%\mcp-search-net
+```
+
+Le fichier `%LOCALAPPDATA%\mcp-search-net\mcp.json.example` contient la déclaration Copilot avec le chemin absolu correct. Voir [la procédure IntelliJ/Copilot](docs/intellij-copilot.md).
+
+Deux configurations partagées sont disponibles dans IntelliJ : `MCP - Install user (Windows)` et `MCP - Install and run (Windows)`.
+
+## Développement
+
+Le dépôt cible Node.js 24 LTS et npm :
+
+```powershell
+npm ci
 npm run check
-```
-
-## Start local Web services
-
-```powershell
-Copy-Item .env.example .env
 docker compose up -d
-docker compose ps
+npm run dev
 ```
 
-SearXNG is bound to `127.0.0.1:8888`; Crawl4AI is bound to `127.0.0.1:11235`.
-The development token is local-only. Change it before sharing either port.
+SearXNG écoute sur `127.0.0.1:8888` et Crawl4AI sur `127.0.0.1:11235`. Le processus MCP réserve strictement `stdout` au protocole et écrit ses logs structurés sur `stderr`.
 
-## Run the MCP server
+## Documentation
 
-```powershell
-$env:CRAWL4AI_API_TOKEN='mcp-search-local-development-token'
-npm run build
-node dist/bootstrap/main.js
-```
+Le [sommaire de la documentation](docs/README.md) couvre l’installation, IntelliJ/Copilot, l’utilisation, la configuration, l’architecture, les contrats des outils, le développement, les tests, la sécurité et le dépannage.
 
-The process intentionally prints nothing except MCP protocol messages on stdout. Structured logs go to stderr.
+## Périmètre V1
 
-## IntelliJ IDEA / GitHub Copilot
-
-In Copilot Chat, use **Configure your MCP server** then **Add MCP Tools**. Add a local server to the generated `mcp.json`:
-
-```json
-{
-  "servers": {
-    "mcp-search-net": {
-      "command": "node",
-      "args": ["I:/Documents/mcp-search-web/dist/bootstrap/main.js"],
-      "env": {
-        "MCP_SEARCH_CONFIG": "I:/Documents/mcp-search-web/config/application.yml",
-        "CRAWL4AI_API_TOKEN": "mcp-search-local-development-token"
-      }
-    }
-  }
-}
-```
-
-Adapt the absolute paths to the final repository location. The project currently lives in `mcp-search-web`; renaming it does not affect the code.
-
-## Configuration
-
-- `config/application.yml`: endpoints, cache, limits and URL policy.
-- `config/official-sources.yml`: registry used to mark and boost official documentation.
-- `config/searxng/settings.yml`: explicitly enables the SearXNG JSON response format.
-- `MCP_SEARCH_CONFIG`: overrides the application configuration path.
-- `CRAWL4AI_API_TOKEN`: overrides the local fallback token.
-
-Invalid required configuration stops startup with a structured error on stderr.
-
-## Security boundaries
-
-- only HTTP(S) URLs on allowed ports are accepted;
-- DNS results resolving to loopback, private, link-local, documentation or reserved networks are rejected;
-- URL credentials and local hostnames are rejected;
-- Crawl4AI receives only one URL and no executable/browser configuration from MCP callers;
-- fetched Web content is untrusted data and is never executed;
-- cache writes are limited to the configured local SQLite file.
-
-DNS rebinding cannot be eliminated solely by pre-resolution because Crawl4AI resolves the URL in a separate browser process. Keep Crawl4AI local, authenticated and isolated; production deployments should add egress firewall rules.
-
-## Commands
-
-| Command         | Purpose                                       |
-| --------------- | --------------------------------------------- |
-| `npm run dev`   | Run from TypeScript during development        |
-| `npm run build` | Compile production JavaScript                 |
-| `npm start`     | Run compiled MCP server                       |
-| `npm test`      | Run Vitest                                    |
-| `npm run lint`  | Run ESLint                                    |
-| `npm run check` | Typecheck, lint, format-check, test and build |
-
-## Scope
-
-SQLite is a cache only. Document catalogues, local indexing, FTS/BM25 multi-document search, synchronization and embeddings remain out of scope for V1.
+SQLite sert uniquement de cache. Les catalogues documentaires, l’indexation locale, FTS/BM25, la synchronisation et les embeddings restent hors périmètre V1.
