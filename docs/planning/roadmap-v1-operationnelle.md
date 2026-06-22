@@ -21,19 +21,20 @@ La V2 (catalogue documentaire, FTS5, synchronisation, versions, embeddings) doit
 
 ## Suivi d'avancement
 
-| Phase                              | Statut                      | Validation                                              |
-| ---------------------------------- | --------------------------- | ------------------------------------------------------- |
-| Phase 0 — Validation reproductible | ✅ Terminée le 21 juin 2026 | Node 24.17.0, `npm ci`, CI, SearXNG épinglé et sain     |
-| Phase 1 — Contrat MCP commun       | ✅ Terminée le 21 juin 2026 | 51 tests déterministes et test réel `search_web` réussi |
-| Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi      |
-| Phase 3 — `fetch_url`              | ✅ Terminée le 21 juin 2026 | 87 tests déterministes, extraction multi-format et BM25 |
-| Phase 4 — Sécurité réseau          | ✅ Terminée le 21 juin 2026 | Passerelle épinglée, redirections/limites testées       |
-| Phase 5 — Cache résilient          | ✅ Terminée le 21 juin 2026 | SQLite typé, revalidation et stale fallback             |
-| Phase 6 — Observabilité            | ✅ Terminée le 21 juin 2026 | Événements corrélés et redaction récursive              |
-| Phase 7 — Déploiement              | ✅ Terminée le 21 juin 2026 | Compose complet/hybride et cycle Windows validés        |
-| Phase 8 et suivantes               | ⏳ À réaliser               | Non démarrées                                           |
+| Phase                              | Statut                      | Validation                                               |
+| ---------------------------------- | --------------------------- | -------------------------------------------------------- |
+| Phase 0 — Validation reproductible | ✅ Terminée le 21 juin 2026 | Node 24.17.0, `npm ci`, CI, SearXNG épinglé et sain      |
+| Phase 1 — Contrat MCP commun       | ✅ Terminée le 21 juin 2026 | 51 tests déterministes et test réel `search_web` réussi  |
+| Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi       |
+| Phase 3 — `fetch_url`              | ✅ Terminée le 21 juin 2026 | 87 tests déterministes, extraction multi-format et BM25  |
+| Phase 4 — Sécurité réseau          | ✅ Terminée le 21 juin 2026 | Passerelle épinglée, redirections/limites testées        |
+| Phase 5 — Cache résilient          | ✅ Terminée le 21 juin 2026 | SQLite typé, revalidation et stale fallback              |
+| Phase 6 — Observabilité            | ✅ Terminée le 21 juin 2026 | Événements corrélés et redaction récursive               |
+| Phase 7 — Déploiement              | ✅ Terminée le 21 juin 2026 | Compose complet/hybride et cycle Windows validés         |
+| Phase 8 — Stratégie de tests       | ✅ Terminée le 22 juin 2026 | 126 requis, intégration 6/6 et E2E réels 2/2             |
+| Phase 9 — Documentation et recette | 🟡 Partielle                | Automatisation terminée ; recette IntelliJ UI à exécuter |
 
-Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md), de la [phase 2](validation-phase-2.md), des [phases 3 et 4](validation-phase-3-4.md) et des [phases 5 à 7](validation-phase-5-7.md).
+Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md), de la [phase 2](validation-phase-2.md), des [phases 3 et 4](validation-phase-3-4.md), des [phases 5 à 7](validation-phase-5-7.md) et des [phases 8 et 9](validation-phase-8-9.md).
 
 ## État vérifié au moment de l'audit
 
@@ -69,17 +70,17 @@ Légende : ✅ satisfait par le code actuel ; 🟡 partiel ; ❌ non satisfait ;
 | AC-02 — détection par Copilot dans IntelliJ              |  ⚪  | Installation et exemple documentés, mais aucune preuve de test réel conservée.                                                |
 | AC-03 — seulement deux outils                            |  ✅  | Les deux outils sont déclarés et un test STDIO vérifie leurs noms.                                                            |
 | AC-04 — cinq résultats de recherche par défaut           |  ✅  | Défaut configuré à 5 et maximum configuré à 10.                                                                               |
-| AC-05 — cinq sections et 12 000 caractères par défaut    |  ✅  | Défauts et maxima absolus validés par schéma et tests.                                                                         |
+| AC-05 — cinq sections et 12 000 caractères par défaut    |  ✅  | Défauts et maxima absolus validés par schéma et tests.                                                                        |
 | AC-06 — conservation des URL sources                     |  ✅  | Les sorties actuelles conservent les URL demandée/finale et les URL de recherche ; à préserver lors de la refonte du contrat. |
-| AC-07 — classification des sources officielles           |  ✅  | Quatre statuts, registre de référence et organisations GitHub contrôlées.                                                      |
-| AC-08 — suppression des doublons                         |  ✅  | Canonicalisation, retrait du tracking et déduplication déterministe testés.                                                    |
-| AC-09 — HTML, Markdown et PDF textuel                    |  ✅  | Corpus multi-format, PDF textuel et erreurs OCR/type testés sans LLM.                                                          |
-| AC-10 — cache SQLite et statut exposé                    |  ✅  | `HIT`, `MISS`, `STALE_FALLBACK`, `DISABLED`, validateurs et modes dégradés testés.                                             |
-| AC-11 — blocage local, privé et redirections dangereuses |  ✅  | Passerelle épinglée validant chaque saut avant connexion, avec limites et tests SSRF.                                          |
+| AC-07 — classification des sources officielles           |  ✅  | Quatre statuts, registre de référence et organisations GitHub contrôlées.                                                     |
+| AC-08 — suppression des doublons                         |  ✅  | Canonicalisation, retrait du tracking et déduplication déterministe testés.                                                   |
+| AC-09 — HTML, Markdown et PDF textuel                    |  ✅  | Corpus multi-format, PDF textuel et erreurs OCR/type testés sans LLM.                                                         |
+| AC-10 — cache SQLite et statut exposé                    |  ✅  | `HIT`, `MISS`, `STALE_FALLBACK`, `DISABLED`, validateurs et modes dégradés testés.                                            |
+| AC-11 — blocage local, privé et redirections dangereuses |  ✅  | Passerelle épinglée validant chaque saut avant connexion, avec limites et tests SSRF.                                         |
 | AC-12 — aucun LLM/API payante requis                     |  ✅  | Aucun LLM ni SDK commercial dans le code ou les dépendances.                                                                  |
 | AC-13 — lecture seule et aucun accès au projet           |  ✅  | Seuls la configuration et le cache local sont lus/écrits par le serveur.                                                      |
-| AC-14 — tests unitaires, sécurité et E2E au vert         |  ❌  | Suite non exécutée avec le bon Node et couverture très inférieure aux scénarios du cahier des charges.                        |
-| AC-15 — installation et exemples IntelliJ documentés     |  🟡  | Pages présentes ; leur contenu devra être réaligné et validé après les changements de contrat/déploiement.                    |
+| AC-14 — tests unitaires, sécurité et E2E au vert         |  ✅  | 126 tests requis, suites spécialisées sans test ignoré, intégration réelle 6/6 et E2E réels 2/2 sous Node 24.                 |
+| AC-15 — installation et exemples IntelliJ documentés     |  ✅  | Installation, configuration IntelliJ, exploitation, tests et recette manuelle sont documentés et reliés depuis l’index.       |
 
 ## Ordre de réalisation recommandé
 
@@ -180,7 +181,7 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 - [x] Contrôler chaque redirection **avant** la connexion suivante : protocole, identifiants, port, nom, toutes les réponses DNS et adresse IP.
 - [x] Ne pas considérer la validation actuelle de `resolvedUrl` comme suffisante : Crawl4AI ne reçoit plus l'URL publique.
 - [x] Choisir et documenter le mécanisme effectif : suivi de redirections dans une passerelle contrôlée avec connexion épinglée.
-- [x] Réduire le risque de DNS rebinding entre le processus MCP et Crawl4AI par épinglage de l'adresse approuvée ; Crawl4AI traite uniquement une URL `data:` neutralisée.
+- [x] Réduire le risque de DNS rebinding entre le processus MCP et Crawl4AI par épinglage de l'adresse approuvée ; Crawl4AI traite uniquement un document `raw://` neutralisé, sans requête réseau.
 - [x] Imposer 5 redirections maximum.
 - [x] Imposer une taille de téléchargement de 10 Mo par défaut et interrompre le transfert avant dépassement.
 - [x] Imposer un timeout absolu de 20 secondes par défaut.
@@ -237,28 +238,32 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 
 ### Phase 8 — Construire la stratégie de tests complète (P0)
 
-- [ ] **Unitaires :** objets-valeurs, contrôle des caractères, clés de cache, normalisation d'URL, scoring, BM25, budgets et codes d'erreur.
-- [ ] **Contrat :** fixtures SearXNG/Crawl4AI valides, champs absents/supplémentaires, schémas invalides, HTTP non JSON et réponses partielles.
-- [ ] **Intégration :** Compose, services réels et SQLite réel dans une suite séparée et activable en CI.
-- [ ] **Sécurité :** SSRF, DNS, chaque redirection, tailles, protocoles, contenu injecté et refus de toute configuration exécutable.
-- [ ] **E2E STDIO :** lister exactement deux outils, puis appeler réellement `search_web` et `fetch_url`, y compris une erreur stable de chaque outil.
-- [ ] **Formats :** HTML, Markdown, README GitHub, JSON, XML/YAML et PDF textuel ; vérifier l'échec OCR explicite.
-- [ ] **Résilience :** SearXNG arrêté, Crawl4AI arrêté, SQLite indisponible et cache expiré utilisable.
-- [ ] **Performance :** MISS/HIT, page proche de 10 Mo, appels successifs et concurrence limitée.
-- [ ] Publier les rapports de test et interdire une livraison si un test requis est ignoré ou conditionnel sans preuve d'exécution.
+**Statut : ✅ TERMINÉE — validée le 22 juin 2026.**
+
+- [x] **Unitaires :** objets-valeurs, contrôle des caractères, clés de cache, normalisation d'URL, scoring, BM25, budgets et codes d'erreur.
+- [x] **Contrat :** fixtures SearXNG/Crawl4AI valides, champs absents/supplémentaires, schémas invalides, HTTP non JSON et réponses partielles.
+- [x] **Intégration :** Compose, services réels et SQLite réel dans une suite séparée et activable en CI.
+- [x] **Sécurité :** SSRF, DNS, chaque redirection, tailles, protocoles, contenu injecté et refus de toute configuration exécutable.
+- [x] **E2E STDIO :** lister exactement deux outils, puis appeler réellement `search_web` et `fetch_url`, y compris une erreur stable de chaque outil.
+- [x] **Formats :** HTML, Markdown, README GitHub, JSON, XML/YAML et PDF textuel ; vérifier l'échec OCR explicite.
+- [x] **Résilience :** SearXNG arrêté, Crawl4AI arrêté, SQLite indisponible et cache expiré utilisable.
+- [x] **Performance :** MISS/HIT, page proche de 10 Mo, appels successifs et concurrence limitée.
+- [x] Publier les rapports de test et interdire une livraison si un test requis est ignoré ou conditionnel sans preuve d'exécution.
 
 **Condition de sortie :** `npm run check`, la suite d'intégration et la suite de sécurité passent sous Node 24 sur un clone propre.
 
 ### Phase 9 — Documentation, ADR, benchmark et recette (P1)
 
-- [ ] Mettre à jour `docs/reference/tools.md` avec les contrats exacts, avertissements, erreurs et exemples de réponses compactes.
-- [ ] Mettre à jour configuration, sécurité, tests, dépannage et installation après validation réelle.
-- [ ] Ajouter `docs/adr/ADR-001` à `ADR-010` conformément à l'annexe B.
-- [ ] Ajouter une matrice de traçabilité exigences → code → tests → critères d'acceptation.
-- [ ] Exécuter le benchmark de l'annexe D sur GitHub Copilot/MCP, JetBrains, Java, Maven, Quarkus, JavaFX, Oracle, Sonar et Docker.
-- [ ] Mesurer taux officiel, pertinence, fraîcheur, qualité d'extraction, taille de contexte, latence MISS/HIT et résilience.
+**Statut : 🟡 PARTIELLE — toute la partie automatisable est terminée ; AC-02 exige encore la recette UI IntelliJ.**
+
+- [x] Mettre à jour `docs/reference/tools.md` avec les contrats exacts, avertissements, erreurs et exemples de réponses compactes.
+- [x] Mettre à jour configuration, sécurité, tests, dépannage et installation après validation réelle.
+- [x] Ajouter `docs/adr/ADR-001` à `ADR-010` conformément à l'annexe B.
+- [x] Ajouter une matrice de traçabilité exigences → code → tests → critères d'acceptation.
+- [x] Exécuter le benchmark de l'annexe D sur GitHub Copilot/MCP, JetBrains, Java, Maven, Quarkus, JavaFX, Oracle, Sonar et Docker.
+- [x] Mesurer taux officiel, pertinence, fraîcheur, qualité d'extraction, taille de contexte, latence MISS/HIT et résilience.
 - [ ] Effectuer la recette manuelle dans IntelliJ : détection des deux outils, recherche officielle, extraction ciblée, cache HIT et affichage d'un avertissement.
-- [ ] Archiver les versions des images, de Node, du SDK MCP et des dépendances utilisées pour la recette.
+- [x] Archiver les versions des images, de Node, du SDK MCP et des dépendances utilisées pour la recette.
 
 **Condition de sortie :** les quinze critères AC-01 à AC-15 sont verts et accompagnés d'une preuve reproductible.
 
@@ -274,7 +279,7 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 - [x] Aucune sortie libre n'est écrite sur `stdout`.
 - [x] L'installation Windows et la mise à jour conservatrice sont validées sur un profil propre.
 - [ ] Copilot dans IntelliJ détecte uniquement les deux outils et peut les appeler.
-- [ ] La documentation, les ADR, la traçabilité et le rapport de benchmark correspondent au binaire livré.
+- [x] La documentation, les ADR, la traçabilité et le rapport de benchmark correspondent au binaire livré.
 - [x] Aucun composant V2 n'a été introduit dans la base V1.
 
 ## Définition de « V1 pleinement opérationnelle »

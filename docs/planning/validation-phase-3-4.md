@@ -20,7 +20,7 @@ Les phases 3 et 4 sont terminées. La validation complète sous Node.js 24.14.0 
 - traitement explicite de README, `robots.txt`, `sitemap.xml` et `llms.txt` ;
 - erreur OCR dédiée pour les PDF sans texte et erreur de type non pris en charge ;
 - sélection BM25 locale, bonus de titre/code/version et budgets par section/globaux ;
-- rendu Crawl4AI de secours uniquement sur un document `data:` déjà téléchargé et neutralisé.
+- rendu Crawl4AI de secours uniquement sur un document `raw://` déjà téléchargé et neutralisé, sans requête réseau.
 
 ## Phase 4 — sécurité réseau
 

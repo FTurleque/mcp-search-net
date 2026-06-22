@@ -109,7 +109,9 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       'content-type': 'application/json',
     };
     if (this.apiToken !== undefined) headers['authorization'] = `Bearer ${this.apiToken}`;
-    const dataUrl = `data:text/html;base64,${Buffer.from(html).toString('base64')}`;
+    // Crawl4AI's raw:// transport renders caller-provided HTML without issuing a
+    // network request. Its server-side SSRF guard intentionally rejects data: URLs.
+    const rawUrl = `raw://${html}`;
     const json = await fetchJson(
       'crawl4ai',
       endpoint,
@@ -117,7 +119,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          urls: [dataUrl],
+          urls: [rawUrl],
           browser_config: { text_mode: true, light_mode: true },
           crawler_config: { check_robots_txt: false, page_timeout: this.timeoutMs },
         }),

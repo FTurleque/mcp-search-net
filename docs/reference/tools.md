@@ -88,7 +88,7 @@ Le sélecteur local utilise BM25, renforce les correspondances dans les titres, 
 
 Les formats V1 sont HTML, Markdown/README, texte, JSON, XML, YAML, `robots.txt`, `sitemap.xml`, `llms.txt` et PDF textuel. Un PDF sans couche texte produit `OCR_REQUIRED_NOT_SUPPORTED`; un autre format non textuel produit `UNSUPPORTED_CONTENT_TYPE`.
 
-En mode `auto`, le rendu natif n'est tenté qu'après une extraction statique insuffisante. Crawl4AI reçoit alors une URL `data:` contenant le HTML déjà téléchargé et neutralisé, jamais l'URL publique. L'avertissement `JAVASCRIPT_FALLBACK_USED` rend ce chemin visible.
+En mode `auto`, le rendu natif n'est tenté qu'après une extraction statique insuffisante. Crawl4AI reçoit alors un document `raw://` contenant le HTML déjà téléchargé et neutralisé, jamais l'URL publique. Ce transport natif ne déclenche aucune requête réseau. L'avertissement `JAVASCRIPT_FALLBACK_USED` rend ce chemin visible.
 
 ## Annotations et erreurs
 
@@ -96,6 +96,58 @@ Les outils sont déclarés en lecture seule et non destructifs. Les erreurs de v
 
 Une erreur MCP expose son code et son `requestId` dans le contenu textuel. Sa structure complète est placée dans la métadonnée MCP namespacée `mcp-search-net/error` ; elle n'est pas placée dans `structuredContent`, réservé au schéma de succès annoncé par l'outil.
 
-Les codes V1 stables couvrent les arguments et URL invalides, les protocoles/adresses bloqués, le DNS, les redirections, délais et tailles, HTTP, l'indisponibilité des deux fournisseurs, les types de contenu, l'extraction/OCR, le cache et l'erreur interne. Les détails inattendus ne sont jamais renvoyés au client.
+### Avertissements stables
+
+| Code                            | Signification                                           |
+| ------------------------------- | ------------------------------------------------------- |
+| `NO_RESULTS`                    | aucun résultat après filtrage                           |
+| `NO_VERIFIED_OFFICIAL_SOURCE`   | aucune source officielle vérifiée en mode strict        |
+| `NON_OFFICIAL_RESULTS_INCLUDED` | le résultat inclut une source non vérifiée              |
+| `RESULTS_TRUNCATED`             | la limite de résultats est atteinte                     |
+| `CONTENT_TRUNCATED`             | le budget global de caractères est atteint              |
+| `SECTION_TRUNCATED`             | au moins une section dépasse 5 000 caractères           |
+| `FALLBACK_LANGUAGE_USED`        | la recherche a été rejouée en anglais                   |
+| `STALE_CACHE_USED`              | une donnée expirée remplace un fournisseur indisponible |
+| `REDIRECTED_URL`                | l’URL finale diffère de l’URL demandée                  |
+| `JAVASCRIPT_FALLBACK_USED`      | le rendu Crawl4AI a complété l’extraction statique      |
+| `NO_RELEVANT_SECTION`           | aucune section n’est pertinente pour la requête         |
+| `UNVERIFIED_SOURCE`             | la page n’est pas reconnue comme officielle             |
+
+### Erreurs stables
+
+| Famille      | Codes                                                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Entrée       | `INVALID_ARGUMENT`, `INVALID_URL`, `UNSUPPORTED_PROTOCOL`                                                               |
+| Réseau sûr   | `BLOCKED_ADDRESS`, `DNS_RESOLUTION_FAILED`, `TOO_MANY_REDIRECTS`, `REQUEST_TIMEOUT`, `RESPONSE_TOO_LARGE`, `HTTP_ERROR` |
+| Fournisseurs | `SEARCH_PROVIDER_UNAVAILABLE`, `CONTENT_PROVIDER_UNAVAILABLE`                                                           |
+| Contenu      | `UNSUPPORTED_CONTENT_TYPE`, `EXTRACTION_FAILED`, `NO_RELEVANT_CONTENT`, `OCR_REQUIRED_NOT_SUPPORTED`                    |
+| Exploitation | `CACHE_UNAVAILABLE`, `INTERNAL_ERROR`                                                                                   |
+
+Les détails inattendus ne sont jamais renvoyés au client.
+
+### Exemples de repli textuel compact
+
+`search_web` :
+
+```text
+1. Maven – Introduction to the Build Lifecycle
+   https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html
+   VERIFIED_OFFICIAL · score 0.94
+```
+
+`fetch_url` :
+
+```text
+Source: https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html
+
+## Build Lifecycle Basics
+Maven repose sur trois cycles de vie intégrés…
+```
+
+Erreur :
+
+```text
+UNSUPPORTED_PROTOCOL [requestId: …] Only HTTP and HTTPS URLs are supported.
+```
 
 Le serveur n’expose aucune option Crawl4AI permettant scripts arbitraires, hooks navigateur, fichiers locaux, proxy fourni par l’appelant, cookies, authentification ou configuration LLM.

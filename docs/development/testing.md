@@ -10,6 +10,33 @@ Cette commande enchaîne typecheck, ESLint, contrôle Prettier, compilation et V
 
 Elle commence par `npm run check:runtime` et s'arrête immédiatement avec un message explicite si le runtime actif n'est pas Node.js 24. La CI exécute `npm ci` puis cette même commande sous Node 24.
 
+## Suites de livraison
+
+| Commande                   | Portée                                                          |    Réseau requis     |
+| -------------------------- | --------------------------------------------------------------- | :------------------: |
+| `npm run check`            | TypeScript, lint, format, build et tests déterministes          |         non          |
+| `npm run test:required`    | Tous les tests requis hors réseau, avec refus des tests ignorés |         non          |
+| `npm run test:unit`        | Domaine, application et présentation                            |         non          |
+| `npm run test:contract`    | Contrats SearXNG et Crawl4AI sur fixtures                       |         non          |
+| `npm run test:security`    | SSRF, protocoles, redirections, limites et injection            |         non          |
+| `npm run test:resilience`  | Cache et fournisseurs dégradés                                  |         non          |
+| `npm run test:performance` | Limite de 10 Mo et concurrence                                  |   local uniquement   |
+| `npm run test:integration` | SearXNG, Crawl4AI et SQLite réels                               | oui, Compose démarré |
+| `npm run test:e2e:live`    | Appels MCP STDIO réels des deux outils                          | oui, Compose démarré |
+| `npm run test:release`     | Toutes les suites précédentes                                   |         oui          |
+
+Les rapports JSON sont écrits dans `.data/test-reports/`. Le lanceur échoue si une
+suite requise ne contient aucun test, échoue ou ignore un test. La CI publie ces
+rapports comme artefacts.
+
+Pour les suites réelles :
+
+```powershell
+docker compose --profile hybrid up -d searxng crawl4ai
+npm run test:integration
+npm run test:e2e:live
+```
+
 ## Niveaux
 
 - domaine : classement officiel, sélection Markdown et budgets ;
@@ -19,7 +46,7 @@ Elle commence par `npm run check:runtime` et s'arrête immédiatement avec un me
 - intégration : SearXNG et Crawl4AI réels via Docker ;
 - bout en bout : client MCP STDIO lançant le serveur compilé.
 
-Les tests réseau réels doivent être explicitement activés afin que la suite ordinaire reste déterministe. Vérifier aussi qu’aucun log applicatif n’est écrit sur `stdout`.
+Les tests réseau réels sont exclus de la suite ordinaire afin qu’elle reste déterministe. Vérifier aussi qu’aucun log applicatif n’est écrit sur `stdout`.
 
 La suite déterministe couvre SQLite réel (migrations, validateurs, expiration, stale, corruption, pruning et concurrence), les événements/redactions et la séparation JSON-RPC `stdout` / diagnostics `stderr`.
 

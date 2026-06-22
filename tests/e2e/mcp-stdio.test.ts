@@ -63,6 +63,16 @@ describe('MCP STDIO server', () => {
     const invalidContent = invalid.content as { type: string; text: string }[];
     expect(invalidContent[0]).toMatchObject({ type: 'text' });
     expect(invalidContent[0]?.text).toContain('(INVALID_ARGUMENT)');
+
+    const blockedFetch = await client.callTool({
+      name: 'fetch_url',
+      arguments: { url: 'file:///etc/passwd' },
+    });
+    expect(blockedFetch.isError).toBe(true);
+    expect(blockedFetch._meta?.['mcp-search-net/error']).toMatchObject({
+      error: { code: 'UNSUPPORTED_PROTOCOL' },
+      metadata: { tool: 'fetch_url' },
+    });
   });
 
   it('keeps stdout as JSON-RPC and writes structured diagnostics only to stderr', async () => {

@@ -79,7 +79,7 @@ describe('Crawl4aiContentFetcher', () => {
     } as unknown as SecureHttpGateway;
     const crawl = vi.fn(async (_input, init) => {
       const payload = JSON.parse(String(init?.body)) as { urls: string[] };
-      expect(payload.urls[0]).toMatch(/^data:text\/html;base64,/u);
+      expect(payload.urls[0]).toMatch(/^raw:\/\/<html/u);
       expect(payload.urls[0]).not.toContain('example.com');
       return new Response(
         JSON.stringify({

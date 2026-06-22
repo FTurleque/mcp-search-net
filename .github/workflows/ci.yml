@@ -29,3 +29,56 @@ jobs:
 
       - name: Run deterministic checks
         run: npm run check
+
+      - name: Run required suite without skips
+        run: npm run test:required
+
+      - name: Run security suite
+        run: npm run test:security
+
+      - name: Run unit and contract suites
+        run: npm run test:unit && npm run test:contract
+
+      - name: Run resilience suite
+        run: npm run test:resilience
+
+      - name: Run performance suite
+        run: npm run test:performance
+
+      - name: Upload deterministic reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deterministic-test-reports
+          path: .data/test-reports
+
+  integration:
+    name: Docker integration and live E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Start real providers
+        run: docker compose -f compose.yaml -f compose.hybrid.yaml up -d --wait searxng crawl4ai
+      - name: Run integration suite
+        run: npm run test:integration
+      - name: Run live MCP E2E suite
+        run: npm run test:e2e:live
+      - name: Upload integration reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-reports
+          path: .data/test-reports
+      - name: Collect provider logs
+        if: failure()
+        run: docker compose -f compose.yaml -f compose.hybrid.yaml logs --no-color
+      - name: Stop providers
+        if: always()
+        run: docker compose -f compose.yaml -f compose.hybrid.yaml down

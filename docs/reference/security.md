@@ -22,7 +22,7 @@ La politique URL rejette les schémas autres que HTTP(S), les identifiants inté
 
 ## Frontière Crawl4AI
 
-Crawl4AI ne télécharge plus directement la cible publique. En mode `auto`, il traite uniquement une URL `data:` construite à partir du HTML déjà contrôlé. Une politique d'egress du conteneur reste recommandée en défense supplémentaire, mais elle n'est plus la protection SSRF principale.
+Crawl4AI ne télécharge plus directement la cible publique. En mode `auto`, il traite uniquement un document `raw://` construit à partir du HTML déjà contrôlé ; ce transport natif n'émet aucune requête réseau. Une politique d'egress du conteneur reste recommandée en défense supplémentaire, mais elle n'est plus la protection SSRF principale.
 
 ## Contenu malveillant
 
