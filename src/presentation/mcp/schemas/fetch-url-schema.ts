@@ -12,14 +12,14 @@ export function createFetchUrlSchemas(
   const input = acceptInvalidToolInput(
     z
       .object({
-        url: z.url().describe('Known public HTTP(S) URL to fetch'),
+        url: z.url().max(4_096).describe('Known public HTTP(S) URL to fetch'),
         query: z
           .string()
           .trim()
-          .min(2)
+          .min(1)
           .max(500)
           .optional()
-          .describe('Terms used by the local BM25 section selector'),
+          .describe('Terms used by the deterministic lexical section selector'),
         maxCharacters: z
           .number()
           .int()
@@ -36,7 +36,7 @@ export function createFetchUrlSchemas(
     .object({
       heading: z.string(),
       markdown: z.string(),
-      score: z.number().nonnegative(),
+      score: z.number().min(0).max(1),
       truncated: z.boolean(),
     })
     .strict();

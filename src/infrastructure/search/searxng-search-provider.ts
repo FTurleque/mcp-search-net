@@ -5,7 +5,11 @@ import type {
   SearchProviderRequest,
   SearchProviderResponse,
 } from '../../application/ports/search-provider.js';
-import { ExternalServiceError } from '../../domain/errors/domain-errors.js';
+import {
+  ExternalServiceError,
+  HttpError,
+  SearchProviderUnavailableError,
+} from '../../domain/errors/domain-errors.js';
 import { fetchJson } from '../http/http-utils.js';
 
 const resultSchema = z
@@ -44,7 +48,7 @@ export class SearxngSearchProvider implements SearchProvider {
 
   public async search(request: SearchProviderRequest): Promise<SearchProviderResponse> {
     const endpoint = new URL('/search', ensureTrailingSlash(this.baseUrl));
-    endpoint.searchParams.set('q', request.query);
+    endpoint.searchParams.set('q', request.query.value);
     endpoint.searchParams.set('format', 'json');
     endpoint.searchParams.set('categories', 'general');
     endpoint.searchParams.set('safesearch', '1');
@@ -52,13 +56,7 @@ export class SearxngSearchProvider implements SearchProvider {
     if (request.language !== undefined) endpoint.searchParams.set('language', request.language);
     if (request.timeRange !== undefined) endpoint.searchParams.set('time_range', request.timeRange);
 
-    const json = await fetchJson(
-      'searxng',
-      endpoint,
-      { method: 'GET', headers: { accept: 'application/json' } },
-      this.timeoutMs,
-      this.fetchImplementation,
-    );
+    const json = await this.requestJson(endpoint);
     const parsed = responseSchema.safeParse(json);
     if (!parsed.success) {
       throw new ExternalServiceError('searxng response does not match its contract', 'searxng', {
@@ -67,7 +65,7 @@ export class SearxngSearchProvider implements SearchProvider {
     }
 
     return {
-      results: parsed.data.results.slice(0, request.limit).map((result) => {
+      results: parsed.data.results.slice(0, request.maxResults).map((result) => {
         const publishedAt = toPublishedAt(result.publishedDate ?? result.pubdate);
         const updatedAt = toPublishedAt(result.updatedDate);
         const detectedLanguage = result.language ?? result.lang ?? undefined;
@@ -89,6 +87,32 @@ export class SearxngSearchProvider implements SearchProvider {
         typeof entry === 'string' ? entry : entry[0],
       ),
     };
+  }
+
+  private async requestJson(endpoint: URL): Promise<unknown> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await fetchJson(
+          'searxng',
+          endpoint,
+          { method: 'GET', headers: { accept: 'application/json' } },
+          this.timeoutMs,
+          this.fetchImplementation,
+        );
+      } catch (error) {
+        const retryable =
+          error instanceof HttpError &&
+          (error.status === 429 || (error.status !== undefined && error.status >= 500));
+        if (retryable && attempt === 0) continue;
+        if (error instanceof HttpError) {
+          throw new SearchProviderUnavailableError('searxng rejected the search request', {
+            cause: error,
+          });
+        }
+        throw error;
+      }
+    }
+    throw new SearchProviderUnavailableError();
   }
 }
 

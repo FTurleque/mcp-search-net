@@ -8,7 +8,7 @@ import type { FetchResponse } from '../../domain/models/content.js';
 import type { SearchResponse } from '../../domain/models/search.js';
 import type { ToolResponse } from '../../domain/models/tool-response.js';
 import type { ApplicationConfig } from '../../infrastructure/config/application-config.js';
-import type { StructuredLogger } from '../../infrastructure/logging/structured-logger.js';
+import type { Logger } from '../../application/ports/logger.js';
 import { createFetchUrlSchemas } from './schemas/fetch-url-schema.js';
 import { isInvalidToolInput } from './schemas/invalid-tool-input.js';
 import { createSearchWebSchemas } from './schemas/search-web-schema.js';
@@ -18,7 +18,7 @@ export interface McpServerDependencies {
   readonly searchWeb: SearchWeb;
   readonly fetchUrl: FetchUrl;
   readonly config: ApplicationConfig;
-  readonly logger: StructuredLogger;
+  readonly logger: Logger;
 }
 
 export function createMcpServer(dependencies: McpServerDependencies): McpServer {

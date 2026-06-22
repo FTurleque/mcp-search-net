@@ -1,12 +1,11 @@
 import type {
   CacheGetOptions,
-  CacheNamespace,
   CacheRecord,
   CacheRepository,
   CacheValidators,
 } from '../../application/ports/cache-repository.js';
 import { CacheUnavailableError } from '../../domain/errors/domain-errors.js';
-import type { StructuredLogger } from '../logging/structured-logger.js';
+import type { Logger } from '../../application/ports/logger.js';
 
 export class SafeCacheRepository implements CacheRepository {
   private available = true;
@@ -14,41 +13,55 @@ export class SafeCacheRepository implements CacheRepository {
   public constructor(
     private readonly inner: CacheRepository,
     private readonly continueOnError: boolean,
-    private readonly logger: StructuredLogger,
+    private readonly logger: Logger,
   ) {}
 
   public get enabled(): boolean {
     return this.available && this.inner.enabled !== false;
   }
 
-  public async get<T>(
-    namespace: CacheNamespace,
+  public async getSearch<T>(
     key: string,
     options?: CacheGetOptions,
   ): Promise<CacheRecord<T> | undefined> {
-    return this.run('get', () => this.inner.get<T>(namespace, key, options), undefined);
+    return this.run('getSearch', () => this.inner.getSearch<T>(key, options), undefined);
   }
 
-  public async set<T>(
-    namespace: CacheNamespace,
+  public async setSearch<T>(
     key: string,
     value: T,
     ttlMs: number,
     validators?: CacheValidators,
   ): Promise<void> {
     await this.run(
-      'set',
-      () => this.inner.set(namespace, key, value, ttlMs, validators),
+      'setSearch',
+      () => this.inner.setSearch(key, value, ttlMs, validators),
       undefined,
     );
   }
 
-  public async delete(namespace: CacheNamespace, key: string): Promise<void> {
-    await this.run('delete', () => this.inner.delete(namespace, key), undefined);
+  public async getContent<T>(
+    key: string,
+    options?: CacheGetOptions,
+  ): Promise<CacheRecord<T> | undefined> {
+    return this.run('getContent', () => this.inner.getContent<T>(key, options), undefined);
   }
 
-  public async prune(): Promise<number> {
-    return this.run('prune', () => this.inner.prune(), 0);
+  public async setContent<T>(
+    key: string,
+    value: T,
+    ttlMs: number,
+    validators?: CacheValidators,
+  ): Promise<void> {
+    await this.run(
+      'setContent',
+      () => this.inner.setContent(key, value, ttlMs, validators),
+      undefined,
+    );
+  }
+
+  public async deleteExpired(): Promise<number> {
+    return this.run('deleteExpired', () => this.inner.deleteExpired(), 0);
   }
 
   public close(): void {

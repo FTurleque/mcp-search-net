@@ -12,22 +12,24 @@ import { ExternalServiceError } from '../../src/domain/errors/domain-errors.js';
 class MemoryCache implements CacheRepository {
   private readonly values = new Map<string, unknown>();
   private stale = false;
-  public async get<T>(
-    namespace: string,
+  public async getSearch<T>(
     key: string,
     options?: { allowStale?: boolean },
   ): Promise<CacheRecord<T> | undefined> {
-    const value = this.values.get(`${namespace}:${key}`) as T | undefined;
+    const value = this.values.get(key) as T | undefined;
     if (this.stale && options?.allowStale !== true) return undefined;
     return value === undefined
       ? undefined
       : { value, createdAt: new Date(0), expiresAt: new Date(999_999_999_999), stale: this.stale };
   }
-  public async set<T>(namespace: string, key: string, value: T): Promise<void> {
-    this.values.set(`${namespace}:${key}`, value);
+  public async setSearch<T>(key: string, value: T): Promise<void> {
+    this.values.set(key, value);
   }
-  public async delete(): Promise<void> {}
-  public async prune(): Promise<number> {
+  public async getContent<T>(): Promise<CacheRecord<T> | undefined> {
+    return undefined;
+  }
+  public async setContent(): Promise<void> {}
+  public async deleteExpired(): Promise<number> {
     return 0;
   }
   public close(): void {}
@@ -251,7 +253,7 @@ describe('SearchWeb', () => {
     await expect(
       useCase.execute(baseRequest, { requestId: 'request-search' }),
     ).resolves.toMatchObject({ cacheStatus: 'DISABLED' });
-    expect(events.map(({ event }) => event)).toEqual(['cache_miss', 'search_provider_called']);
+    expect(events.map(({ event }) => event)).toEqual(['cache_miss', 'provider_called']);
     expect(events.every(({ data }) => data?.['requestId'] === 'request-search')).toBe(true);
   });
 });

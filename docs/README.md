@@ -35,6 +35,7 @@
 - [Rapport de validation des phases 5 à 7](planning/validation-phase-5-7.md)
 - [Rapport de validation des phases 8 et 9](planning/validation-phase-8-9.md)
 - [Validation finale V1 du 22 juin 2026](planning/validation-v1-finale-2026-06-22.md)
+- [Validation V1 et décision V2 du 22 juin 2026](planning/validation-v1-v2-go-no-go-2026-06-22.md)
 - [Matrice de traçabilité V1](planning/traceabilite-v1.md)
 - [Benchmark V1 du 22 juin 2026](planning/benchmark-v1-2026-06-22.md)
 - [Recette manuelle IntelliJ](planning/recette-intellij-v1.md)
@@ -42,6 +43,6 @@
 
 ## Décisions d’architecture
 
-- [Index ADR-001 à ADR-010](adr/README.md)
+- [Index ADR-001 à ADR-011](adr/README.md)
 
-La documentation décrit la V1. L’indexation d’un catalogue documentaire, FTS/BM25 persistant, les embeddings et la synchronisation restent hors périmètre ; le BM25 local de `fetch_url` sert uniquement à sélectionner les sections de la page courante.
+La documentation décrit la V1. L’indexation d’un catalogue documentaire, FTS/BM25, les embeddings et la synchronisation restent hors périmètre ; `fetch_url` utilise seulement un sélecteur lexical déterministe sur la page courante.

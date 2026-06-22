@@ -27,8 +27,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run deterministic checks
-        run: npm run check
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint sources
+        run: npm run lint
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run integration tests
+        run: npm run test:integration
 
       - name: Run required suite without skips
         run: npm run test:required

@@ -3,7 +3,12 @@ import { isIP } from 'node:net';
 import type { DnsResolver } from '../../application/ports/dns-resolver.js';
 import type { UrlSecurityPolicy } from '../../application/ports/url-security-policy.js';
 import type { ApprovedUrl } from '../../domain/models/public-url.js';
-import { UrlSecurityError } from '../../domain/errors/domain-errors.js';
+import {
+  BlockedAddressError,
+  DnsResolutionError,
+  UnsupportedProtocolError,
+  UrlSecurityError,
+} from '../../domain/errors/domain-errors.js';
 import type { Telemetry } from '../../application/ports/telemetry.js';
 import { NodeDnsResolver } from './node-dns-resolver.js';
 
@@ -47,7 +52,7 @@ export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
     }
 
     if (url.protocol !== 'https:' && !(this.options.allowHttp && url.protocol === 'http:')) {
-      throw new UrlSecurityError('Only approved HTTP(S) URLs are allowed', 'UNSUPPORTED_PROTOCOL');
+      throw new UnsupportedProtocolError('Only approved HTTP(S) URLs are allowed');
     }
     if (url.username !== '' || url.password !== '') {
       throw new UrlSecurityError('URLs containing credentials are not allowed', 'INVALID_URL');
@@ -60,13 +65,13 @@ export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
       hostname.endsWith('.local') ||
       hostname.endsWith('.internal')
     ) {
-      throw new UrlSecurityError('Local hostnames are not allowed');
+      throw new BlockedAddressError('Local hostnames are not allowed');
     }
 
     const defaultPort = url.protocol === 'https:' ? 443 : 80;
     const port = url.port === '' ? defaultPort : Number.parseInt(url.port, 10);
     if (!this.options.allowedPorts.includes(port)) {
-      throw new UrlSecurityError(`Port ${port} is not allowed`);
+      throw new BlockedAddressError(`Port ${port} is not allowed`);
     }
 
     let addresses: readonly string[];
@@ -79,13 +84,13 @@ export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
             ? await this.resolver(hostname)
             : await this.resolver.resolve(hostname);
       } catch (error) {
-        throw new UrlSecurityError('The hostname cannot be resolved', 'DNS_RESOLUTION_FAILED', {
+        throw new DnsResolutionError('The hostname cannot be resolved', {
           cause: error,
         });
       }
     }
     if (addresses.length === 0 || addresses.some((address) => !isPublicAddress(address))) {
-      throw new UrlSecurityError('The URL resolves to a non-public network address');
+      throw new BlockedAddressError('The URL resolves to a non-public network address');
     }
 
     url.hostname = hostname;

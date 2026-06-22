@@ -8,7 +8,7 @@ export class SearchQuery {
     if (containsControlCharacters(input)) {
       throw new InvalidSearchQueryError('The search query contains control characters');
     }
-    const value = input.normalize('NFKC').trim().replace(/\s+/gu, ' ');
+    const value = input.trim().replace(/\s+/gu, ' ');
     if (value.length < 2 || value.length > 500) {
       throw new InvalidSearchQueryError(
         'The search query must contain between 2 and 500 characters',

@@ -19,7 +19,6 @@ cache:
   documentationTtlMs: 86400000
   readmeTtlMs: 21600000
   sitemapTtlMs: 86400000
-  temporaryErrorTtlMs: 300000
   staleRetentionMs: 604800000
   maxEntries: 2000
 

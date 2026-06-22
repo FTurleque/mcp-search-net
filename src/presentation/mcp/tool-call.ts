@@ -13,11 +13,11 @@ import type {
   ToolResponse,
 } from '../../domain/models/tool-response.js';
 import { isToolErrorCode } from '../../domain/models/tool-response.js';
-import type { StructuredLogger } from '../../infrastructure/logging/structured-logger.js';
+import type { Logger } from '../../application/ports/logger.js';
 
 export interface ToolCallOptions<T> {
   readonly tool: ToolName;
-  readonly logger: StructuredLogger;
+  readonly logger: Logger;
   readonly execute: (requestId: string) => Promise<ToolExecution<T>>;
   readonly validateResponse: (response: ToolResponse<T>) => ToolResponse<T>;
   readonly formatText: (response: ToolResponse<T>) => string;

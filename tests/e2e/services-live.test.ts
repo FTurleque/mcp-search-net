@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { SearxngSearchProvider } from '../../src/infrastructure/search/searxng-search-provider.js';
 import { Crawl4aiContentFetcher } from '../../src/infrastructure/fetch/crawl4ai-content-fetcher.js';
 import type { SecureHttpGateway } from '../../src/infrastructure/fetch/secure-http-gateway.js';
+import { SearchQuery } from '../../src/domain/value-objects/search-query.js';
+import { WebUrl } from '../../src/domain/value-objects/web-url.js';
 
 const live = process.env['RUN_LIVE_SERVICES'] === '1';
 
@@ -18,9 +20,9 @@ describe.runIf(live)('live provider services', () => {
   it('queries real SearXNG through its typed adapter', async () => {
     const provider = new SearxngSearchProvider('http://127.0.0.1:8888', 15_000);
     const response = await provider.search({
-      query: 'Model Context Protocol',
+      query: SearchQuery.create('Model Context Protocol'),
       language: 'en',
-      limit: 5,
+      maxResults: 5,
     });
     expect(response.results).toEqual(expect.any(Array));
     expect(response.unresponsiveEngines).toEqual(expect.any(Array));
@@ -60,11 +62,18 @@ describe.runIf(live)('live provider services', () => {
     } as unknown as SecureHttpGateway;
     const fetcher = new Crawl4aiContentFetcher(
       'http://127.0.0.1:11235',
-      20_000,
       'mcp-search-local-development-token',
       gateway,
     );
-    await expect(fetcher.fetch('https://example.com/dynamic', 'auto')).resolves.toMatchObject({
+    await expect(
+      fetcher.fetch({
+        url: WebUrl.create('https://example.com/dynamic'),
+        renderMode: 'auto',
+        timeoutMs: 20_000,
+        maxResponseBytes: 1_000_000,
+        maxRedirects: 5,
+      }),
+    ).resolves.toMatchObject({
       extractionMode: 'native-render',
     });
   });

@@ -9,7 +9,7 @@ La réduction de contexte doit être reproductible, locale, économique et indé
 
 ## Décision
 
-Utiliser des règles déterministes et BM25 local pour classer les résultats et sections. Aucun SDK ou appel LLM n'est autorisé dans le serveur.
+Utiliser des règles déterministes et une pertinence lexicale locale pour classer les résultats et sections. Aucun SDK ou appel LLM n'est autorisé dans le serveur.
 
 ## Conséquences
 

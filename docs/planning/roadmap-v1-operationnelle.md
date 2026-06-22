@@ -12,7 +12,7 @@ Les principaux écarts bloquants concernent :
 - le contrat public des deux outils et l'enveloppe commune de réponse ;
 - la sécurité des redirections, les limites de téléchargement et les délais absolus ;
 - les statuts de source, les politiques `strict` / `prefer` / `any` et le classement borné ;
-- la sélection des sections, BM25 et les budgets de `fetch_url` ;
+- la sélection lexicale des sections et les budgets de `fetch_url` ;
 - le cache dégradé, les validateurs HTTP et `STALE_FALLBACK` ;
 - le lancement complet à trois services avec Docker Compose ;
 - la couverture de tests, la CI et les preuves d'acceptation en environnement réel.
@@ -21,18 +21,18 @@ La V2 (catalogue documentaire, FTS5, synchronisation, versions, embeddings) doit
 
 ## Suivi d'avancement
 
-| Phase                              | Statut                      | Validation                                               |
-| ---------------------------------- | --------------------------- | -------------------------------------------------------- |
-| Phase 0 — Validation reproductible | ✅ Terminée le 21 juin 2026 | Node 24.17.0, `npm ci`, CI, SearXNG épinglé et sain      |
-| Phase 1 — Contrat MCP commun       | ✅ Terminée le 21 juin 2026 | 51 tests déterministes et test réel `search_web` réussi  |
-| Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi       |
-| Phase 3 — `fetch_url`              | ✅ Terminée le 21 juin 2026 | 87 tests déterministes, extraction multi-format et BM25  |
-| Phase 4 — Sécurité réseau          | ✅ Terminée le 21 juin 2026 | Passerelle épinglée, redirections/limites testées        |
-| Phase 5 — Cache résilient          | ✅ Terminée le 21 juin 2026 | SQLite typé, revalidation et stale fallback              |
-| Phase 6 — Observabilité            | ✅ Terminée le 21 juin 2026 | Événements corrélés et redaction récursive               |
-| Phase 7 — Déploiement              | ✅ Terminée le 21 juin 2026 | Compose complet/hybride et cycle Windows validés         |
-| Phase 8 — Stratégie de tests       | ✅ Terminée le 22 juin 2026 | 134 requis, intégration déterministe 25/25 et E2E 7/7    |
-| Phase 9 — Documentation et recette | 🟡 Partielle                | Automatisation terminée ; recette IntelliJ UI à exécuter |
+| Phase                              | Statut                      | Validation                                                            |
+| ---------------------------------- | --------------------------- | --------------------------------------------------------------------- |
+| Phase 0 — Validation reproductible | ✅ Terminée le 21 juin 2026 | Node 24.17.0, `npm ci`, CI, SearXNG épinglé et sain                   |
+| Phase 1 — Contrat MCP commun       | ✅ Terminée le 21 juin 2026 | 51 tests déterministes et test réel `search_web` réussi               |
+| Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi                    |
+| Phase 3 — `fetch_url`              | ✅ Terminée le 21 juin 2026 | 87 tests déterministes, extraction multi-format et sélection lexicale |
+| Phase 4 — Sécurité réseau          | ✅ Terminée le 21 juin 2026 | Passerelle épinglée, redirections/limites testées                     |
+| Phase 5 — Cache résilient          | ✅ Terminée le 21 juin 2026 | SQLite typé, revalidation et stale fallback                           |
+| Phase 6 — Observabilité            | ✅ Terminée le 21 juin 2026 | Événements corrélés et redaction récursive                            |
+| Phase 7 — Déploiement              | ✅ Terminée le 21 juin 2026 | Compose complet/hybride et cycle Windows validés                      |
+| Phase 8 — Stratégie de tests       | ✅ Terminée le 22 juin 2026 | 134 requis, intégration déterministe 25/25 et E2E 7/7                 |
+| Phase 9 — Documentation et recette | 🟡 Partielle                | Automatisation terminée ; recette IntelliJ UI à exécuter              |
 
 Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md), de la [phase 2](validation-phase-2.md), des [phases 3 et 4](validation-phase-3-4.md), des [phases 5 à 7](validation-phase-5-7.md) et des [phases 8 et 9](validation-phase-8-9.md).
 
@@ -44,7 +44,7 @@ Le détail des preuves est conservé dans les rapports de validation des [phases
 - Exactement deux outils déclarés : `search_web` et `fetch_url`.
 - Transport MCP STDIO ; logs écrits sur `stderr`.
 - Clients SearXNG JSON et Crawl4AI 0.9.
-- Cache SQLite générique avec migrations, TTL et limite du nombre d'entrées.
+- Cache SQLite V1 séparé entre `search_cache` et `content_cache`, avec migrations, TTL et limite du nombre d'entrées.
 - Registre YAML de quelques sources officielles.
 - Contrôle des protocoles, ports, noms locaux et plages IPv4/IPv6 non publiques.
 - Dockerfile, Compose pour SearXNG/Crawl4AI, installateur utilisateur Windows et exemple Copilot.
@@ -164,7 +164,7 @@ Zones principales : `src/domain/models`, `src/presentation/mcp/schemas`, `src/pr
 - [x] En mode `auto`, tenter `static`, puis seulement le rendu natif Crawl4AI si le contenu est inexploitable ; produire `JAVASCRIPT_FALLBACK_USED`.
 - [x] Nettoyer ou vérifier la suppression des scripts, styles, menus, publicités, iframes, formulaires, contenu invisible et bannières répétitives.
 - [x] Découper selon les titres tout en gardant les blocs de code avec leur section.
-- [x] Implémenter une sélection locale BM25, avec bonus titre/sous-titre, bloc de code et version explicitement demandée.
+- [x] Implémenter une sélection lexicale locale déterministe, avec bonus titre/sous-titre, bloc de code et version explicitement demandée.
 - [x] Appliquer 5 000 caractères maximum par section, puis les limites globales de sections et de caractères.
 - [x] Ne plus retourner silencieusement les trois premières sections lorsqu'aucune section n'est pertinente ; utiliser le comportement et l'avertissement `NO_RELEVANT_SECTION` défini par le contrat.
 - [x] Produire `CONTENT_TRUNCATED` et `SECTION_TRUNCATED` séparément.
@@ -212,7 +212,7 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 
 **Statut : ✅ TERMINÉE — validée le 21 juin 2026.**
 
-- [x] Émettre les événements stables : `server_started`, `tool_call_started`, `tool_call_completed`, `tool_call_failed`, `cache_hit`, `cache_miss`, `search_provider_called`, `content_fetcher_called`, `url_blocked`, `response_truncated`.
+- [x] Émettre les événements stables : `server_started`, `server_stopped`, `tool_call_started`, `tool_call_completed`, `tool_call_failed`, `cache_hit`, `cache_miss`, `provider_called`, `provider_failed`, `url_blocked`, `content_truncated`, `configuration_invalid`.
 - [x] Inclure `requestId`, outil, durée, domaine, statut HTTP, cache, tailles, nombre de résultats/sections et code d'erreur selon l'événement.
 - [x] Vérifier récursivement la suppression des secrets, pas seulement les clés de premier niveau.
 - [x] Ne jamais journaliser le contenu complet, les en-têtes d'autorisation, les variables d'environnement ou une stack trace sur la sortie MCP.
@@ -240,7 +240,7 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 
 **Statut : ✅ TERMINÉE — validée le 22 juin 2026.**
 
-- [x] **Unitaires :** objets-valeurs, contrôle des caractères, clés de cache, normalisation d'URL, scoring, BM25, budgets et codes d'erreur.
+- [x] **Unitaires :** objets-valeurs, contrôle des caractères, clés de cache, normalisation d'URL, scoring lexical, budgets et codes d'erreur.
 - [x] **Contrat :** fixtures SearXNG/Crawl4AI valides, champs absents/supplémentaires, schémas invalides, HTTP non JSON et réponses partielles.
 - [x] **Intégration :** Compose, services réels et SQLite réel dans une suite séparée et activable en CI.
 - [x] **Sécurité :** SSRF, DNS, chaque redirection, tailles, protocoles, contenu injecté et refus de toute configuration exécutable.

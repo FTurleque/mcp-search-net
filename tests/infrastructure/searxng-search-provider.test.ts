@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { SearxngSearchProvider } from '../../src/infrastructure/search/searxng-search-provider.js';
+import { SearchQuery } from '../../src/domain/value-objects/search-query.js';
 
 describe('SearxngSearchProvider', () => {
   it('requests JSON explicitly and tolerates engine metadata', async () => {
@@ -30,10 +31,10 @@ describe('SearxngSearchProvider', () => {
     const provider = new SearxngSearchProvider('http://127.0.0.1:8888', 1_000, fetchMock);
 
     const response = await provider.search({
-      query: 'mcp sdk',
+      query: SearchQuery.create('mcp sdk'),
       language: 'fr-FR',
       timeRange: 'month',
-      limit: 5,
+      maxResults: 5,
     });
 
     const requestTarget = vi.mocked(fetchMock).mock.calls[0]?.[0];
@@ -52,5 +53,21 @@ describe('SearxngSearchProvider', () => {
       detectedLanguage: 'en',
     });
     expect(response.unresponsiveEngines).toEqual(['google']);
+  });
+
+  it.each([
+    [403, 1],
+    [429, 2],
+    [500, 2],
+  ])('maps HTTP %i and retries at most once when temporary', async (status, expectedCalls) => {
+    const fetchMock = vi.fn(
+      async () => new Response('failure', { status }),
+    ) as unknown as typeof fetch;
+    const provider = new SearxngSearchProvider('http://127.0.0.1:8888', 1_000, fetchMock);
+
+    await expect(
+      provider.search({ query: SearchQuery.create('mcp sdk'), maxResults: 5 }),
+    ).rejects.toMatchObject({ code: 'SEARCH_PROVIDER_UNAVAILABLE' });
+    expect(fetchMock).toHaveBeenCalledTimes(expectedCalls);
   });
 });

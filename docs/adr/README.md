@@ -14,3 +14,4 @@ Les ADR décrivent les décisions structurantes de la V1. Leur statut `Accepté`
 | [008](ADR-008-deux-outils-v1.md)          | Deux outils MCP en V1                                   |
 | [009](ADR-009-securite-reseau.md)         | Blocage des réseaux privés et contrôle des redirections |
 | [010](ADR-010-v2-sqlite-fts5.md)          | Préparer la V2 avec SQLite FTS5                         |
+| [011](ADR-011-v1-v2-boundary.md)          | Figer la frontière V1/V2 et les contrats publics        |

@@ -10,12 +10,16 @@ import { ApplicationError } from '../../domain/errors/domain-errors.js';
 import type { SourceStatus } from '../../domain/models/search.js';
 import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import { selectRelevantContent } from '../../domain/services/content-selection.js';
+import { WebUrl } from '../../domain/value-objects/web-url.js';
 
 export interface FetchUrlOptions {
   readonly documentationTtlMs: number;
   readonly readmeTtlMs: number;
   readonly sitemapTtlMs: number;
   readonly maxLinks: number;
+  readonly timeoutMs: number;
+  readonly maxResponseBytes: number;
+  readonly maxRedirects: number;
 }
 
 export class FetchUrl {
@@ -36,13 +40,14 @@ export class FetchUrl {
       ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
       tool: 'fetch_url' as const,
     };
-    const approved = await this.securityPolicy.assertAllowed(request.url, securityContext);
+    const requestedUrl = WebUrl.create(request.url);
+    const approved = await this.securityPolicy.assertAllowed(requestedUrl.value, securityContext);
     const key = createHash('sha256')
       .update(
         JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 3 }),
       )
       .digest('hex');
-    const cached = await this.cache.get<FetchedContent>('content', key, { allowStale: true });
+    const cached = await this.cache.getContent<FetchedContent>(key, { allowStale: true });
     let content: FetchedContent;
     let cacheStatus: ToolExecution<FetchResponse>['cacheStatus'];
     let staleFallback = false;
@@ -63,15 +68,23 @@ export class FetchUrl {
       });
       const startedAt = performance.now();
       try {
-        const fetched = await this.fetcher.fetch(approved.value, request.renderMode, {
+        const fetched = await this.fetcher.fetch({
+          url: WebUrl.create(approved.value),
+          renderMode: request.renderMode,
+          timeoutMs: this.options.timeoutMs,
+          maxResponseBytes: this.options.maxResponseBytes,
+          maxRedirects: this.options.maxRedirects,
           ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
-          ...(cached?.etag === undefined ? {} : { etag: cached.etag }),
-          ...(cached?.lastModified === undefined ? {} : { lastModified: cached.lastModified }),
-          ...(cached?.contentHash === undefined ? {} : { contentHash: cached.contentHash }),
+          cacheValidators: {
+            ...(cached?.etag === undefined ? {} : { etag: cached.etag }),
+            ...(cached?.lastModified === undefined ? {} : { lastModified: cached.lastModified }),
+            ...(cached?.contentHash === undefined ? {} : { contentHash: cached.contentHash }),
+          },
         });
-        this.telemetry?.record('content_fetcher_called', {
+        this.telemetry?.record('provider_called', {
           requestId: context.requestId,
           tool: 'fetch_url',
+          provider: 'crawl4ai',
           domain: approved.hostname,
           durationMs: Number((performance.now() - startedAt).toFixed(3)),
           status: 'success',
@@ -85,16 +98,17 @@ export class FetchUrl {
         content = 'notModified' in fetched ? requireCachedValue(cached) : fetched;
         cacheStatus =
           'notModified' in fetched ? 'HIT' : this.cache.enabled === false ? 'DISABLED' : 'MISS';
-        await this.cache.set('content', key, content, cacheTtl(content, this.options), {
+        await this.cache.setContent(key, content, cacheTtl(content, this.options), {
           ...(content.etag === undefined ? {} : { etag: content.etag }),
           ...(content.lastModified === undefined ? {} : { lastModified: content.lastModified }),
           contentHash: content.contentHash,
         });
         if (this.cache.enabled === false) cacheStatus = 'DISABLED';
       } catch (error) {
-        this.telemetry?.record('content_fetcher_called', {
+        this.telemetry?.record('provider_failed', {
           requestId: context.requestId,
           tool: 'fetch_url',
+          provider: 'crawl4ai',
           domain: approved.hostname,
           durationMs: Number((performance.now() - startedAt).toFixed(3)),
           status: 'failed',
@@ -171,7 +185,7 @@ export class FetchUrl {
         message: 'No section matched the requested query',
       });
     if (selected.truncated)
-      this.telemetry?.record('response_truncated', {
+      this.telemetry?.record('content_truncated', {
         requestId: context.requestId,
         tool: 'fetch_url',
         domain: final.hostname,

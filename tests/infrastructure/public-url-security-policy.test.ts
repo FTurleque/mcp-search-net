@@ -58,6 +58,25 @@ describe('PublicUrlSecurityPolicy', () => {
     await expect(policy.assertAllowed('https://example.com:8443')).rejects.toBeDefined();
   });
 
+  it('accepts a non-default public port only when configured', async () => {
+    const resolver = async () => ['93.184.216.34'];
+    const defaultPolicy = new PublicUrlSecurityPolicy(options, resolver);
+    const configuredPolicy = new PublicUrlSecurityPolicy(
+      { allowedPorts: [80, 443, 8443], allowHttp: true },
+      resolver,
+    );
+    await expect(
+      defaultPolicy.assertAllowed('https://example.com:8443/docs'),
+    ).rejects.toMatchObject({
+      code: 'BLOCKED_ADDRESS',
+    });
+    await expect(
+      configuredPolicy.assertAllowed('https://example.com:8443/docs'),
+    ).resolves.toMatchObject({
+      value: 'https://example.com:8443/docs',
+    });
+  });
+
   it('maps invalid URLs, protocols and DNS failures to stable codes', async () => {
     const policy = new PublicUrlSecurityPolicy(options, async () => {
       throw new Error('dns unavailable');

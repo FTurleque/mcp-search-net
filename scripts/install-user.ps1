@@ -94,6 +94,7 @@ New-Item -ItemType Directory -Force -Path $StageApp | Out-Null
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'dist') -Destination $StageApp -Recurse
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Destination $StageApp
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package-lock.json') -Destination $StageApp
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'migrations') -Destination $StageApp -Recurse
 
 Push-Location $StageApp
 try {

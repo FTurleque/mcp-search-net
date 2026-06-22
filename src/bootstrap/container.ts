@@ -35,7 +35,6 @@ export function createContainer(loaded: LoadedConfiguration) {
   );
   const contentFetcher = new Crawl4aiContentFetcher(
     config.crawl4ai.baseUrl,
-    config.crawl4ai.timeoutMs,
     loaded.crawl4aiApiToken,
     secureGateway,
   );
@@ -60,6 +59,9 @@ export function createContainer(loaded: LoadedConfiguration) {
       readmeTtlMs: config.cache.readmeTtlMs,
       sitemapTtlMs: config.cache.sitemapTtlMs,
       maxLinks: config.limits.maxLinks,
+      timeoutMs: config.crawl4ai.timeoutMs,
+      maxResponseBytes: config.security.maxDownloadBytes,
+      maxRedirects: config.security.maxRedirects,
     },
     logger,
   );

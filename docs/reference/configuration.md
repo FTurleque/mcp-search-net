@@ -20,6 +20,7 @@ Dans l’installation, modifier `%LOCALAPPDATA%\mcp-search-net\config`. L’inst
 - `MCP_SEARXNG_URL` et `MCP_CRAWL4AI_URL` remplacent les endpoints ;
 - `MCP_CACHE_PATH` contrôle le chemin du cache ;
 - `MCP_LOG_LEVEL` remplace le niveau de journalisation.
+- `MCP_ALLOWED_PUBLIC_PORTS` remplace la liste des ports publics, au format `80,443`.
 
 Les anciens noms préfixés `MCP_SEARCH_` restent acceptés pour compatibilité. Les
 nouveaux déploiements utilisent les noms ci-dessus. `.env.example` ne contient
@@ -32,7 +33,7 @@ La priorité est : valeurs internes sûres, YAML, variables d'environnement, pui
 - `searxng` et `crawl4ai` : URL et délai ;
 - `cache.enabled` : active ou désactive SQLite ;
 - `cache.continueOnError` : poursuit avec `cacheStatus: DISABLED` si SQLite devient indisponible ;
-- `cache` : chemin SQLite, rétention stale, nombre maximal d’entrées et TTL (recherche 60 min, documentation 24 h, README 6 h, sitemap 24 h, erreur temporaire 5 min) ;
+- `cache` : chemin SQLite, rétention stale, nombre maximal d’entrées et TTL (recherche 60 min, documentation 24 h, README 6 h, sitemap 24 h) ;
 - `limits` : budgets des résultats, extraits, Markdown et liens ;
 - `security.allowedPorts` : ports Web publics acceptés ;
 - `security.allowHttp` : autorisation de HTTP ;

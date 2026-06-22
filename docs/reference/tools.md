@@ -74,17 +74,17 @@ Le nombre demandé ne peut pas dépasser la limite applicative. La langue et la 
 
 Entrées :
 
-| Champ           | Défaut   | Contraintes                                    |
-| --------------- | -------- | ---------------------------------------------- |
-| `url`           | —        | URL HTTP(S) publique connue                    |
-| `query`         | absente  | 2 à 500 caractères, utilisés par le BM25 local |
-| `maxCharacters` | `12000`  | de 1 000 à 30 000                              |
-| `maxSections`   | `5`      | de 1 à 10                                      |
-| `renderMode`    | `static` | `static` ou `auto`                             |
+| Champ           | Défaut   | Contraintes                                                 |
+| --------------- | -------- | ----------------------------------------------------------- |
+| `url`           | —        | URL HTTP(S) publique connue                                 |
+| `query`         | absente  | 2 à 500 caractères, utilisés par le sélecteur lexical local |
+| `maxCharacters` | `12000`  | de 1 000 à 30 000                                           |
+| `maxSections`   | `5`      | de 1 à 10                                                   |
+| `renderMode`    | `static` | `static` ou `auto`                                          |
 
 La sortie contient `requestedUrl`, `finalUrl`, `canonicalUrl`, `domain`, `contentType`, `sourceStatus`, `fetchedAt`, `extractionMode`, `truncated`, `sectionCount`, `sections`, le Markdown assemblé et les liens publics validés. Chaque section expose son titre, son Markdown, son score local et son état de troncature.
 
-Le sélecteur local utilise BM25, renforce les correspondances dans les titres, les blocs de code et les versions demandées, limite chaque section à 5 000 caractères, puis applique les budgets globaux. Une requête sans correspondance renvoie une liste vide et `NO_RELEVANT_SECTION`, jamais les premières sections arbitraires.
+Le sélecteur local utilise une pertinence lexicale déterministe bornée entre 0 et 1, renforce les correspondances dans les titres, les blocs de code et les versions demandées, limite chaque section à 5 000 caractères, puis applique les budgets globaux. Une requête sans correspondance renvoie une liste vide et `NO_RELEVANT_SECTION`, jamais les premières sections arbitraires.
 
 Les formats V1 sont HTML, Markdown/README, texte, JSON, XML, YAML, `robots.txt`, `sitemap.xml`, `llms.txt` et PDF textuel. Un PDF sans couche texte produit `OCR_REQUIRED_NOT_SUPPORTED`; un autre format non textuel produit `UNSUPPORTED_CONTENT_TYPE`.
 

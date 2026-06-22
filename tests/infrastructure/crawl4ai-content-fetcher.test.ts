@@ -6,6 +6,7 @@ import {
   UnsupportedContentTypeError,
 } from '../../src/domain/errors/domain-errors.js';
 import type { SecureHttpGateway } from '../../src/infrastructure/fetch/secure-http-gateway.js';
+import { WebUrl } from '../../src/domain/value-objects/web-url.js';
 
 describe('Crawl4aiContentFetcher', () => {
   it('extracts downloaded HTML without giving Crawl4AI the public URL', async () => {
@@ -21,14 +22,8 @@ describe('Crawl4aiContentFetcher', () => {
       })),
     } as unknown as SecureHttpGateway;
     const crawl = vi.fn() as unknown as typeof fetch;
-    const fetcher = new Crawl4aiContentFetcher(
-      'http://127.0.0.1:11235',
-      1_000,
-      undefined,
-      gateway,
-      crawl,
-    );
-    const result = await fetcher.fetch('https://example.com/docs', 'static');
+    const fetcher = new Crawl4aiContentFetcher('http://127.0.0.1:11235', undefined, gateway, crawl);
+    const result = await fetcher.fetch(fetchRequest('https://example.com/docs', 'static'));
     if ('notModified' in result) throw new Error('Expected fetched content');
     expect(result).toMatchObject({
       title: 'Docs',
@@ -61,8 +56,10 @@ describe('Crawl4aiContentFetcher', () => {
         body: new TextEncoder().encode(body),
       }),
     } as unknown as SecureHttpGateway;
-    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', 1_000, undefined, gateway);
-    await expect(fetcher.fetch('https://example.com/file', 'static')).resolves.toMatchObject({
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
+    await expect(
+      fetcher.fetch(fetchRequest('https://example.com/file', 'static')),
+    ).resolves.toMatchObject({
       markdown: expect.stringContaining(expected),
     });
   });
@@ -81,6 +78,7 @@ describe('Crawl4aiContentFetcher', () => {
     } as unknown as SecureHttpGateway;
     const crawl = vi.fn(async (_input, init) => {
       const payload = JSON.parse(String(init?.body)) as { urls: string[] };
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer local-test-token-123');
       expect(payload.urls[0]).toMatch(/^raw:\/\/<html/u);
       expect(payload.urls[0]).not.toContain('example.com');
       expect(payload.urls[0]).not.toContain('<link');
@@ -98,10 +96,38 @@ describe('Crawl4aiContentFetcher', () => {
         { status: 200 },
       );
     }) as unknown as typeof fetch;
-    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', 1_000, undefined, gateway, crawl);
-    await expect(fetcher.fetch('https://example.com/app', 'auto')).resolves.toMatchObject({
+    const fetcher = new Crawl4aiContentFetcher(
+      'http://crawl4ai',
+      'local-test-token-123',
+      gateway,
+      crawl,
+    );
+    await expect(
+      fetcher.fetch(fetchRequest('https://example.com/app', 'auto')),
+    ).resolves.toMatchObject({
       extractionMode: 'native-render',
       markdown: expect.stringContaining('Rendered'),
+    });
+  });
+
+  it('maps an unavailable Crawl4AI renderer to the content provider error', async () => {
+    const gateway = {
+      download: async () => ({
+        requestedUrl: 'https://example.com/app',
+        finalUrl: 'https://example.com/app',
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+        body: new TextEncoder().encode('<html><body>tiny</body></html>'),
+      }),
+    } as unknown as SecureHttpGateway;
+    const unavailable = vi.fn(async () => {
+      throw new TypeError('connection refused');
+    }) as unknown as typeof fetch;
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway, unavailable);
+    await expect(
+      fetcher.fetch(fetchRequest('https://example.com/app', 'auto')),
+    ).rejects.toMatchObject({
+      code: 'CONTENT_PROVIDER_UNAVAILABLE',
     });
   });
 
@@ -114,24 +140,28 @@ describe('Crawl4aiContentFetcher', () => {
       body: new Uint8Array(),
     }));
     const gateway = { download } as unknown as SecureHttpGateway;
-    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', 1_000, undefined, gateway);
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
     await expect(
-      fetcher.fetch('https://example.com/docs', 'static', {
-        etag: '"v1"',
-        lastModified: 'Sun, 21 Jun 2026 00:00:00 GMT',
-        contentHash: 'abc',
+      fetcher.fetch({
+        ...fetchRequest('https://example.com/docs', 'static'),
+        cacheValidators: {
+          etag: '"v1"',
+          lastModified: 'Sun, 21 Jun 2026 00:00:00 GMT',
+          contentHash: 'abc',
+        },
       }),
     ).resolves.toEqual({ notModified: true });
     expect(download).toHaveBeenCalledWith(
       'https://example.com/docs',
       { 'if-none-match': '"v1"', 'if-modified-since': 'Sun, 21 Jun 2026 00:00:00 GMT' },
       { tool: 'fetch_url' },
+      { timeoutMs: 1_000, maxBytes: 1_000_000, maxRedirects: 5 },
     );
   });
 
   it('returns explicit errors for binary and invalid PDF content', async () => {
     const make = (contentType: string, body: string) =>
-      new Crawl4aiContentFetcher('http://crawl4ai', 1_000, undefined, {
+      new Crawl4aiContentFetcher('http://crawl4ai', undefined, {
         download: async () => ({
           requestedUrl: 'https://example.com/file',
           finalUrl: 'https://example.com/file',
@@ -141,10 +171,14 @@ describe('Crawl4aiContentFetcher', () => {
         }),
       } as unknown as SecureHttpGateway);
     await expect(
-      make('application/zip', 'binary archive').fetch('https://example.com/file', 'static'),
+      make('application/zip', 'binary archive').fetch(
+        fetchRequest('https://example.com/file', 'static'),
+      ),
     ).rejects.toBeInstanceOf(UnsupportedContentTypeError);
     await expect(
-      make('application/pdf', '%PDF image only').fetch('https://example.com/file.pdf', 'static'),
+      make('application/pdf', '%PDF image only').fetch(
+        fetchRequest('https://example.com/file.pdf', 'static'),
+      ),
     ).rejects.toBeInstanceOf(ExtractionError);
   });
 
@@ -159,12 +193,24 @@ describe('Crawl4aiContentFetcher', () => {
         body: pdf,
       }),
     } as unknown as SecureHttpGateway;
-    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', 1_000, undefined, gateway);
-    await expect(fetcher.fetch('https://example.com/guide.pdf', 'static')).resolves.toMatchObject({
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
+    await expect(
+      fetcher.fetch(fetchRequest('https://example.com/guide.pdf', 'static')),
+    ).resolves.toMatchObject({
       markdown: expect.stringContaining('Public documentation'),
     });
   });
 });
+
+function fetchRequest(url: string, renderMode: 'static' | 'auto') {
+  return {
+    url: WebUrl.create(url),
+    renderMode,
+    timeoutMs: 1_000,
+    maxResponseBytes: 1_000_000,
+    maxRedirects: 5,
+  } as const;
+}
 
 function makeTextPdf(text: string): Uint8Array {
   const stream = `BT /F1 18 Tf 72 720 Td (${text}) Tj ET`;

@@ -16,7 +16,7 @@ Use a bearer token for authentication and keep it secret.
 Run the service with Docker Compose.
 `;
 
-  it('selects sections matching the query with local BM25', () => {
+  it('selects sections matching the query with deterministic lexical relevance', () => {
     const result = selectRelevantContent(markdown, 'bearer authentication token', 5_000, 5);
     expect(result.markdown).toContain('## Authentication');
     expect(result.markdown).not.toContain('## Deployment');

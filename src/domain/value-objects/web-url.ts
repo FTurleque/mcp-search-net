@@ -1,4 +1,4 @@
-import { InvalidWebUrlError } from '../errors/domain-errors.js';
+import { InvalidWebUrlError, UnsupportedProtocolError } from '../errors/domain-errors.js';
 import { DomainName } from './domain-name.js';
 
 const TRACKING_PARAMETERS = new Set([
@@ -19,6 +19,7 @@ export class WebUrl {
   ) {}
 
   public static create(input: string): WebUrl {
+    if (input.length > 4_096) throw new InvalidWebUrlError('The URL exceeds 4096 characters');
     let url: URL;
     try {
       url = new URL(input);
@@ -26,7 +27,7 @@ export class WebUrl {
       throw new InvalidWebUrlError('The URL must be absolute', { cause: error });
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      throw new InvalidWebUrlError('Only HTTP and HTTPS URLs are supported');
+      throw new UnsupportedProtocolError();
     }
     if (url.username !== '' || url.password !== '') {
       throw new InvalidWebUrlError('URLs containing credentials are not allowed');

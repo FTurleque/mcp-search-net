@@ -161,6 +161,7 @@ MCP_OFFICIAL_SOURCES_PATH
 MCP_SEARXNG_URL
 MCP_CRAWL4AI_URL
 MCP_CRAWL4AI_TOKEN
+MCP_ALLOWED_PUBLIC_PORTS
 ```
 
 La priorité est : valeurs internes sûres, YAML, environnement, puis paramètres

@@ -5,6 +5,11 @@ const httpUrlSchema = z.url().refine((value) => {
   const protocol = new URL(value).protocol;
   return protocol === 'http:' || protocol === 'https:';
 }, 'Expected an HTTP or HTTPS URL');
+const publicPortsEnvironmentSchema = z
+  .string()
+  .regex(/^\d+(?:,\d+)*$/u, 'Expected comma-separated TCP ports')
+  .transform((value) => value.split(',').map((port) => Number.parseInt(port, 10)))
+  .pipe(z.array(z.number().int().min(1).max(65_535)).min(1));
 
 export const applicationConfigSchema = z
   .object({
@@ -40,7 +45,6 @@ export const applicationConfigSchema = z
         documentationTtlMs: durationSchema.default(86_400_000),
         readmeTtlMs: durationSchema.default(21_600_000),
         sitemapTtlMs: durationSchema.default(86_400_000),
-        temporaryErrorTtlMs: durationSchema.default(300_000),
         staleRetentionMs: durationSchema.default(604_800_000),
         maxEntries: z.number().int().min(10).max(100_000).default(2_000),
       })
@@ -53,7 +57,6 @@ export const applicationConfigSchema = z
         documentationTtlMs: 86_400_000,
         readmeTtlMs: 21_600_000,
         sitemapTtlMs: 86_400_000,
-        temporaryErrorTtlMs: 300_000,
         staleRetentionMs: 604_800_000,
         maxEntries: 2_000,
       }),
@@ -144,6 +147,7 @@ export const applicationEnvironmentSchema = z.object({
   MCP_SEARXNG_URL: httpUrlSchema.optional(),
   MCP_CRAWL4AI_URL: httpUrlSchema.optional(),
   MCP_CRAWL4AI_TOKEN: z.string().min(16).optional(),
+  MCP_ALLOWED_PUBLIC_PORTS: publicPortsEnvironmentSchema.optional(),
 });
 
 export type ApplicationEnvironment = z.infer<typeof applicationEnvironmentSchema>;

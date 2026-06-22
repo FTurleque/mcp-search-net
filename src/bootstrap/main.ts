@@ -71,6 +71,9 @@ function assertSupportedNode(): void {
 
 main().catch((error: unknown) => {
   const logger = new StructuredLogger('error');
+  logger.record('configuration_invalid', {
+    error: error instanceof Error ? { name: error.name } : 'unknown',
+  });
   logger.error('Fatal bootstrap error', { error: error instanceof Error ? error : String(error) });
   process.exitCode = 1;
 });

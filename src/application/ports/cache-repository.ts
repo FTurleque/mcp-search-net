@@ -1,5 +1,3 @@
-export type CacheNamespace = 'search' | 'content' | 'temporary-error';
-
 export interface CacheValidators {
   readonly etag?: string;
   readonly lastModified?: string;
@@ -19,35 +17,29 @@ export interface CacheGetOptions {
 
 export interface CacheRepository {
   readonly enabled?: boolean;
-  get<T>(
-    namespace: CacheNamespace,
-    key: string,
-    options?: CacheGetOptions,
-  ): Promise<CacheRecord<T> | undefined>;
-  set<T>(
-    namespace: CacheNamespace,
-    key: string,
-    value: T,
-    ttlMs: number,
-    validators?: CacheValidators,
-  ): Promise<void>;
-  delete(namespace: CacheNamespace, key: string): Promise<void>;
-  prune(): Promise<number>;
+  getSearch<T>(key: string, options?: CacheGetOptions): Promise<CacheRecord<T> | undefined>;
+  setSearch<T>(key: string, value: T, ttlMs: number, validators?: CacheValidators): Promise<void>;
+  getContent<T>(key: string, options?: CacheGetOptions): Promise<CacheRecord<T> | undefined>;
+  setContent<T>(key: string, value: T, ttlMs: number, validators?: CacheValidators): Promise<void>;
+  deleteExpired(): Promise<number>;
   close(): void;
 }
 
 export class DisabledCacheRepository implements CacheRepository {
   public readonly enabled = false;
-  public get<T>(): Promise<CacheRecord<T> | undefined> {
+  public getSearch<T>(): Promise<CacheRecord<T> | undefined> {
     return Promise.resolve(undefined);
   }
-  public set(): Promise<void> {
+  public setSearch(): Promise<void> {
     return Promise.resolve();
   }
-  public delete(): Promise<void> {
+  public getContent<T>(): Promise<CacheRecord<T> | undefined> {
+    return Promise.resolve(undefined);
+  }
+  public setContent(): Promise<void> {
     return Promise.resolve();
   }
-  public prune(): Promise<number> {
+  public deleteExpired(): Promise<number> {
     return Promise.resolve(0);
   }
   public close(): void {

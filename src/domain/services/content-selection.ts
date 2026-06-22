@@ -26,18 +26,11 @@ export function selectRelevantContent(
 ): SelectedContent {
   const sections = splitMarkdown(normalizeMarkdown(markdown));
   const terms = tokenize(query ?? '');
-  const averageLength = Math.max(
-    1,
-    sections.reduce((total, section) => total + section.tokens.length, 0) / sections.length,
-  );
 
   const ranked = sections
     .map((section) => ({
       section,
-      score:
-        terms.length === 0
-          ? 1 / (section.index + 1)
-          : bm25(section, sections, terms, averageLength),
+      score: terms.length === 0 ? 1 / (section.index + 1) : lexicalRelevance(section, terms),
     }))
     .filter(({ score }) => terms.length === 0 || score > 0)
     .sort((left, right) => right.score - left.score || left.section.index - right.section.index)
@@ -87,28 +80,19 @@ export function selectRelevantContent(
   };
 }
 
-function bm25(
-  section: MarkdownSection,
-  corpus: readonly MarkdownSection[],
-  terms: readonly string[],
-  averageLength: number,
-): number {
-  const k1 = 1.2;
-  const b = 0.75;
+function lexicalRelevance(section: MarkdownSection, terms: readonly string[]): number {
+  const uniqueTerms = [...new Set(terms)];
   const headingTokens = tokenize(section.heading);
-  const codeBonus = /```[\s\S]*?```/u.test(section.body) ? 0.2 : 0;
-  return terms.reduce((score, term) => {
-    const frequency = section.tokens.filter((token) => token === term).length;
-    if (frequency === 0) return score;
-    const documents = corpus.filter((candidate) => candidate.tokens.includes(term)).length;
-    const idf = Math.log(1 + (corpus.length - documents + 0.5) / (documents + 0.5));
-    const normalized =
-      (frequency * (k1 + 1)) /
-      (frequency + k1 * (1 - b + b * (section.tokens.length / averageLength)));
-    const titleBonus = headingTokens.includes(term) ? 1.5 : 0;
-    const versionBonus = /^v?\d+(?:\.\d+)+$/u.test(term) ? 0.5 : 0;
-    return score + idf * normalized + titleBonus + versionBonus;
-  }, codeBonus);
+  const hasCode = /```[\s\S]*?```/u.test(section.body);
+  const matchedScore = uniqueTerms.reduce((score, term) => {
+    if (!section.tokens.includes(term)) return score;
+    const titleBonus = headingTokens.includes(term) ? 0.5 : 0;
+    const versionBonus = /^v?\d+(?:\.\d+)+$/u.test(term) ? 0.25 : 0;
+    return score + 1 + titleBonus + versionBonus;
+  }, 0);
+  const raw = matchedScore === 0 ? 0 : matchedScore + (hasCode ? 0.1 : 0);
+  const maximum = Math.max(1, uniqueTerms.length * 1.75 + 0.1);
+  return Math.min(1, raw / maximum);
 }
 
 function splitMarkdown(markdown: string): readonly MarkdownSection[] {

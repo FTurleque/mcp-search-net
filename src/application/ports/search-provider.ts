@@ -1,12 +1,11 @@
 import type { ProviderSearchResult, SearchTimeRange } from '../../domain/models/search.js';
+import type { SearchQuery } from '../../domain/value-objects/search-query.js';
 
 export interface SearchProviderRequest {
-  readonly query: string;
+  readonly query: SearchQuery;
   readonly language?: string;
   readonly timeRange?: SearchTimeRange;
-  readonly limit: number;
-  readonly allowedDomains?: readonly string[];
-  readonly excludedDomains?: readonly string[];
+  readonly maxResults: number;
 }
 
 export interface SearchProviderResponse {

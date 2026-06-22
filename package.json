@@ -35,7 +35,7 @@
     "benchmark:v1": "node scripts/benchmark-v1.mjs",
     "install:user": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1",
     "install:user:run": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1 -StartServices -RunAfterInstall",
-    "check": "npm run check:runtime && npm run check:copilot && npm run typecheck && npm run lint && npm run format:check && npm run build && npm run test"
+    "check": "npm run check:runtime && npm run check:copilot && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
@@ -47,7 +47,7 @@
   "devDependencies": {
     "@eslint/js": "9.39.1",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^24.0.0",
+    "@types/node": "24.13.2",
     "eslint": "9.39.1",
     "prettier": "3.6.2",
     "tsx": "^4.16.5",

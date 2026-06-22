@@ -59,6 +59,30 @@ export class InvalidWebUrlError extends ApplicationError {
   }
 }
 
+export class UnsupportedProtocolError extends ApplicationError {
+  public constructor(
+    message = 'Only HTTP and HTTPS protocols are supported',
+    options?: ErrorOptions,
+  ) {
+    super(message, 'UNSUPPORTED_PROTOCOL', options);
+  }
+}
+
+export class BlockedAddressError extends UrlSecurityError {
+  public constructor(
+    message = 'The address is blocked by the public URL policy',
+    options?: ErrorOptions,
+  ) {
+    super(message, 'BLOCKED_ADDRESS', options);
+  }
+}
+
+export class DnsResolutionError extends UrlSecurityError {
+  public constructor(message = 'The hostname cannot be resolved safely', options?: ErrorOptions) {
+    super(message, 'DNS_RESOLUTION_FAILED', options);
+  }
+}
+
 export class InvalidDomainError extends InvalidArgumentError {
   public constructor(message = 'The domain name is invalid', options?: ErrorOptions) {
     super(message, options);
@@ -138,8 +162,28 @@ export class OcrRequiredError extends ApplicationError {
   }
 }
 
+export class OcrRequiredNotSupportedError extends OcrRequiredError {}
+
 export class CacheUnavailableError extends ApplicationError {
   public constructor(message = 'The cache is unavailable', options?: ErrorOptions) {
     super(message, 'CACHE_UNAVAILABLE', options);
+  }
+}
+
+export class SearchProviderUnavailableError extends ExternalServiceError {
+  public constructor(message = 'The search provider is unavailable', options?: ErrorOptions) {
+    super(message, 'searxng', options);
+  }
+}
+
+export class ContentProviderUnavailableError extends ExternalServiceError {
+  public constructor(message = 'The content provider is unavailable', options?: ErrorOptions) {
+    super(message, 'crawl4ai', options);
+  }
+}
+
+export class InternalApplicationError extends ApplicationError {
+  public constructor(message = 'An internal application error occurred', options?: ErrorOptions) {
+    super(message, 'INTERNAL_ERROR', options);
   }
 }

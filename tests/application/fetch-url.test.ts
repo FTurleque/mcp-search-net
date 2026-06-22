@@ -7,12 +7,15 @@ import type { FetchedContent } from '../../src/domain/models/content.js';
 import { ExternalServiceError } from '../../src/domain/errors/domain-errors.js';
 
 class NoCache implements CacheRepository {
-  public async get<T>(): Promise<CacheRecord<T> | undefined> {
+  public async getSearch<T>(): Promise<CacheRecord<T> | undefined> {
     return undefined;
   }
-  public async set(): Promise<void> {}
-  public async delete(): Promise<void> {}
-  public async prune(): Promise<number> {
+  public async setSearch(): Promise<void> {}
+  public async getContent<T>(): Promise<CacheRecord<T> | undefined> {
+    return undefined;
+  }
+  public async setContent(): Promise<void> {}
+  public async deleteExpired(): Promise<number> {
     return 0;
   }
   public close(): void {}
@@ -20,14 +23,17 @@ class NoCache implements CacheRepository {
 
 class ContentCache implements CacheRepository {
   public constructor(public record: CacheRecord<FetchedContent>) {}
-  public async get<T>(): Promise<CacheRecord<T> | undefined> {
+  public async getSearch<T>(): Promise<CacheRecord<T> | undefined> {
+    return undefined;
+  }
+  public async setSearch(): Promise<void> {}
+  public async getContent<T>(): Promise<CacheRecord<T> | undefined> {
     return this.record as CacheRecord<T>;
   }
-  public async set<T>(_namespace: string, _key: string, value: T): Promise<void> {
+  public async setContent<T>(_key: string, value: T): Promise<void> {
     this.record = { ...this.record, value: value as FetchedContent, stale: false };
   }
-  public async delete(): Promise<void> {}
-  public async prune(): Promise<number> {
+  public async deleteExpired(): Promise<number> {
     return 0;
   }
   public close(): void {}
@@ -37,11 +43,12 @@ describe('FetchUrl', () => {
   it('selects content and preserves metadata', async () => {
     const useCase = new FetchUrl(
       {
-        async fetch(url) {
+        async fetch({ url }) {
+          const value = url.value;
           return {
-            requestedUrl: url,
-            finalUrl: url,
-            canonicalUrl: url,
+            requestedUrl: value,
+            finalUrl: value,
+            canonicalUrl: value,
             title: 'Documentation',
             markdown: '# Intro\n\nOther.\n\n## Cache\n\nSQLite cache transactions.',
             documentSections: [],
@@ -62,7 +69,7 @@ describe('FetchUrl', () => {
         },
       },
       { findByUrl: () => undefined, findForQuery: () => [], list: () => [], version: () => '1' },
-      { documentationTtlMs: 1_000, readmeTtlMs: 1_000, sitemapTtlMs: 1_000, maxLinks: 10 },
+      testOptions(),
     );
 
     const response = await useCase.execute({
@@ -83,11 +90,12 @@ describe('FetchUrl', () => {
   it('filters blocked links and never exposes provider metadata', async () => {
     const useCase = new FetchUrl(
       {
-        async fetch(url) {
+        async fetch({ url }) {
+          const value = url.value;
           return {
-            requestedUrl: url,
-            finalUrl: url,
-            canonicalUrl: url,
+            requestedUrl: value,
+            finalUrl: value,
+            canonicalUrl: value,
             markdown: '# Safe\n\nPublic documentation content.',
             documentSections: [],
             contentType: 'text/html',
@@ -108,7 +116,7 @@ describe('FetchUrl', () => {
         },
       },
       { findByUrl: () => undefined, findForQuery: () => [], list: () => [], version: () => '1' },
-      { documentationTtlMs: 1_000, readmeTtlMs: 1_000, sitemapTtlMs: 1_000, maxLinks: 10 },
+      testOptions(),
     );
     const response = await useCase.execute({
       url: 'https://example.com',
@@ -176,8 +184,8 @@ describe('FetchUrl', () => {
       contentHash: content.contentHash,
     });
     let received: unknown;
-    const useCase = createCachedUseCase(cache, async (_url, _mode, context) => {
-      received = context;
+    const useCase = createCachedUseCase(cache, async (request) => {
+      received = request.cacheValidators;
       return { notModified: true as const };
     });
     const response = await useCase.execute({
@@ -216,8 +224,8 @@ describe('FetchUrl', () => {
     );
     expect(events.map(({ event }) => event)).toEqual([
       'cache_miss',
-      'content_fetcher_called',
-      'response_truncated',
+      'provider_called',
+      'content_truncated',
     ]);
     expect(events.every(({ data }) => data?.['requestId'] === 'request-fetch')).toBe(true);
   });
@@ -257,11 +265,23 @@ function createCachedUseCase(
     },
     { findByUrl: () => undefined, findForQuery: () => [], list: () => [], version: () => '1' },
     {
+      ...testOptions(),
       documentationTtlMs: 86_400_000,
       readmeTtlMs: 21_600_000,
       sitemapTtlMs: 86_400_000,
-      maxLinks: 10,
     },
     telemetry,
   );
+}
+
+function testOptions() {
+  return {
+    documentationTtlMs: 1_000,
+    readmeTtlMs: 1_000,
+    sitemapTtlMs: 1_000,
+    maxLinks: 10,
+    timeoutMs: 1_000,
+    maxResponseBytes: 1_000_000,
+    maxRedirects: 5,
+  } as const;
 }

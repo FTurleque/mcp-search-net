@@ -5,13 +5,12 @@ import Database from 'better-sqlite3';
 
 import type {
   CacheGetOptions,
-  CacheNamespace,
   CacheRecord,
   CacheRepository,
   CacheValidators,
 } from '../../application/ports/cache-repository.js';
 import type { Clock } from '../../application/ports/clock.js';
-import { migrations } from './migrations.js';
+import { loadMigrations } from './migrations.js';
 
 interface CacheRow {
   readonly payload: string;
@@ -22,25 +21,26 @@ interface CacheRow {
   readonly content_hash: string | null;
 }
 
-const CACHE_TABLES: Readonly<Record<CacheNamespace, string>> = {
+type CacheKind = 'search' | 'content';
+
+const CACHE_TABLES: Readonly<Record<CacheKind, string>> = {
   search: 'search_cache',
   content: 'content_cache',
-  'temporary-error': 'temporary_error_cache',
 };
 
 export class SqliteCacheRepository implements CacheRepository {
   public readonly enabled = true;
   private readonly database: Database.Database;
   private readonly selectStatements: Readonly<
-    Record<CacheNamespace, Database.Statement<[string], CacheRow>>
+    Record<CacheKind, Database.Statement<[string], CacheRow>>
   >;
   private readonly touchStatements: Readonly<
-    Record<CacheNamespace, Database.Statement<[number, string]>>
+    Record<CacheKind, Database.Statement<[number, string]>>
   >;
-  private readonly deleteStatements: Readonly<Record<CacheNamespace, Database.Statement<[string]>>>;
+  private readonly deleteStatements: Readonly<Record<CacheKind, Database.Statement<[string]>>>;
   private readonly upsertStatements: Readonly<
     Record<
-      CacheNamespace,
+      CacheKind,
       Database.Statement<
         [
           string,
@@ -99,28 +99,68 @@ export class SqliteCacheRepository implements CacheRepository {
     );
   }
 
-  public get<T>(
-    namespace: CacheNamespace,
+  public getSearch<T>(
     key: string,
     options: CacheGetOptions = {},
   ): Promise<CacheRecord<T> | undefined> {
-    const row = this.selectStatements[namespace].get(key);
+    return this.get<T>('search', key, options);
+  }
+
+  public getContent<T>(
+    key: string,
+    options: CacheGetOptions = {},
+  ): Promise<CacheRecord<T> | undefined> {
+    return this.get<T>('content', key, options);
+  }
+
+  public setSearch<T>(
+    key: string,
+    value: T,
+    ttlMs: number,
+    validators: CacheValidators = {},
+  ): Promise<void> {
+    return this.set('search', key, value, ttlMs, validators);
+  }
+
+  public setContent<T>(
+    key: string,
+    value: T,
+    ttlMs: number,
+    validators: CacheValidators = {},
+  ): Promise<void> {
+    return this.set('content', key, value, ttlMs, validators);
+  }
+
+  public deleteExpired(): Promise<number> {
+    return Promise.resolve(this.pruneSync(this.clock.now().getTime()));
+  }
+
+  public close(): void {
+    if (this.database.open) this.database.close();
+  }
+
+  private get<T>(
+    kind: CacheKind,
+    key: string,
+    options: CacheGetOptions,
+  ): Promise<CacheRecord<T> | undefined> {
+    const row = this.selectStatements[kind].get(key);
     if (row === undefined) return Promise.resolve(undefined);
     const now = this.clock.now().getTime();
     const stale = row.expires_at <= now;
     if (stale && options.allowStale !== true) return Promise.resolve(undefined);
     if (row.expires_at + this.staleRetentionMs <= now) {
-      this.deleteStatements[namespace].run(key);
+      this.deleteStatements[kind].run(key);
       return Promise.resolve(undefined);
     }
     let value: T;
     try {
       value = JSON.parse(row.payload) as T;
     } catch {
-      this.deleteStatements[namespace].run(key);
+      this.deleteStatements[kind].run(key);
       return Promise.resolve(undefined);
     }
-    this.touchStatements[namespace].run(now, key);
+    this.touchStatements[kind].run(now, key);
     return Promise.resolve({
       value,
       createdAt: new Date(row.created_at),
@@ -132,8 +172,8 @@ export class SqliteCacheRepository implements CacheRepository {
     });
   }
 
-  public set<T>(
-    namespace: CacheNamespace,
+  private set<T>(
+    kind: CacheKind,
     key: string,
     value: T,
     ttlMs: number,
@@ -142,7 +182,7 @@ export class SqliteCacheRepository implements CacheRepository {
     const payload = JSON.stringify(value);
     const now = this.clock.now().getTime();
     this.database.transaction(() => {
-      this.upsertStatements[namespace].run(
+      this.upsertStatements[kind].run(
         key,
         payload,
         now,
@@ -158,19 +198,6 @@ export class SqliteCacheRepository implements CacheRepository {
     return Promise.resolve();
   }
 
-  public delete(namespace: CacheNamespace, key: string): Promise<void> {
-    this.deleteStatements[namespace].run(key);
-    return Promise.resolve();
-  }
-
-  public prune(): Promise<number> {
-    return Promise.resolve(this.pruneSync(this.clock.now().getTime()));
-  }
-
-  public close(): void {
-    if (this.database.open) this.database.close();
-  }
-
   private applyMigrations(): void {
     this.database.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -183,7 +210,7 @@ export class SqliteCacheRepository implements CacheRepository {
       'INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)',
     );
     this.database.transaction(() => {
-      for (const migration of migrations) {
+      for (const migration of loadMigrations()) {
         if (hasMigration.get(migration.version) !== undefined) continue;
         this.database.exec(migration.sql);
         recordMigration.run(migration.version, this.clock.now().getTime());
@@ -193,13 +220,13 @@ export class SqliteCacheRepository implements CacheRepository {
 
   private createStatements<T extends Database.Statement>(
     sql: (table: string) => string,
-  ): Readonly<Record<CacheNamespace, T>> {
+  ): Readonly<Record<CacheKind, T>> {
     return Object.fromEntries(
       Object.entries(CACHE_TABLES).map(([namespace, table]) => [
         namespace,
         this.database.prepare(sql(table)),
       ]),
-    ) as Readonly<Record<CacheNamespace, T>>;
+    ) as Readonly<Record<CacheKind, T>>;
   }
 
   private pruneSync(now: number): number {

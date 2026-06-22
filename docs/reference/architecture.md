@@ -23,11 +23,12 @@ Le domaine ne dépend ni du SDK MCP, ni de SearXNG, Crawl4AI, SQLite, Docker, YA
 - `DnsResolver` : résolution complète et injectable de toutes les adresses ;
 - `Clock` : temps injectable pour les TTL et tests.
 - `Telemetry` : événements structurés corrélés par `requestId`.
+- `Logger` : diagnostics structurés et télémétrie sur `stderr`.
 
 ## Flux
 
 `search_web` normalise l'entrée avant de construire sa clé de cache, consulte le cache, interroge SearXNG, tente l'anglais si la langue demandée ne retourne rien, normalise les URL, classifie et déduplique les sources, applique les filtres/politiques puis le budget de sortie. Il ne récupère jamais le contenu des pages trouvées. `fetch_url` valide l’URL et sa résolution DNS, consulte le cache, télécharge via la passerelle sécurisée, sélectionne les sections Markdown et limite la réponse.
 
-Le cache possède des espaces typés `search`, `content` et `temporary-error`. Les contenus conservent URL, type, Markdown nettoyé, sections, statut HTTP, date, ETag, Last-Modified et hash. Une entrée expirée reste disponible pendant la rétention stale : si le fournisseur échoue, elle produit `STALE_FALLBACK` et `STALE_CACHE_USED`. Sans cache, les outils continuent avec `DISABLED`.
+Le cache possède uniquement les tables `search_cache`, `content_cache` et `schema_migrations`. Les contenus conservent URL, type, Markdown nettoyé, sections, statut HTTP, date, ETag, Last-Modified et hash. Une entrée expirée reste disponible pendant la rétention stale : si le fournisseur échoue, elle produit `STALE_FALLBACK` et `STALE_CACHE_USED`. Sans cache, les outils continuent avec `DISABLED`.
 
 Les futurs ports documentaires V2 peuvent être ajoutés sans modifier le domaine V1, mais aucune indexation, synchronisation ou recherche multi-document n’est implémentée ici.

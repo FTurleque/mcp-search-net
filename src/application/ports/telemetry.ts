@@ -6,10 +6,11 @@ export type TelemetryEvent =
   | 'tool_call_failed'
   | 'cache_hit'
   | 'cache_miss'
-  | 'search_provider_called'
-  | 'content_fetcher_called'
+  | 'provider_called'
+  | 'provider_failed'
   | 'url_blocked'
-  | 'response_truncated';
+  | 'content_truncated'
+  | 'configuration_invalid';
 
 export interface Telemetry {
   record(event: TelemetryEvent, data?: Readonly<Record<string, unknown>>): void;

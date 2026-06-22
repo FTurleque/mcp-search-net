@@ -3,16 +3,12 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod/v4';
 
 import type { ContentFetcher } from '../../application/ports/content-fetcher.js';
-import type {
-  ContentFetchResult,
-  FetchedContent,
-  RenderMode,
-} from '../../domain/models/content.js';
-import type { ContentFetchContext } from '../../application/ports/content-fetcher.js';
+import type { ContentFetchResult, FetchedContent } from '../../domain/models/content.js';
+import type { ContentFetchRequest } from '../../application/ports/content-fetcher.js';
 import {
-  ExternalServiceError,
+  ContentProviderUnavailableError,
   ExtractionError,
-  OcrRequiredError,
+  OcrRequiredNotSupportedError,
   UnsupportedContentTypeError,
 } from '../../domain/errors/domain-errors.js';
 import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
@@ -45,29 +41,33 @@ const envelopeSchema = z
 export class Crawl4aiContentFetcher implements ContentFetcher {
   public constructor(
     private readonly baseUrl: string,
-    private readonly timeoutMs: number,
     private readonly apiToken: string | undefined,
     private readonly gateway: SecureHttpGateway,
     private readonly fetchImplementation: typeof fetch = fetch,
   ) {}
 
-  public async fetch(
-    url: string,
-    renderMode: RenderMode,
-    context: ContentFetchContext = {},
-  ): Promise<ContentFetchResult> {
-    const resource = await this.gateway.download(url, createConditionalHeaders(context), {
-      ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
-      tool: 'fetch_url',
-    });
+  public async fetch(request: ContentFetchRequest): Promise<ContentFetchResult> {
+    const resource = await this.gateway.download(
+      request.url.value,
+      createConditionalHeaders(request.cacheValidators),
+      {
+        ...(request.requestId === undefined ? {} : { requestId: request.requestId }),
+        tool: 'fetch_url',
+      },
+      {
+        timeoutMs: request.timeoutMs,
+        maxBytes: request.maxResponseBytes,
+        maxRedirects: request.maxRedirects,
+      },
+    );
     if (resource.status === 304) return { notModified: true };
     const contentType = detectContentType(resource);
     const decoded = await decodeResource(resource, contentType);
     let markdown = decoded.markdown;
     let extractionMode: FetchedContent['extractionMode'] = 'static';
 
-    if (renderMode === 'auto' && isHtml(contentType) && !isUseful(markdown)) {
-      const rendered = await this.renderPreparedHtml(decoded.safeHtml ?? '');
+    if (request.renderMode === 'auto' && isHtml(contentType) && !isUseful(markdown)) {
+      const rendered = await this.renderPreparedHtml(decoded.safeHtml ?? '', request.timeoutMs);
       if (isUseful(rendered)) markdown = rendered;
       extractionMode = 'native-render';
     }
@@ -102,7 +102,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     };
   }
 
-  private async renderPreparedHtml(html: string): Promise<string> {
+  private async renderPreparedHtml(html: string, timeoutMs: number): Promise<string> {
     const endpoint = new URL('/crawl', ensureTrailingSlash(this.baseUrl));
     const headers: Record<string, string> = {
       accept: 'application/json',
@@ -121,15 +121,15 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
         body: JSON.stringify({
           urls: [rawUrl],
           browser_config: { text_mode: true, light_mode: true },
-          crawler_config: { check_robots_txt: false, page_timeout: this.timeoutMs },
+          crawler_config: { check_robots_txt: false, page_timeout: timeoutMs },
         }),
       },
-      this.timeoutMs,
+      timeoutMs,
       this.fetchImplementation,
     );
     const envelope = envelopeSchema.safeParse(json);
     if (!envelope.success)
-      throw new ExternalServiceError('crawl4ai returned an invalid rendering response', 'crawl4ai');
+      throw new ContentProviderUnavailableError('crawl4ai returned an invalid rendering response');
     const result = envelope.data.results?.[0] ?? envelope.data.result;
     if (!result?.success) throw new ExtractionError('crawl4ai native rendering failed');
     if (typeof result.markdown === 'string') return result.markdown;
@@ -137,10 +137,12 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
   }
 }
 
-function createConditionalHeaders(context: ContentFetchContext): Readonly<Record<string, string>> {
+function createConditionalHeaders(
+  context: ContentFetchRequest['cacheValidators'],
+): Readonly<Record<string, string>> {
   const headers: Record<string, string> = {};
-  if (isSafeHeaderValue(context.etag)) headers['if-none-match'] = context.etag;
-  if (isSafeHeaderValue(context.lastModified)) headers['if-modified-since'] = context.lastModified;
+  if (isSafeHeaderValue(context?.etag)) headers['if-none-match'] = context.etag;
+  if (isSafeHeaderValue(context?.lastModified)) headers['if-modified-since'] = context.lastModified;
   return headers;
 }
 
@@ -162,7 +164,7 @@ async function decodeResource(
 ): Promise<DecodedContent> {
   if (contentType === 'application/pdf') return decodePdf(resource.body);
   if (contentType.startsWith('image/')) {
-    throw new OcrRequiredError();
+    throw new OcrRequiredNotSupportedError();
   }
   const text = new TextDecoder('utf-8', { fatal: false }).decode(resource.body).replace(/\0/gu, '');
   if (isHtml(contentType)) return decodeHtml(text, resource.finalUrl);
@@ -276,10 +278,11 @@ async function decodePdf(bytes: Uint8Array): Promise<DecodedContent> {
       await loadingTask.destroy();
     }
     const markdown = pages.join('\n\n');
-    if (markdown.replace(/[^\p{L}\p{N}]/gu, '').length < 20) throw new OcrRequiredError();
+    if (markdown.replace(/[^\p{L}\p{N}]/gu, '').length < 20)
+      throw new OcrRequiredNotSupportedError();
     return { markdown, links: [] };
   } catch (error) {
-    if (error instanceof OcrRequiredError) throw error;
+    if (error instanceof OcrRequiredNotSupportedError) throw error;
     throw new ExtractionError('The PDF document is invalid or cannot be parsed', { cause: error });
   }
 }

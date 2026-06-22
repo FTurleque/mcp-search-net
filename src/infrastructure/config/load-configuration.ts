@@ -84,6 +84,12 @@ function applyEnvironmentOverrides(
       ...application.logging,
       ...(logLevel === undefined ? {} : { level: logLevel }),
     },
+    security: {
+      ...application.security,
+      ...(environment.MCP_ALLOWED_PUBLIC_PORTS === undefined
+        ? {}
+        : { allowedPorts: environment.MCP_ALLOWED_PUBLIC_PORTS }),
+    },
   };
 }
 

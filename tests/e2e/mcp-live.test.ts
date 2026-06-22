@@ -26,6 +26,16 @@ describe.runIf(live)('live MCP fetch', () => {
     });
 
     await client.connect(transport);
+    const blocked = await client.callTool({
+      name: 'fetch_url',
+      arguments: { url: 'http://127.0.0.1/private' },
+    });
+    expect(blocked.isError).toBe(true);
+    expect(blocked._meta?.['mcp-search-net/error']).toMatchObject({
+      code: 'BLOCKED_ADDRESS',
+      retryable: false,
+    });
+
     const result = await client.callTool({
       name: 'fetch_url',
       arguments: {

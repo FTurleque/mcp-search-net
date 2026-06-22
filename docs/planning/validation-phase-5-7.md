@@ -13,7 +13,7 @@ Les phases 5, 6 et 7 sont terminées. La validation déterministe sous Node.js 2
 
 ## Phase 5 — Cache
 
-- espaces typés `search`, `content` et `temporary-error` ;
+- tables typées `search_cache` et `content_cache`, suivies par `schema_migrations` ;
 - migration SQLite conservatrice ajoutant ETag, Last-Modified et hash ;
 - conservation contrôlée des entrées expirées et stale fallback pour les deux fournisseurs ;
 - revalidation HTTP 304 et hash SHA-256 ;

@@ -32,6 +32,12 @@ export interface DownloadedResource {
   readonly body: Uint8Array;
 }
 
+export interface SecureDownloadLimits {
+  readonly timeoutMs: number;
+  readonly maxBytes: number;
+  readonly maxRedirects: number;
+}
+
 export class SecureHttpGateway {
   private active = 0;
   private readonly waiters: (() => void)[] = [];
@@ -46,14 +52,16 @@ export class SecureHttpGateway {
     value: string,
     conditionalHeaders: Readonly<Record<string, string>> = {},
     context: { readonly requestId?: string; readonly tool?: 'fetch_url' } = {},
+    requestedLimits?: SecureDownloadLimits,
   ): Promise<DownloadedResource> {
-    const deadline = Date.now() + this.options.timeoutMs;
+    const limits = this.validateLimits(requestedLimits);
+    const deadline = Date.now() + limits.timeoutMs;
     await this.acquire(deadline);
     try {
       if (this.options.respectRobotsTxt && !new URL(value).pathname.endsWith('/robots.txt')) {
-        await this.assertRobotsAllowed(value, deadline, context);
+        await this.assertRobotsAllowed(value, deadline, context, limits);
       }
-      return await this.follow(value, value, 0, deadline, conditionalHeaders, context);
+      return await this.follow(value, value, 0, deadline, conditionalHeaders, context, limits);
     } finally {
       this.release();
     }
@@ -64,10 +72,11 @@ export class SecureHttpGateway {
     currentUrl: string,
     redirects: number,
     deadline: number,
-    conditionalHeaders: Readonly<Record<string, string>> = {},
-    context: { readonly requestId?: string; readonly tool?: 'fetch_url' } = {},
+    conditionalHeaders: Readonly<Record<string, string>>,
+    context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
+    limits: SecureDownloadLimits,
   ): Promise<DownloadedResource> {
-    if (redirects > this.options.maxRedirects) throw new TooManyRedirectsError();
+    if (redirects > limits.maxRedirects) throw new TooManyRedirectsError();
     const approved = await withDeadline(
       this.securityPolicy.assertAllowed(currentUrl, context),
       deadline,
@@ -78,6 +87,7 @@ export class SecureHttpGateway {
       approved,
       deadline,
       sameOrigin ? conditionalHeaders : {},
+      limits.maxBytes,
     );
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers['location'];
@@ -92,6 +102,7 @@ export class SecureHttpGateway {
         deadline,
         conditionalHeaders,
         context,
+        limits,
       );
     }
     if (response.status !== 304 && (response.status < 200 || response.status >= 300)) {
@@ -104,12 +115,13 @@ export class SecureHttpGateway {
     value: string,
     deadline: number,
     context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
+    limits: SecureDownloadLimits,
   ): Promise<void> {
     const url = new URL(value);
     const robotsUrl = new URL('/robots.txt', url.origin).toString();
     let resource: DownloadedResource;
     try {
-      resource = await this.follow(robotsUrl, robotsUrl, 0, deadline, {}, context);
+      resource = await this.follow(robotsUrl, robotsUrl, 0, deadline, {}, context, limits);
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) return;
       // A temporarily unavailable robots file does not grant access silently.
@@ -125,6 +137,7 @@ export class SecureHttpGateway {
     approved: Awaited<ReturnType<UrlSecurityPolicy['assertAllowed']>>,
     deadline: number,
     conditionalHeaders: Readonly<Record<string, string>>,
+    maxBytes: number,
   ): Promise<Omit<DownloadedResource, 'requestedUrl' | 'finalUrl'>> {
     const url = new URL(approved.value);
     const address = approved.addresses[0];
@@ -161,7 +174,7 @@ export class SecureHttpGateway {
           const status = incoming.statusCode ?? 0;
           const headers = flattenHeaders(incoming.headers);
           const declared = Number.parseInt(headers['content-length'] ?? '0', 10);
-          if (Number.isFinite(declared) && declared > this.options.maxBytes) {
+          if (Number.isFinite(declared) && declared > maxBytes) {
             incoming.destroy();
             reject(new ResponseTooLargeError());
             return;
@@ -170,7 +183,7 @@ export class SecureHttpGateway {
           let size = 0;
           incoming.on('data', (chunk: Buffer) => {
             size += chunk.length;
-            if (size > this.options.maxBytes) {
+            if (size > maxBytes) {
               incoming.destroy(new ResponseTooLargeError());
               return;
             }
@@ -190,6 +203,25 @@ export class SecureHttpGateway {
       );
       outgoing.end();
     });
+  }
+
+  private validateLimits(requested?: SecureDownloadLimits): SecureDownloadLimits {
+    const limits = requested ?? {
+      timeoutMs: this.options.timeoutMs,
+      maxBytes: this.options.maxBytes,
+      maxRedirects: this.options.maxRedirects,
+    };
+    if (
+      limits.timeoutMs <= 0 ||
+      limits.maxBytes <= 0 ||
+      limits.maxRedirects < 0 ||
+      limits.timeoutMs > this.options.timeoutMs ||
+      limits.maxBytes > this.options.maxBytes ||
+      limits.maxRedirects > this.options.maxRedirects
+    ) {
+      throw new ApplicationError('Unsafe HTTP limits were requested', 'INTERNAL_ERROR');
+    }
+    return limits;
   }
 
   private async throttle(origin: string, deadline: number): Promise<void> {

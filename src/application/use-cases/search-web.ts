@@ -15,6 +15,7 @@ import type {
   ToolWarningDescriptor,
 } from '../../domain/models/tool-response.js';
 import { ApplicationError } from '../../domain/errors/domain-errors.js';
+import { SearchQuery } from '../../domain/value-objects/search-query.js';
 import {
   matchesDomain,
   rankAndDeduplicate,
@@ -51,7 +52,7 @@ export class SearchWeb {
       providerOversampling: this.options.providerOversampling,
       maxSnippetChars: this.options.maxSnippetChars,
     });
-    const cached = await this.cache.get<CachedSearchValue>('search', key, { allowStale: true });
+    const cached = await this.cache.getSearch<CachedSearchValue>(key, { allowStale: true });
 
     if (cached !== undefined && !cached.stale) {
       this.telemetry?.record('cache_hit', {
@@ -151,7 +152,7 @@ export class SearchWeb {
       },
     };
 
-    await this.cache.set('search', key, value, this.options.cacheTtlMs);
+    await this.cache.setSearch(key, value, this.options.cacheTtlMs);
     return execution(value, this.cache.enabled === false ? 'DISABLED' : 'MISS');
   }
 
@@ -163,16 +164,15 @@ export class SearchWeb {
     const startedAt = performance.now();
     try {
       const response = await this.provider.search({
-        query: request.query,
+        query: SearchQuery.create(request.query),
         language,
         ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
-        limit: request.maxResults * this.options.providerOversampling,
-        allowedDomains: request.allowedDomains,
-        excludedDomains: request.excludedDomains,
+        maxResults: request.maxResults * this.options.providerOversampling,
       });
-      this.telemetry?.record('search_provider_called', {
+      this.telemetry?.record('provider_called', {
         requestId: context.requestId,
         tool: 'search_web',
+        provider: 'searxng',
         durationMs: Number((performance.now() - startedAt).toFixed(3)),
         status: 'success',
         resultCount: response.results.length,
@@ -180,9 +180,10 @@ export class SearchWeb {
       });
       return response;
     } catch (error) {
-      this.telemetry?.record('search_provider_called', {
+      this.telemetry?.record('provider_failed', {
         requestId: context.requestId,
         tool: 'search_web',
+        provider: 'searxng',
         durationMs: Number((performance.now() - startedAt).toFixed(3)),
         status: 'failed',
         code: error instanceof ApplicationError ? error.code : 'INTERNAL_ERROR',

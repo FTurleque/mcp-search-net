@@ -46,10 +46,14 @@ describe('application configuration precedence and limits', () => {
         MCP_LOG_LEVEL: 'debug',
         MCP_SEARXNG_URL: 'http://127.0.0.1:8888',
         MCP_CRAWL4AI_TOKEN: 'a-secure-local-token',
+        MCP_ALLOWED_PUBLIC_PORTS: '80,443,8443',
       }).success,
     ).toBe(true);
     expect(
       applicationEnvironmentSchema.safeParse({ MCP_SEARXNG_URL: 'file:///tmp/socket' }).success,
+    ).toBe(false);
+    expect(
+      applicationEnvironmentSchema.safeParse({ MCP_ALLOWED_PUBLIC_PORTS: '80,0,70000' }).success,
     ).toBe(false);
   });
 
@@ -58,10 +62,12 @@ describe('application configuration precedence and limits', () => {
     process.env['MCP_LOG_LEVEL'] = 'debug';
     process.env['MCP_SEARXNG_URL'] = 'http://searxng.internal:8080';
     process.env['MCP_CRAWL4AI_TOKEN'] = 'test-token-from-environment';
+    process.env['MCP_ALLOWED_PUBLIC_PORTS'] = '80,443,8443';
     const loaded = await loadConfiguration(resolve('config/application.yml'));
     expect(loaded.application.cache.enabled).toBe(false);
     expect(loaded.application.logging.level).toBe('debug');
     expect(loaded.application.searxng.baseUrl).toBe('http://searxng.internal:8080');
     expect(loaded.crawl4aiApiToken).toBe('test-token-from-environment');
+    expect(loaded.application.security.allowedPorts).toEqual([80, 443, 8443]);
   });
 });

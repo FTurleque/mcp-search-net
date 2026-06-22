@@ -1,4 +1,5 @@
-import type { Telemetry, TelemetryEvent } from '../../application/ports/telemetry.js';
+import type { Logger } from '../../application/ports/logger.js';
+import type { TelemetryEvent } from '../../application/ports/telemetry.js';
 
 export type LogLevel = 'debug' | 'info' | 'warning' | 'error';
 
@@ -11,12 +12,14 @@ const priorities: Readonly<Record<LogLevel, number>> = {
 const sensitiveKey =
   /api.?key|authorization|cookie|credential|password|proxy|secret|token|environment/i;
 
-export class StructuredLogger implements Telemetry {
+export class StructuredLogger implements Logger {
   public constructor(private readonly minimumLevel: LogLevel) {}
 
   public record(event: TelemetryEvent, data: Readonly<Record<string, unknown>> = {}): void {
     this.write(
-      event === 'tool_call_failed' || event === 'url_blocked' ? 'error' : 'info',
+      event === 'tool_call_failed' || event === 'provider_failed' || event === 'url_blocked'
+        ? 'error'
+        : 'info',
       event,
       data,
     );

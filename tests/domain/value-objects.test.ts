@@ -11,6 +11,7 @@ describe('V1 value objects', () => {
       WebUrl.create('HTTPS://Example.COM:443/docs/?utm_source=test&b=2&a=1#section').value,
     ).toBe('https://example.com/docs?a=1&b=2');
     expect(() => WebUrl.create('file:///etc/passwd')).toThrow(/HTTP and HTTPS/u);
+    expect(() => WebUrl.create(`https://example.com/${'a'.repeat(4_096)}`)).toThrow(/4096/u);
   });
 
   it('matches domains only on DNS label boundaries', () => {
