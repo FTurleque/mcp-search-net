@@ -120,6 +120,26 @@ describe('FetchUrl', () => {
     expect(JSON.stringify(response.data)).not.toContain('must-not-leak');
   });
 
+  it('reports a validated redirect and controlled native-render fallback', async () => {
+    const content = {
+      ...fetchedContent(),
+      finalUrl: 'https://www.example.com/docs',
+      canonicalUrl: 'https://www.example.com/docs',
+      extractionMode: 'native-render' as const,
+    };
+    const useCase = createCachedUseCase(new NoCache(), async () => content);
+    const response = await useCase.execute({
+      url: 'https://example.com/docs',
+      maxCharacters: 2_000,
+      maxSections: 5,
+      renderMode: 'auto',
+    });
+    expect(response.data.finalUrl).toBe('https://www.example.com/docs');
+    expect(response.warnings.map((warning) => warning.code)).toEqual(
+      expect.arrayContaining(['REDIRECTED_URL', 'JAVASCRIPT_FALLBACK_USED']),
+    );
+  });
+
   it('uses stale content when the provider is unavailable', async () => {
     const content = fetchedContent();
     const cache = new ContentCache({

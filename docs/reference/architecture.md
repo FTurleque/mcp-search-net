@@ -20,6 +20,7 @@ Le domaine ne dépend ni du SDK MCP, ni de SearXNG, Crawl4AI, SQLite, Docker, YA
 - `CacheRepository` : cache des recherches et contenus ;
 - `OfficialSourceRegistry` : identification et priorité des sources ;
 - `UrlSecurityPolicy` : validation SSRF avant extraction ;
+- `DnsResolver` : résolution complète et injectable de toutes les adresses ;
 - `Clock` : temps injectable pour les TTL et tests.
 - `Telemetry` : événements structurés corrélés par `requestId`.
 

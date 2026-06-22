@@ -7,7 +7,12 @@ const result = spawnSync(
   [resolve('scripts/run-test-suite.mjs'), 'e2e-live', 'vitest.live.config.ts'],
   {
     cwd: process.cwd(),
-    env: { ...process.env, RUN_LIVE_SEARXNG: '1', RUN_LIVE_CRAWL4AI: '1' },
+    env: {
+      ...process.env,
+      RUN_LIVE_SEARXNG: '1',
+      RUN_LIVE_CRAWL4AI: '1',
+      RUN_LIVE_SERVICES: '1',
+    },
     stdio: 'inherit',
   },
 );

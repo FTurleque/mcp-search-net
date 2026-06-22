@@ -14,11 +14,16 @@ Dans l’installation, modifier `%LOCALAPPDATA%\mcp-search-net\config`. L’inst
 
 ## Variables d’environnement
 
-- `MCP_SEARCH_CONFIG` remplace le chemin du fichier applicatif ;
-- `CRAWL4AI_API_TOKEN` remplace le jeton configuré.
-- `MCP_SEARCH_SEARXNG_URL` et `MCP_SEARCH_CRAWL4AI_URL` remplacent les endpoints ;
-- `MCP_SEARCH_CACHE_PATH`, `MCP_SEARCH_CACHE_ENABLED` et `MCP_SEARCH_CACHE_CONTINUE_ON_ERROR` contrôlent le cache ;
-- `MCP_SEARCH_LOG_LEVEL` remplace le niveau de journalisation.
+- `MCP_CONFIG_PATH` remplace le chemin du fichier applicatif ;
+- `MCP_OFFICIAL_SOURCES_PATH` remplace le registre officiel ;
+- `MCP_CRAWL4AI_TOKEN` fournit le jeton de la façade ;
+- `MCP_SEARXNG_URL` et `MCP_CRAWL4AI_URL` remplacent les endpoints ;
+- `MCP_CACHE_PATH` contrôle le chemin du cache ;
+- `MCP_LOG_LEVEL` remplace le niveau de journalisation.
+
+Les anciens noms préfixés `MCP_SEARCH_` restent acceptés pour compatibilité. Les
+nouveaux déploiements utilisent les noms ci-dessus. `.env.example` ne contient
+que des valeurs d’exemple.
 
 La priorité est : valeurs internes sûres, YAML, variables d'environnement, puis paramètres d'outil bornés. Toutes les surcharges repassent par Zod ; elles ne peuvent pas augmenter les maxima absolus.
 

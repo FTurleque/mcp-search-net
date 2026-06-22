@@ -7,7 +7,7 @@ export default defineConfig({
       reporter: ['text', 'html'],
     },
     include: ['tests/**/*.test.ts'],
-    exclude: ['tests/e2e/mcp-live*.test.ts', 'tests/integration/**', 'tests/performance/**'],
+    exclude: ['tests/e2e/*live*.test.ts', 'tests/integration/**', 'tests/performance/**'],
     testTimeout: 15_000,
   },
 });

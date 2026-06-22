@@ -21,8 +21,8 @@ Elle commence par `npm run check:runtime` et s'arrête immédiatement avec un me
 | `npm run test:security`    | SSRF, protocoles, redirections, limites et injection            |         non          |
 | `npm run test:resilience`  | Cache et fournisseurs dégradés                                  |         non          |
 | `npm run test:performance` | Limite de 10 Mo et concurrence                                  |   local uniquement   |
-| `npm run test:integration` | SearXNG, Crawl4AI et SQLite réels                               | oui, Compose démarré |
-| `npm run test:e2e:live`    | Appels MCP STDIO réels des deux outils                          | oui, Compose démarré |
+| `npm run test:integration` | Contrats fournisseurs, configuration et SQLite réel             |         non          |
+| `npm run test:e2e`         | Fournisseurs réels et appels MCP STDIO des deux outils          | oui, Compose démarré |
 | `npm run test:release`     | Toutes les suites précédentes                                   |         oui          |
 
 Les rapports JSON sont écrits dans `.data/test-reports/`. Le lanceur échoue si une
@@ -32,9 +32,8 @@ rapports comme artefacts.
 Pour les suites réelles :
 
 ```powershell
-docker compose --profile hybrid up -d searxng crawl4ai
-npm run test:integration
-npm run test:e2e:live
+docker compose up -d searxng crawl4ai
+npm run test:e2e
 ```
 
 ## Niveaux
@@ -43,7 +42,8 @@ npm run test:e2e:live
 - application : cas d’usage avec ports simulés, cache et erreurs ;
 - infrastructure : YAML/Zod, SQLite, politique DNS/URL et clients HTTP simulés ;
 - présentation : schémas MCP, résultats structurés et erreurs ;
-- intégration : SearXNG et Crawl4AI réels via Docker ;
+- intégration : adaptateurs sur fixtures, configuration et SQLite réel, sans Docker ;
+- E2E : SearXNG et Crawl4AI réels via Docker et client MCP STDIO officiel ;
 - bout en bout : client MCP STDIO lançant le serveur compilé.
 
 Les tests réseau réels sont exclus de la suite ordinaire afin qu’elle reste déterministe. Vérifier aussi qu’aucun log applicatif n’est écrit sur `stdout`.

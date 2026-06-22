@@ -67,20 +67,25 @@ describe('Crawl4aiContentFetcher', () => {
     });
   });
 
-  it('uses only a prepared data URL for the auto native-render fallback', async () => {
+  it('uses only sanitized prepared raw HTML for the auto native-render fallback', async () => {
     const gateway = {
       download: async () => ({
         requestedUrl: 'https://example.com/app',
         finalUrl: 'https://example.com/app',
         status: 200,
         headers: { 'content-type': 'text/html' },
-        body: new TextEncoder().encode('<html><body><div>tiny</div></body></html>'),
+        body: new TextEncoder().encode(
+          '<html><head><meta http-equiv="refresh" content="0;url=http://127.0.0.1"><link rel="stylesheet" href="http://127.0.0.1/a.css"></head><body><img src="http://127.0.0.1/x"><div style="background:url(http://127.0.0.1/y)">tiny</div></body></html>',
+        ),
       }),
     } as unknown as SecureHttpGateway;
     const crawl = vi.fn(async (_input, init) => {
       const payload = JSON.parse(String(init?.body)) as { urls: string[] };
       expect(payload.urls[0]).toMatch(/^raw:\/\/<html/u);
       expect(payload.urls[0]).not.toContain('example.com');
+      expect(payload.urls[0]).not.toContain('<link');
+      expect(payload.urls[0]).not.toContain('<meta');
+      expect(payload.urls[0]).not.toContain('127.0.0.1');
       return new Response(
         JSON.stringify({
           results: [

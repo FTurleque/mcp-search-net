@@ -42,7 +42,7 @@ describe('SqliteCacheRepository', () => {
     const fixture = createRepository();
     await fixture.cache.set('search', 'bad', { ok: true }, 10_000);
     const database = new Database(fixture.path);
-    database.prepare("UPDATE cache_entries SET payload = '{' WHERE cache_key = 'bad'").run();
+    database.prepare("UPDATE search_cache SET payload = '{' WHERE cache_key = 'bad'").run();
     database.close();
     await expect(fixture.cache.get('search', 'bad', { allowStale: true })).resolves.toBeUndefined();
   });
@@ -58,9 +58,18 @@ describe('SqliteCacheRepository', () => {
     expect(await fixture.cache.prune()).toBeGreaterThan(0);
     const database = new Database(fixture.path, { readonly: true });
     expect(
-      (database.prepare('SELECT count(*) AS count FROM cache_entries').get() as { count: number })
+      (database.prepare('SELECT count(*) AS count FROM search_cache').get() as { count: number })
         .count,
     ).toBe(0);
+    expect(
+      (
+        database
+          .prepare(
+            "SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('search_cache', 'content_cache', 'schema_migrations')",
+          )
+          .get() as { count: number }
+      ).count,
+    ).toBe(3);
     database.close();
   });
 

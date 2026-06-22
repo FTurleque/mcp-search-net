@@ -1,10 +1,11 @@
-import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
+import type { DnsResolver } from '../../application/ports/dns-resolver.js';
 import type { UrlSecurityPolicy } from '../../application/ports/url-security-policy.js';
 import type { ApprovedUrl } from '../../domain/models/public-url.js';
 import { UrlSecurityError } from '../../domain/errors/domain-errors.js';
 import type { Telemetry } from '../../application/ports/telemetry.js';
+import { NodeDnsResolver } from './node-dns-resolver.js';
 
 export type AddressResolver = (hostname: string) => Promise<readonly string[]>;
 
@@ -16,7 +17,7 @@ export interface PublicUrlSecurityOptions {
 export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
   public constructor(
     private readonly options: PublicUrlSecurityOptions,
-    private readonly resolver: AddressResolver = resolveAll,
+    private readonly resolver: DnsResolver | AddressResolver = new NodeDnsResolver(),
     private readonly telemetry?: Telemetry,
   ) {}
 
@@ -73,7 +74,10 @@ export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
       addresses = [hostname];
     } else {
       try {
-        addresses = await this.resolver(hostname);
+        addresses =
+          typeof this.resolver === 'function'
+            ? await this.resolver(hostname)
+            : await this.resolver.resolve(hostname);
       } catch (error) {
         throw new UrlSecurityError('The hostname cannot be resolved', 'DNS_RESOLUTION_FAILED', {
           cause: error,
@@ -96,11 +100,6 @@ function safeHostname(value: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-async function resolveAll(hostname: string): Promise<readonly string[]> {
-  const records = await dnsLookup(hostname, { all: true, verbatim: true });
-  return [...new Set(records.map((record) => record.address))];
 }
 
 export function isPublicAddress(address: string): boolean {

@@ -34,6 +34,7 @@
 - [Rapport de validation des phases 3 et 4](planning/validation-phase-3-4.md)
 - [Rapport de validation des phases 5 à 7](planning/validation-phase-5-7.md)
 - [Rapport de validation des phases 8 et 9](planning/validation-phase-8-9.md)
+- [Validation finale V1 du 22 juin 2026](planning/validation-v1-finale-2026-06-22.md)
 - [Matrice de traçabilité V1](planning/traceabilite-v1.md)
 - [Benchmark V1 du 22 juin 2026](planning/benchmark-v1-2026-06-22.md)
 - [Recette manuelle IntelliJ](planning/recette-intellij-v1.md)

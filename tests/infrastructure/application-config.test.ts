@@ -2,7 +2,10 @@ import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { applicationConfigSchema } from '../../src/infrastructure/config/application-config.js';
+import {
+  applicationConfigSchema,
+  applicationEnvironmentSchema,
+} from '../../src/infrastructure/config/application-config.js';
 import { loadConfiguration } from '../../src/infrastructure/config/load-configuration.js';
 
 const originalEnvironment = { ...process.env };
@@ -37,13 +40,28 @@ describe('application configuration precedence and limits', () => {
     );
   });
 
+  it('validates the documented environment contract', () => {
+    expect(
+      applicationEnvironmentSchema.safeParse({
+        MCP_LOG_LEVEL: 'debug',
+        MCP_SEARXNG_URL: 'http://127.0.0.1:8888',
+        MCP_CRAWL4AI_TOKEN: 'a-secure-local-token',
+      }).success,
+    ).toBe(true);
+    expect(
+      applicationEnvironmentSchema.safeParse({ MCP_SEARXNG_URL: 'file:///tmp/socket' }).success,
+    ).toBe(false);
+  });
+
   it('applies validated environment overrides after YAML', async () => {
     process.env['MCP_SEARCH_CACHE_ENABLED'] = 'false';
-    process.env['MCP_SEARCH_LOG_LEVEL'] = 'debug';
-    process.env['MCP_SEARCH_SEARXNG_URL'] = 'http://searxng.internal:8080';
+    process.env['MCP_LOG_LEVEL'] = 'debug';
+    process.env['MCP_SEARXNG_URL'] = 'http://searxng.internal:8080';
+    process.env['MCP_CRAWL4AI_TOKEN'] = 'test-token-from-environment';
     const loaded = await loadConfiguration(resolve('config/application.yml'));
     expect(loaded.application.cache.enabled).toBe(false);
     expect(loaded.application.logging.level).toBe('debug');
     expect(loaded.application.searxng.baseUrl).toBe('http://searxng.internal:8080');
+    expect(loaded.crawl4aiApiToken).toBe('test-token-from-environment');
   });
 });

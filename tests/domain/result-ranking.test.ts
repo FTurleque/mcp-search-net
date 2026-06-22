@@ -30,7 +30,7 @@ describe('result ranking', () => {
         score: 100,
         engines: [],
       },
-      { query: 'mcp sdk', allowedDomains: [] },
+      { query: 'mcp sdk' },
     );
     const official = toSearchResult(
       {
@@ -40,7 +40,7 @@ describe('result ranking', () => {
         score: 1,
         engines: [],
       },
-      { query: 'mcp sdk', officialSource, allowedDomains: [] },
+      { query: 'mcp sdk', officialSource },
     );
 
     const ranked = rankAndDeduplicate([community!, official!]);
@@ -57,7 +57,7 @@ describe('result ranking', () => {
         score: 1,
         engines: ['b'],
       },
-      { query: 'docs', allowedDomains: [] },
+      { query: 'docs' },
     );
     const second = toSearchResult(
       {
@@ -67,7 +67,7 @@ describe('result ranking', () => {
         score: 1,
         engines: ['a'],
       },
-      { query: 'docs', allowedDomains: [] },
+      { query: 'docs' },
     );
 
     const ranked = rankAndDeduplicate([first!, second!]);
@@ -76,21 +76,19 @@ describe('result ranking', () => {
     expect(ranked[0]?.title).toBe('A title');
   });
 
-  it('classifies allowed, likely, third-party and unknown sources', () => {
-    const create = (url: string, allowedDomains: readonly string[] = []) =>
-      toSearchResult(
-        { title: 'Result', url, snippet: '', engines: [] },
-        { query: 'result', allowedDomains },
-      )?.sourceStatus;
+  it('classifies only registry entries as verified official', () => {
+    const create = (url: string) =>
+      toSearchResult({ title: 'Result', url, snippet: '', engines: [] }, { query: 'result' })
+        ?.sourceStatus;
 
-    expect(create('https://sub.example.com/page', ['example.com'])).toBe('VERIFIED_OFFICIAL');
+    expect(create('https://sub.example.com/page')).toBe('UNKNOWN');
     expect(create('https://developer.vendor.test/reference')).toBe('LIKELY_OFFICIAL');
     expect(create('https://stackoverflow.com/questions/1')).toBe('THIRD_PARTY');
     expect(create('https://example.net/page')).toBe('UNKNOWN');
   });
 
   it('uses a stable title and URL order when scores are equal', () => {
-    const context = { query: 'unrelated', allowedDomains: [] } as const;
+    const context = { query: 'unrelated' } as const;
     const beta = toSearchResult(
       { title: 'Beta', url: 'https://example.net/b', snippet: '', engines: [] },
       context,

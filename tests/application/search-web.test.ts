@@ -62,6 +62,7 @@ const baseResults: readonly ProviderSearchResult[] = [
     snippet: 'x',
     score: 10,
     engines: ['a'],
+    updatedAt: '2026-06-22T00:00:00.000Z',
   },
   {
     title: 'Official MCP documentation',
@@ -69,6 +70,7 @@ const baseResults: readonly ProviderSearchResult[] = [
     snippet: 'y',
     score: 1,
     engines: ['b'],
+    updatedAt: '2026-06-22T00:00:00.000Z',
   },
 ];
 
@@ -147,7 +149,7 @@ describe('SearchWeb', () => {
 
     const response = await useCase.execute({
       ...baseRequest,
-      sourcePolicy: 'strict',
+      sourcePolicy: 'any',
       allowedDomains: ['vendor.test'],
       excludedDomains: ['blocked.vendor.test'],
     });
@@ -155,7 +157,7 @@ describe('SearchWeb', () => {
     expect(response.data.results).toHaveLength(1);
     expect(response.data.results[0]).toMatchObject({
       domain: 'guide.vendor.test',
-      sourceStatus: 'VERIFIED_OFFICIAL',
+      sourceStatus: 'UNKNOWN',
     });
   });
 
@@ -174,6 +176,27 @@ describe('SearchWeb', () => {
     expect(response.status).toBe('partial');
     expect(response.warnings.map((warning) => warning.code)).toContain('FALLBACK_LANGUAGE_USED');
     expect(response.data.metadata.unresponsiveEngines).toEqual(['engine-fr']);
+    expect(response.warnings.map((warning) => warning.code)).toContain(
+      'SEARCH_PROVIDER_PARTIAL_FAILURE',
+    );
+  });
+
+  it('reports when provider results do not contain freshness metadata', async () => {
+    const undated = {
+      title: baseResults[1]!.title,
+      url: baseResults[1]!.url,
+      snippet: baseResults[1]!.snippet,
+      score: 1,
+      engines: baseResults[1]!.engines,
+    };
+    const useCase = createUseCase(async () => ({
+      results: [undated],
+      total: 1,
+      unresponsiveEngines: [],
+    }));
+    const response = await useCase.execute(baseRequest);
+    expect(response.status).toBe('partial');
+    expect(response.warnings.map((warning) => warning.code)).toContain('DATE_UNAVAILABLE');
   });
 
   it('warns when ranked results are truncated to maxResults', async () => {
@@ -242,5 +265,12 @@ function createUseCase(search: SearchProvider['search']): SearchWeb {
 }
 
 function providerResult(url: string): ProviderSearchResult {
-  return { title: 'MCP documentation', url, snippet: 'MCP', score: 1, engines: ['test'] };
+  return {
+    title: 'MCP documentation',
+    url,
+    snippet: 'MCP',
+    score: 1,
+    engines: ['test'],
+    updatedAt: '2026-06-22T00:00:00.000Z',
+  };
 }

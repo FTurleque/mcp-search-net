@@ -42,7 +42,7 @@ export function createMcpServer(dependencies: McpServerDependencies): McpServer 
     {
       title: 'Search the public Web',
       description:
-        'Search public web pages through a local SearXNG instance. Official documentation sources are ranked first and all results preserve their URLs and provenance.',
+        'Recherche des pages Web à partir de termes, privilégie les sources officielles et retourne une liste limitée de résultats avec leurs URL. Utiliser cet outil pour découvrir des sources. Ne pas l’utiliser pour lire le contenu complet d’une URL déjà connue.',
       inputSchema: searchSchemas.input,
       outputSchema: searchSchemas.output.shape,
       annotations: {
@@ -85,7 +85,7 @@ export function createMcpServer(dependencies: McpServerDependencies): McpServer 
     {
       title: 'Fetch a public URL',
       description:
-        'Fetch one known public HTTP(S) URL through the local Crawl4AI service, preserve metadata and links, select relevant Markdown sections, and enforce a strict content budget.',
+        'Récupère une URL publique validée et retourne uniquement les sections pertinentes avec les métadonnées de source. Utiliser cet outil lorsqu’une URL est déjà connue. Il ne suit pas les liens, ne réalise pas de crawl et n’exécute aucun script fourni par l’appelant.',
       inputSchema: fetchSchemas.input,
       outputSchema: fetchSchemas.output.shape,
       annotations: {

@@ -15,5 +15,5 @@ COPY --from=build /app/dist ./dist
 COPY config ./config
 RUN mkdir -p /app/.data && chown -R node:node /app/.data
 USER node
-ENV MCP_SEARCH_CONFIG=/app/config/application.docker.yml
+ENV MCP_CONFIG_PATH=/app/config/application.docker.yml
 ENTRYPOINT ["node", "dist/bootstrap/main.js"]

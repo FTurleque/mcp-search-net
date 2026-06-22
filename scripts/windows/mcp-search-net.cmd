@@ -13,8 +13,8 @@ if not exist "%SERVER_JS%" (
   exit /b 3
 )
 
-if not defined MCP_SEARCH_CONFIG set "MCP_SEARCH_CONFIG=%MCP_SEARCH_HOME%\config\application.yml"
-if not defined CRAWL4AI_API_TOKEN set "CRAWL4AI_API_TOKEN=mcp-search-local-development-token"
+if not defined MCP_CONFIG_PATH set "MCP_CONFIG_PATH=%MCP_SEARCH_HOME%\config\application.yml"
+if not defined MCP_CRAWL4AI_TOKEN set "MCP_CRAWL4AI_TOKEN=mcp-search-local-development-token"
 
 "%NODE_EXE%" "%SERVER_JS%"
 exit /b %ERRORLEVEL%

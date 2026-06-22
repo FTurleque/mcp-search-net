@@ -31,7 +31,7 @@ La V2 (catalogue documentaire, FTS5, synchronisation, versions, embeddings) doit
 | Phase 5 — Cache résilient          | ✅ Terminée le 21 juin 2026 | SQLite typé, revalidation et stale fallback              |
 | Phase 6 — Observabilité            | ✅ Terminée le 21 juin 2026 | Événements corrélés et redaction récursive               |
 | Phase 7 — Déploiement              | ✅ Terminée le 21 juin 2026 | Compose complet/hybride et cycle Windows validés         |
-| Phase 8 — Stratégie de tests       | ✅ Terminée le 22 juin 2026 | 126 requis, intégration 6/6 et E2E réels 2/2             |
+| Phase 8 — Stratégie de tests       | ✅ Terminée le 22 juin 2026 | 134 requis, intégration déterministe 25/25 et E2E 7/7    |
 | Phase 9 — Documentation et recette | 🟡 Partielle                | Automatisation terminée ; recette IntelliJ UI à exécuter |
 
 Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md), de la [phase 2](validation-phase-2.md), des [phases 3 et 4](validation-phase-3-4.md), des [phases 5 à 7](validation-phase-5-7.md) et des [phases 8 et 9](validation-phase-8-9.md).
@@ -79,7 +79,7 @@ Légende : ✅ satisfait par le code actuel ; 🟡 partiel ; ❌ non satisfait ;
 | AC-11 — blocage local, privé et redirections dangereuses |  ✅  | Passerelle épinglée validant chaque saut avant connexion, avec limites et tests SSRF.                                         |
 | AC-12 — aucun LLM/API payante requis                     |  ✅  | Aucun LLM ni SDK commercial dans le code ou les dépendances.                                                                  |
 | AC-13 — lecture seule et aucun accès au projet           |  ✅  | Seuls la configuration et le cache local sont lus/écrits par le serveur.                                                      |
-| AC-14 — tests unitaires, sécurité et E2E au vert         |  ✅  | 126 tests requis, suites spécialisées sans test ignoré, intégration réelle 6/6 et E2E réels 2/2 sous Node 24.                 |
+| AC-14 — tests unitaires, sécurité et E2E au vert         |  ✅  | 134 tests requis, intégration déterministe 25/25 et E2E réels 7/7 sans test ignoré sous Node 24.                              |
 | AC-15 — installation et exemples IntelliJ documentés     |  ✅  | Installation, configuration IntelliJ, exploitation, tests et recette manuelle sont documentés et reliés depuis l’index.       |
 
 ## Ordre de réalisation recommandé
@@ -124,7 +124,7 @@ Zones principales : `src/domain/models`, `src/presentation/mcp/schemas`, `src/pr
 
 - [x] Remplacer `officialOnly` par `sourcePolicy: strict | prefer | any`, défaut `prefer`.
 - [x] Ajouter `allowedDomains` et `excludedDomains`, limités à 20, avec comparaison DNS par frontière de domaine ; les exclusions restent prioritaires.
-- [x] Ajouter `week` à `timeRange`.
+- [x] Limiter `timeRange` à `day`, `month` et `year`, valeurs officiellement prises en charge par SearXNG.
 - [x] Appliquer `fr-FR` par défaut et le repli anglais avec `FALLBACK_LANGUAGE_USED` lorsque nécessaire.
 - [x] Rejeter les caractères de contrôle dans `query` et normaliser tous les champs avant de créer la clé de cache.
 
@@ -133,7 +133,7 @@ Zones principales : `src/domain/models`, `src/presentation/mcp/schemas`, `src/pr
 - [x] Retirer les fragments et les paramètres de suivi connus (`utm_*`, `gclid`, `fbclid`, etc.).
 - [x] Canonicaliser hôte, port implicite, slash final et paramètres avant déduplication, sans modifier abusivement les paramètres fonctionnels.
 - [x] Remplacer le booléen `official` par `VERIFIED_OFFICIAL`, `LIKELY_OFFICIAL`, `THIRD_PARTY` ou `UNKNOWN`.
-- [x] Considérer un domaine passé dans `allowedDomains` comme `VERIFIED_OFFICIAL` pour l'appel courant.
+- [x] Utiliser `allowedDomains` uniquement comme filtre ; seul le registre officiel produit `VERIFIED_OFFICIAL`.
 - [x] Étendre le registre aux sources du benchmark : JetBrains, Java/OpenJDK, Maven, Quarkus, JavaFX, Oracle et Sonar, en plus des entrées existantes.
 - [x] Ajouter la reconnaissance contrôlée des organisations GitHub officielles.
 - [x] Produire un score déterministe borné entre 0 et 1 ; documenter bonus/malus et rappeler qu'il ne s'agit pas d'une probabilité de vérité.

@@ -64,12 +64,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Build MCP container
+        run: docker compose build mcp-search-net
       - name: Start real providers
-        run: docker compose -f compose.yaml -f compose.hybrid.yaml up -d --wait searxng crawl4ai
+        run: docker compose up -d --wait searxng crawl4ai
       - name: Run integration suite
         run: npm run test:integration
       - name: Run live MCP E2E suite
-        run: npm run test:e2e:live
+        run: npm run test:e2e
       - name: Upload integration reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -78,7 +80,7 @@ jobs:
           path: .data/test-reports
       - name: Collect provider logs
         if: failure()
-        run: docker compose -f compose.yaml -f compose.hybrid.yaml logs --no-color
+        run: docker compose logs --no-color
       - name: Stop providers
         if: always()
-        run: docker compose -f compose.yaml -f compose.hybrid.yaml down
+        run: docker compose down

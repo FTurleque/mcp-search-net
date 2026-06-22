@@ -133,12 +133,9 @@ describe('executeToolCall', () => {
       expect(result._meta?.['mcp-search-net/error']).toMatchObject({
         schemaVersion: '1.0',
         requestId: '00000000-0000-4000-8000-000000000002',
-        error: {
-          code: 'INTERNAL_ERROR',
-          message: 'Unexpected internal error',
-          requestId: '00000000-0000-4000-8000-000000000002',
-        },
-        metadata: { tool: 'fetch_url', durationMs: 5 },
+        code: 'INTERNAL_ERROR',
+        message: 'Unexpected internal error',
+        retryable: false,
       });
       expect(result.content[0]).toMatchObject({ type: 'text' });
       expect((result.content[0] as { text: string }).text).not.toContain('secret');

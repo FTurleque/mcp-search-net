@@ -13,7 +13,6 @@ search:
 server:
   port: 8080
   bind_address: 0.0.0.0
-  secret_key: mcp-search-net-local-only-change-for-shared-environments
   limiter: false
   image_proxy: false
 

@@ -18,8 +18,8 @@ describe('MCP STDIO server', () => {
       command: process.execPath,
       args: [resolve('dist/bootstrap/main.js')],
       env: {
-        MCP_SEARCH_CONFIG: resolve('config/application.yml'),
-        CRAWL4AI_API_TOKEN: 'mcp-search-local-development-token',
+        MCP_CONFIG_PATH: resolve('config/application.yml'),
+        MCP_CRAWL4AI_TOKEN: 'mcp-search-local-development-token',
       },
       stderr: 'pipe',
     });
@@ -46,7 +46,7 @@ describe('MCP STDIO server', () => {
         allowedDomains: { type: 'array', maxItems: 20 },
         excludedDomains: { type: 'array', maxItems: 20 },
         language: { default: 'fr-FR' },
-        timeRange: { enum: ['day', 'week', 'month', 'year'] },
+        timeRange: { enum: ['day', 'month', 'year'] },
       },
     });
 
@@ -57,8 +57,8 @@ describe('MCP STDIO server', () => {
     expect(invalid.isError).toBe(true);
     expect(invalid._meta?.['mcp-search-net/error']).toMatchObject({
       schemaVersion: '1.0',
-      error: { code: 'INVALID_ARGUMENT' },
-      metadata: { tool: 'search_web' },
+      code: 'INVALID_ARGUMENT',
+      retryable: false,
     });
     const invalidContent = invalid.content as { type: string; text: string }[];
     expect(invalidContent[0]).toMatchObject({ type: 'text' });
@@ -70,8 +70,8 @@ describe('MCP STDIO server', () => {
     });
     expect(blockedFetch.isError).toBe(true);
     expect(blockedFetch._meta?.['mcp-search-net/error']).toMatchObject({
-      error: { code: 'UNSUPPORTED_PROTOCOL' },
-      metadata: { tool: 'fetch_url' },
+      code: 'UNSUPPORTED_PROTOCOL',
+      retryable: false,
     });
   });
 
@@ -79,8 +79,8 @@ describe('MCP STDIO server', () => {
     const child = spawn(process.execPath, [resolve('dist/bootstrap/main.js')], {
       env: {
         ...process.env,
-        MCP_SEARCH_CONFIG: resolve('config/application.yml'),
-        CRAWL4AI_API_TOKEN: 'test-token-that-must-not-leak',
+        MCP_CONFIG_PATH: resolve('config/application.yml'),
+        MCP_CRAWL4AI_TOKEN: 'test-token-that-must-not-leak',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });

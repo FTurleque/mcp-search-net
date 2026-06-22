@@ -5,7 +5,7 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     exclude: [
-      'tests/e2e/mcp-live*.test.ts',
+      'tests/e2e/*live*.test.ts',
       'tests/integration/**/*.test.ts',
       'tests/performance/**/*.test.ts',
     ],

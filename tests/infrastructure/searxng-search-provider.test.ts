@@ -32,7 +32,7 @@ describe('SearxngSearchProvider', () => {
     const response = await provider.search({
       query: 'mcp sdk',
       language: 'fr-FR',
-      timeRange: 'week',
+      timeRange: 'month',
       limit: 5,
     });
 
@@ -42,7 +42,8 @@ describe('SearxngSearchProvider', () => {
     expect(requestedUrl.pathname).toBe('/search');
     expect(requestedUrl.searchParams.get('format')).toBe('json');
     expect(requestedUrl.searchParams.get('language')).toBe('fr-FR');
-    expect(requestedUrl.searchParams.get('time_range')).toBe('week');
+    expect(requestedUrl.searchParams.get('time_range')).toBe('month');
+    expect(requestedUrl.searchParams.get('pageno')).toBe('1');
     expect(response.results[0]).toMatchObject({
       title: 'Official docs',
       snippet: 'A & B',

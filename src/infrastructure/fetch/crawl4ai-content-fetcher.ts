@@ -201,8 +201,13 @@ function decodeHtml(html: string, baseUrl: string): DecodedContent {
     /<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["'][^"']*canonical[^"']*["']/iu.exec(html)?.[1];
   const safeHtml = removeNoisyBlocks(html)
     .replace(/<(script|style|noscript|iframe|form|nav|aside)\b[\s\S]*?<\/\1>/giu, ' ')
+    .replace(/<(object|embed|video|audio|source)\b[\s\S]*?<\/\1>/giu, ' ')
+    .replace(/<(link|meta|base)\b[^>]*>/giu, ' ')
     .replace(/<!--([\s\S]*?)-->/gu, ' ')
-    .replace(/\s(?:src|srcset|action|poster|data|on\w+)\s*=\s*(?:["'][^"']*["']|[^\s>]+)/giu, '');
+    .replace(
+      /\s(?:src|srcset|action|poster|data|style|on\w+)\s*=\s*(?:["'][^"']*["']|[^\s>]+)/giu,
+      '',
+    );
   const links = [...safeHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["']/giu)].flatMap((match) =>
     normalizeLink(match[1] ?? '', baseUrl),
   );

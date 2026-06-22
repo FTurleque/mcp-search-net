@@ -5,6 +5,8 @@ export interface SearchProviderRequest {
   readonly language?: string;
   readonly timeRange?: SearchTimeRange;
   readonly limit: number;
+  readonly allowedDomains?: readonly string[];
+  readonly excludedDomains?: readonly string[];
 }
 
 export interface SearchProviderResponse {

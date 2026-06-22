@@ -47,6 +47,33 @@ export class InvalidArgumentError extends ApplicationError {
   }
 }
 
+export class InvalidSearchQueryError extends InvalidArgumentError {
+  public constructor(message = 'The search query is invalid', options?: ErrorOptions) {
+    super(message, options);
+  }
+}
+
+export class InvalidWebUrlError extends ApplicationError {
+  public constructor(message = 'The Web URL is invalid', options?: ErrorOptions) {
+    super(message, 'INVALID_URL', options);
+  }
+}
+
+export class InvalidDomainError extends InvalidArgumentError {
+  public constructor(message = 'The domain name is invalid', options?: ErrorOptions) {
+    super(message, options);
+  }
+}
+
+export class ContextBudgetExceededError extends InvalidArgumentError {
+  public constructor(
+    message = 'The context budget is invalid or exceeded',
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+  }
+}
+
 export class RequestTimeoutError extends ApplicationError {
   public constructor(message = 'The request timed out', options?: ErrorOptions) {
     super(message, 'REQUEST_TIMEOUT', options);
@@ -93,6 +120,12 @@ export class ExtractionError extends ApplicationError {
 export class NoRelevantContentError extends ApplicationError {
   public constructor(message = 'No relevant content was found', options?: ErrorOptions) {
     super(message, 'NO_RELEVANT_CONTENT', options);
+  }
+}
+
+export class NoOfficialSourceFoundError extends NoRelevantContentError {
+  public constructor(message = 'No verified official source was found', options?: ErrorOptions) {
+    super(message, options);
   }
 }
 

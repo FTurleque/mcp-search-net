@@ -80,8 +80,8 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
     const response: ToolErrorResponse = {
       schemaVersion: '1.0',
       requestId,
-      error: { ...publicError, requestId },
-      metadata: { tool: options.tool, durationMs },
+      ...publicError,
+      retryable: isRetryable(publicError.code),
     };
     options.logger.record('tool_call_failed', {
       requestId,
@@ -101,6 +101,17 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
       isError: true,
     };
   }
+}
+
+function isRetryable(code: ToolErrorCode): boolean {
+  return [
+    'DNS_RESOLUTION_FAILED',
+    'REQUEST_TIMEOUT',
+    'HTTP_ERROR',
+    'SEARCH_PROVIDER_UNAVAILABLE',
+    'CONTENT_PROVIDER_UNAVAILABLE',
+    'CACHE_UNAVAILABLE',
+  ].includes(code);
 }
 
 function summarizeData(value: unknown): Readonly<Record<string, unknown>> {

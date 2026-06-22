@@ -41,6 +41,7 @@ describe('search request normalization', () => {
         allowedDomains: Array.from({ length: 21 }, (_, index) => `d${index}.example.com`),
       }),
     ).toThrow(/20 domains/u);
+    expect(() => normalizeSearchRequest({ ...base, maxResults: 11 })).toThrow(/between 1 and 10/u);
   });
 
   it('includes every influential field in the cache key and ignores domain ordering', () => {
@@ -49,7 +50,7 @@ describe('search request normalization', () => {
     const variants = [
       { ...normalized, query: 'Other query' },
       { ...normalized, language: 'en' },
-      { ...normalized, timeRange: 'week' as const },
+      { ...normalized, timeRange: 'month' as const },
       { ...normalized, maxResults: 4 },
       { ...normalized, sourcePolicy: 'strict' as const },
       { ...normalized, allowedDomains: ['example.com'] },
@@ -79,6 +80,12 @@ describe('search request normalization', () => {
     });
     expect(createSearchCacheKey(ordered, 'registry-a', behavior)).toBe(
       createSearchCacheKey(reversed, 'registry-a', behavior),
+    );
+  });
+
+  it('rejects the unsupported week time range', () => {
+    expect(() => normalizeSearchRequest({ ...base, timeRange: 'week' as never })).toThrow(
+      /day, month or year/u,
     );
   });
 });

@@ -41,10 +41,10 @@ Entrées :
 | `allowedDomains`  | `[]`     | 20 domaines maximum ; agit comme liste blanche          |
 | `excludedDomains` | `[]`     | 20 domaines maximum ; prioritaire sur les autorisations |
 | `language`        | `fr-FR`  | langue BCP-47 ; repli anglais si aucun résultat         |
-| `timeRange`       | absente  | `day`, `week`, `month` ou `year`                        |
+| `timeRange`       | absente  | `day`, `month` ou `year`, selon l’API SearXNG           |
 | `maxResults`      | `5`      | de 1 à 10                                               |
 
-Les domaines sont comparés par frontière DNS : `docs.example.com` correspond à `example.com`, contrairement à `example.com.attacker.test`. Un domaine autorisé est considéré comme `VERIFIED_OFFICIAL` pour l'appel courant.
+Les domaines sont comparés par frontière DNS : `docs.example.com` correspond à `example.com`, contrairement à `example.com.attacker.test`. `allowedDomains` filtre les résultats mais ne rend jamais un domaine officiel ; seul le registre `official-sources.yml` peut produire `VERIFIED_OFFICIAL`.
 
 Politiques :
 
@@ -98,20 +98,22 @@ Une erreur MCP expose son code et son `requestId` dans le contenu textuel. Sa st
 
 ### Avertissements stables
 
-| Code                            | Signification                                           |
-| ------------------------------- | ------------------------------------------------------- |
-| `NO_RESULTS`                    | aucun résultat après filtrage                           |
-| `NO_VERIFIED_OFFICIAL_SOURCE`   | aucune source officielle vérifiée en mode strict        |
-| `NON_OFFICIAL_RESULTS_INCLUDED` | le résultat inclut une source non vérifiée              |
-| `RESULTS_TRUNCATED`             | la limite de résultats est atteinte                     |
-| `CONTENT_TRUNCATED`             | le budget global de caractères est atteint              |
-| `SECTION_TRUNCATED`             | au moins une section dépasse 5 000 caractères           |
-| `FALLBACK_LANGUAGE_USED`        | la recherche a été rejouée en anglais                   |
-| `STALE_CACHE_USED`              | une donnée expirée remplace un fournisseur indisponible |
-| `REDIRECTED_URL`                | l’URL finale diffère de l’URL demandée                  |
-| `JAVASCRIPT_FALLBACK_USED`      | le rendu Crawl4AI a complété l’extraction statique      |
-| `NO_RELEVANT_SECTION`           | aucune section n’est pertinente pour la requête         |
-| `UNVERIFIED_SOURCE`             | la page n’est pas reconnue comme officielle             |
+| Code                              | Signification                                           |
+| --------------------------------- | ------------------------------------------------------- |
+| `NO_RESULTS`                      | aucun résultat après filtrage                           |
+| `NO_VERIFIED_OFFICIAL_SOURCE`     | aucune source officielle vérifiée en mode strict        |
+| `NON_OFFICIAL_RESULTS_INCLUDED`   | le résultat inclut une source non vérifiée              |
+| `RESULTS_TRUNCATED`               | la limite de résultats est atteinte                     |
+| `CONTENT_TRUNCATED`               | le budget global de caractères est atteint              |
+| `SECTION_TRUNCATED`               | au moins une section dépasse 5 000 caractères           |
+| `FALLBACK_LANGUAGE_USED`          | la recherche a été rejouée en anglais                   |
+| `STALE_CACHE_USED`                | une donnée expirée remplace un fournisseur indisponible |
+| `REDIRECTED_URL`                  | l’URL finale diffère de l’URL demandée                  |
+| `JAVASCRIPT_FALLBACK_USED`        | le rendu Crawl4AI a complété l’extraction statique      |
+| `NO_RELEVANT_SECTION`             | aucune section n’est pertinente pour la requête         |
+| `DATE_UNAVAILABLE`                | les moteurs actifs n’ont fourni aucune date             |
+| `UNVERIFIED_SOURCE`               | la page n’est pas reconnue comme officielle             |
+| `SEARCH_PROVIDER_PARTIAL_FAILURE` | au moins un moteur SearXNG était indisponible           |
 
 ### Erreurs stables
 
@@ -148,6 +150,18 @@ Erreur :
 
 ```text
 UNSUPPORTED_PROTOCOL [requestId: …] Only HTTP and HTTPS URLs are supported.
+```
+
+La métadonnée MCP `mcp-search-net/error` suit ce contrat minimal :
+
+```json
+{
+  "schemaVersion": "1.0",
+  "requestId": "…",
+  "code": "UNSUPPORTED_PROTOCOL",
+  "message": "Only HTTP and HTTPS URLs are supported.",
+  "retryable": false
+}
 ```
 
 Le serveur n’expose aucune option Crawl4AI permettant scripts arbitraires, hooks navigateur, fichiers locaux, proxy fourni par l’appelant, cookies, authentification ou configuration LLM.

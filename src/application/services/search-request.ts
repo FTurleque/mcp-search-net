@@ -1,6 +1,4 @@
 import { createHash } from 'node:crypto';
-import { domainToASCII } from 'node:url';
-
 import { InvalidArgumentError } from '../../domain/errors/domain-errors.js';
 import type {
   NormalizedSearchRequest,
@@ -8,20 +6,13 @@ import type {
   SearchTimeRange,
   SourcePolicy,
 } from '../../domain/models/search.js';
-import { containsControlCharacters } from '../../domain/services/text-validation.js';
-
-const DOMAIN_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
+import { DomainName } from '../../domain/value-objects/domain-name.js';
+import { SearchQuery } from '../../domain/value-objects/search-query.js';
 const SOURCE_POLICIES: readonly SourcePolicy[] = ['strict', 'prefer', 'any'];
-const TIME_RANGES: readonly SearchTimeRange[] = ['day', 'week', 'month', 'year'];
+const TIME_RANGES: readonly SearchTimeRange[] = ['day', 'month', 'year'];
 
 export function normalizeSearchRequest(request: SearchRequest): NormalizedSearchRequest {
-  if (containsControlCharacters(request.query)) {
-    throw new InvalidArgumentError('The search query contains control characters');
-  }
-  const query = request.query.normalize('NFKC').trim().replace(/\s+/gu, ' ');
-  if (query.length < 2 || query.length > 500) {
-    throw new InvalidArgumentError('The search query must contain between 2 and 500 characters');
-  }
+  const query = SearchQuery.create(request.query).value;
   if (!Number.isInteger(request.maxResults) || request.maxResults < 1 || request.maxResults > 10) {
     throw new InvalidArgumentError('maxResults must be an integer between 1 and 10');
   }
@@ -31,7 +22,7 @@ export function normalizeSearchRequest(request: SearchRequest): NormalizedSearch
     throw new InvalidArgumentError('sourcePolicy must be strict, prefer or any');
   }
   if (request.timeRange !== undefined && !TIME_RANGES.includes(request.timeRange)) {
-    throw new InvalidArgumentError('timeRange must be day, week, month or year');
+    throw new InvalidArgumentError('timeRange must be day, month or year');
   }
 
   return {
@@ -70,24 +61,11 @@ export function createSearchCacheKey(
 }
 
 export function normalizeDomain(value: string): string {
-  const candidate = value.trim().toLowerCase().replace(/\.$/u, '');
-  if (candidate === '' || /[\s/:@?#]/u.test(candidate)) {
-    throw new InvalidArgumentError(`Invalid domain: ${value}`);
-  }
-  const ascii = domainToASCII(candidate);
-  if (ascii === '' || ascii.length > 253) {
-    throw new InvalidArgumentError(`Invalid domain: ${value}`);
-  }
-  const labels = ascii.split('.');
-  if (labels.some((label) => !DOMAIN_LABEL.test(label))) {
-    throw new InvalidArgumentError(`Invalid domain: ${value}`);
-  }
-  return ascii;
+  return DomainName.create(value).value;
 }
 
 export function domainMatches(hostname: string, domain: string): boolean {
-  const normalized = hostname.toLowerCase().replace(/\.$/u, '');
-  return normalized === domain || normalized.endsWith(`.${domain}`);
+  return DomainName.create(domain).matches(hostname);
 }
 
 function normalizeDomains(values: readonly string[], field: string): readonly string[] {

@@ -16,7 +16,7 @@ La Phase 2 `search_web` est terminée. La validation complète sous Node.js 24.1
 - `sourcePolicy: strict | prefer | any`, défaut `prefer` ;
 - `allowedDomains` et `excludedDomains`, 20 maximum, avec comparaison par frontière DNS ;
 - `language: fr-FR` par défaut et repli anglais si la première recherche ne retourne rien ;
-- périodes `day`, `week`, `month`, `year` ;
+- périodes `day`, `month`, `year`, alignées sur l’API SearXNG officielle ;
 - requêtes de 2 à 500 caractères sans caractère de contrôle ;
 - 5 résultats par défaut et maximum absolu de 10.
 
@@ -46,5 +46,9 @@ Le test MCP STDIO réel a exécuté `search_web` avec :
 - cinq résultats maximum.
 
 Il vérifie une réponse non vide, des URL HTTP(S), des sources exclusivement `VERIFIED_OFFICIAL` et des scores compris entre 0 et 1.
+
+> Alignement du 22 juin 2026 : `allowedDomains` ne confère plus le statut
+> officiel. Le domaine de cette recette reste vérifié parce qu’il figure dans le
+> registre `official-sources.yml`.
 
 `search_web` dépend uniquement du port `SearchProvider`, du cache et du registre officiel : aucune page trouvée n'est récupérée automatiquement.

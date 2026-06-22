@@ -1,5 +1,6 @@
 export type TelemetryEvent =
   | 'server_started'
+  | 'server_stopped'
   | 'tool_call_started'
   | 'tool_call_completed'
   | 'tool_call_failed'

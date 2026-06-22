@@ -22,25 +22,39 @@ interface CacheRow {
   readonly content_hash: string | null;
 }
 
+const CACHE_TABLES: Readonly<Record<CacheNamespace, string>> = {
+  search: 'search_cache',
+  content: 'content_cache',
+  'temporary-error': 'temporary_error_cache',
+};
+
 export class SqliteCacheRepository implements CacheRepository {
   public readonly enabled = true;
   private readonly database: Database.Database;
-  private readonly selectStatement: Database.Statement<[string, string], CacheRow>;
-  private readonly touchStatement: Database.Statement<[number, string, string]>;
-  private readonly deleteStatement: Database.Statement<[string, string]>;
-  private readonly upsertStatement: Database.Statement<
-    [
-      string,
-      string,
-      string,
-      number,
-      number,
-      number,
-      number,
-      string | null,
-      string | null,
-      string | null,
-    ]
+  private readonly selectStatements: Readonly<
+    Record<CacheNamespace, Database.Statement<[string], CacheRow>>
+  >;
+  private readonly touchStatements: Readonly<
+    Record<CacheNamespace, Database.Statement<[number, string]>>
+  >;
+  private readonly deleteStatements: Readonly<Record<CacheNamespace, Database.Statement<[string]>>>;
+  private readonly upsertStatements: Readonly<
+    Record<
+      CacheNamespace,
+      Database.Statement<
+        [
+          string,
+          string,
+          number,
+          number,
+          number,
+          number,
+          string | null,
+          string | null,
+          string | null,
+        ]
+      >
+    >
   >;
 
   public constructor(
@@ -53,32 +67,36 @@ export class SqliteCacheRepository implements CacheRepository {
     this.database = new Database(path);
     this.database.pragma('journal_mode = WAL');
     this.database.pragma('synchronous = NORMAL');
+    this.database.pragma('foreign_keys = ON');
     this.database.pragma('busy_timeout = 5000');
     this.applyMigrations();
-    this.selectStatement = this.database.prepare(
-      'SELECT payload, created_at, expires_at, etag, last_modified, content_hash FROM cache_entries WHERE namespace = ? AND cache_key = ?',
+    this.selectStatements = this.createStatements(
+      (table) =>
+        `SELECT payload, created_at, expires_at, etag, last_modified, content_hash FROM ${table} WHERE cache_key = ?`,
     );
-    this.touchStatement = this.database.prepare(
-      'UPDATE cache_entries SET last_accessed_at = ? WHERE namespace = ? AND cache_key = ?',
+    this.touchStatements = this.createStatements(
+      (table) => `UPDATE ${table} SET last_accessed_at = ? WHERE cache_key = ?`,
     );
-    this.deleteStatement = this.database.prepare(
-      'DELETE FROM cache_entries WHERE namespace = ? AND cache_key = ?',
+    this.deleteStatements = this.createStatements(
+      (table) => `DELETE FROM ${table} WHERE cache_key = ?`,
     );
-    this.upsertStatement = this.database.prepare(`
-      INSERT INTO cache_entries (
-        namespace, cache_key, payload, created_at, expires_at, last_accessed_at, size_bytes,
-        etag, last_modified, content_hash
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(namespace, cache_key) DO UPDATE SET
-        payload = excluded.payload,
-        created_at = excluded.created_at,
-        expires_at = excluded.expires_at,
-        last_accessed_at = excluded.last_accessed_at,
-        size_bytes = excluded.size_bytes,
-        etag = excluded.etag,
-        last_modified = excluded.last_modified,
-        content_hash = excluded.content_hash
-    `);
+    this.upsertStatements = this.createStatements(
+      (table) => `
+        INSERT INTO ${table} (
+          cache_key, payload, created_at, expires_at, last_accessed_at, size_bytes,
+          etag, last_modified, content_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(cache_key) DO UPDATE SET
+          payload = excluded.payload,
+          created_at = excluded.created_at,
+          expires_at = excluded.expires_at,
+          last_accessed_at = excluded.last_accessed_at,
+          size_bytes = excluded.size_bytes,
+          etag = excluded.etag,
+          last_modified = excluded.last_modified,
+          content_hash = excluded.content_hash
+      `,
+    );
   }
 
   public get<T>(
@@ -86,23 +104,23 @@ export class SqliteCacheRepository implements CacheRepository {
     key: string,
     options: CacheGetOptions = {},
   ): Promise<CacheRecord<T> | undefined> {
-    const row = this.selectStatement.get(namespace, key);
+    const row = this.selectStatements[namespace].get(key);
     if (row === undefined) return Promise.resolve(undefined);
     const now = this.clock.now().getTime();
     const stale = row.expires_at <= now;
     if (stale && options.allowStale !== true) return Promise.resolve(undefined);
     if (row.expires_at + this.staleRetentionMs <= now) {
-      this.deleteStatement.run(namespace, key);
+      this.deleteStatements[namespace].run(key);
       return Promise.resolve(undefined);
     }
     let value: T;
     try {
       value = JSON.parse(row.payload) as T;
     } catch {
-      this.deleteStatement.run(namespace, key);
+      this.deleteStatements[namespace].run(key);
       return Promise.resolve(undefined);
     }
-    this.touchStatement.run(now, namespace, key);
+    this.touchStatements[namespace].run(now, key);
     return Promise.resolve({
       value,
       createdAt: new Date(row.created_at),
@@ -124,8 +142,7 @@ export class SqliteCacheRepository implements CacheRepository {
     const payload = JSON.stringify(value);
     const now = this.clock.now().getTime();
     this.database.transaction(() => {
-      this.upsertStatement.run(
-        namespace,
+      this.upsertStatements[namespace].run(
         key,
         payload,
         now,
@@ -142,7 +159,7 @@ export class SqliteCacheRepository implements CacheRepository {
   }
 
   public delete(namespace: CacheNamespace, key: string): Promise<void> {
-    this.deleteStatement.run(namespace, key);
+    this.deleteStatements[namespace].run(key);
     return Promise.resolve();
   }
 
@@ -174,17 +191,32 @@ export class SqliteCacheRepository implements CacheRepository {
     })();
   }
 
+  private createStatements<T extends Database.Statement>(
+    sql: (table: string) => string,
+  ): Readonly<Record<CacheNamespace, T>> {
+    return Object.fromEntries(
+      Object.entries(CACHE_TABLES).map(([namespace, table]) => [
+        namespace,
+        this.database.prepare(sql(table)),
+      ]),
+    ) as Readonly<Record<CacheNamespace, T>>;
+  }
+
   private pruneSync(now: number): number {
-    const obsolete = this.database
-      .prepare('DELETE FROM cache_entries WHERE expires_at <= ?')
-      .run(now - this.staleRetentionMs);
-    const overflow = this.database
-      .prepare(
-        `DELETE FROM cache_entries WHERE rowid IN (
-        SELECT rowid FROM cache_entries ORDER BY last_accessed_at DESC LIMIT -1 OFFSET ?
-      )`,
-      )
-      .run(this.maxEntries);
-    return obsolete.changes + overflow.changes;
+    let changes = 0;
+    for (const table of Object.values(CACHE_TABLES)) {
+      changes += this.database
+        .prepare(`DELETE FROM ${table} WHERE expires_at <= ?`)
+        .run(now - this.staleRetentionMs).changes;
+      changes += this.database
+        .prepare(
+          `DELETE FROM ${table} WHERE rowid IN (
+            SELECT rowid FROM ${table}
+            ORDER BY last_accessed_at DESC LIMIT -1 OFFSET ?
+          )`,
+        )
+        .run(this.maxEntries).changes;
+    }
+    return changes;
   }
 }

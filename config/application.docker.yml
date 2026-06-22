@@ -9,8 +9,7 @@ searxng:
 crawl4ai:
   baseUrl: http://crawl4ai:11235
   timeoutMs: 20000
-  apiTokenEnvironmentVariable: CRAWL4AI_API_TOKEN
-  apiToken: mcp-search-local-development-token
+  apiTokenEnvironmentVariable: MCP_CRAWL4AI_TOKEN
 
 cache:
   enabled: true

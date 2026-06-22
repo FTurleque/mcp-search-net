@@ -1,16 +1,7 @@
 import type { OfficialSource } from '../models/official-source.js';
 import type { ProviderSearchResult, SearchResult, SourceStatus } from '../models/search.js';
-
-const TRACKING_PARAMETERS = new Set([
-  'dclid',
-  'fbclid',
-  'gclid',
-  'mc_cid',
-  'mc_eid',
-  'msclkid',
-  '_hsenc',
-  '_hsmi',
-]);
+import { RelevanceScore } from '../value-objects/relevance-score.js';
+import { WebUrl } from '../value-objects/web-url.js';
 const THIRD_PARTY_DOMAINS = [
   'dev.to',
   'medium.com',
@@ -35,7 +26,6 @@ const DOCUMENTATION_LABELS = new Set([
 export interface SearchResultContext {
   readonly query: string;
   readonly officialSource?: OfficialSource;
-  readonly allowedDomains: readonly string[];
 }
 
 export function toSearchResult(
@@ -47,7 +37,7 @@ export function toSearchResult(
 
   const url = new URL(normalizedUrl);
   const domain = url.hostname.toLowerCase();
-  const sourceStatus = classifySource(url, context.officialSource, context.allowedDomains);
+  const sourceStatus = classifySource(url, context.officialSource);
   const title = result.title.trim() || domain;
 
   return {
@@ -76,24 +66,7 @@ export function rankAndDeduplicate(results: readonly SearchResult[]): readonly S
 }
 
 export function normalizeResultUrl(value: string): string | undefined {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return undefined;
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
-
-  url.hash = '';
-  for (const key of [...url.searchParams.keys()]) {
-    const normalizedKey = key.toLowerCase();
-    if (normalizedKey.startsWith('utm_') || TRACKING_PARAMETERS.has(normalizedKey)) {
-      url.searchParams.delete(key);
-    }
-  }
-  url.searchParams.sort();
-  if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/u, '');
-  return url.toString();
+  return WebUrl.tryCreate(value)?.value;
 }
 
 export function matchesDomain(hostname: string, domains: readonly string[]): boolean {
@@ -101,14 +74,8 @@ export function matchesDomain(hostname: string, domains: readonly string[]): boo
   return domains.some((domain) => normalized === domain || normalized.endsWith(`.${domain}`));
 }
 
-function classifySource(
-  url: URL,
-  officialSource: OfficialSource | undefined,
-  allowedDomains: readonly string[],
-): SourceStatus {
-  if (officialSource !== undefined || matchesDomain(url.hostname, allowedDomains)) {
-    return 'VERIFIED_OFFICIAL';
-  }
+function classifySource(url: URL, officialSource: OfficialSource | undefined): SourceStatus {
+  if (officialSource !== undefined) return 'VERIFIED_OFFICIAL';
   if (matchesDomain(url.hostname, THIRD_PARTY_DOMAINS) || looksThirdParty(url)) {
     return 'THIRD_PARTY';
   }
@@ -148,7 +115,7 @@ function scoreResult(
     urlSignal +
     documentationBonus +
     officialPriority * 0.05;
-  return Number(Math.min(1, Math.max(0, raw)).toFixed(6));
+  return RelevanceScore.clamp(raw).value;
 }
 
 function looksThirdParty(url: URL): boolean {

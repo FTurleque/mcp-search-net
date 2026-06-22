@@ -48,6 +48,7 @@ export class SearxngSearchProvider implements SearchProvider {
     endpoint.searchParams.set('format', 'json');
     endpoint.searchParams.set('categories', 'general');
     endpoint.searchParams.set('safesearch', '1');
+    endpoint.searchParams.set('pageno', '1');
     if (request.language !== undefined) endpoint.searchParams.set('language', request.language);
     if (request.timeRange !== undefined) endpoint.searchParams.set('time_range', request.timeRange);
 

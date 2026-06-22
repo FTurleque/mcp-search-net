@@ -15,10 +15,6 @@ export const toolWarningSchema = z
   })
   .strict();
 
-const commonMetadataFields = {
-  durationMs: z.number().nonnegative(),
-};
-
 export function createToolResponseSchema<T extends z.ZodType>(tool: ToolName, data: T) {
   return z
     .object({
@@ -29,7 +25,7 @@ export function createToolResponseSchema<T extends z.ZodType>(tool: ToolName, da
       metadata: z
         .object({
           tool: z.literal(tool),
-          ...commonMetadataFields,
+          durationMs: z.number().nonnegative(),
           cacheStatus: z.enum(CACHE_STATUSES),
           provider: z.string().min(1),
         })
@@ -43,18 +39,8 @@ export const toolErrorResponseSchema = z
   .object({
     schemaVersion: z.literal('1.0'),
     requestId: z.uuid(),
-    error: z
-      .object({
-        code: z.enum(TOOL_ERROR_CODES),
-        message: z.string().min(1),
-        requestId: z.uuid(),
-      })
-      .strict(),
-    metadata: z
-      .object({
-        tool: z.enum(['search_web', 'fetch_url']),
-        ...commonMetadataFields,
-      })
-      .strict(),
+    code: z.enum(TOOL_ERROR_CODES),
+    message: z.string().min(1),
+    retryable: z.boolean(),
   })
   .strict();

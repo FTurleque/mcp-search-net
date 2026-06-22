@@ -32,7 +32,7 @@ export function createSearchWebSchemas(defaultResults: number, maximumResults: n
           .regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/)
           .default('fr-FR')
           .describe('BCP-47-like language code, for example fr or en-US'),
-        timeRange: z.enum(['day', 'week', 'month', 'year']).optional(),
+        timeRange: z.enum(['day', 'month', 'year']).optional(),
         maxResults: z.number().int().min(1).max(maximumResults).default(defaultResults),
       })
       .strict(),

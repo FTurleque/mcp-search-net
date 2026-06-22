@@ -7,21 +7,43 @@ import { connectStdio } from '../presentation/mcp/mcp-server.js';
 
 async function main(): Promise<void> {
   assertSupportedNode();
-  const configPath = process.env['MCP_SEARCH_CONFIG'] ?? resolve('config/application.yml');
+  loadLocalEnvironment();
+  const configPath =
+    process.env['MCP_CONFIG_PATH'] ??
+    process.env['MCP_SEARCH_CONFIG'] ??
+    resolve('config/application.yml');
   const loaded = await loadConfiguration(configPath);
   const container = createContainer(loaded);
 
-  const shutdown = (): void => {
-    container.logger.info('MCP server shutting down');
+  let shuttingDown = false;
+  const shutdown = async (reason: string, exitCode = 0): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    container.logger.record('server_stopped', { reason, exitCode });
+    await container.mcpServer.close().catch(() => undefined);
     container.cache.close();
+    process.exitCode = exitCode;
   };
   process.once('SIGINT', () => {
-    shutdown();
-    process.exit(0);
+    void shutdown('SIGINT');
   });
   process.once('SIGTERM', () => {
-    shutdown();
-    process.exit(0);
+    void shutdown('SIGTERM');
+  });
+  process.once('uncaughtException', (error) => {
+    container.logger.error('uncaught_exception', { error });
+    void shutdown('uncaughtException', 1);
+  });
+  process.once('unhandledRejection', (reason) => {
+    container.logger.error('unhandled_rejection', { reason });
+    void shutdown('unhandledRejection', 1);
+  });
+  process.stdout.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EPIPE') void shutdown('EPIPE');
+    else {
+      container.logger.error('stdout_error', { error });
+      void shutdown('stdoutError', 1);
+    }
   });
   process.once('exit', () => container.cache.close());
 
@@ -30,6 +52,14 @@ async function main(): Promise<void> {
     version: loaded.application.application.version,
   });
   await connectStdio(container.mcpServer);
+}
+
+function loadLocalEnvironment(): void {
+  try {
+    process.loadEnvFile(resolve('.env'));
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+  }
 }
 
 function assertSupportedNode(): void {

@@ -1,4 +1,4 @@
-export type SearchTimeRange = 'day' | 'week' | 'month' | 'year';
+export type SearchTimeRange = 'day' | 'month' | 'year';
 export type SourcePolicy = 'strict' | 'prefer' | 'any';
 export type SourceStatus = 'VERIFIED_OFFICIAL' | 'LIKELY_OFFICIAL' | 'THIRD_PARTY' | 'UNKNOWN';
 

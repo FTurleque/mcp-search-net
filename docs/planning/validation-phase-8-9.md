@@ -15,15 +15,15 @@ Validation réalisée le 22 juin 2026 sous Node.js 24.14.0.
 
 | Commande                   | Résultat                                            |
 | -------------------------- | --------------------------------------------------- |
-| `npm run check`            | 20 fichiers, 126 tests réussis                      |
-| `npm run test:required`    | 126 réussis, 0 ignoré                               |
-| `npm run test:unit`        | 55 réussis, 0 ignoré                                |
+| `npm run check`            | 21 fichiers, 134 tests réussis                      |
+| `npm run test:required`    | 134 réussis, 0 ignoré                               |
+| `npm run test:unit`        | 62 réussis, 0 ignoré                                |
 | `npm run test:contract`    | 6 réussis, 0 ignoré                                 |
 | `npm run test:security`    | 60 réussis, 0 ignoré                                |
 | `npm run test:resilience`  | 23 réussis, 0 ignoré                                |
 | `npm run test:performance` | 2 réussis, 0 ignoré                                 |
-| `npm run test:integration` | 6 réussis, 0 ignoré                                 |
-| `npm run test:e2e:live`    | 2 réussis, 0 ignoré                                 |
+| `npm run test:integration` | 25 réussis, 0 ignoré, sans Docker                   |
+| `npm run test:e2e`         | 7 réussis, 0 ignoré, fournisseurs et MCP réels      |
 | Compose hybride            | configuration valide, SearXNG et Crawl4AI `healthy` |
 
 Les rapports sont écrits sous `.data/test-reports/`. Le workflow CI exécute les

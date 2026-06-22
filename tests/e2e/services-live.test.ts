@@ -1,19 +1,14 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { SearxngSearchProvider } from '../../src/infrastructure/search/searxng-search-provider.js';
-import { SqliteCacheRepository } from '../../src/infrastructure/cache/sqlite-cache-repository.js';
 import { Crawl4aiContentFetcher } from '../../src/infrastructure/fetch/crawl4ai-content-fetcher.js';
 import type { SecureHttpGateway } from '../../src/infrastructure/fetch/secure-http-gateway.js';
 
-const root = mkdtempSync(join(tmpdir(), 'mcp-integration-'));
-afterAll(() => rmSync(root, { recursive: true, force: true }));
+const live = process.env['RUN_LIVE_SERVICES'] === '1';
 
-describe('real provider and SQLite integration', () => {
+describe.runIf(live)('live provider services', () => {
   it('observes healthy SearXNG and Crawl4AI services', async () => {
     const searchHealth = await fetch('http://127.0.0.1:8888/search?q=health&format=json');
     expect(searchHealth.ok).toBe(true);
@@ -32,7 +27,7 @@ describe('real provider and SQLite integration', () => {
     expect(response.results.every((result) => /^https?:\/\//u.test(result.url))).toBe(true);
   });
 
-  it('renders prepared raw HTML through the real Crawl4AI endpoint', () => {
+  it('renders prepared raw HTML through the authenticated Crawl4AI endpoint', () => {
     const script = [
       'import json, requests',
       "html='<html><body><h1>Integration proof</h1><p>Real Crawl4AI endpoint.</p></body></html>'",
@@ -53,39 +48,24 @@ describe('real provider and SQLite integration', () => {
     expect(envelope.results?.[0]?.markdown?.raw_markdown).toContain('Integration proof');
   });
 
-  it('persists and reopens a real SQLite cache', async () => {
-    const path = join(root, 'cache.sqlite');
-    const clock = { now: () => new Date('2026-06-22T00:00:00.000Z') };
-    const first = new SqliteCacheRepository(path, clock, 100, 86_400_000);
-    await first.set('search', 'key', { result: 'value' }, 60_000);
-    first.close();
-    const reopened = new SqliteCacheRepository(path, clock, 100, 86_400_000);
-    await expect(reopened.get('search', 'key')).resolves.toMatchObject({
-      value: { result: 'value' },
-    });
-    reopened.close();
-  });
-
-  it('maps stopped-provider equivalents to stable unavailability errors', async () => {
-    const provider = new SearxngSearchProvider('http://127.0.0.1:1', 200);
-    await expect(provider.search({ query: 'docs', limit: 1 })).rejects.toMatchObject({
-      code: 'SEARCH_PROVIDER_UNAVAILABLE',
-    });
-  });
-
-  it('maps unavailable Crawl4AI during auto rendering', async () => {
+  it('uses the real Crawl4AI adapter from the host in auto mode', async () => {
     const gateway = {
       download: async () => ({
-        requestedUrl: 'https://example.com',
-        finalUrl: 'https://example.com',
+        requestedUrl: 'https://example.com/dynamic',
+        finalUrl: 'https://example.com/dynamic',
         status: 200,
         headers: { 'content-type': 'text/html' },
-        body: new TextEncoder().encode('<p>tiny</p>'),
+        body: new TextEncoder().encode('<html><body><div>tiny</div></body></html>'),
       }),
     } as unknown as SecureHttpGateway;
-    const fetcher = new Crawl4aiContentFetcher('http://127.0.0.1:1', 200, undefined, gateway);
-    await expect(fetcher.fetch('https://example.com', 'auto')).rejects.toMatchObject({
-      code: 'CONTENT_PROVIDER_UNAVAILABLE',
+    const fetcher = new Crawl4aiContentFetcher(
+      'http://127.0.0.1:11235',
+      20_000,
+      'mcp-search-local-development-token',
+      gateway,
+    );
+    await expect(fetcher.fetch('https://example.com/dynamic', 'auto')).resolves.toMatchObject({
+      extractionMode: 'native-render',
     });
   });
 });

@@ -71,8 +71,9 @@ describe('tool response schemas', () => {
         toolErrorResponseSchema.safeParse({
           schemaVersion: '1.0',
           requestId,
-          error: { code, message: code, requestId },
-          metadata: { tool: 'fetch_url', durationMs: 0 },
+          code,
+          message: code,
+          retryable: false,
         }).success,
       ).toBe(true);
     }

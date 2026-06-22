@@ -19,8 +19,8 @@ describe.runIf(live)('live MCP search', () => {
       command: process.execPath,
       args: [resolve('dist/bootstrap/main.js')],
       env: {
-        MCP_SEARCH_CONFIG: resolve('config/application.yml'),
-        CRAWL4AI_API_TOKEN: 'mcp-search-local-development-token',
+        MCP_CONFIG_PATH: resolve('config/application.yml'),
+        MCP_CRAWL4AI_TOKEN: 'mcp-search-local-development-token',
       },
       stderr: 'pipe',
     });

@@ -101,7 +101,6 @@ export class SearchWeb {
         const mapped = toSearchResult(result, {
           query: normalizedRequest.query,
           ...(officialSource === undefined ? {} : { officialSource }),
-          allowedDomains: normalizedRequest.allowedDomains,
         });
         if (mapped === undefined) return undefined;
         return {
@@ -120,16 +119,23 @@ export class SearchWeb {
     const policyCandidates = applySourcePolicy(candidates, normalizedRequest.sourcePolicy);
     const ranked = rankAndDeduplicate(policyCandidates);
     const results = ranked.slice(0, normalizedRequest.maxResults);
+    const unresponsiveEngines = mergeUnresponsiveEngines(firstResponse, providerResponse);
     const warnings = createWarnings({
       request: normalizedRequest,
       fallbackLanguageUsed: shouldFallback,
       candidates,
       ranked,
       results,
+      unresponsiveEngines,
     });
     const value: CachedSearchValue = {
       status: warnings.some((warning) =>
-        ['FALLBACK_LANGUAGE_USED', 'RESULTS_TRUNCATED'].includes(warning.code),
+        [
+          'FALLBACK_LANGUAGE_USED',
+          'RESULTS_TRUNCATED',
+          'DATE_UNAVAILABLE',
+          'SEARCH_PROVIDER_PARTIAL_FAILURE',
+        ].includes(warning.code),
       )
         ? 'partial'
         : 'success',
@@ -140,7 +146,7 @@ export class SearchWeb {
         metadata: {
           total: providerResponse.total ?? candidates.length,
           returned: results.length,
-          unresponsiveEngines: mergeUnresponsiveEngines(firstResponse, providerResponse),
+          unresponsiveEngines,
         },
       },
     };
@@ -161,6 +167,8 @@ export class SearchWeb {
         language,
         ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
         limit: request.maxResults * this.options.providerOversampling,
+        allowedDomains: request.allowedDomains,
+        excludedDomains: request.excludedDomains,
       });
       this.telemetry?.record('search_provider_called', {
         requestId: context.requestId,
@@ -199,6 +207,7 @@ function createWarnings(context: {
   readonly candidates: readonly SearchResult[];
   readonly ranked: readonly SearchResult[];
   readonly results: readonly SearchResult[];
+  readonly unresponsiveEngines: readonly string[];
 }): readonly ToolWarningDescriptor[] {
   const warnings: ToolWarningDescriptor[] = [];
   if (context.fallbackLanguageUsed) {
@@ -230,6 +239,23 @@ function createWarnings(context: {
     warnings.push({
       code: 'RESULTS_TRUNCATED',
       message: `Results were limited to ${context.request.maxResults}`,
+    });
+  }
+  if (
+    context.results.length > 0 &&
+    context.results.every(
+      (result) => result.publishedAt === undefined && result.updatedAt === undefined,
+    )
+  ) {
+    warnings.push({
+      code: 'DATE_UNAVAILABLE',
+      message: 'The active search engines did not provide a publication or update date',
+    });
+  }
+  if (context.unresponsiveEngines.length > 0) {
+    warnings.push({
+      code: 'SEARCH_PROVIDER_PARTIAL_FAILURE',
+      message: 'One or more SearXNG engines were unavailable',
     });
   }
   return warnings;

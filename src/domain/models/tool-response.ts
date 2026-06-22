@@ -13,7 +13,9 @@ export const TOOL_WARNING_CODES = [
   'REDIRECTED_URL',
   'JAVASCRIPT_FALLBACK_USED',
   'NO_RELEVANT_SECTION',
+  'DATE_UNAVAILABLE',
   'UNVERIFIED_SOURCE',
+  'SEARCH_PROVIDER_PARTIAL_FAILURE',
 ] as const;
 export type ToolWarningCode = (typeof TOOL_WARNING_CODES)[number];
 
@@ -75,15 +77,9 @@ export interface ToolResponse<T> {
 export interface ToolErrorResponse {
   readonly schemaVersion: '1.0';
   readonly requestId: string;
-  readonly error: {
-    readonly code: ToolErrorCode;
-    readonly message: string;
-    readonly requestId: string;
-  };
-  readonly metadata: {
-    readonly tool: ToolName;
-    readonly durationMs: number;
-  };
+  readonly code: ToolErrorCode;
+  readonly message: string;
+  readonly retryable: boolean;
 }
 
 export function isToolErrorCode(value: string): value is ToolErrorCode {

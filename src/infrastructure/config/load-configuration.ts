@@ -1,8 +1,12 @@
 import { dirname, resolve } from 'node:path';
 
 import type { OfficialSourceRegistry } from '../../application/ports/official-source-registry.js';
-import { applicationConfigSchema, officialSourcesFileSchema } from './application-config.js';
-import type { ApplicationConfig } from './application-config.js';
+import {
+  applicationConfigSchema,
+  applicationEnvironmentSchema,
+  officialSourcesFileSchema,
+} from './application-config.js';
+import type { ApplicationConfig, ApplicationEnvironment } from './application-config.js';
 import { loadYaml } from './yaml-loader.js';
 import { OfficialSourceYamlRegistry } from './official-source-yaml-registry.js';
 
@@ -14,15 +18,27 @@ export interface LoadedConfiguration {
 
 export async function loadConfiguration(configPath: string): Promise<LoadedConfiguration> {
   const absoluteConfigPath = resolve(configPath);
+  const environment = applicationEnvironmentSchema.parse(process.env);
   const yamlApplication = await loadYaml(absoluteConfigPath, applicationConfigSchema);
-  const application = applicationConfigSchema.parse(applyEnvironmentOverrides(yamlApplication));
-  const officialPath = resolve(dirname(absoluteConfigPath), application.officialSourcesPath);
+  const application = applicationConfigSchema.parse(
+    applyEnvironmentOverrides(yamlApplication, environment),
+  );
+  const officialPath = resolve(
+    dirname(absoluteConfigPath),
+    environment.MCP_OFFICIAL_SOURCES_PATH ??
+      firstEnvironment('MCP_SEARCH_OFFICIAL_SOURCES_PATH') ??
+      application.officialSourcesPath,
+  );
   const officialFile = await loadYaml(officialPath, officialSourcesFileSchema);
   const tokenFromEnvironment =
     application.crawl4ai.apiTokenEnvironmentVariable === undefined
       ? undefined
       : process.env[application.crawl4ai.apiTokenEnvironmentVariable];
-  const crawl4aiApiToken = tokenFromEnvironment ?? application.crawl4ai.apiToken;
+  const crawl4aiApiToken =
+    environment.MCP_CRAWL4AI_TOKEN ??
+    firstEnvironment('CRAWL4AI_API_TOKEN') ??
+    tokenFromEnvironment ??
+    application.crawl4ai.apiToken;
 
   return {
     application: {
@@ -38,11 +54,14 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
   };
 }
 
-function applyEnvironmentOverrides(application: ApplicationConfig): unknown {
-  const searxngUrl = process.env['MCP_SEARCH_SEARXNG_URL'];
-  const crawl4aiUrl = process.env['MCP_SEARCH_CRAWL4AI_URL'];
-  const cachePath = process.env['MCP_SEARCH_CACHE_PATH'];
-  const logLevel = process.env['MCP_SEARCH_LOG_LEVEL'];
+function applyEnvironmentOverrides(
+  application: ApplicationConfig,
+  environment: ApplicationEnvironment,
+): unknown {
+  const searxngUrl = environment.MCP_SEARXNG_URL ?? firstEnvironment('MCP_SEARCH_SEARXNG_URL');
+  const crawl4aiUrl = environment.MCP_CRAWL4AI_URL ?? firstEnvironment('MCP_SEARCH_CRAWL4AI_URL');
+  const cachePath = environment.MCP_CACHE_PATH ?? firstEnvironment('MCP_SEARCH_CACHE_PATH');
+  const logLevel = environment.MCP_LOG_LEVEL ?? firstEnvironment('MCP_SEARCH_LOG_LEVEL');
   const cacheEnabled = environmentBoolean('MCP_SEARCH_CACHE_ENABLED');
   const continueOnError = environmentBoolean('MCP_SEARCH_CACHE_CONTINUE_ON_ERROR');
   return {
@@ -66,6 +85,14 @@ function applyEnvironmentOverrides(application: ApplicationConfig): unknown {
       ...(logLevel === undefined ? {} : { level: logLevel }),
     },
   };
+}
+
+function firstEnvironment(...names: readonly string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value !== undefined && value !== '') return value;
+  }
+  return undefined;
 }
 
 function environmentBoolean(name: string): boolean | undefined {

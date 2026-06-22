@@ -39,7 +39,7 @@ Une installation existante conserve `config\application.yml`, `config\official-s
 ├── docs\                copie de cette documentation
 ├── runtime\              Node.js portable
 ├── compose.yaml         mode complet, services internes
-├── compose.hybrid.yaml  ports loopback pour le mode hybride
+├── compose.hybrid.yaml  compatibilité des installations antérieures
 ├── mcp.json.example
 ├── mcp.container.json.example
 └── VERSION

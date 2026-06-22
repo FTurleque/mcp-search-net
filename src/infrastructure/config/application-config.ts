@@ -136,6 +136,18 @@ export const applicationConfigSchema = z
 
 export type ApplicationConfig = z.infer<typeof applicationConfigSchema>;
 
+export const applicationEnvironmentSchema = z.object({
+  MCP_CONFIG_PATH: z.string().min(1).optional(),
+  MCP_LOG_LEVEL: z.enum(['debug', 'info', 'warning', 'error']).optional(),
+  MCP_CACHE_PATH: z.string().min(1).optional(),
+  MCP_OFFICIAL_SOURCES_PATH: z.string().min(1).optional(),
+  MCP_SEARXNG_URL: httpUrlSchema.optional(),
+  MCP_CRAWL4AI_URL: httpUrlSchema.optional(),
+  MCP_CRAWL4AI_TOKEN: z.string().min(16).optional(),
+});
+
+export type ApplicationEnvironment = z.infer<typeof applicationEnvironmentSchema>;
+
 export const officialSourcesFileSchema = z
   .object({
     version: z.literal(1),
