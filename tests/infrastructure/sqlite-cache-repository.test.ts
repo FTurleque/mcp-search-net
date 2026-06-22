@@ -89,15 +89,18 @@ describe('SqliteCacheRepository', () => {
 
   it('continues with cache disabled after an operational failure', async () => {
     const failing: CacheRepository = {
-      enabled: true,
       async getSearch() {
         throw new Error('SQLITE path secret');
       },
-      async setSearch() {},
+      async setSearch() {
+        return true;
+      },
       async getContent() {
         return undefined;
       },
-      async setContent() {},
+      async setContent() {
+        return true;
+      },
       async deleteExpired() {
         return 0;
       },
@@ -106,7 +109,7 @@ describe('SqliteCacheRepository', () => {
     const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const cache = new SafeCacheRepository(failing, true, new StructuredLogger('error'));
     await expect(cache.getSearch('key')).resolves.toBeUndefined();
-    expect(cache.enabled).toBe(false);
+    await expect(cache.setSearch('key', { value: true }, 1_000)).resolves.toBe(false);
     expect(String(write.mock.calls[0]?.[0])).not.toContain('path secret');
     write.mockRestore();
   });

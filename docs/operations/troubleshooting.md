@@ -4,7 +4,7 @@
 
 - vérifier que le chemin dans `mcp.json` vient du fichier généré `%LOCALAPPDATA%\mcp-search-net\mcp.json.example` ;
 - redémarrer le serveur MCP dans l’interface Copilot ;
-- vérifier que le lanceur et `app\dist\bootstrap\main.js` existent ;
+- vérifier que le lanceur et `app\build\bootstrap\main.js` existent ;
 - consulter `stderr` dans les journaux Copilot/IntelliJ.
 
 ## SearXNG ou Crawl4AI est indisponible

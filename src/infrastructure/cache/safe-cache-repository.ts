@@ -16,10 +16,6 @@ export class SafeCacheRepository implements CacheRepository {
     private readonly logger: Logger,
   ) {}
 
-  public get enabled(): boolean {
-    return this.available && this.inner.enabled !== false;
-  }
-
   public async getSearch<T>(
     key: string,
     options?: CacheGetOptions,
@@ -32,12 +28,8 @@ export class SafeCacheRepository implements CacheRepository {
     value: T,
     ttlMs: number,
     validators?: CacheValidators,
-  ): Promise<void> {
-    await this.run(
-      'setSearch',
-      () => this.inner.setSearch(key, value, ttlMs, validators),
-      undefined,
-    );
+  ): Promise<boolean> {
+    return this.run('setSearch', () => this.inner.setSearch(key, value, ttlMs, validators), false);
   }
 
   public async getContent<T>(
@@ -52,11 +44,11 @@ export class SafeCacheRepository implements CacheRepository {
     value: T,
     ttlMs: number,
     validators?: CacheValidators,
-  ): Promise<void> {
-    await this.run(
+  ): Promise<boolean> {
+    return this.run(
       'setContent',
       () => this.inner.setContent(key, value, ttlMs, validators),
-      undefined,
+      false,
     );
   }
 

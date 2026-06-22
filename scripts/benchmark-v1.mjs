@@ -21,7 +21,7 @@ const scenarios = [
 const client = new Client({ name: 'mcp-search-net-benchmark', version: '1.0.0' });
 const transport = new StdioClientTransport({
   command: process.execPath,
-  args: [resolve('dist/bootstrap/main.js')],
+  args: [resolve('build/bootstrap/main.js')],
   env: {
     MCP_CONFIG_PATH: resolve('config/application.yml'),
     MCP_CRAWL4AI_TOKEN: process.env['MCP_CRAWL4AI_TOKEN'] ?? 'mcp-search-local-development-token',

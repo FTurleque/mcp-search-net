@@ -62,7 +62,7 @@ npm run build
 npm start
 ```
 
-Le processus utilise le transport MCP STDIO ; il n’ouvre aucun port applicatif.
+Le build nettoie `build/` et l'ancien dossier `dist/` avant compilation. TypeScript utilise `noEmitOnError`, puis `npm start` exécute `build/bootstrap/main.js`. Le processus utilise le transport MCP STDIO ; il n’ouvre aucun port applicatif.
 
 ## Validation
 
@@ -123,7 +123,7 @@ Exécution Node locale, après `npm run build` :
 ```json
 {
   "command": "node",
-  "args": ["N:/chemin/vers/mcp-search-net/dist/bootstrap/main.js"],
+  "args": ["N:/chemin/vers/mcp-search-net/build/bootstrap/main.js"],
   "cwd": "N:/chemin/vers/mcp-search-net",
   "env": {
     "MCP_CONFIG_PATH": "N:/chemin/vers/mcp-search-net/config/application.yml",

@@ -16,7 +16,7 @@ describe('MCP STDIO server', () => {
     client = new Client({ name: 'mcp-search-net-test', version: '1.0.0' });
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: [resolve('dist/bootstrap/main.js')],
+      args: [resolve('build/bootstrap/main.js')],
       env: {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
         MCP_CRAWL4AI_TOKEN: 'mcp-search-local-development-token',
@@ -76,7 +76,7 @@ describe('MCP STDIO server', () => {
   });
 
   it('keeps stdout as JSON-RPC and writes structured diagnostics only to stderr', async () => {
-    const child = spawn(process.execPath, [resolve('dist/bootstrap/main.js')], {
+    const child = spawn(process.execPath, [resolve('build/bootstrap/main.js')], {
       env: {
         ...process.env,
         MCP_CONFIG_PATH: resolve('config/application.yml'),

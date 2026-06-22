@@ -4,6 +4,7 @@ import { createContainer } from './container.js';
 import { loadConfiguration } from '../infrastructure/config/load-configuration.js';
 import { StructuredLogger } from '../infrastructure/logging/structured-logger.js';
 import { connectStdio } from '../presentation/mcp/mcp-server.js';
+import { ConfigurationError } from '../domain/errors/domain-errors.js';
 
 async function main(): Promise<void> {
   assertSupportedNode();
@@ -65,7 +66,9 @@ function loadLocalEnvironment(): void {
 function assertSupportedNode(): void {
   const major = Number.parseInt(process.versions.node.split('.')[0] ?? '0', 10);
   if (major !== 24) {
-    throw new Error(`Node.js 24 LTS is required; current runtime is ${process.versions.node}`);
+    throw new ConfigurationError(
+      `Node.js 24 LTS is required; current runtime is ${process.versions.node}`,
+    );
   }
 }
 

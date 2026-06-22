@@ -78,7 +78,7 @@ function normalizeDomains(values: readonly string[], field: string): readonly st
 function normalizeLanguage(value: string): string {
   try {
     const language = Intl.getCanonicalLocales(value.trim())[0];
-    if (language === undefined) throw new Error('missing locale');
+    if (language === undefined) throw new InvalidArgumentError('The language is missing');
     return language;
   } catch (error) {
     throw new InvalidArgumentError(`Invalid language: ${value}`, { cause: error });

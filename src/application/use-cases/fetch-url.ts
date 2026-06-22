@@ -6,7 +6,7 @@ import type { ContentFetcher } from '../ports/content-fetcher.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
 import type { UrlSecurityPolicy } from '../ports/url-security-policy.js';
 import type { FetchRequest, FetchResponse, FetchedContent } from '../../domain/models/content.js';
-import { ApplicationError } from '../../domain/errors/domain-errors.js';
+import { ApplicationError, InternalApplicationError } from '../../domain/errors/domain-errors.js';
 import type { SourceStatus } from '../../domain/models/search.js';
 import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import { selectRelevantContent } from '../../domain/services/content-selection.js';
@@ -68,19 +68,23 @@ export class FetchUrl {
       });
       const startedAt = performance.now();
       try {
-        const fetched = await this.fetcher.fetch({
-          url: WebUrl.create(approved.value),
-          renderMode: request.renderMode,
-          timeoutMs: this.options.timeoutMs,
-          maxResponseBytes: this.options.maxResponseBytes,
-          maxRedirects: this.options.maxRedirects,
-          ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
-          cacheValidators: {
-            ...(cached?.etag === undefined ? {} : { etag: cached.etag }),
-            ...(cached?.lastModified === undefined ? {} : { lastModified: cached.lastModified }),
-            ...(cached?.contentHash === undefined ? {} : { contentHash: cached.contentHash }),
+        const fetched = await this.fetcher.fetch(
+          {
+            url: WebUrl.create(approved.value),
+            renderMode: request.renderMode,
+            timeoutMs: this.options.timeoutMs,
+            maxResponseBytes: this.options.maxResponseBytes,
+            maxRedirects: this.options.maxRedirects,
           },
-        });
+          {
+            ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+            cacheValidators: {
+              ...(cached?.etag === undefined ? {} : { etag: cached.etag }),
+              ...(cached?.lastModified === undefined ? {} : { lastModified: cached.lastModified }),
+              ...(cached?.contentHash === undefined ? {} : { contentHash: cached.contentHash }),
+            },
+          },
+        );
         this.telemetry?.record('provider_called', {
           requestId: context.requestId,
           tool: 'fetch_url',
@@ -96,14 +100,13 @@ export class FetchUrl {
               : fetched.metadata['bytes'],
         });
         content = 'notModified' in fetched ? requireCachedValue(cached) : fetched;
-        cacheStatus =
-          'notModified' in fetched ? 'HIT' : this.cache.enabled === false ? 'DISABLED' : 'MISS';
-        await this.cache.setContent(key, content, cacheTtl(content, this.options), {
+        cacheStatus = 'notModified' in fetched ? 'HIT' : 'MISS';
+        const stored = await this.cache.setContent(key, content, cacheTtl(content, this.options), {
           ...(content.etag === undefined ? {} : { etag: content.etag }),
           ...(content.lastModified === undefined ? {} : { lastModified: content.lastModified }),
           contentHash: content.contentHash,
         });
-        if (this.cache.enabled === false) cacheStatus = 'DISABLED';
+        if (!stored) cacheStatus = 'DISABLED';
       } catch (error) {
         this.telemetry?.record('provider_failed', {
           requestId: context.requestId,
@@ -221,7 +224,8 @@ export class FetchUrl {
 function requireCachedValue(
   record: { readonly value: FetchedContent } | undefined,
 ): FetchedContent {
-  if (record === undefined) throw new Error('A 304 response requires a cached value');
+  if (record === undefined)
+    throw new InternalApplicationError('A 304 response requires a cached value');
   return record.value;
 }
 

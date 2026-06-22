@@ -22,7 +22,7 @@ describe.runIf(live)('live MCP search', () => {
     cacheRoot = mkdtempSync(join(tmpdir(), 'mcp-search-live-cache-'));
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: [resolve('dist/bootstrap/main.js')],
+      args: [resolve('build/bootstrap/main.js')],
       env: {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
         MCP_CRAWL4AI_TOKEN: 'mcp-search-local-development-token',

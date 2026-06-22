@@ -7,14 +7,14 @@
   "engines": {
     "node": ">=24 <25"
   },
-  "exports": "./dist/bootstrap/main.js",
+  "exports": "./build/bootstrap/main.js",
   "scripts": {
-    "clean": "node scripts/clean.mjs",
+    "clean": "rimraf build dist",
     "check:runtime": "node scripts/check-node-version.mjs",
     "check:copilot": "node scripts/validate-copilot-config.mjs",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
     "dev": "tsx src/bootstrap/main.ts",
-    "start": "node dist/bootstrap/main.js",
+    "start": "node build/bootstrap/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
@@ -50,6 +50,7 @@
     "@types/node": "24.13.2",
     "eslint": "9.39.1",
     "prettier": "3.6.2",
+    "rimraf": "6.1.3",
     "tsx": "^4.16.5",
     "typescript": "5.9.3",
     "typescript-eslint": "8.48.1",

@@ -118,7 +118,7 @@ export class SqliteCacheRepository implements CacheRepository {
     value: T,
     ttlMs: number,
     validators: CacheValidators = {},
-  ): Promise<void> {
+  ): Promise<boolean> {
     return this.set('search', key, value, ttlMs, validators);
   }
 
@@ -127,7 +127,7 @@ export class SqliteCacheRepository implements CacheRepository {
     value: T,
     ttlMs: number,
     validators: CacheValidators = {},
-  ): Promise<void> {
+  ): Promise<boolean> {
     return this.set('content', key, value, ttlMs, validators);
   }
 
@@ -178,7 +178,7 @@ export class SqliteCacheRepository implements CacheRepository {
     value: T,
     ttlMs: number,
     validators: CacheValidators = {},
-  ): Promise<void> {
+  ): Promise<boolean> {
     const payload = JSON.stringify(value);
     const now = this.clock.now().getTime();
     this.database.transaction(() => {
@@ -195,7 +195,7 @@ export class SqliteCacheRepository implements CacheRepository {
       );
       this.pruneSync(now);
     })();
-    return Promise.resolve();
+    return Promise.resolve(true);
   }
 
   private applyMigrations(): void {

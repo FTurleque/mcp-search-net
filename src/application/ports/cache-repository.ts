@@ -16,28 +16,36 @@ export interface CacheGetOptions {
 }
 
 export interface CacheRepository {
-  readonly enabled?: boolean;
   getSearch<T>(key: string, options?: CacheGetOptions): Promise<CacheRecord<T> | undefined>;
-  setSearch<T>(key: string, value: T, ttlMs: number, validators?: CacheValidators): Promise<void>;
+  setSearch<T>(
+    key: string,
+    value: T,
+    ttlMs: number,
+    validators?: CacheValidators,
+  ): Promise<boolean>;
   getContent<T>(key: string, options?: CacheGetOptions): Promise<CacheRecord<T> | undefined>;
-  setContent<T>(key: string, value: T, ttlMs: number, validators?: CacheValidators): Promise<void>;
+  setContent<T>(
+    key: string,
+    value: T,
+    ttlMs: number,
+    validators?: CacheValidators,
+  ): Promise<boolean>;
   deleteExpired(): Promise<number>;
   close(): void;
 }
 
 export class DisabledCacheRepository implements CacheRepository {
-  public readonly enabled = false;
   public getSearch<T>(): Promise<CacheRecord<T> | undefined> {
     return Promise.resolve(undefined);
   }
-  public setSearch(): Promise<void> {
-    return Promise.resolve();
+  public setSearch(): Promise<boolean> {
+    return Promise.resolve(false);
   }
   public getContent<T>(): Promise<CacheRecord<T> | undefined> {
     return Promise.resolve(undefined);
   }
-  public setContent(): Promise<void> {
-    return Promise.resolve();
+  public setContent(): Promise<boolean> {
+    return Promise.resolve(false);
   }
   public deleteExpired(): Promise<number> {
     return Promise.resolve(0);

@@ -9,7 +9,7 @@ Le serveur doit intégrer le SDK MCP officiel, exécuter un transport STDIO port
 
 ## Décision
 
-Utiliser TypeScript strict sur Node.js 24 LTS, avec compilation ESM et lockfile npm.
+Utiliser TypeScript strict sur Node.js 24 LTS, avec compilation ESM NodeNext, lockfile npm, sortie unique dans `build/`, nettoyage avant compilation et `noEmitOnError: true`.
 
 ## Conséquences
 

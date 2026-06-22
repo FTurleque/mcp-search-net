@@ -2,7 +2,7 @@
 setlocal
 if not defined MCP_SEARCH_HOME set "MCP_SEARCH_HOME=%LOCALAPPDATA%\mcp-search-net"
 set "NODE_EXE=%MCP_SEARCH_HOME%\runtime\node-v24.17.0-win-x64\node.exe"
-set "SERVER_JS=%MCP_SEARCH_HOME%\app\dist\bootstrap\main.js"
+set "SERVER_JS=%MCP_SEARCH_HOME%\app\build\bootstrap\main.js"
 
 if not exist "%NODE_EXE%" (
   1>&2 echo mcp-search-net: runtime Node.js absent. Relancez scripts\install-user.ps1.

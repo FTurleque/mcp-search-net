@@ -10,11 +10,15 @@ class NoCache implements CacheRepository {
   public async getSearch<T>(): Promise<CacheRecord<T> | undefined> {
     return undefined;
   }
-  public async setSearch(): Promise<void> {}
+  public async setSearch(): Promise<boolean> {
+    return true;
+  }
   public async getContent<T>(): Promise<CacheRecord<T> | undefined> {
     return undefined;
   }
-  public async setContent(): Promise<void> {}
+  public async setContent(): Promise<boolean> {
+    return true;
+  }
   public async deleteExpired(): Promise<number> {
     return 0;
   }
@@ -26,12 +30,15 @@ class ContentCache implements CacheRepository {
   public async getSearch<T>(): Promise<CacheRecord<T> | undefined> {
     return undefined;
   }
-  public async setSearch(): Promise<void> {}
+  public async setSearch(): Promise<boolean> {
+    return true;
+  }
   public async getContent<T>(): Promise<CacheRecord<T> | undefined> {
     return this.record as CacheRecord<T>;
   }
-  public async setContent<T>(_key: string, value: T): Promise<void> {
+  public async setContent<T>(_key: string, value: T): Promise<boolean> {
     this.record = { ...this.record, value: value as FetchedContent, stale: false };
+    return true;
   }
   public async deleteExpired(): Promise<number> {
     return 0;
@@ -184,8 +191,8 @@ describe('FetchUrl', () => {
       contentHash: content.contentHash,
     });
     let received: unknown;
-    const useCase = createCachedUseCase(cache, async (request) => {
-      received = request.cacheValidators;
+    const useCase = createCachedUseCase(cache, async (_request, context) => {
+      received = context?.cacheValidators;
       return { notModified: true as const };
     });
     const response = await useCase.execute({

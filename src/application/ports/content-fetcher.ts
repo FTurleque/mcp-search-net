@@ -8,10 +8,13 @@ export interface ContentFetchRequest {
   readonly timeoutMs: number;
   readonly maxResponseBytes: number;
   readonly maxRedirects: number;
+}
+
+export interface ContentFetchContext {
   readonly requestId?: string;
   readonly cacheValidators?: CacheValidators;
 }
 
 export interface ContentFetcher {
-  fetch(request: ContentFetchRequest): Promise<ContentFetchResult>;
+  fetch(request: ContentFetchRequest, context?: ContentFetchContext): Promise<ContentFetchResult>;
 }

@@ -152,8 +152,8 @@ export class SearchWeb {
       },
     };
 
-    await this.cache.setSearch(key, value, this.options.cacheTtlMs);
-    return execution(value, this.cache.enabled === false ? 'DISABLED' : 'MISS');
+    const stored = await this.cache.setSearch(key, value, this.options.cacheTtlMs);
+    return execution(value, stored ? 'MISS' : 'DISABLED');
   }
 
   private async searchProvider(

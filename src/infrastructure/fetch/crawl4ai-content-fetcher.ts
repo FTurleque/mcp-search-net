@@ -4,7 +4,10 @@ import { z } from 'zod/v4';
 
 import type { ContentFetcher } from '../../application/ports/content-fetcher.js';
 import type { ContentFetchResult, FetchedContent } from '../../domain/models/content.js';
-import type { ContentFetchRequest } from '../../application/ports/content-fetcher.js';
+import type {
+  ContentFetchContext,
+  ContentFetchRequest,
+} from '../../application/ports/content-fetcher.js';
 import {
   ContentProviderUnavailableError,
   ExtractionError,
@@ -46,12 +49,15 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     private readonly fetchImplementation: typeof fetch = fetch,
   ) {}
 
-  public async fetch(request: ContentFetchRequest): Promise<ContentFetchResult> {
+  public async fetch(
+    request: ContentFetchRequest,
+    context: ContentFetchContext = {},
+  ): Promise<ContentFetchResult> {
     const resource = await this.gateway.download(
       request.url.value,
-      createConditionalHeaders(request.cacheValidators),
+      createConditionalHeaders(context.cacheValidators),
       {
-        ...(request.requestId === undefined ? {} : { requestId: request.requestId }),
+        ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
         tool: 'fetch_url',
       },
       {
@@ -138,7 +144,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
 }
 
 function createConditionalHeaders(
-  context: ContentFetchRequest['cacheValidators'],
+  context: ContentFetchContext['cacheValidators'],
 ): Readonly<Record<string, string>> {
   const headers: Record<string, string> = {};
   if (isSafeHeaderValue(context?.etag)) headers['if-none-match'] = context.etag;

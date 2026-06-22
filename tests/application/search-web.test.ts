@@ -22,13 +22,16 @@ class MemoryCache implements CacheRepository {
       ? undefined
       : { value, createdAt: new Date(0), expiresAt: new Date(999_999_999_999), stale: this.stale };
   }
-  public async setSearch<T>(key: string, value: T): Promise<void> {
+  public async setSearch<T>(key: string, value: T): Promise<boolean> {
     this.values.set(key, value);
+    return true;
   }
   public async getContent<T>(): Promise<CacheRecord<T> | undefined> {
     return undefined;
   }
-  public async setContent(): Promise<void> {}
+  public async setContent(): Promise<boolean> {
+    return true;
+  }
   public async deleteExpired(): Promise<number> {
     return 0;
   }

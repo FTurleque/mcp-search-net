@@ -26,7 +26,7 @@ Les écarts confirmés par rapport à la mission étaient :
 | Fichier                                            | Rôle                                                   |
 | -------------------------------------------------- | ------------------------------------------------------ |
 | `.gitattributes`                                   | LF pour code/docs et CRLF pour les scripts Windows     |
-| `scripts/clean.mjs`                                | nettoyage portable de `dist` et `coverage`             |
+| script npm `clean` avec `rimraf`                   | nettoyage portable de `build` et de l'ancien `dist`    |
 | `src/application/ports/dns-resolver.ts`            | port DNS injectable                                    |
 | `src/infrastructure/security/node-dns-resolver.ts` | résolution DNS Node de toutes les adresses             |
 | `src/domain/value-objects/web-url.ts`              | URL Web absolue et normalisée                          |

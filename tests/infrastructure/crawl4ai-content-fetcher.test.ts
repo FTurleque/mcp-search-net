@@ -142,8 +142,7 @@ describe('Crawl4aiContentFetcher', () => {
     const gateway = { download } as unknown as SecureHttpGateway;
     const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
     await expect(
-      fetcher.fetch({
-        ...fetchRequest('https://example.com/docs', 'static'),
+      fetcher.fetch(fetchRequest('https://example.com/docs', 'static'), {
         cacheValidators: {
           etag: '"v1"',
           lastModified: 'Sun, 21 Jun 2026 00:00:00 GMT',

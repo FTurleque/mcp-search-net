@@ -11,7 +11,7 @@ docker compose up -d
 npm run dev
 ```
 
-`npm run dev` lance TypeScript avec `tsx`. `npm run build` produit `dist`, et `npm start` lance cette version compilée.
+`npm run dev` lance TypeScript avec `tsx`. `npm run build` nettoie puis produit `build`, et `npm start` lance cette version compilée.
 
 ## Règles de conception
 
