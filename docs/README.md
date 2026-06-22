@@ -10,8 +10,8 @@
 
 ## Référence technique
 
-- [Architecture — point d'entrée stable](architecture.md)
-- [Sécurité — point d'entrée stable](security.md)
+- [Architecture — point d'entrée stable](reference/architecture.md)
+- [Sécurité — point d'entrée stable](reference/security.md)
 - [Architecture](reference/architecture.md)
 - [Configuration](reference/configuration.md)
 - [Contrats des outils](reference/tools.md)
