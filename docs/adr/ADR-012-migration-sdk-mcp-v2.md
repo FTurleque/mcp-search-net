@@ -8,6 +8,7 @@
 Le projet mcp-search-net utilise `@modelcontextprotocol/sdk@1.29.0`, dernière release stable de la génération V1 du SDK MCP TypeScript, vérifiée le 22 juin 2026 dans l'ADR-002.
 
 Cette version fournit les primitives STDIO stables nécessaires :
+
 - `McpServer` pour créer le serveur
 - `StdioServerTransport` pour le transport local
 - `registerTool(...)` pour déclarer les outils
@@ -98,4 +99,3 @@ Au 27 juin 2026, la V1 de mcp-search-net est officiellement close avec tous les 
 - [SDK MCP TypeScript](https://github.com/modelcontextprotocol/typescript-sdk)
 - [Release v1.29.0](https://github.com/modelcontextprotocol/typescript-sdk/releases/tag/v1.29.0)
 - [Documentation officielle MCP](https://modelcontextprotocol.io)
-
