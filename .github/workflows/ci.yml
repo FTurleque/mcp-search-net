@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 24
           cache: npm
@@ -59,7 +59,7 @@ jobs:
 
       - name: Upload deterministic reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea0d9a1af285e20c14bf34ee2e3a192a5e2e3c8b # v4.5.0
         with:
           name: deterministic-test-reports
           path: .data/test-reports
@@ -69,8 +69,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 24
           cache: npm
@@ -86,7 +86,7 @@ jobs:
         run: npm run test:e2e
       - name: Upload integration reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea0d9a1af285e20c14bf34ee2e3a192a5e2e3c8b # v4.5.0
         with:
           name: integration-test-reports
           path: .data/test-reports

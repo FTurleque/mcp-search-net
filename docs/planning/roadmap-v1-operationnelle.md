@@ -262,7 +262,7 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 - [x] Ajouter une matrice de traçabilité exigences → code → tests → critères d'acceptation.
 - [x] Exécuter le benchmark de l'annexe D sur GitHub Copilot/MCP, JetBrains, Java, Maven, Quarkus, JavaFX, Oracle, Sonar et Docker.
 - [x] Mesurer taux officiel, pertinence, fraîcheur, qualité d'extraction, taille de contexte, latence MISS/HIT et résilience.
-- [ ] Effectuer la recette manuelle dans IntelliJ : détection des deux outils, recherche officielle, extraction ciblée, cache HIT et affichage d'un avertissement.
+- [x] Effectuer la recette manuelle dans IntelliJ : détection des deux outils, recherche officielle, extraction ciblée, cache HIT et affichage d'un avertissement.
 - [x] Archiver les versions des images, de Node, du SDK MCP et des dépendances utilisées pour la recette.
 
 **Condition de sortie :** les quinze critères AC-01 à AC-15 sont verts et accompagnés d'une preuve reproductible.
@@ -271,14 +271,14 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 
 - [x] Node 24 actif ; `npm ci` et `npm run check` réussissent.
 - [ ] CI verte sur le commit candidat.
-- [ ] Les trois services Compose sont présents ; leurs healthchecks sont verts.
+- [x] Les trois services Compose sont présents ; leurs healthchecks sont verts.
 - [x] `search_web` et `fetch_url` passent les tests E2E réels.
 - [x] Tous les scénarios SSRF prouvent l'absence de connexion vers la cible interdite.
 - [x] Les limites absolues restent effectives malgré une configuration ou une entrée hostile.
 - [x] Chaque réponse contient `schemaVersion`, `requestId`, avertissements séparés, métadonnées et statut de cache.
 - [x] Aucune sortie libre n'est écrite sur `stdout`.
 - [x] L'installation Windows et la mise à jour conservatrice sont validées sur un profil propre.
-- [ ] Copilot dans IntelliJ détecte uniquement les deux outils et peut les appeler.
+- [x] Copilot dans IntelliJ détecte uniquement les deux outils et peut les appeler.
 - [x] La documentation, les ADR, la traçabilité et le rapport de benchmark correspondent au binaire livré.
 - [x] Aucun composant V2 n'a été introduit dans la base V1.
 

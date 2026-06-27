@@ -31,13 +31,15 @@
 ## Planification
 
 - [Feuille de route vers une V1 pleinement opérationnelle](planning/roadmap-v1-operationnelle.md)
+- [Feuille de route V2 — Catalogue documentaire](planning/roadmap-v2-documentaire.md)
 - [Rapport de validation des phases 0 et 1](planning/validation-phase-0-1.md)
 - [Rapport de validation de la phase 2](planning/validation-phase-2.md)
 - [Rapport de validation des phases 3 et 4](planning/validation-phase-3-4.md)
 - [Rapport de validation des phases 5 à 7](planning/validation-phase-5-7.md)
 - [Rapport de validation des phases 8 et 9](planning/validation-phase-8-9.md)
 - [Validation finale V1 du 22 juin 2026](planning/validation-v1-finale-2026-06-22.md)
-- [Validation V1 et décision V2 du 22 juin 2026](planning/validation-v1-v2-go-no-go-2026-06-22.md)
+- [Validation finale V1 — Recette complète 27 juin 2026](planning/validation-v1-recette-finale-2026-06-27.md)
+- [Décision V1/V2 go/no-go du 22 juin 2026](planning/validation-v1-v2-go-no-go-2026-06-22.md)
 - [Validation V1 après alignement du build](planning/validation-v1-build-2026-06-22.md)
 - [Matrice de traçabilité V1](planning/traceabilite-v1.md)
 - [Benchmark V1 du 22 juin 2026](planning/benchmark-v1-2026-06-22.md)
