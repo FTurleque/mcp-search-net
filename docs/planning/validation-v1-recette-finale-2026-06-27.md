@@ -291,9 +291,9 @@ Depuis [docs/planning/roadmap-v1-operationnelle.md](roadmap-v1-operationnelle.md
 
 ## 9. Verdict final
 
-**Statut** : 🔄 **EN COURS DE VALIDATION**
+**Statut** : 🟡 **VALIDATION PARTIELLE — EN COURS**
 
-À compléter après exécution réelle de la séquence de validation.
+La séquence déterministe complète est validée (139 tests required, 0 skip). Les étapes nécessitant Docker Desktop démarré (build image, healthchecks, E2E live) et la recette IntelliJ manuelle restent à effectuer.
 
 ### GitHub Actions épinglées (SHA vérifiés le 27 juin 2026 via API GitHub)
 
@@ -312,29 +312,30 @@ $r = Invoke-WebRequest -Uri "https://api.github.com/repos/actions/upload-artifac
 ### Prochaines étapes
 
 1. ✅ Épingler GitHub Actions avec SHA complets officiels (vérifiés via API)
-2. ⏳ Exécuter la séquence complète de validation
-3. ⏳ Effectuer la recette IntelliJ Copilot manuelle
-4. ⏳ Compléter ce document avec résultats réels (section 8)
-5. ⏳ Créer commit de validation `chore(v1): validation finale V1 opérationnelle 2026-06-27`
-6. ⏳ Attendre CI verte (jobs `check` + `integration`)
-7. ⏳ Capturer URL du run CI vert pour archive
-8. ⏳ Clore officiellement la V1
-9. ⏳ Débloquer la V2 selon ADR-011
+2. ✅ Exécuter la séquence déterministe complète (format, lint, typecheck, build, 139 tests)
+3. ⏳ Démarrer Docker Desktop et valider build + healthchecks + E2E live
+4. ⏳ Effectuer la recette IntelliJ Copilot manuelle
+5. ⏳ Compléter ce document avec résultats réels (section 8 — Docker + IntelliJ)
+6. ⏳ Créer commit de validation `chore(v1): validation finale V1 opérationnelle 2026-06-27`
+7. ⏳ Attendre CI verte (jobs `check` + `integration`)
+8. ⏳ Capturer URL du run CI vert pour archive
+9. ⏳ Clore officiellement la V1
+10. ⏳ Débloquer la V2 selon ADR-011
 
 ## Annexe A : Versions exactes utilisées
 
-À compléter après exécution réelle :
+Relevées le 27 juin 2026 sur le poste de validation Windows :
 
-- **Node.js** : [résultat de `node --version`]
-- **npm** : [résultat de `npm --version`]
-- **Docker** : [résultat de `docker --version`]
+- **Node.js** : 24.17.0
+- **npm** : 11.13.0
+- **Docker** : 29.5.3, build d1c06ef
 - **TypeScript** : 5.9.3
 - **Vitest** : 4.1.9
 - **ESLint** : 9.39.1
 - **Prettier** : 3.6.2
 - **SDK MCP** : 1.29.0
-- **better-sqlite3** : 12.x
-- **Zod** : 4.x
+- **better-sqlite3** : 12.11.1
+- **Zod** : 4.4.3
 
 ## Annexe B : Logs structurés (exemples)
 
@@ -381,6 +382,6 @@ $r = Invoke-WebRequest -Uri "https://api.github.com/repos/actions/upload-artifac
 
 **Validation réalisée par** : GitHub Copilot Agent  
 **Date de début** : 27 juin 2026  
-**Date de clôture** : [À compléter]  
-**Commit de validation** : [SHA après création]  
-**Run CI** : [URL GitHub Actions après exécution]
+**Date de clôture** : [À compléter après recette IntelliJ et Docker]  
+**Commit de validation** : `9b6e7178cf753440595b8a5950f0841888a4b7c1` (merge PR #1)  
+**Run CI** : [URL GitHub Actions après exécution finale]
