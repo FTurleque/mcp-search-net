@@ -198,11 +198,13 @@ Selon ADR-011 :
 **Objectif** : ajouter recherche sémantique si un benchmark démontre un gain significatif.
 
 **Pré-requis** :
+
 - [ ] Benchmark FTS5 vs embeddings sur corpus test (précision, recall, latence)
 - [ ] Gain démontré > 15% en précision ou recall
 - [ ] Latence acceptable (< 500ms pour recherche)
 
 **Tâches** :
+
 - [ ] Choisir modèle embeddings (local, pas d'API payante)
 - [ ] Créer table `embeddings` avec vecteurs
 - [ ] Implémenter génération embeddings lors de l'indexation
@@ -300,4 +302,3 @@ La V2 est considérée opérationnelle lorsque :
 - [Roadmap V1 opérationnelle](roadmap-v1-operationnelle.md)
 - [SQLite FTS5 Documentation](https://www.sqlite.org/fts5.html)
 - [BM25 Scoring](https://en.wikipedia.org/wiki/Okapi_BM25)
-
