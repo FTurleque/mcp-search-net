@@ -280,9 +280,22 @@ Depuis [docs/planning/roadmap-v1-operationnelle.md](roadmap-v1-operationnelle.md
 
 À compléter après exécution réelle de la séquence de validation.
 
+### GitHub Actions épinglées (SHA vérifiés le 27 juin 2026 via API GitHub)
+
+| Action                    | Version | SHA commit (complet)                       |
+| ------------------------- | ------- | ------------------------------------------ |
+| `actions/checkout`        | v7.0.0  | `9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0` |
+| `actions/setup-node`      | v6.4.0  | `48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e` |
+| `actions/upload-artifact` | v7.0.1  | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
+
+Commande de vérification utilisée :
+```powershell
+$r = Invoke-WebRequest -Uri "https://api.github.com/repos/actions/upload-artifact/git/ref/tags/v7.0.1" ...
+```
+
 ### Prochaines étapes
 
-1. ✅ Épingler GitHub Actions avec SHA complets officiels
+1. ✅ Épingler GitHub Actions avec SHA complets officiels (vérifiés via API)
 2. ⏳ Exécuter la séquence complète de validation
 3. ⏳ Effectuer la recette IntelliJ Copilot manuelle
 4. ⏳ Compléter ce document avec résultats réels (section 8)
