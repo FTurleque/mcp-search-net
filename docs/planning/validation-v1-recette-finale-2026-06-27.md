@@ -408,6 +408,6 @@ Artefacts              : deterministic-test-reports, integration-test-reports
 
 **Commit initial** : `b4b829aaec41bf5d05476132867fd91421f70f8a`
 
-**Commit candidat** : À compléter après `git push`
+**Commit candidat** : `ea85189943630138fef15e43c6dc6d66f1564541`
 
 **Run CI** : À compléter dans le commit documentaire de clôture

@@ -288,7 +288,7 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 V1 OPÉRATIONNELLE AVEC RÉSERVES
 Date de recette partielle : 2026-06-28
 Commit initial            : b4b829aaec41bf5d05476132867fd91421f70f8a
-Commit candidat           : à compléter après git push
+  Commit candidat           : ea85189943630138fef15e43c6dc6d66f1564541
 Run CI                    : à compléter après CI verte
 
 Réserves ouvertes :
