@@ -21,18 +21,18 @@ La V2 (catalogue documentaire, FTS5, synchronisation, versions, embeddings) doit
 
 ## Suivi d'avancement
 
-| Phase                              | Statut                      | Validation                                                            |
-| ---------------------------------- | --------------------------- | --------------------------------------------------------------------- |
-| Phase 0 — Validation reproductible | ✅ Terminée le 21 juin 2026 | Node 24.17.0, `npm ci`, CI, SearXNG épinglé et sain                   |
-| Phase 1 — Contrat MCP commun       | ✅ Terminée le 21 juin 2026 | 51 tests déterministes et test réel `search_web` réussi               |
-| Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi                    |
-| Phase 3 — `fetch_url`              | ✅ Terminée le 21 juin 2026 | 87 tests déterministes, extraction multi-format et sélection lexicale |
-| Phase 4 — Sécurité réseau          | ✅ Terminée le 21 juin 2026 | Passerelle épinglée, redirections/limites testées                     |
-| Phase 5 — Cache résilient          | ✅ Terminée le 21 juin 2026 | SQLite typé, revalidation et stale fallback                           |
-| Phase 6 — Observabilité            | ✅ Terminée le 21 juin 2026 | Événements corrélés et redaction récursive                            |
-| Phase 7 — Déploiement              | ✅ Terminée le 21 juin 2026 | Compose complet/hybride et cycle Windows validés                      |
-| Phase 8 — Stratégie de tests       | ✅ Terminée le 22 juin 2026 | 134 requis, intégration déterministe 25/25 et E2E 7/7                 |
-| Phase 9 — Documentation et recette | 🟡 Partielle                | Automatisation terminée ; recette IntelliJ UI à exécuter              |
+| Phase                              | Statut                      | Validation                                                                                            |
+| ---------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Phase 0 — Validation reproductible | ✅ Terminée le 21 juin 2026 | Node 24.17.0, `npm ci`, CI, SearXNG épinglé et sain                                                   |
+| Phase 1 — Contrat MCP commun       | ✅ Terminée le 21 juin 2026 | 51 tests déterministes et test réel `search_web` réussi                                               |
+| Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi                                                    |
+| Phase 3 — `fetch_url`              | ✅ Terminée le 21 juin 2026 | 87 tests déterministes, extraction multi-format et sélection lexicale                                 |
+| Phase 4 — Sécurité réseau          | ✅ Terminée le 21 juin 2026 | Passerelle épinglée, redirections/limites testées                                                     |
+| Phase 5 — Cache résilient          | ✅ Terminée le 21 juin 2026 | SQLite typé, revalidation et stale fallback                                                           |
+| Phase 6 — Observabilité            | ✅ Terminée le 21 juin 2026 | Événements corrélés et redaction récursive                                                            |
+| Phase 7 — Déploiement              | ✅ Terminée le 21 juin 2026 | Compose complet/hybride et cycle Windows validés                                                      |
+| Phase 8 — Stratégie de tests       | ✅ Terminée le 22 juin 2026 | 134 requis, intégration déterministe 25/25 et E2E 7/7                                                 |
+| Phase 9 — Documentation et recette | 🟡 Partielle                | Déterministe, E2E STDIO, Compose, scripts V1 terminés — Docker live et recette IntelliJ UI en attente |
 
 Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md), de la [phase 2](validation-phase-2.md), des [phases 3 et 4](validation-phase-3-4.md), des [phases 5 à 7](validation-phase-5-7.md) et des [phases 8 et 9](validation-phase-8-9.md).
 
@@ -271,16 +271,34 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 
 - [x] Node 24 actif ; `npm ci` et `npm run check` réussissent.
 - [ ] CI verte sur le commit candidat.
-- [x] Les trois services Compose sont présents ; leurs healthchecks sont verts.
-- [x] `search_web` et `fetch_url` passent les tests E2E réels.
-- [x] Tous les scénarios SSRF prouvent l'absence de connexion vers la cible interdite.
+- [ ] Les trois services Compose démarrent ; SearXNG et Crawl4AI `healthy`. _(Docker démon arrêté lors de la recette 2026-06-28)_
+- [ ] `search_web` et `fetch_url` passent les tests E2E live réels. _(Docker démon arrêté)_
+- [x] Tous les scénarios SSRF prouvent l'absence de connexion vers la cible interdite. _(61 tests security + E2E déterministe 2/2)_
 - [x] Les limites absolues restent effectives malgré une configuration ou une entrée hostile.
 - [x] Chaque réponse contient `schemaVersion`, `requestId`, avertissements séparés, métadonnées et statut de cache.
-- [x] Aucune sortie libre n'est écrite sur `stdout`.
+- [x] Aucune sortie libre n'est écrite sur `stdout`. _(prouvé par `mcp-stdio.test.ts` test 2)_
 - [x] L'installation Windows et la mise à jour conservatrice sont validées sur un profil propre.
-- [x] Copilot dans IntelliJ détecte uniquement les deux outils et peut les appeler.
+- [ ] Copilot dans IntelliJ détecte uniquement les deux outils et peut les appeler. _(AC-02 en attente)_
 - [x] La documentation, les ADR, la traçabilité et le rapport de benchmark correspondent au binaire livré.
 - [x] Aucun composant V2 n'a été introduit dans la base V1.
+
+## Statut V1 — 28 juin 2026
+
+```
+V1 OPÉRATIONNELLE AVEC RÉSERVES
+Date de recette partielle : 2026-06-28
+Commit initial            : b4b829aaec41bf5d05476132867fd91421f70f8a
+Commit candidat           : à compléter après git push
+Run CI                    : à compléter après CI verte
+
+Réserves ouvertes :
+  - Docker démon arrêté lors de la recette — build image + healthchecks + E2E live non exécutés
+  - AC-02 IntelliJ/Copilot : recette manuelle non exécutée
+  - CI GitHub Actions : en attente du push du commit candidat
+
+V2 STUDY GO     — autorisé (ADR-011 + ADR-012 définissent la frontière)
+V2 BUILD NO-GO  — en attente : Docker live + IntelliJ + CI verts
+```
 
 ## Définition de « V1 pleinement opérationnelle »
 

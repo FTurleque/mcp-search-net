@@ -12,18 +12,20 @@ Elle commence par `npm run check:runtime` et s'arrête immédiatement avec un me
 
 ## Suites de livraison
 
-| Commande                   | Portée                                                          |    Réseau requis     |
-| -------------------------- | --------------------------------------------------------------- | :------------------: |
-| `npm run check`            | TypeScript, lint, format, build et tests déterministes          |         non          |
-| `npm run test:required`    | Tous les tests requis hors réseau, avec refus des tests ignorés |         non          |
-| `npm run test:unit`        | Domaine, application et présentation                            |         non          |
-| `npm run test:contract`    | Contrats SearXNG et Crawl4AI sur fixtures                       |         non          |
-| `npm run test:security`    | SSRF, protocoles, redirections, limites et injection            |         non          |
-| `npm run test:resilience`  | Cache et fournisseurs dégradés                                  |         non          |
-| `npm run test:performance` | Limite de 10 Mo et concurrence                                  |   local uniquement   |
-| `npm run test:integration` | Contrats fournisseurs, configuration et SQLite réel             |         non          |
-| `npm run test:e2e`         | Fournisseurs réels et appels MCP STDIO des deux outils          | oui, Compose démarré |
-| `npm run test:release`     | Toutes les suites précédentes                                   |         oui          |
+| Commande                         | Portée                                                          |    Réseau requis     |
+| -------------------------------- | --------------------------------------------------------------- | :------------------: |
+| `npm run check`                  | TypeScript, lint, format, build et tests déterministes          |         non          |
+| `npm run test:required`          | Tous les tests requis hors réseau, avec refus des tests ignorés |         non          |
+| `npm run test:unit`              | Domaine, application et présentation                            |         non          |
+| `npm run test:contract`          | Contrats SearXNG et Crawl4AI sur fixtures                       |         non          |
+| `npm run test:security`          | SSRF, protocoles, redirections, limites et injection            |         non          |
+| `npm run test:resilience`        | Cache et fournisseurs dégradés                                  |         non          |
+| `npm run test:performance`       | Limite de 10 Mo et concurrence                                  |   local uniquement   |
+| `npm run test:integration`       | Contrats fournisseurs, configuration et SQLite réel             |         non          |
+| `npm run test:e2e:deterministic` | Démarrage STDIO, `tools/list`, SSRF, `stdout`/`stderr`          |         non          |
+| `npm run test:e2e:live`          | Fournisseurs réels et appels MCP STDIO des deux outils          | oui, Compose démarré |
+| `npm run test:e2e`               | Alias officiel de `test:e2e:live`                               | oui, Compose démarré |
+| `npm run test:release`           | Toutes les suites précédentes                                   |         oui          |
 
 Les rapports JSON sont écrits dans `.data/test-reports/`. Le lanceur échoue si une
 suite requise ne contient aucun test, échoue ou ignore un test. La CI publie ces
@@ -33,8 +35,22 @@ Pour les suites réelles :
 
 ```powershell
 docker compose up -d searxng crawl4ai
-npm run test:e2e
+npm run test:e2e:live
 ```
+
+## Distinction E2E déterministe / live
+
+La suite E2E est scindée en deux niveaux de dépendance :
+
+| Suite                            | Services externes | Objectif                                                                         |
+| -------------------------------- | :---------------: | -------------------------------------------------------------------------------- |
+| `npm run test:e2e:deterministic` |        Non        | Contrat MCP STDIO, `tools/list`, exactement deux outils, SSRF, `stdout`/`stderr` |
+| `npm run test:e2e:live`          |        Oui        | Intégration SearXNG + Crawl4AI réels, cache MISS → HIT, extraction réelle        |
+| `npm run test:e2e`               |        Oui        | Alias officiel de `test:e2e:live`                                                |
+
+`test:e2e:deterministic` lance le binaire Node local sans aucun service externe. Il est inclus dans la CI principale (job `check`) afin d'être exécuté à chaque push. `test:e2e:live` et `test:e2e` requièrent Docker Compose démarré et s'exécutent dans le job `integration` de la CI.
+
+La double exécution de `mcp-stdio.test.ts` (via `test:required` puis `test:e2e:deterministic`) est volontaire : elle apporte une preuve nommée et traçable dans la CI sans modifier `vitest.required.config.ts`.
 
 ## Niveaux
 

@@ -61,6 +61,16 @@ services:
       - backend
       - egress
 
+  # mcp-search-net est un serveur MCP STDIO pur et n'expose pas d'endpoint HTTP de
+  # santé. Aucun healthcheck HTTP n'est donc défini pour ce service.
+  #
+  # Ce que depends_on/service_healthy garantit : que SearXNG et Crawl4AI sont prêts
+  # avant que le process MCP démarre. Il ne garantit pas que le serveur MCP lui-même
+  # est fonctionnel.
+  #
+  # La santé fonctionnelle du serveur MCP est validée par :
+  #   - npm run test:e2e:deterministic : démarrage STDIO, tools/list, SSRF, stdout/stderr
+  #   - npm run test:e2e:live          : intégration search_web + fetch_url avec providers réels
   mcp-search-net:
     build:
       context: .

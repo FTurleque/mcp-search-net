@@ -1,4 +1,4 @@
-# Validation finale V1 — Recette complète 27 juin 2026
+# Validation finale V1 — Recette complète 27–28 juin 2026
 
 ## 1. Contexte de validation
 
@@ -6,12 +6,18 @@ Cette validation finale clôt officiellement la V1 opérationnelle de mcp-search
 
 ### Environnement de validation
 
-- **Date** : 27 juin 2026
-- **Node.js** : vérifier avec `node --version` (attendu : 24.x.x)
-- **npm** : vérifier avec `npm --version`
-- **Docker** : vérifier avec `docker --version`
-- **OS** : Windows avec PowerShell
-- **Dépôt** : état propre depuis `git status --short`
+| Champ                  | Valeur                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| Date d'ouverture       | 2026-06-27                                                                     |
+| Date de clôture        | 2026-06-28                                                                     |
+| Branche                | `master`                                                                       |
+| Commit initial         | `b4b829aaec41bf5d05476132867fd91421f70f8a`                                     |
+| Version Node.js        | v24.17.0                                                                       |
+| Version npm            | 11.13.0                                                                        |
+| Version Docker         | 29.5.3 (client) — démon arrêté lors de la recette                              |
+| Version Docker Compose | 2.x (CLI disponible)                                                           |
+| Système d'exploitation | Windows 11, PowerShell 5.1                                                     |
+| Dépôt                  | modifications locales : `ci.yml`, `compose.yaml`, `testing.md`, `package.json` |
 
 ### Versions cibles
 
@@ -44,16 +50,17 @@ npm run build
 ### Suites de tests déterministes
 
 ```powershell
-npm run test:required     # 134+ tests sans skip
+npm run test:required     # 139 tests sans skip
 npm run test:unit         # Tests domain/application/presentation
 npm run test:contract     # Fixtures providers
 npm run test:security     # SSRF, limites, validation hostile
 npm run test:resilience   # Cache degraded, timeout, erreurs
 npm run test:performance  # Benchmarks déterministes
 npm run test:integration  # SQLite in-memory, pas de Docker
+npm run test:e2e:deterministic  # STDIO, tools/list, SSRF, stdout/stderr
 ```
 
-**Résultat attendu** : ✅ Toutes les suites vertes, rapports dans `.data/test-reports/`
+**Résultat attendu** : ✅ Toutes les suites vertes
 
 **Critères de succès** :
 
@@ -85,8 +92,7 @@ docker compose ps
 - SearXNG : `healthy` (healthcheck : 15s interval, 10 retries, 20s start_period)
 - Crawl4AI : `healthy` (healthcheck : 15s interval, 12 retries, 60s start_period)
 - Binding : `127.0.0.1:8888` (SearXNG), `127.0.0.1:11235` (Crawl4AI)
-
-**Validation provisoire** : ✅ Coche la case Docker dès que les deux services sont `healthy`
+- `mcp-search-net` : aucun healthcheck HTTP (service STDIO pur — cf. note dans `compose.yaml`)
 
 ## 4. Validation SDK MCP et primitives STDIO
 
@@ -94,13 +100,11 @@ docker compose ps
 
 Fichiers à inspecter :
 
-- [package.json](../../package.json#L41) : `"@modelcontextprotocol/sdk": "1.29.0"`
+- [package.json](../../package.json) : `"@modelcontextprotocol/sdk": "1.29.0"`
 - [ADR-002](../adr/ADR-002-mcp-stdio.md) : décision d'utiliser SDK V1 stable
 - [src/presentation/mcp/mcp-server.ts](../../src/presentation/mcp/mcp-server.ts) : imports `McpServer`, `StdioServerTransport`, `registerTool`
 
-**Vérification externe** : [Release officielle v1.29.0](https://github.com/modelcontextprotocol/typescript-sdk/releases/tag/v1.29.0)
-
-**Résultat attendu** : ✅ SDK 1.29.0 V1 stable confirmé, pas de version alpha/bêta/RC
+**Résultat attendu** : ✅ SDK 1.29.0 V1 stable confirmé
 
 ## 5. Vérification des invariants de sécurité
 
@@ -108,21 +112,17 @@ Fichiers à inspecter :
 
 Fichiers clés :
 
-- [src/presentation/mcp/schemas/search-web-schema.ts](../../src/presentation/mcp/schemas/search-web-schema.ts#L36) : `maxResults` validé `z.number().int().min(1).max(maximumResults)` → rejet si invalide
-- [src/presentation/mcp/schemas/search-web-schema.ts](../../src/presentation/mcp/schemas/search-web-schema.ts#L35) : `timeRange` enum `['day', 'month', 'year']` → `'week'` invalide
-- [tests/security/](../../tests/security/) : tests SSRF prouvant non-contact
+- [src/presentation/mcp/schemas/search-web-schema.ts](../../src/presentation/mcp/schemas/search-web-schema.ts) : `maxResults` validé `z.number().int().min(1).max(maximumResults)` → rejet si invalide
+- `timeRange` enum `['day', 'month', 'year']` → `'week'` invalide
+- [tests/security/](../../tests/security/) : 61 tests SSRF prouvant non-contact
 
-**Validation** :
+**Résultat attendu** : ✅ Validations strictes, rejet, pas plafonnement silencieux
 
-```typescript
-// ✅ Rejet, pas plafonnement silencieux
-z.number().int().min(1).max(maximumResults);
+### Vérification des contrats publics
 
-// ✅ Enum fermé
-z.enum(['day', 'month', 'year']);
-```
-
-**Résultat attendu** : ✅ Validations strictes, pas de plafonnement silencieux
+- `extractionMode` : `'static' | 'native-render'` — cohérent dans schéma, domaine, infrastructure et tous les tests ✅
+- `cacheStatus` : `HIT | MISS | STALE_FALLBACK | DISABLED` (majuscules) — cohérent partout ✅
+- Aucun libellé résiduel `rendered`, `hit`, `miss` ✅
 
 ## 6. Suite E2E live avec fournisseurs réels
 
@@ -138,9 +138,7 @@ npm run test:e2e  # Lance scripts/run-live-tests.mjs
 - `tests/e2e/mcp-docker-live.test.ts` : serveur MCP conteneurisé
 - `tests/e2e/services-live.test.ts` : search + fetch réels avec SearXNG et Crawl4AI
 
-**Résultat attendu** : ✅ 7 tests E2E passés, rapports dans `.data/test-reports/`
-
-**Logs structurés** : stderr uniquement, JSON-RPC sur stdout
+**Résultat attendu** : ✅ 7 tests E2E passés
 
 ## 7. Recette IntelliJ Copilot manuelle
 
@@ -175,125 +173,98 @@ Suivre [docs/getting-started/intellij-copilot.md](../getting-started/intellij-co
 }
 ```
 
-### Scénarios de validation
-
-**Scénario 1 : Détection des outils**
-
-1. Redémarrer la fenêtre IntelliJ après configuration MCP
-2. Ouvrir le panneau GitHub Copilot
-3. Vérifier la liste des outils disponibles
-
-**Résultat attendu** : ✅ Exactement deux outils listés : `search_web` et `fetch_url`
-
-**Scénario 2 : Recherche officielle**
-
-1. Dans Copilot, demander : "Cherche la documentation officielle de Node.js 24 LTS"
-2. Observer l'utilisation de `search_web`
-3. Vérifier les résultats retournés
-
-**Résultat attendu** :
-
-- ✅ Outil `search_web` appelé
-- ✅ Résultats incluant `nodejs.org` (source officielle)
-- ✅ Metadata avec `requestId`, `cacheStatus`, `total`, `returned`
-- ✅ Logs stderr structurés JSON
-
-**Scénario 3 : Extraction ciblée**
-
-1. Demander : "Récupère le contenu de https://nodejs.org/en/about/previous-releases"
-2. Observer l'utilisation de `fetch_url`
-3. Vérifier le contenu extrait
-
-**Résultat attendu** :
-
-- ✅ Outil `fetch_url` appelé avec l'URL exacte
-- ✅ Markdown extrait avec sections pertinentes
-- ✅ Metadata avec `sourceStatus`, `extractionMode`, `truncated`
-- ✅ Logs stderr structurés, stdout JSON-RPC uniquement
-
-**Scénario 4 : Cache HIT**
-
-1. Répéter immédiatement la même recherche ou fetch
-2. Observer le `cacheStatus` dans la réponse
-
-**Résultat attendu** : ✅ `cacheStatus: "HIT"`, temps de réponse < 100ms
-
-**Scénario 5 : Avertissement**
-
-1. Demander un fetch d'une URL non officielle
-2. Vérifier les warnings dans la réponse
-
-**Résultat attendu** : ✅ Warning `UNVERIFIED_SOURCE` présent
-
-### Logs et captures
-
-**Obligatoire** :
-
-- Commande `docker compose logs mcp-search-net` ou logs stderr Node
-- Extraits de requêtes/réponses MCP avec `requestId`
-- Résultat de `npm run test:e2e`
-
-**Fortement recommandé en annexe** :
-
-- Capture IntelliJ : panneau outils Copilot (2 outils uniquement)
-- Capture IntelliJ : résultat `search_web` avec sources officielles
-- Capture IntelliJ : résultat `fetch_url` avec metadata
-
 ## 8. Résultats de validation
 
-### Matrice de validation complète
+### Matrice de validation complète — 28 juin 2026
 
-| Étape                      | Commande/Action                  | Résultat | Preuve                            |
-| -------------------------- | -------------------------------- | -------- | --------------------------------- |
-| Runtime Node 24            | `npm run check:runtime`          |          | Version affichée                  |
-| Installation reproductible | `npm ci`                         |          | Pas d'erreur                      |
-| Format                     | `npm run format:check`           |          | Pas de fichier à formater         |
-| Lint                       | `npm run lint`                   |          | 0 warning                         |
-| Typecheck                  | `npm run typecheck`              |          | Compilation propre                |
-| Build                      | `npm run build`                  |          | `build/bootstrap/main.js` créé    |
-| Tests required             | `npm run test:required`          |          | 134+ tests passés, 0 skip         |
-| Tests unit                 | `npm run test:unit`              |          | Tous verts                        |
-| Tests contract             | `npm run test:contract`          |          | Tous verts                        |
-| Tests security             | `npm run test:security`          |          | SSRF prouvent non-contact         |
-| Tests resilience           | `npm run test:resilience`        |          | Tous verts                        |
-| Tests performance          | `npm run test:performance`       |          | Tous verts                        |
-| Tests integration          | `npm run test:integration`       |          | Déterministe, pas Docker          |
-| Docker config              | `docker compose config`          |          | Syntaxe valide                    |
-| Docker build               | `docker compose build`           |          | Image créée                       |
-| Docker healthchecks        | `docker compose ps`              |          | SearXNG + Crawl4AI `healthy`      |
-| E2E live                   | `npm run test:e2e`               |          | 7 tests passés                    |
-| IntelliJ : outils détectés | Panneau Copilot                  |          | 2 outils uniquement               |
-| IntelliJ : search_web réel | Recherche Node.js 24             |          | Sources officielles retournées    |
-| IntelliJ : fetch_url réel  | Fetch nodejs.org                 |          | Markdown extrait                  |
-| IntelliJ : cache HIT       | Répéter recherche                |          | `cacheStatus: "HIT"`              |
-| IntelliJ : warning         | Fetch source non officielle      |          | `UNVERIFIED_SOURCE` warning       |
-| SDK MCP 1.29.0 stable      | Inspection code + release GitHub |          | V1 stable confirmé                |
-| Invariants sécurité        | Inspection schémas + tests       |          | Rejet strict, pas plafonnement    |
-| Contrats publics gelés     | ADR-011                          |          | `search_web` + `fetch_url` gelés  |
-| Aucun composant V2         | Inspection code                  |          | Pas de FTS, catalogue, embeddings |
+| Validation                | Commande ou action               | Résultat                     | Preuve                                             | Statut |
+| ------------------------- | -------------------------------- | ---------------------------- | -------------------------------------------------- | :----: |
+| Runtime Node 24           | `npm run check:runtime`          | Node v24.17.0                | `node --version` → `v24.17.0`                      |   ✅   |
+| Installation              | `npm ci`                         | 286 packages, 0 vuln         | exit 0, `added 286 packages`                       |   ✅   |
+| Format                    | `npm run format:check`           | Tous les fichiers OK         | `All matched files use Prettier code style!`       |   ✅   |
+| Lint                      | `npm run lint`                   | 0 warning, 0 erreur          | exit 0, pas de sortie                              |   ✅   |
+| Typecheck                 | `npm run typecheck`              | Compilation propre           | exit 0, pas d'erreur TS                            |   ✅   |
+| Build                     | `npm run build`                  | `build/` créé                | `build/bootstrap/main.js` présent                  |   ✅   |
+| Tests unitaires           | `npm run test:unit`              | 62 passés, 0 skip            | `REQUIRED_SUITE_VALID unit: 62 passed, 0 skipped`  |   ✅   |
+| Tests contrat             | `npm run test:contract`          | 6 passés, 0 skip             | `REQUIRED_SUITE_VALID contract: 6 passed`          |   ✅   |
+| Tests sécurité            | `npm run test:security`          | 61 passés, 0 skip            | `REQUIRED_SUITE_VALID security: 61 passed`         |   ✅   |
+| Tests résilience          | `npm run test:resilience`        | 25 passés, 0 skip            | `REQUIRED_SUITE_VALID resilience: 25 passed`       |   ✅   |
+| Tests performance         | `npm run test:performance`       | 2 passés, 0 skip             | `REQUIRED_SUITE_VALID performance: 2 passed`       |   ✅   |
+| Tests intégration         | `npm run test:integration`       | 29 passés, 0 skip            | `REQUIRED_SUITE_VALID integration: 29 passed`      |   ✅   |
+| Tests complets            | `npm test`                       | 139 passés, 0 skip           | `Tests 139 passed (139)`, 21 fichiers              |   ✅   |
+| Suite required            | `npm run test:required`          | 139 passés, 0 skip           | `REQUIRED_SUITE_VALID required: 139 passed`        |   ✅   |
+| E2E déterministe          | `npm run test:e2e:deterministic` | 2 passés, 0 skip             | `Tests 2 passed (2)` — `mcp-stdio.test.ts`         |   ✅   |
+| Compose config            | `docker compose config`          | Syntaxe valide               | exit 0, pas d'erreur YAML                          |   ✅   |
+| Build Docker              | `docker compose build`           | —                            | NON EXÉCUTÉ — Docker démon arrêté                  |   ⏳   |
+| Providers healthy         | `docker compose ps`              | —                            | NON EXÉCUTÉ — Docker démon arrêté                  |   ⏳   |
+| E2E live                  | `npm run test:e2e:live`          | —                            | NON EXÉCUTÉ — Docker démon arrêté                  |   ⏳   |
+| MCP tools/list            | E2E déterministe                 | `['fetch_url','search_web']` | `mcp-stdio.test.ts` test 1                         |   ✅   |
+| Recherche `search_web`    | E2E déterministe                 | Erreur invalide vérifiée     | `INVALID_ARGUMENT` sur query=42                    |   ✅   |
+| Extraction `fetch_url`    | E2E déterministe                 | SSRF bloqué vérifié          | `UNSUPPORTED_PROTOCOL` sur `file:///etc/passwd`    |   ✅   |
+| SSRF bloqué               | E2E déterministe                 | `BLOCKED_ADDRESS`            | `mcp-live.test.ts` + `security/*.test.ts`          |   ✅   |
+| Sortie stdout propre      | E2E déterministe                 | JSON-RPC uniquement          | `mcp-stdio.test.ts` test 2 — 1 seul record stdout  |   ✅   |
+| Logs stderr structurés    | E2E déterministe                 | `server_started` présent     | voir Annexe B                                      |   ✅   |
+| IntelliJ — 2 outils       | Recette manuelle                 | —                            | AC-02 : EN ATTENTE — recette manuelle non exécutée |   ⏳   |
+| IntelliJ — `search_web`   | Recette manuelle                 | —                            | AC-02 : EN ATTENTE                                 |   ⏳   |
+| IntelliJ — `fetch_url`    | Recette manuelle                 | —                            | AC-02 : EN ATTENTE                                 |   ⏳   |
+| IntelliJ — cache HIT      | Recette manuelle                 | —                            | AC-02 : EN ATTENTE                                 |   ⏳   |
+| IntelliJ — warning        | Recette manuelle                 | —                            | AC-02 : EN ATTENTE                                 |   ⏳   |
+| SDK MCP 1.29.0 stable     | Inspection code                  | Confirmé                     | `package.json` + ADR-002                           |   ✅   |
+| Invariants sécurité       | Schémas + tests security         | Rejet strict                 | 61 tests SSRF, enum `timeRange`, max strict        |   ✅   |
+| `extractionMode` cohérent | Inspection globale               | `native-render` uniforme     | 9 occurrences src + 7 tests, aucun mélange         |   ✅   |
+| `cacheStatus` cohérent    | Inspection globale               | Majuscules partout           | `HIT/MISS/STALE_FALLBACK/DISABLED` uniformes       |   ✅   |
+| Contrats publics gelés    | ADR-011                          | Confirmé                     | `search_web` + `fetch_url` gelés, ADR-011          |   ✅   |
+| Aucun composant V2        | Inspection code                  | Confirmé                     | Pas de FTS, catalogue, embeddings                  |   ✅   |
+| CI GitHub Actions         | Workflow                         | —                            | EN ATTENTE — commit candidat non encore poussé     |   ⏳   |
 
-### Checklist finale de livraison (mise à jour)
-
-Depuis [docs/planning/roadmap-v1-operationnelle.md](roadmap-v1-operationnelle.md#L270) :
+### Checklist finale de livraison
 
 - [x] Node 24 actif ; `npm ci` et `npm run check` réussissent.
-- [ ] CI verte sur le commit candidat (après épinglage GitHub Actions).
-- [x] Les trois services Compose sont présents ; leurs healthchecks sont verts.
-- [x] `search_web` et `fetch_url` passent les tests E2E réels.
-- [x] Tous les scénarios SSRF prouvent l'absence de connexion vers la cible interdite.
+- [ ] CI verte sur le commit candidat.
+- [ ] Les trois services Compose démarrent ; SearXNG et Crawl4AI `healthy`. _(Docker démon arrêté)_
+- [ ] `search_web` et `fetch_url` passent les tests E2E live réels. _(Docker démon arrêté)_
+- [x] Tous les scénarios SSRF prouvent l'absence de connexion vers la cible interdite. _(61 tests sécurité + E2E déterministe)_
 - [x] Les limites absolues restent effectives malgré une configuration ou une entrée hostile.
 - [x] Chaque réponse contient `schemaVersion`, `requestId`, avertissements séparés, métadonnées et statut de cache.
-- [x] Aucune sortie libre n'est écrite sur `stdout`.
+- [x] Aucune sortie libre n'est écrite sur `stdout`. _(prouvé par `mcp-stdio.test.ts` test 2)_
 - [x] L'installation Windows et la mise à jour conservatrice sont validées sur un profil propre.
-- [ ] Copilot dans IntelliJ détecte uniquement les deux outils et peut les appeler.
+- [ ] Copilot dans IntelliJ détecte uniquement les deux outils et peut les appeler. _(AC-02 en attente)_
 - [x] La documentation, les ADR, la traçabilité et le rapport de benchmark correspondent au binaire livré.
 - [x] Aucun composant V2 n'a été introduit dans la base V1.
 
 ## 9. Verdict final
 
-**Statut** : 🟡 **VALIDATION PARTIELLE — EN COURS**
+**Statut** : 🟡 **V1 OPÉRATIONNELLE AVEC RÉSERVES**
 
-La séquence déterministe complète est validée (139 tests required, 0 skip). Les étapes nécessitant Docker Desktop démarré (build image, healthchecks, E2E live) et la recette IntelliJ manuelle restent à effectuer.
+### Preuves disponibles
+
+| Catégorie                  | Statut | Détail                                                                               |
+| -------------------------- | :----: | ------------------------------------------------------------------------------------ |
+| Build déterministe complet |   ✅   | format + lint + typecheck + build verts                                              |
+| 139 tests requis, 0 skip   |   ✅   | unit 62, contract 6, security 61, resilience 25, performance 2, integration 29       |
+| E2E déterministe STDIO     |   ✅   | `tools/list` = `['fetch_url','search_web']`, SSRF bloqué, stdout JSON-RPC uniquement |
+| Contrats publics cohérents |   ✅   | `extractionMode`, `cacheStatus`, codes d'erreur — aucun mélange détecté              |
+| Compose config valide      |   ✅   | `docker compose config --quiet` — exit 0                                             |
+| Docker build + live E2E    |   ⏳   | NON EXÉCUTÉ — Docker démon arrêté au moment de la recette                            |
+| Recette IntelliJ/Copilot   |   ⏳   | AC-02 EN ATTENTE — recette manuelle non exécutée                                     |
+| CI GitHub Actions          |   ⏳   | EN ATTENTE — commit candidat non encore poussé                                       |
+
+### AC-02 : EN ATTENTE DE RECETTE MANUELLE
+
+**Motif** : la recette IntelliJ/Copilot exige une intervention humaine directe dans l'IDE avec GitHub Copilot connecté. Elle ne peut pas être automatisée.
+
+**Date prévue** : dès que l'opérateur dispose de Docker Desktop démarré et d'IntelliJ avec Copilot.
+
+**Impact** : verdict limité à `V1 OPÉRATIONNELLE AVEC RÉSERVES`. `V2 BUILD NO-GO` jusqu'à exécution.
+
+### Décisions
+
+```
+V1 OPÉRATIONNELLE AVEC RÉSERVES
+
+V2 STUDY GO     — autorisé dès maintenant (ADR-011 + ADR-012 définissent la frontière)
+V2 BUILD NO-GO  — en attente de : Docker live, recette IntelliJ, CI verte
+```
 
 ### GitHub Actions épinglées (SHA vérifiés le 27 juin 2026 via API GitHub)
 
@@ -303,32 +274,26 @@ La séquence déterministe complète est validée (139 tests required, 0 skip). 
 | `actions/setup-node`      | v6.4.0  | `48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e` |
 | `actions/upload-artifact` | v7.0.1  | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
 
-Commande de vérification utilisée :
-
-```powershell
-$r = Invoke-WebRequest -Uri "https://api.github.com/repos/actions/upload-artifact/git/ref/tags/v7.0.1" ...
-```
-
 ### Prochaines étapes
 
-1. ✅ Épingler GitHub Actions avec SHA complets officiels (vérifiés via API)
-2. ✅ Exécuter la séquence déterministe complète (format, lint, typecheck, build, 139 tests)
-3. ⏳ Démarrer Docker Desktop et valider build + healthchecks + E2E live
-4. ⏳ Effectuer la recette IntelliJ Copilot manuelle
-5. ⏳ Compléter ce document avec résultats réels (section 8 — Docker + IntelliJ)
-6. ⏳ Créer commit de validation `chore(v1): validation finale V1 opérationnelle 2026-06-27`
-7. ⏳ Attendre CI verte (jobs `check` + `integration`)
-8. ⏳ Capturer URL du run CI vert pour archive
-9. ⏳ Clore officiellement la V1
-10. ⏳ Débloquer la V2 selon ADR-011
+1. ✅ Ajouter `test:e2e:deterministic` et documenter la séparation déterministe/live
+2. ✅ Annoter `compose.yaml` — décision healthcheck STDIO
+3. ✅ Ajouter `test:e2e:deterministic` dans la CI job `check`
+4. ✅ Exécuter la séquence déterministe complète (format, lint, typecheck, build, 139 tests)
+5. ✅ `docker compose config --quiet` — syntaxe valide
+6. ⏳ Démarrer Docker Desktop et valider build + healthchecks + E2E live
+7. ⏳ Effectuer la recette IntelliJ Copilot manuelle (AC-02)
+8. ⏳ Créer commit candidat, obtenir CI verte
+9. ⏳ Créer commit documentaire de clôture avec URL CI
+10. ⏳ Clore officiellement la V1 et débloquer V2 selon ADR-011
 
 ## Annexe A : Versions exactes utilisées
 
-Relevées le 27 juin 2026 sur le poste de validation Windows :
+Relevées le 28 juin 2026 sur le poste de validation Windows :
 
 - **Node.js** : 24.17.0
 - **npm** : 11.13.0
-- **Docker** : 29.5.3, build d1c06ef
+- **Docker** : 29.5.3 (client) — démon non démarré lors de la recette
 - **TypeScript** : 5.9.3
 - **Vitest** : 4.1.9
 - **ESLint** : 9.39.1
@@ -337,51 +302,112 @@ Relevées le 27 juin 2026 sur le poste de validation Windows :
 - **better-sqlite3** : 12.11.1
 - **Zod** : 4.4.3
 
-## Annexe B : Logs structurés (exemples)
+## Annexe B : Logs structurés (réels)
 
-### Exemple stderr : démarrage serveur
+### Log stderr réel : démarrage serveur (capturé le 28 juin 2026)
 
 ```json
 {
+  "timestamp": "2026-06-28T17:38:00.224Z",
   "level": "info",
-  "timestamp": "2026-06-27T...",
   "event": "server_started",
   "name": "mcp-search-net",
   "version": "1.0.0"
 }
 ```
 
-### Exemple stderr : cache HIT
+### Log stderr attendu : appel tool_call_completed MISS
 
 ```json
 {
+  "timestamp": "2026-06-28T...",
   "level": "info",
-  "timestamp": "...",
-  "event": "cache_hit",
-  "requestId": "...",
+  "event": "tool_call_completed",
   "tool": "search_web",
-  "cache": "search"
+  "requestId": "<uuid>",
+  "cacheStatus": "MISS",
+  "durationMs": 450
 }
 ```
 
-### Exemple stdout : JSON-RPC response
+### Log stderr attendu : appel tool_call_completed HIT
 
 ```json
-{"jsonrpc":"2.0","id":1,"result":{"schemaVersion":"1.0.0","tool":"search_web","status":"success","requestId":"...","cacheStatus":"MISS","provider":"searxng","warnings":[],"data":{"query":"...","results":[...],"metadata":{...}}}}
+{
+  "timestamp": "2026-06-28T...",
+  "level": "info",
+  "event": "tool_call_completed",
+  "tool": "search_web",
+  "requestId": "<uuid>",
+  "cacheStatus": "HIT",
+  "durationMs": 2
+}
 ```
 
-## Annexe C : Captures IntelliJ (facultatif)
+### Log stderr attendu : URL bloquée
 
-[À ajouter après recette manuelle : captures d'écran du panneau Copilot, liste des outils, résultats search/fetch]
+```json
+{
+  "timestamp": "2026-06-28T...",
+  "level": "warn",
+  "event": "url_blocked",
+  "requestId": "<uuid>",
+  "reason": "UNSUPPORTED_PROTOCOL",
+  "url": "file://<redacted>"
+}
+```
+
+### Résultat `tools/list` réel (prouvé par `mcp-stdio.test.ts`)
+
+```json
+["fetch_url", "search_web"]
+```
+
+## Annexe C : Recette IntelliJ — À compléter
+
+**AC-02 : EN ATTENTE DE RECETTE MANUELLE**
+
+Suivre [recette-intellij-v1.md](recette-intellij-v1.md) et compléter :
+
+| Élément                  | Valeur      |
+| ------------------------ | ----------- |
+| Date et opérateur        | à compléter |
+| IntelliJ IDEA            | à compléter |
+| Extension GitHub Copilot | à compléter |
+| Commit testé             | à compléter |
+| Deux outils seulement    | ☐           |
+| Recherche officielle     | ☐           |
+| Extraction ciblée        | ☐           |
+| Cache HIT                | ☐           |
+| Avertissement visible    | ☐           |
+| Erreur de protocole sûre | ☐           |
 
 ## Annexe D : URL du run CI vert
 
-[À compléter après CI verte : lien GitHub Actions vers le run de validation]
+À compléter dans le commit documentaire de clôture :
+
+```
+Commit candidat validé : <SHA après git push>
+Run CI de validation   : <URL GitHub Actions>
+Résultat               : <succès / échec>
+Date                   : <date>
+Jobs réussis           : check + integration
+Durée                  : <durée>
+Artefacts              : deterministic-test-reports, integration-test-reports
+```
 
 ---
 
-**Validation réalisée par** : GitHub Copilot Agent  
-**Date de début** : 27 juin 2026  
-**Date de clôture** : [À compléter après recette IntelliJ et Docker]  
-**Commit de validation** : `9b6e7178cf753440595b8a5950f0841888a4b7c1` (merge PR #1)  
-**Run CI** : [URL GitHub Actions après exécution finale]
+**Validation réalisée par** : GitHub Copilot Agent
+
+**Date de début** : 27 juin 2026
+
+**Date de clôture partielle** : 28 juin 2026 (séquence déterministe complète)
+
+**Date de clôture définitive** : À compléter après Docker live + IntelliJ + CI
+
+**Commit initial** : `b4b829aaec41bf5d05476132867fd91421f70f8a`
+
+**Commit candidat** : À compléter après `git push`
+
+**Run CI** : À compléter dans le commit documentaire de clôture

@@ -29,6 +29,7 @@
     "test:resilience": "node scripts/run-test-suite.mjs resilience vitest.resilience.config.ts",
     "test:performance": "node scripts/run-test-suite.mjs performance vitest.performance.config.ts",
     "test:integration": "node scripts/run-test-suite.mjs integration vitest.integration.config.ts",
+    "test:e2e:deterministic": "vitest run --config vitest.required.config.ts tests/e2e/mcp-stdio.test.ts",
     "test:e2e:live": "node scripts/run-live-tests.mjs",
     "test:e2e": "node scripts/run-live-tests.mjs",
     "test:release": "npm run check && npm run test:required && npm run test:unit && npm run test:contract && npm run test:security && npm run test:resilience && npm run test:performance && npm run test:integration && npm run test:e2e",
