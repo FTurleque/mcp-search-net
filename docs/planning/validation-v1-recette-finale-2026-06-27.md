@@ -387,12 +387,12 @@ Suivre [recette-intellij-v1.md](recette-intellij-v1.md) et compléter :
 À compléter dans le commit documentaire de clôture :
 
 ```
-Commit candidat validé : <SHA après git push>
-Run CI de validation   : <URL GitHub Actions>
-Résultat               : <succès / échec>
-Date                   : <date>
-Jobs réussis           : check + integration
-Durée                  : <durée>
+Commit candidat validé : ea85189943630138fef15e43c6dc6d66f1564541
+Run CI de validation   : https://github.com/FTurleque/mcp-search-net/actions
+Résultat               : en attente
+Date                   : 2026-06-28
+Jobs réussis           : check + integration (en attente)
+Durée                  : à compléter
 Artefacts              : deterministic-test-reports, integration-test-reports
 ```
 
