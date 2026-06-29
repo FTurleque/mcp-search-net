@@ -1,0 +1,39 @@
+#!/bin/sh
+set -eu
+
+blocked=0
+local_ref=''
+
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha || [ -n "$local_ref" ]
+do
+  case "$remote_ref" in
+    refs/heads/master|refs/heads/main)
+      printf '%s\n' \
+        'Push direct bloque vers la branche principale.' \
+        '' \
+        'Flux attendu :' \
+        '  1. pousser une branche de travail' \
+        '  2. ouvrir une pull request' \
+        '  3. merger la PR toi-meme sur GitHub' \
+        '' \
+        "Aucune approbation collaborateur n'est requise par ce hook." >&2
+      blocked=1
+      ;;
+    refs/heads/release/*)
+      printf '%s\n' \
+        'Push bloque vers une branche release figee.' \
+        '' \
+        'Les branches release/* doivent rester attachees au code exact publie.' >&2
+      blocked=1
+      ;;
+    refs/tags/v1.0.0)
+      printf '%s\n' \
+        'Push bloque vers le tag de release v1.0.0.' \
+        '' \
+        'Ce tag identifie la premiere release publiee et ne doit pas etre deplace.' >&2
+      blocked=1
+      ;;
+  esac
+done
+
+exit "$blocked"

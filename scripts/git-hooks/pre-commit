@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+
+case "$branch" in
+  master|main)
+    printf '%s\n' \
+      'Commit bloque sur la branche principale.' \
+      '' \
+      'Flux attendu :' \
+      '  1. creer une branche de travail' \
+      '  2. committer sur cette branche' \
+      '  3. pousser la branche' \
+      '  4. merger via GitHub sans approbation collaborateur obligatoire' \
+      '' \
+      'Exemple :' \
+      '  git switch -c feature/ma-modification' >&2
+    exit 1
+    ;;
+  release/*)
+    printf '%s\n' \
+      'Commit bloque sur une branche release figee.' \
+      '' \
+      'Les branches release/* servent de preuve immuable pour les releases publiees.' \
+      'Travaille depuis une branche feature ou depuis master apres merge officiel.' >&2
+    exit 1
+    ;;
+esac
+
+exit 0
