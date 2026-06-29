@@ -45,7 +45,7 @@ jobs:
       - name: Run required suite without skips
         run: npm run test:required
 
-      - name: Run E2E deterministic suite (STDIO, tools/list, SSRF, stdout/stderr)
+      - name: Run deterministic MCP E2E
         run: npm run test:e2e:deterministic
 
       - name: Run security suite

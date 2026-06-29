@@ -42,11 +42,15 @@ npm run test:e2e:live
 
 La suite E2E est scindée en deux niveaux de dépendance :
 
-| Suite                            | Services externes | Objectif                                                                         |
-| -------------------------------- | :---------------: | -------------------------------------------------------------------------------- |
-| `npm run test:e2e:deterministic` |        Non        | Contrat MCP STDIO, `tools/list`, exactement deux outils, SSRF, `stdout`/`stderr` |
-| `npm run test:e2e:live`          |        Oui        | Intégration SearXNG + Crawl4AI réels, cache MISS → HIT, extraction réelle        |
-| `npm run test:e2e`               |        Oui        | Alias officiel de `test:e2e:live`                                                |
+| Script                           | Réseau/Docker | Objectif                                                    |
+| -------------------------------- | ------------: | ----------------------------------------------------------- |
+| `npm run test:e2e:deterministic` |           Non | MCP STDIO, `tools/list`, SSRF, séparation `stdout`/`stderr` |
+| `npm run test:e2e:live`          |           Oui | Intégration réelle SearXNG, Crawl4AI et cache               |
+| `npm run test:e2e`               |           Oui | Alias officiel de la recette E2E live                       |
+
+La suite déterministe valide le contrat MCP et les règles de sécurité sans
+service externe. La suite live valide la chaîne complète avec SearXNG et
+Crawl4AI démarrés par Docker Compose.
 
 `test:e2e:deterministic` lance le binaire Node local sans aucun service externe. Il est inclus dans la CI principale (job `check`) afin d'être exécuté à chaque push. `test:e2e:live` et `test:e2e` requièrent Docker Compose démarré et s'exécutent dans le job `integration` de la CI.
 

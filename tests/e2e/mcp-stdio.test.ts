@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import type { Readable } from 'node:stream';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -22,6 +23,10 @@ describe('MCP STDIO server', () => {
         MCP_CRAWL4AI_TOKEN: 'mcp-search-local-development-token',
       },
       stderr: 'pipe',
+    });
+    let stderr = '';
+    captureStderr(transport, (chunk) => {
+      stderr += chunk;
     });
 
     await client.connect(transport);
@@ -73,6 +78,26 @@ describe('MCP STDIO server', () => {
       code: 'UNSUPPORTED_PROTOCOL',
       retryable: false,
     });
+
+    const blockedLocalFetch = await client.callTool({
+      name: 'fetch_url',
+      arguments: { url: 'http://127.0.0.1/private' },
+    });
+    expect(blockedLocalFetch.isError).toBe(true);
+    expect(blockedLocalFetch._meta?.['mcp-search-net/error']).toMatchObject({
+      code: 'BLOCKED_ADDRESS',
+      retryable: false,
+    });
+    await waitUntil(
+      () => stderr.includes('"event":"url_blocked"') && stderr.includes('"code":"BLOCKED_ADDRESS"'),
+    );
+    expect(parseStderrRecords(stderr)).toContainEqual(
+      expect.objectContaining({
+        event: 'url_blocked',
+        tool: 'fetch_url',
+        code: 'BLOCKED_ADDRESS',
+      }),
+    );
   });
 
   it('keeps stdout as JSON-RPC and writes structured diagnostics only to stderr', async () => {
@@ -122,4 +147,20 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
     if (Date.now() >= deadline) throw new Error('Timed out waiting for MCP output');
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
   }
+}
+
+function captureStderr(transport: StdioClientTransport, onChunk: (chunk: string) => void): void {
+  const stderr = transport.stderr as Readable | null;
+  stderr?.setEncoding('utf8');
+  stderr?.on('data', (chunk: string | Buffer) => {
+    onChunk(chunk.toString());
+  });
+}
+
+function parseStderrRecords(stderr: string): Record<string, unknown>[] {
+  return stderr
+    .trim()
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }

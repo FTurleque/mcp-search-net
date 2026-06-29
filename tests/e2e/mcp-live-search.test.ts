@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import type { Readable } from 'node:stream';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -30,8 +31,15 @@ describe.runIf(live)('live MCP search', () => {
       },
       stderr: 'pipe',
     });
+    let stderr = '';
+    captureStderr(transport, (chunk) => {
+      stderr += chunk;
+    });
 
     await client.connect(transport);
+    const tools = await client.listTools();
+    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(['fetch_url', 'search_web']);
+
     const result = await client.callTool({
       name: 'search_web',
       arguments: {
@@ -80,5 +88,45 @@ describe.runIf(live)('live MCP search', () => {
     expect(cachedResult.structuredContent).toMatchObject({
       metadata: { cacheStatus: 'HIT' },
     });
+    await waitUntil(() => stderr.includes('"cacheStatus":"HIT"'));
+    const stderrRecords = parseStderrRecords(stderr);
+    expect(stderrRecords).toContainEqual(
+      expect.objectContaining({
+        event: 'tool_call_completed',
+        tool: 'search_web',
+        cacheStatus: 'MISS',
+      }),
+    );
+    expect(stderrRecords).toContainEqual(
+      expect.objectContaining({
+        event: 'tool_call_completed',
+        tool: 'search_web',
+        cacheStatus: 'HIT',
+      }),
+    );
   });
 });
+
+function captureStderr(transport: StdioClientTransport, onChunk: (chunk: string) => void): void {
+  const stderr = transport.stderr as Readable | null;
+  stderr?.setEncoding('utf8');
+  stderr?.on('data', (chunk: string | Buffer) => {
+    onChunk(chunk.toString());
+  });
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for MCP stderr output');
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
+  }
+}
+
+function parseStderrRecords(stderr: string): Record<string, unknown>[] {
+  return stderr
+    .trim()
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}

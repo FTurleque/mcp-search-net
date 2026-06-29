@@ -41,4 +41,17 @@ Copilot connecté ; les tests STDIO automatisés ne remplacent pas cette preuve 
 | Avertissement visible    | ☐           |
 | Erreur de protocole sûre | ☐           |
 
-Résultat final : **EN ATTENTE DE RECETTE MANUELLE**.
+## Statut AC-02
+
+AC-02 : EN ATTENTE — recette manuelle IntelliJ/Copilot non exécutée.
+
+Motif :
+L’environnement d’exécution Codex ne permet pas de piloter l’interface
+IntelliJ/GitHub Copilot.
+
+Date prévue :
+À compléter par l’opérateur.
+
+Impact :
+V1 OPÉRATIONNELLE AVEC RÉSERVES
+V2 BUILD NO-GO
