@@ -21,18 +21,18 @@ La V2 (catalogue documentaire, FTS5, synchronisation, versions, embeddings) doit
 
 ## Suivi d'avancement
 
-| Phase                              | Statut                      | Validation                                                                                            |
-| ---------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Phase 0 — Validation reproductible | ✅ Terminée le 21 juin 2026 | Node 24.17.0, `npm ci`, CI, SearXNG épinglé et sain                                                   |
-| Phase 1 — Contrat MCP commun       | ✅ Terminée le 21 juin 2026 | 51 tests déterministes et test réel `search_web` réussi                                               |
-| Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi                                                    |
-| Phase 3 — `fetch_url`              | ✅ Terminée le 21 juin 2026 | 87 tests déterministes, extraction multi-format et sélection lexicale                                 |
-| Phase 4 — Sécurité réseau          | ✅ Terminée le 21 juin 2026 | Passerelle épinglée, redirections/limites testées                                                     |
-| Phase 5 — Cache résilient          | ✅ Terminée le 21 juin 2026 | SQLite typé, revalidation et stale fallback                                                           |
-| Phase 6 — Observabilité            | ✅ Terminée le 21 juin 2026 | Événements corrélés et redaction récursive                                                            |
-| Phase 7 — Déploiement              | ✅ Terminée le 21 juin 2026 | Compose complet/hybride et cycle Windows validés                                                      |
-| Phase 8 — Stratégie de tests       | ✅ Terminée le 22 juin 2026 | 134 requis, intégration déterministe 25/25 et E2E 7/7                                                 |
-| Phase 9 — Documentation et recette | 🟡 Partielle                | Déterministe, E2E STDIO, Compose, scripts V1 terminés — Docker live et recette IntelliJ UI en attente |
+| Phase                              | Statut                      | Validation                                                                                                      |
+| ---------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Phase 0 — Validation reproductible | ✅ Terminée le 21 juin 2026 | Node 24.17.0, `npm ci`, CI, SearXNG épinglé et sain                                                             |
+| Phase 1 — Contrat MCP commun       | ✅ Terminée le 21 juin 2026 | 51 tests déterministes et test réel `search_web` réussi                                                         |
+| Phase 2 — `search_web`             | ✅ Terminée le 21 juin 2026 | 67 tests déterministes et test SearXNG réel réussi                                                              |
+| Phase 3 — `fetch_url`              | ✅ Terminée le 21 juin 2026 | 87 tests déterministes, extraction multi-format et sélection lexicale                                           |
+| Phase 4 — Sécurité réseau          | ✅ Terminée le 21 juin 2026 | Passerelle épinglée, redirections/limites testées                                                               |
+| Phase 5 — Cache résilient          | ✅ Terminée le 21 juin 2026 | SQLite typé, revalidation et stale fallback                                                                     |
+| Phase 6 — Observabilité            | ✅ Terminée le 21 juin 2026 | Événements corrélés et redaction récursive                                                                      |
+| Phase 7 — Déploiement              | ✅ Terminée le 21 juin 2026 | Compose complet/hybride et cycle Windows validés                                                                |
+| Phase 8 — Stratégie de tests       | ✅ Terminée le 22 juin 2026 | 134 requis, intégration déterministe 25/25 et E2E 7/7                                                           |
+| Phase 9 — Documentation et recette | 🟡 Partielle                | Déterministe, E2E STDIO, Compose, Docker live et lancement manuel IntelliJ validés — UI Copilot Chat en attente |
 
 Le détail des preuves est conservé dans les rapports de validation des [phases 0 et 1](validation-phase-0-1.md), de la [phase 2](validation-phase-2.md), des [phases 3 et 4](validation-phase-3-4.md), des [phases 5 à 7](validation-phase-5-7.md) et des [phases 8 et 9](validation-phase-8-9.md).
 
@@ -67,7 +67,7 @@ Légende : ✅ satisfait par le code actuel ; 🟡 partiel ; ❌ non satisfait ;
 | Critère                                                  | État | Écart principal                                                                                                               |
 | -------------------------------------------------------- | :--: | ----------------------------------------------------------------------------------------------------------------------------- |
 | AC-01 — démarrage avec Docker Compose                    |  ✅  | Trois services définis ; image MCP, dépendances saines et initialisation STDIO conteneurisée validées.                        |
-| AC-02 — détection par Copilot dans IntelliJ              |  ⚪  | Installation et exemple documentés, mais aucune preuve de test réel conservée.                                                |
+| AC-02 — détection par Copilot dans IntelliJ              |  🟡  | Lancement manuel IntelliJ/Windows validé ; preuve UI Copilot Chat encore absente.                                             |
 | AC-03 — seulement deux outils                            |  ✅  | Les deux outils sont déclarés et un test STDIO vérifie leurs noms.                                                            |
 | AC-04 — cinq résultats de recherche par défaut           |  ✅  | Défaut configuré à 5 et maximum configuré à 10.                                                                               |
 | AC-05 — cinq sections et 12 000 caractères par défaut    |  ✅  | Défauts et maxima absolus validés par schéma et tests.                                                                        |
@@ -254,7 +254,7 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 
 ### Phase 9 — Documentation, ADR, benchmark et recette (P1)
 
-**Statut : 🟡 PARTIELLE — toute la partie automatisable est terminée ; AC-02 exige encore la recette UI IntelliJ.**
+**Statut : 🟡 PARTIELLE — partie automatisable et lancement manuel IntelliJ/Windows validés ; AC-02 exige encore la preuve UI Copilot Chat.**
 
 - [x] Mettre à jour `docs/reference/tools.md` avec les contrats exacts, avertissements, erreurs et exemples de réponses compactes.
 - [x] Mettre à jour configuration, sécurité, tests, dépannage et installation après validation réelle.
@@ -278,7 +278,7 @@ Zone principale : `src/infrastructure/security` et chemin complet jusqu'à Crawl
 - [x] Chaque réponse contient `schemaVersion`, `requestId`, avertissements séparés, métadonnées et statut de cache.
 - [x] Aucune sortie libre n'est écrite sur `stdout`. _(prouvé par `mcp-stdio.test.ts` test 2)_
 - [x] L'installation Windows et la mise à jour conservatrice sont validées sur un profil propre.
-- [ ] Copilot dans IntelliJ détecte uniquement les deux outils et peut les appeler. _(AC-02 en attente)_
+- [ ] Copilot dans IntelliJ détecte uniquement les deux outils et peut les appeler. _(lancement manuel IntelliJ validé le 2026-06-29 ; UI Copilot Chat en attente)_
 - [x] La documentation, les ADR, la traçabilité et le rapport de benchmark correspondent au binaire livré.
 - [x] Aucun composant V2 n'a été introduit dans la base V1.
 
@@ -293,11 +293,11 @@ Run CI                    : à compléter après CI verte
 
 Réserves ouvertes :
   - Docker démon arrêté lors de la recette — build image + healthchecks + E2E live ✅ RÉSOLUS (2026-06-28)
-  - AC-02 IntelliJ/Copilot : recette manuelle non exécutée
+  - AC-02 IntelliJ/Copilot : lancement manuel IntelliJ/Windows validé, UI Copilot Chat en attente
   - CI GitHub Actions : en attente du push du commit candidat
 
 V2 STUDY GO     — autorisé (ADR-011 + ADR-012 définissent la frontière)
-V2 BUILD NO-GO  — en attente : Docker live + IntelliJ + CI verts
+V2 BUILD NO-GO  — en attente : UI Copilot Chat + CI verte
 ```
 
 ## Définition de « V1 pleinement opérationnelle »

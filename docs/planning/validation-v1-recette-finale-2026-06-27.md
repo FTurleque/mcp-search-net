@@ -6,18 +6,18 @@ Cette validation finale clôt officiellement la V1 opérationnelle de mcp-search
 
 ### Environnement de validation
 
-| Champ                  | Valeur                                                                        |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| Date d'ouverture       | 2026-06-27                                                                    |
-| Date de clôture        | 2026-06-29 (automatisable validé ; AC-02 IntelliJ et CI finale en réserve)    |
-| Branche                | `master`                                                                      |
-| Commit initial         | `b4b829aaec41bf5d05476132867fd91421f70f8a`                                    |
-| Version Node.js        | v24.17.0                                                                      |
-| Version npm            | 11.13.0                                                                       |
-| Version Docker         | 29.5.3 (client/server) — Docker Desktop disponible                            |
-| Version Docker Compose | v5.1.4                                                                        |
-| Système d'exploitation | Windows 11, PowerShell 5.1                                                    |
-| Dépôt                  | modifications locales contrôlées ; `mcp-search-net.iml` non suivi préexistant |
+| Champ                  | Valeur                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------- |
+| Date d'ouverture       | 2026-06-27                                                                      |
+| Date de clôture        | 2026-06-29 (automatisable et lancement IntelliJ validés ; CI finale en réserve) |
+| Branche                | `master`                                                                        |
+| Commit initial         | `b4b829aaec41bf5d05476132867fd91421f70f8a`                                      |
+| Version Node.js        | v24.17.0                                                                        |
+| Version npm            | 11.13.0                                                                         |
+| Version Docker         | 29.5.3 (client/server) — Docker Desktop disponible                              |
+| Version Docker Compose | v5.1.4                                                                          |
+| Système d'exploitation | Windows 11, PowerShell 5.1                                                      |
+| Dépôt                  | modifications locales contrôlées ; `mcp-search-net.iml` non suivi préexistant   |
 
 ### Versions cibles
 
@@ -177,28 +177,28 @@ Suivre [docs/getting-started/intellij-copilot.md](../getting-started/intellij-co
 
 ### Recette opérationnelle exécutée le 29 juin 2026
 
-| Validation        | Commande ou action               | Résultat                                        |                  Durée | Preuve                                                                                   | Statut     |
-| ----------------- | -------------------------------- | ----------------------------------------------- | ---------------------: | ---------------------------------------------------------------------------------------- | ---------- |
-| Installation      | `npm ci`                         | exit 0 ; 286 packages audités ; 0 vulnérabilité |                  4.8 s | `added 286 packages` ; warning utile `prebuild-install@7.1.3` déprécié                   | OK         |
-| Format            | `npm run format:check`           | exit 0                                          |                  2.7 s | `All matched files use Prettier code style!`                                             | OK         |
-| Lint              | `npm run lint`                   | exit 0 ; 0 warning                              |                  6.2 s | ESLint terminé sans sortie d'erreur                                                      | OK         |
-| Build             | `npm run build`                  | exit 0                                          |                  3.1 s | `rimraf build dist` puis `tsc -p tsconfig.build.json`                                    | OK         |
-| Tests unitaires   | `npm run test:unit`              | exit 0 ; 62 tests ; 19 suites                   |                  1.8 s | `REQUIRED_SUITE_VALID unit: 62 passed, 0 skipped`                                        | OK         |
-| Tests intégration | `npm run test:integration`       | exit 0 ; 29 tests ; 10 suites                   |                  1.9 s | `REQUIRED_SUITE_VALID integration: 29 passed, 0 skipped`                                 | OK         |
-| Tests globaux     | `npm test`                       | exit 0 ; 139 tests ; 21 fichiers                |                  2.9 s | `Test Files 21 passed (21)` ; `Tests 139 passed (139)`                                   | OK         |
-| E2E déterministe  | `npm run test:e2e:deterministic` | exit 0 ; 2 tests ; 1 fichier                    |                  2.4 s | STDIO, `tools/list`, erreurs stables, SSRF locale, séparation `stdout`/`stderr`          | OK         |
-| Compose           | `docker compose config`          | exit 0                                          |                  0.4 s | configuration Compose rendue sans erreur ; aucun healthcheck HTTP MCP                    | OK         |
-| Image MCP         | `docker compose build`           | exit 0                                          |                  1.9 s | `Image mcp-search-net:1.0.0 Built`                                                       | OK         |
-| Providers         | `docker compose ps`              | SearXNG healthy ; Crawl4AI healthy              |                  0.4 s | `Up ... (healthy)` sur les deux services ; ports `127.0.0.1:8888` et `127.0.0.1:11235`   | OK         |
-| E2E live          | `npm run test:e2e:live`          | exit 0 ; 7 tests ; 8 suites                     |                  5.1 s | `REQUIRED_SUITE_VALID e2e-live: 7 passed, 0 skipped`                                     | OK         |
-| Alias E2E         | `npm run test:e2e`               | exit 0 ; 7 tests ; 8 suites                     |                  4.5 s | alias public vers la recette live ; `REQUIRED_SUITE_VALID e2e-live`                      | OK         |
-| Outils MCP        | `tools/list`                     | exactement 2 outils                             | inclus dans preuve MCP | `['fetch_url','search_web']`                                                             | OK         |
-| Recherche         | `search_web`                     | réponse structurée valide ; statut `partial`    | inclus dans preuve MCP | requête `Example Domain`, 5 résultats, URL `https://www.iana.org/help/example-domains`   | OK         |
-| Extraction        | `fetch_url`                      | réponse structurée valide                       | inclus dans preuve MCP | titre `Example Domains`, `contentType: text/html`, `extractionMode: static`, 3 sections  | OK         |
-| Cache             | `MISS` puis `HIT`                | prouvé sur deux appels identiques               | inclus dans preuve MCP | `firstCall: MISS`, `secondCall: HIT`                                                     | OK         |
-| SSRF              | URL locale bloquée               | erreur contrôlée                                | inclus dans preuve MCP | `http://127.0.0.1` -> `BLOCKED_ADDRESS`, `providerCallsForRequest: 0`, log `url_blocked` | OK         |
-| IntelliJ          | recette manuelle                 | non exécutée                                    |         non applicable | AC-02 en attente : environnement Codex sans interface IntelliJ/Copilot pilotable         | EN ATTENTE |
-| CI                | workflow GitHub Actions          | non exécuté sur commit final                    |         non applicable | workflow inspecté et mis à jour ; aucun commit/push demandé, donc pas de run final       | EN ATTENTE |
+| Validation        | Commande ou action               | Résultat                                               |                  Durée | Preuve                                                                                         | Statut     |
+| ----------------- | -------------------------------- | ------------------------------------------------------ | ---------------------: | ---------------------------------------------------------------------------------------------- | ---------- |
+| Installation      | `npm ci`                         | exit 0 ; 286 packages audités ; 0 vulnérabilité        |                  4.8 s | `added 286 packages` ; warning utile `prebuild-install@7.1.3` déprécié                         | OK         |
+| Format            | `npm run format:check`           | exit 0                                                 |                  2.7 s | `All matched files use Prettier code style!`                                                   | OK         |
+| Lint              | `npm run lint`                   | exit 0 ; 0 warning                                     |                  6.2 s | ESLint terminé sans sortie d'erreur                                                            | OK         |
+| Build             | `npm run build`                  | exit 0                                                 |                  3.1 s | `rimraf build dist` puis `tsc -p tsconfig.build.json`                                          | OK         |
+| Tests unitaires   | `npm run test:unit`              | exit 0 ; 62 tests ; 19 suites                          |                  1.8 s | `REQUIRED_SUITE_VALID unit: 62 passed, 0 skipped`                                              | OK         |
+| Tests intégration | `npm run test:integration`       | exit 0 ; 29 tests ; 10 suites                          |                  1.9 s | `REQUIRED_SUITE_VALID integration: 29 passed, 0 skipped`                                       | OK         |
+| Tests globaux     | `npm test`                       | exit 0 ; 139 tests ; 21 fichiers                       |                  2.9 s | `Test Files 21 passed (21)` ; `Tests 139 passed (139)`                                         | OK         |
+| E2E déterministe  | `npm run test:e2e:deterministic` | exit 0 ; 2 tests ; 1 fichier                           |                  2.4 s | STDIO, `tools/list`, erreurs stables, SSRF locale, séparation `stdout`/`stderr`                | OK         |
+| Compose           | `docker compose config`          | exit 0                                                 |                  0.4 s | configuration Compose rendue sans erreur ; aucun healthcheck HTTP MCP                          | OK         |
+| Image MCP         | `docker compose build`           | exit 0                                                 |                  1.9 s | `Image mcp-search-net:1.0.0 Built`                                                             | OK         |
+| Providers         | `docker compose ps`              | SearXNG healthy ; Crawl4AI healthy                     |                  0.4 s | `Up ... (healthy)` sur les deux services ; ports `127.0.0.1:8888` et `127.0.0.1:11235`         | OK         |
+| E2E live          | `npm run test:e2e:live`          | exit 0 ; 7 tests ; 8 suites                            |                  5.1 s | `REQUIRED_SUITE_VALID e2e-live: 7 passed, 0 skipped`                                           | OK         |
+| Alias E2E         | `npm run test:e2e`               | exit 0 ; 7 tests ; 8 suites                            |                  4.5 s | alias public vers la recette live ; `REQUIRED_SUITE_VALID e2e-live`                            | OK         |
+| Outils MCP        | `tools/list`                     | exactement 2 outils                                    | inclus dans preuve MCP | `['fetch_url','search_web']`                                                                   | OK         |
+| Recherche         | `search_web`                     | réponse structurée valide ; statut `partial`           | inclus dans preuve MCP | requête `Example Domain`, 5 résultats, URL `https://www.iana.org/help/example-domains`         | OK         |
+| Extraction        | `fetch_url`                      | réponse structurée valide                              | inclus dans preuve MCP | titre `Example Domains`, `contentType: text/html`, `extractionMode: static`, 3 sections        | OK         |
+| Cache             | `MISS` puis `HIT`                | prouvé sur deux appels identiques                      | inclus dans preuve MCP | `firstCall: MISS`, `secondCall: HIT`                                                           | OK         |
+| SSRF              | URL locale bloquée               | erreur contrôlée                                       | inclus dans preuve MCP | `http://127.0.0.1` -> `BLOCKED_ADDRESS`, `providerCallsForRequest: 0`, log `url_blocked`       | OK         |
+| IntelliJ          | lancement manuel Windows         | scripts `.run`/`.cmd` validés ; UI Copilot non prouvée |    commandes manuelles | `verify-live`, `verify-deterministic`, `run-local-mcp`, `providers-up/down`, `install-and-run` | PARTIEL    |
+| CI                | workflow GitHub Actions          | non exécuté sur commit final                           |         non applicable | workflow inspecté et mis à jour ; aucun commit/push demandé, donc pas de run final             | EN ATTENTE |
 
 ### Environnement et commit testés
 
@@ -301,14 +301,21 @@ Les logs archivés ne contiennent ni token, ni secret, ni environnement complet,
 
 ### Recette IntelliJ
 
-AC-02 : EN ATTENTE — recette manuelle IntelliJ/Copilot non exécutée.
+AC-02 : PARTIEL — lancement manuel IntelliJ/Windows validé, interaction
+GitHub Copilot Chat non encore exécutée.
 
-Motif :
-L’environnement d’exécution Codex ne permet pas de piloter l’interface
-IntelliJ/GitHub Copilot.
+Preuves manuelles fournies le 29 juin 2026 :
 
-Date prévue :
-À compléter par l’opérateur.
+- `verify-live.cmd` : SearXNG et Crawl4AI `Healthy`, puis `REQUIRED_SUITE_VALID e2e-live: 7 passed, 0 skipped`.
+- `verify-deterministic.cmd` : `tests/e2e/mcp-stdio.test.ts`, `2 passed`.
+- `run-local-mcp.cmd` : build TypeScript, providers `Healthy`, log `server_started`, arrêt `server_stopped` avec `reason: SIGINT` et `exitCode: 0`.
+- `providers-up.cmd` : deux conteneurs `healthy`, ports `127.0.0.1:8888` et `127.0.0.1:11235`.
+- `providers-down.cmd` : conteneurs et réseaux Compose supprimés.
+- `install-and-run.cmd` : installation utilisateur complète, `npm run check` vert, 139 tests globaux passés, providers utilisateur `Healthy`, serveur MCP lancé puis arrêté proprement.
+
+Limite :
+aucune preuve n'a encore été fournie montrant GitHub Copilot Chat afficher les
+deux outils et les appeler directement depuis l'interface.
 
 Impact :
 V1 OPÉRATIONNELLE AVEC RÉSERVES
@@ -320,7 +327,7 @@ Le workflow GitHub Actions a été inspecté : les SHA d'actions restent épingl
 
 ### Limites restantes
 
-- AC-02 IntelliJ/Copilot reste manuel et non exécuté.
+- AC-02 IntelliJ/Copilot reste partiel : lancement manuel validé, UI Copilot Chat non prouvée.
 - CI finale non disponible tant qu'un commit candidat n'est pas poussé.
 - La recherche live a réussi avec résultats, mais certains moteurs SearXNG externes ont répondu en erreur ou avec limitation ; le serveur a exposé ces conditions via warnings et statut `partial`.
 - Le fichier `mcp-search-net.iml` était déjà non suivi avant la recette et n'a pas été modifié.
@@ -332,4 +339,4 @@ V1 OPÉRATIONNELLE AVEC RÉSERVES
 V2 BUILD NO-GO
 ```
 
-Motif : toute la séquence automatisable est verte, Docker est disponible, les deux outils MCP fonctionnent, MISS/HIT et SSRF sont prouvés. Les réserves restantes sont la recette manuelle IntelliJ/Copilot et l'absence de run CI final sur un commit poussé.
+Motif : toute la séquence automatisable est verte, Docker est disponible, les deux outils MCP fonctionnent, MISS/HIT et SSRF sont prouvés, et le lancement manuel IntelliJ/Windows est validé. Les réserves restantes sont l'interaction directe dans GitHub Copilot Chat et l'absence de run CI final sur un commit poussé.
