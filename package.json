@@ -1,6 +1,7 @@
 {
   "name": "mcp-search-net",
   "version": "1.0.0",
+  "license": "MIT",
   "private": true,
   "description": "Local MCP web search and fetch server for GitHub Copilot",
   "type": "module",
