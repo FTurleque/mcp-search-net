@@ -15,14 +15,25 @@ if (-not $InstallRoot.Equals($ExpectedRoot, [System.StringComparison]::OrdinalIg
 }
 
 if (-not (Test-Path -LiteralPath $InstallRoot)) {
-    Write-Host 'mcp-search-net n’est pas installé pour cet utilisateur.'
+    Write-Host "mcp-search-net n'est pas installé pour cet utilisateur."
     exit 0
 }
 
 $Docker = Get-Command docker -ErrorAction SilentlyContinue
 $ComposeFile = Join-Path $InstallRoot 'compose.yaml'
 if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $ComposeFile)) {
-    & $Docker.Source compose -p mcp-search-net-user -f $ComposeFile down
+    $ComposeProject = if ([string]::IsNullOrWhiteSpace($env:MCP_SEARCH_COMPOSE_PROJECT)) {
+        'mcp-search-net'
+    }
+    else {
+        $env:MCP_SEARCH_COMPOSE_PROJECT
+    }
+    foreach ($project in @($ComposeProject, 'mcp-search-net-user') | Select-Object -Unique) {
+        & $Docker.Source compose -p $project -f $ComposeFile down
+        if ($LASTEXITCODE -ne 0) {
+            throw "La commande '$($Docker.Source)' a échoué avec le code $LASTEXITCODE."
+        }
+    }
 }
 
 if ($KeepData) {
@@ -36,5 +47,5 @@ if ($KeepData) {
 }
 elseif ($PSCmdlet.ShouldProcess($InstallRoot, 'Supprimer entièrement')) {
     Remove-Item -LiteralPath $InstallRoot -Recurse -Force
-    Write-Host 'mcp-search-net a été désinstallé pour cet utilisateur.'
+    Write-Host "mcp-search-net a été désinstallé pour cet utilisateur."
 }

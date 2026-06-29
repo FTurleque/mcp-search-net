@@ -15,6 +15,12 @@ $NodeArchiveName = "$NodeFolderName.zip"
 $NodeDownloadUrl = "https://nodejs.org/dist/v$NodeVersion/$NodeArchiveName"
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
+$ComposeProject = if ([string]::IsNullOrWhiteSpace($env:MCP_SEARCH_COMPOSE_PROJECT)) {
+    'mcp-search-net'
+}
+else {
+    $env:MCP_SEARCH_COMPOSE_PROJECT
+}
 
 function Invoke-NativeCommand {
     param(
@@ -169,7 +175,7 @@ $McpExample = [ordered]@{
     servers = [ordered]@{
         'mcp-search-net' = [ordered]@{
             command = 'cmd.exe'
-            args = @('/d', '/s', '/c', "`"$Launcher`"")
+            args = @('/d', '/s', '/c', $Launcher)
             env = [ordered]@{
                 MCP_SEARCH_HOME = $InstallRoot
             }
@@ -187,7 +193,7 @@ $ContainerExample = [ordered]@{
     servers = [ordered]@{
         'mcp-search-net-container' = [ordered]@{
             command = 'cmd.exe'
-            args = @('/d', '/s', '/c', "`"$ContainerLauncher`"")
+            args = @('/d', '/s', '/c', $ContainerLauncher)
             env = [ordered]@{ MCP_SEARCH_HOME = $InstallRoot }
         }
     }
@@ -206,12 +212,19 @@ if ($StartServices) {
     if ($null -eq $Docker) {
         throw 'Docker est absent du PATH. Installez ou démarrez Docker Desktop, puis relancez avec -StartServices.'
     }
+    if ($ComposeProject -ne 'mcp-search-net-user') {
+        Write-Host "Arrêt éventuel de l'ancien projet Compose mcp-search-net-user..."
+        & $Docker.Source 'compose' '-p' 'mcp-search-net-user' '-f' (Join-Path $InstallRoot 'compose.yaml') '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') 'down'
+        if ($LASTEXITCODE -ne 0) {
+            throw "La commande '$($Docker.Source)' a échoué avec le code $LASTEXITCODE."
+        }
+    }
     Write-Host 'Démarrage de SearXNG et Crawl4AI...'
-    Invoke-NativeCommand $Docker.Source 'compose' '-p' 'mcp-search-net-user' '-f' (Join-Path $InstallRoot 'compose.yaml') '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') 'up' '-d' '--wait' 'searxng' 'crawl4ai'
+    Invoke-NativeCommand $Docker.Source 'compose' '-p' $ComposeProject '-f' (Join-Path $InstallRoot 'compose.yaml') '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') 'up' '-d' '--wait' 'searxng' 'crawl4ai'
 }
 
 if ($RunAfterInstall) {
-    Write-Host 'Démarrage du serveur MCP STDIO (arrêter avec Ctrl+C)...'
+    Write-Host "Démarrage du serveur MCP STDIO (arrêter avec Ctrl+C)..."
     & $Launcher
     exit $LASTEXITCODE
 }

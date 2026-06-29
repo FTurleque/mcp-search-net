@@ -57,6 +57,13 @@ Le lanceur stable à déclarer dans Copilot est `%LOCALAPPDATA%\mcp-search-net\b
 
 SearXNG écoute uniquement sur `127.0.0.1:8888` et Crawl4AI sur `127.0.0.1:11235`.
 
+Le nom Docker Compose canonique de l'installation utilisateur est
+`mcp-search-net`. Les conteneurs attendus sont donc
+`mcp-search-net-searxng-1` et `mcp-search-net-crawl4ai-1`. Les anciens noms
+`mcp-search-net-user-*` proviennent d'une version antérieure des scripts ;
+l'installateur actuel les arrête sans supprimer les volumes avant de démarrer
+le nom canonique.
+
 ## Mode Compose complet
 
 Le lanceur conteneurisé démarre les dépendances sans publier leurs ports, puis attache le serveur MCP en STDIO sans TTY :

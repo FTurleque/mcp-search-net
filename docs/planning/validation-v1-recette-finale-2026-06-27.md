@@ -312,6 +312,7 @@ Preuves manuelles fournies le 29 juin 2026 :
 - `providers-up.cmd` : deux conteneurs `healthy`, ports `127.0.0.1:8888` et `127.0.0.1:11235`.
 - `providers-down.cmd` : conteneurs et réseaux Compose supprimés.
 - `install-and-run.cmd` : installation utilisateur complète, `npm run check` vert, 139 tests globaux passés, providers utilisateur `Healthy`, serveur MCP lancé puis arrêté proprement.
+- Contrôle complémentaire du nom Compose canonique : le lanceur installé `mcp-search-net-services.cmd up -d --wait searxng crawl4ai` crée `mcp-search-net-crawl4ai-1` et `mcp-search-net-searxng-1` en `healthy`, sans suffixe `user`; `mcp-search-net-services.cmd down` supprime ensuite conteneurs et réseaux, puis `docker ps --filter name=mcp-search-net` ne retourne aucune ligne.
 
 Limite :
 aucune preuve n'a encore été fournie montrant GitHub Copilot Chat afficher les

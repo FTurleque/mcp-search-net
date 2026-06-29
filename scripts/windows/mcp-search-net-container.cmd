@@ -6,7 +6,9 @@ if not exist "%MCP_SEARCH_HOME%\compose.yaml" (
   exit /b 2
 )
 
-docker compose -p mcp-search-net-user -f "%MCP_SEARCH_HOME%\compose.yaml" up -d --wait searxng crawl4ai 1>&2
+if not defined MCP_SEARCH_COMPOSE_PROJECT set "MCP_SEARCH_COMPOSE_PROJECT=mcp-search-net"
+
+docker compose -p "%MCP_SEARCH_COMPOSE_PROJECT%" -f "%MCP_SEARCH_HOME%\compose.yaml" up -d --wait searxng crawl4ai 1>&2
 if errorlevel 1 exit /b %ERRORLEVEL%
-docker compose -p mcp-search-net-user -f "%MCP_SEARCH_HOME%\compose.yaml" --profile stdio run --rm --no-deps -T mcp-search-net
+docker compose -p "%MCP_SEARCH_COMPOSE_PROJECT%" -f "%MCP_SEARCH_HOME%\compose.yaml" --profile stdio run --rm --no-deps -T mcp-search-net
 exit /b %ERRORLEVEL%

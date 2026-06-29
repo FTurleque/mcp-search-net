@@ -3,15 +3,19 @@
 ## Configurations de lancement partagées
 
 Le dossier `.run` fournit des configurations Windows pour installer, lancer et
-vérifier le serveur depuis IntelliJ :
+vérifier le serveur depuis IntelliJ. Toutes les configurations utilisent des
+fichiers `.cmd` dans `scripts/intellij` afin d'éviter les consoles PowerShell
+ouvertes sans commande.
 
-- `MCP - Install user (Windows)` : valide, installe et démarre les conteneurs ;
-- `MCP - Install and run (Windows)` : fait la même chose puis démarre le serveur STDIO dans la console IntelliJ.
-- `MCP - Providers up (Windows)` : démarre SearXNG et Crawl4AI puis affiche leur état ;
-- `MCP - Providers down (Windows)` : arrête les conteneurs du projet ;
-- `MCP - Run local STDIO (Windows)` : compile le projet, démarre les providers et lance `build/bootstrap/main.js` avec la configuration locale ;
-- `MCP - Verify deterministic (Windows)` : lance le build puis `npm run test:e2e:deterministic` ;
-- `MCP - Verify live E2E (Windows)` : démarre les providers, compile et lance `npm run test:e2e:live`.
+| Configuration                | Script                                      | Usage                                                                  | Nom Compose      |
+| ---------------------------- | ------------------------------------------- | ---------------------------------------------------------------------- | ---------------- |
+| `MCP - Verify deterministic` | `scripts/intellij/verify-deterministic.cmd` | Build + test MCP STDIO sans Docker ni réseau                           | aucun            |
+| `MCP - Verify live E2E`      | `scripts/intellij/verify-live.cmd`          | Démarre les providers, build, puis lance l'E2E live                    | `mcp-search-net` |
+| `MCP - Providers up`         | `scripts/intellij/providers-up.cmd`         | Démarre SearXNG et Crawl4AI puis affiche `docker compose ps`           | `mcp-search-net` |
+| `MCP - Providers down`       | `scripts/intellij/providers-down.cmd`       | Arrête les conteneurs et réseaux du projet local                       | `mcp-search-net` |
+| `MCP - Run local STDIO`      | `scripts/intellij/run-local-mcp.cmd`        | Compile, démarre les providers et lance `build/bootstrap/main.js`      | `mcp-search-net` |
+| `MCP - Install user`         | `scripts/intellij/install-user.cmd`         | Installe dans `%LOCALAPPDATA%\mcp-search-net` et démarre les providers | `mcp-search-net` |
+| `MCP - Install and run`      | `scripts/intellij/install-and-run.cmd`      | Même installation, puis lance le serveur MCP STDIO installé            | `mcp-search-net` |
 
 Les configurations passent par `scripts/intellij/run-powershell.cmd`, qui utilise
 `pwsh.exe` si disponible puis `powershell.exe` en repli. La configuration
@@ -23,6 +27,14 @@ Si IntelliJ affiche seulement un prompt PowerShell sans exécuter de commande,
 recharger le projet depuis le disque ou supprimer/recréer la configuration Run
 depuis le fichier `.run` partagé. Les configurations doivent pointer vers un
 fichier `.cmd` dans `scripts/intellij`, pas vers un champ `Script text`.
+
+Le nom Docker Compose attendu est `mcp-search-net`. Les anciens conteneurs ou
+réseaux `mcp-search-net-user-*` proviennent d'une version antérieure des scripts.
+L'installation utilisateur actuelle arrête cet ancien projet avant de démarrer
+les services avec le nom canonique. Pour forcer un autre nom temporairement,
+définir `MCP_SEARCH_COMPOSE_PROJECT`, mais ne pas le faire pour la recette V1.
+Les configurations locales du dépôt et l'installation utilisateur partagent ce
+nom canonique : utiliser une seule famille de lanceurs à la fois.
 
 Validation manuelle du 29 juin 2026 : `verify-live.cmd`,
 `verify-deterministic.cmd`, `run-local-mcp.cmd`, `providers-up.cmd`,
@@ -52,7 +64,7 @@ Forme attendue :
         "/d",
         "/s",
         "/c",
-        "\"C:\\Users\\<utilisateur>\\AppData\\Local\\mcp-search-net\\bin\\mcp-search-net.cmd\""
+        "C:\\Users\\<utilisateur>\\AppData\\Local\\mcp-search-net\\bin\\mcp-search-net.cmd"
       ]
     }
   }
