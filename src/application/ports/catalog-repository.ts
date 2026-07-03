@@ -1,0 +1,25 @@
+import type {
+  CatalogDocument,
+  CatalogDocumentInput,
+  CatalogSource,
+  DocumentSection,
+  DocumentSectionInput,
+  DocumentVersion,
+  DocumentVersionInput,
+  NewCatalogSource,
+} from '../../domain/models/catalog.js';
+
+export interface CatalogRepository {
+  addSource(source: NewCatalogSource): Promise<CatalogSource>;
+  getSourceByKey(sourceKey: string): Promise<CatalogSource | undefined>;
+  listSources(): Promise<readonly CatalogSource[]>;
+  upsertDocument(document: CatalogDocumentInput): Promise<CatalogDocument>;
+  addDocumentVersion(version: DocumentVersionInput): Promise<DocumentVersion>;
+  replaceDocumentSections(
+    documentVersionId: number,
+    sections: readonly DocumentSectionInput[],
+  ): Promise<readonly DocumentSection[]>;
+  getDocumentByPublicId(publicId: string): Promise<CatalogDocument | undefined>;
+  listDocuments(): Promise<readonly CatalogDocument[]>;
+  close(): void;
+}
