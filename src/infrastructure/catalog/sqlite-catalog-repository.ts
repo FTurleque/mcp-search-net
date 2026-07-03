@@ -197,9 +197,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
     if (row !== undefined) return Promise.resolve(toCatalogDocument(row));
 
     const stableRow = this.database
-      .prepare<[number, string], CatalogDocumentRow>(
-        'SELECT * FROM documents WHERE source_id = ? AND stable_key = ?',
-      )
+      .prepare<
+        [number, string],
+        CatalogDocumentRow
+      >('SELECT * FROM documents WHERE source_id = ? AND stable_key = ?')
       .get(document.sourceId, document.stableKey);
     if (stableRow === undefined) throw new Error('CATALOG_DOCUMENT_UPSERT_FAILED');
     return Promise.resolve(toCatalogDocument(stableRow));
@@ -262,17 +263,18 @@ export class SqliteCatalogRepository implements CatalogRepository {
         );
 
       const row = this.database
-        .prepare<[number, string], DocumentVersionRow>(
-          'SELECT * FROM document_versions WHERE document_id = ? AND content_hash = ?',
-        )
+        .prepare<
+          [number, string],
+          DocumentVersionRow
+        >('SELECT * FROM document_versions WHERE document_id = ? AND content_hash = ?')
         .get(version.documentId, version.contentHash);
       if (row === undefined) throw new Error('DOCUMENT_VERSION_INSERT_FAILED');
 
       if (version.isCurrent) {
         this.database
-          .prepare<[number, number, number]>(
-            'UPDATE documents SET current_version_id = ?, updated_at = ? WHERE id = ?',
-          )
+          .prepare<
+            [number, number, number]
+          >('UPDATE documents SET current_version_id = ?, updated_at = ? WHERE id = ?')
           .run(row.id, now, version.documentId);
       }
 
@@ -366,9 +368,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
 
   private selectSectionsByVersionId(documentVersionId: number): readonly DocumentSectionRow[] {
     return this.database
-      .prepare<[number], DocumentSectionRow>(
-        'SELECT * FROM document_sections WHERE document_version_id = ? ORDER BY ordinal',
-      )
+      .prepare<
+        [number],
+        DocumentSectionRow
+      >('SELECT * FROM document_sections WHERE document_version_id = ? ORDER BY ordinal')
       .all(documentVersionId);
   }
 }
