@@ -94,20 +94,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
     return this.asPromise(() => {
       const now = this.now();
       this.database
-        .prepare<
-          [
-            string,
-            string,
-            string,
-            CatalogSourceType,
-            string,
-            CatalogFreshnessPolicy,
-            CatalogSyncStrategy,
-            number,
-            number,
-            number,
-          ]
-        >(
+        .prepare(
           `
           INSERT INTO catalog_sources (
             source_key, display_name, base_url, source_type, language,
@@ -144,8 +131,8 @@ export class SqliteCatalogRepository implements CatalogRepository {
   public listSources(): Promise<readonly CatalogSource[]> {
     return this.asPromise(() => {
       const rows = this.database
-        .prepare<[], CatalogSourceRow>('SELECT * FROM catalog_sources ORDER BY source_key')
-        .all();
+        .prepare('SELECT * FROM catalog_sources ORDER BY source_key')
+        .all() as CatalogSourceRow[];
       return rows.map(toCatalogSource);
     });
   }
@@ -154,22 +141,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
     return this.asPromise(() => {
       const now = this.now();
       this.database
-        .prepare<
-          [
-            string,
-            number,
-            string,
-            string,
-            string,
-            string,
-            string,
-            DocumentStatus,
-            number,
-            number,
-            number,
-            number,
-          ]
-        >(
+        .prepare(
           `
           INSERT INTO documents (
             public_id, source_id, canonical_url, stable_key, title, mime_type,
@@ -204,10 +176,8 @@ export class SqliteCatalogRepository implements CatalogRepository {
       if (row !== undefined) return toCatalogDocument(row);
 
       const stableRow = this.database
-        .prepare<[number, string], CatalogDocumentRow>(
-          'SELECT * FROM documents WHERE source_id = ? AND stable_key = ?',
-        )
-        .get(document.sourceId, document.stableKey);
+        .prepare('SELECT * FROM documents WHERE source_id = ? AND stable_key = ?')
+        .get(document.sourceId, document.stableKey) as CatalogDocumentRow | undefined;
       if (stableRow === undefined) throw new Error('CATALOG_DOCUMENT_UPSERT_FAILED');
       return toCatalogDocument(stableRow);
     });
@@ -219,26 +189,12 @@ export class SqliteCatalogRepository implements CatalogRepository {
       const transaction = this.database.transaction((): DocumentVersionRow => {
         if (version.isCurrent) {
           this.database
-            .prepare<[number]>('UPDATE document_versions SET is_current = 0 WHERE document_id = ?')
+            .prepare('UPDATE document_versions SET is_current = 0 WHERE document_id = ?')
             .run(version.documentId);
         }
 
         this.database
-          .prepare<
-            [
-              number,
-              string | null,
-              string,
-              string | null,
-              string | null,
-              number | null,
-              number,
-              number,
-              'static' | 'native-render',
-              string,
-              string,
-            ]
-          >(
+          .prepare(
             `
             INSERT INTO document_versions (
               document_id, version_label, content_hash, etag, last_modified,
@@ -271,17 +227,13 @@ export class SqliteCatalogRepository implements CatalogRepository {
           );
 
         const row = this.database
-          .prepare<[number, string], DocumentVersionRow>(
-            'SELECT * FROM document_versions WHERE document_id = ? AND content_hash = ?',
-          )
-          .get(version.documentId, version.contentHash);
+          .prepare('SELECT * FROM document_versions WHERE document_id = ? AND content_hash = ?')
+          .get(version.documentId, version.contentHash) as DocumentVersionRow | undefined;
         if (row === undefined) throw new Error('DOCUMENT_VERSION_INSERT_FAILED');
 
         if (version.isCurrent) {
           this.database
-            .prepare<[number, number, number]>(
-              'UPDATE documents SET current_version_id = ?, updated_at = ? WHERE id = ?',
-            )
+            .prepare('UPDATE documents SET current_version_id = ?, updated_at = ? WHERE id = ?')
             .run(row.id, now, version.documentId);
         }
 
@@ -299,23 +251,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
     return this.asPromise(() => {
       const transaction = this.database.transaction((): readonly DocumentSectionRow[] => {
         this.database
-          .prepare<[number]>('DELETE FROM document_sections WHERE document_version_id = ?')
+          .prepare('DELETE FROM document_sections WHERE document_version_id = ?')
           .run(documentVersionId);
 
-        const insert = this.database.prepare<
-          [
-            number,
-            number,
-            string | null,
-            string | null,
-            number | null,
-            string | null,
-            string,
-            string,
-            number,
-            number | null,
-          ]
-        >(`
+        const insert = this.database.prepare(`
           INSERT INTO document_sections (
             document_version_id, ordinal, heading, heading_path, heading_level, anchor,
             content, content_hash, character_count, token_count
@@ -354,8 +293,8 @@ export class SqliteCatalogRepository implements CatalogRepository {
   public listDocuments(): Promise<readonly CatalogDocument[]> {
     return this.asPromise(() => {
       const rows = this.database
-        .prepare<[], CatalogDocumentRow>('SELECT * FROM documents ORDER BY source_id, stable_key')
-        .all();
+        .prepare('SELECT * FROM documents ORDER BY source_id, stable_key')
+        .all() as CatalogDocumentRow[];
       return rows.map(toCatalogDocument);
     });
   }
@@ -378,22 +317,19 @@ export class SqliteCatalogRepository implements CatalogRepository {
 
   private selectSourceByKey(sourceKey: string): CatalogSourceRow | undefined {
     return this.database
-      .prepare<[string], CatalogSourceRow>('SELECT * FROM catalog_sources WHERE source_key = ?')
-      .get(sourceKey);
+      .prepare('SELECT * FROM catalog_sources WHERE source_key = ?')
+      .get(sourceKey) as CatalogSourceRow | undefined;
   }
 
   private selectDocumentByPublicId(publicId: string): CatalogDocumentRow | undefined {
-    return this.database
-      .prepare<[string], CatalogDocumentRow>('SELECT * FROM documents WHERE public_id = ?')
-      .get(publicId);
+    return this.database.prepare('SELECT * FROM documents WHERE public_id = ?').get(publicId) as
+      CatalogDocumentRow | undefined;
   }
 
   private selectSectionsByVersionId(documentVersionId: number): readonly DocumentSectionRow[] {
     return this.database
-      .prepare<[number], DocumentSectionRow>(
-        'SELECT * FROM document_sections WHERE document_version_id = ? ORDER BY ordinal',
-      )
-      .all(documentVersionId);
+      .prepare('SELECT * FROM document_sections WHERE document_version_id = ? ORDER BY ordinal')
+      .all(documentVersionId) as DocumentSectionRow[];
   }
 }
 
