@@ -1,10 +1,14 @@
+import { dirname, join } from 'node:path';
+
 import { FetchUrl } from '../application/use-cases/fetch-url.js';
 import { SearchWeb } from '../application/use-cases/search-web.js';
 import { DisabledCacheRepository } from '../application/ports/cache-repository.js';
 import type { CacheRepository } from '../application/ports/cache-repository.js';
+import type { CatalogRepository } from '../application/ports/catalog-repository.js';
 import { CacheUnavailableError } from '../domain/errors/domain-errors.js';
 import { SafeCacheRepository } from '../infrastructure/cache/safe-cache-repository.js';
 import { SqliteCacheRepository } from '../infrastructure/cache/sqlite-cache-repository.js';
+import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
 import type { LoadedConfiguration } from '../infrastructure/config/load-configuration.js';
 import { Crawl4aiContentFetcher } from '../infrastructure/fetch/crawl4ai-content-fetcher.js';
 import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.js';
@@ -19,6 +23,7 @@ export function createContainer(loaded: LoadedConfiguration) {
   const logger = new StructuredLogger(config.logging.level);
   const clock = new SystemClock();
   const cache = createCache(loaded, clock, logger);
+  const catalog = createCatalog(loaded, clock);
   const securityPolicy = new PublicUrlSecurityPolicy(config.security, undefined, logger);
   const secureGateway = new SecureHttpGateway(securityPolicy, {
     timeoutMs: config.crawl4ai.timeoutMs,
@@ -67,7 +72,7 @@ export function createContainer(loaded: LoadedConfiguration) {
   );
   const mcpServer = createMcpServer({ searchWeb, fetchUrl, config, logger });
 
-  return { cache, logger, mcpServer } as const;
+  return { cache, catalog, logger, mcpServer } as const;
 }
 
 function createCache(
@@ -92,4 +97,12 @@ function createCache(
       throw new CacheUnavailableError('The cache cannot be opened', { cause: error });
     return new DisabledCacheRepository();
   }
+}
+
+function createCatalog(loaded: LoadedConfiguration, clock: SystemClock): CatalogRepository {
+  return new SqliteCatalogRepository(resolveCatalogPath(loaded.application.cache.path), clock);
+}
+
+function resolveCatalogPath(cachePath: string): string {
+  return join(dirname(cachePath), 'catalog.db');
 }
