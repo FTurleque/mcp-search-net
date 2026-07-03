@@ -301,8 +301,9 @@ Les logs archivés ne contiennent ni token, ni secret, ni environnement complet,
 
 ### Recette IntelliJ
 
-AC-02 : PARTIEL — lancement manuel IntelliJ/Windows validé, interaction
-GitHub Copilot Chat non encore exécutée.
+AC-02 : PARTIEL — lancement manuel IntelliJ/Windows validé, affichage
+IntelliJ/Copilot des outils validé, appels directs depuis GitHub Copilot Chat
+non encore exécutés.
 
 Preuves manuelles fournies le 29 juin 2026 :
 
@@ -313,10 +314,24 @@ Preuves manuelles fournies le 29 juin 2026 :
 - `providers-down.cmd` : conteneurs et réseaux Compose supprimés.
 - `install-and-run.cmd` : installation utilisateur complète, `npm run check` vert, 139 tests globaux passés, providers utilisateur `Healthy`, serveur MCP lancé puis arrêté proprement.
 - Contrôle complémentaire du nom Compose canonique : le lanceur installé `mcp-search-net-services.cmd up -d --wait searxng crawl4ai` crée `mcp-search-net-crawl4ai-1` et `mcp-search-net-searxng-1` en `healthy`, sans suffixe `user`; `mcp-search-net-services.cmd down` supprime ensuite conteneurs et réseaux, puis `docker ps --filter name=mcp-search-net` ne retourne aucune ligne.
+- Capture IntelliJ/Copilot fournie le 3 juillet 2026 : écran `Configure Tools`,
+  serveur `mcp-search-net` en état `Running`, exactement deux outils visibles et
+  cochés, `search_web` et `fetch_url`.
+
+Preuves correctives ajoutées le 3 juillet 2026 :
+
+- `install-user.cmd` détecte une ancienne instance MCP verrouillante avant le
+  remplacement de `%LOCALAPPDATA%\mcp-search-net\app`, affiche PID/nom/ligne de
+  commande et échoue proprement sans erreur brute `Access is denied`.
+- Après arrêt manuel des PID détectés, `install-user.cmd` réussit ; un deuxième
+  appel immédiat réussit également.
+- `install-and-run.cmd` est validé via un client MCP STDIO : `tools/list`
+  retourne `["fetch_url", "search_web"]`, avec les diagnostics sur `stderr`.
 
 Limite :
-aucune preuve n'a encore été fournie montrant GitHub Copilot Chat afficher les
-deux outils et les appeler directement depuis l'interface.
+l'affichage IntelliJ/Copilot des deux outils est maintenant prouvé, mais aucune
+preuve n'a encore été fournie montrant GitHub Copilot Chat appeler directement
+`search_web` et `fetch_url` depuis une conversation.
 
 Impact :
 V1 OPÉRATIONNELLE AVEC RÉSERVES
@@ -328,7 +343,7 @@ Le workflow GitHub Actions a été inspecté : les SHA d'actions restent épingl
 
 ### Limites restantes
 
-- AC-02 IntelliJ/Copilot reste partiel : lancement manuel validé, UI Copilot Chat non prouvée.
+- AC-02 IntelliJ/Copilot reste partiel : lancement manuel validé, affichage des outils dans l'UI prouvé, appels directs depuis Copilot Chat non prouvés.
 - CI finale non disponible tant qu'un commit candidat n'est pas poussé.
 - La recherche live a réussi avec résultats, mais certains moteurs SearXNG externes ont répondu en erreur ou avec limitation ; le serveur a exposé ces conditions via warnings et statut `partial`.
 - Le fichier `mcp-search-net.iml` était déjà non suivi avant la recette et n'a pas été modifié.
@@ -340,4 +355,4 @@ V1 OPÉRATIONNELLE AVEC RÉSERVES
 V2 BUILD NO-GO
 ```
 
-Motif : toute la séquence automatisable est verte, Docker est disponible, les deux outils MCP fonctionnent, MISS/HIT et SSRF sont prouvés, et le lancement manuel IntelliJ/Windows est validé. Les réserves restantes sont l'interaction directe dans GitHub Copilot Chat et l'absence de run CI final sur un commit poussé.
+Motif : toute la séquence automatisable est verte, Docker est disponible, les deux outils MCP fonctionnent, MISS/HIT et SSRF sont prouvés, le lancement manuel IntelliJ/Windows est validé, et l'interface IntelliJ/Copilot affiche le serveur `mcp-search-net` en état `Running` avec les deux outils. Les réserves restantes sont les appels directs depuis une conversation GitHub Copilot Chat et l'absence de run CI final sur un commit poussé.
