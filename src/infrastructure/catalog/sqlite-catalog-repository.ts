@@ -278,11 +278,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
   }
 
   private asPromise<T>(operation: () => T): Promise<T> {
-    try {
-      return Promise.resolve(operation());
-    } catch (error) {
-      return Promise.reject(error);
-    }
+    return Promise.resolve().then(operation);
   }
 
   private now(): number {
