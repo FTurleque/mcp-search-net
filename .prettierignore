@@ -4,6 +4,9 @@ coverage
 .data
 package-lock.json
 
+# Prettier core ne fournit pas de parser SQL ; les migrations sont relues manuellement.
+catalog-migrations/*.sql
+
 # Documents de cadrage V2 longs : tableaux, blocs SQL/YAML/JSON et mise en page relue manuellement.
 docs/adr/ADR-013-sdk-mcp-v2-start-decision.md
 docs/adr/ADR-014-catalog-db-isolation.md
