@@ -1,12 +1,16 @@
 @echo off
-setlocal
+setlocal EnableExtensions EnableDelayedExpansion
 
 if "%~1"=="" (
   1>&2 echo Usage: run-powershell.cmd script.ps1 [arguments...]
   exit /b 64
 )
 
-set "SCRIPT=%~1"
+set "SCRIPT=%~f1"
+if not exist "%SCRIPT%" (
+  1>&2 echo Script PowerShell introuvable: "%SCRIPT%"
+  exit /b 66
+)
 shift /1
 
 set "PS_EXE="
@@ -23,13 +27,17 @@ if not defined PS_EXE (
   exit /b 127
 )
 
+1>&2 echo PowerShell utilise: "%PS_EXE%"
+
 set "ARGS="
 :collect
 if "%~1"=="" goto run
-set "ARGS=%ARGS% "%~1""
+set "ARG=%~1"
+set "ARGS=!ARGS! ^"!ARG!^""
 shift /1
 goto collect
 
 :run
-"%PS_EXE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" %ARGS%
-exit /b %ERRORLEVEL%
+"%PS_EXE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" !ARGS!
+set "EXITCODE=%ERRORLEVEL%"
+exit /b %EXITCODE%

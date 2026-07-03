@@ -3,7 +3,8 @@ param(
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'mcp-search-net'),
     [switch]$StartServices,
     [switch]$RunAfterInstall,
-    [switch]$SkipChecks
+    [switch]$SkipChecks,
+    [switch]$ForceStopExistingProcess
 )
 
 Set-StrictMode -Version Latest
@@ -41,6 +42,155 @@ function Assert-PathInsideInstallRoot {
     $rootPrefix = $InstallRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
     if (-not $fullPath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Chemin hors de l'installation utilisateur refusé : $fullPath"
+    }
+}
+
+function Get-CurrentProcessLineage {
+    $lineage = @{}
+    $processId = [int]$PID
+
+    while ($processId -gt 0 -and -not $lineage.ContainsKey($processId)) {
+        $lineage[$processId] = $true
+        $process = Get-CimInstance Win32_Process -Filter "ProcessId = $processId"
+        if ($null -eq $process -or $null -eq $process.ParentProcessId) {
+            break
+        }
+        $processId = [int]$process.ParentProcessId
+    }
+
+    return [int[]]$lineage.Keys
+}
+
+function Get-McpSearchNetProcesses {
+    param(
+        [string]$InstallRootPath = $InstallRoot,
+        [int[]]$ExcludeProcessIds = (Get-CurrentProcessLineage)
+    )
+
+    $installRootFull = [System.IO.Path]::GetFullPath($InstallRootPath)
+    $installRootSlash = $installRootFull.Replace('\', '/')
+    $needles = @(
+        'mcp-search-net',
+        'build/bootstrap/main.js',
+        'build\bootstrap\main.js',
+        'scripts/intellij',
+        'scripts\intellij',
+        $installRootFull,
+        $installRootSlash,
+        'better_sqlite3'
+    )
+    $excluded = @{}
+    foreach ($excludedProcessId in $ExcludeProcessIds) {
+        $excluded[[int]$excludedProcessId] = $true
+    }
+
+    Get-CimInstance Win32_Process |
+        Where-Object {
+            $isMatch = $false
+            if ($null -eq $_.CommandLine) {
+                $isMatch = $false
+            }
+            elseif ($excluded.ContainsKey([int]$_.ProcessId)) {
+                $isMatch = $false
+            }
+            else {
+                foreach ($needle in $needles) {
+                    if (-not [string]::IsNullOrWhiteSpace($needle) -and
+                        $_.CommandLine.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                        $isMatch = $true
+                        break
+                    }
+                }
+            }
+            $isMatch
+        } |
+        Select-Object `
+            @{ Name = 'PID'; Expression = { $_.ProcessId } },
+            @{ Name = 'Nom'; Expression = { $_.Name } },
+            CommandLine
+}
+
+function Write-McpSearchNetProcessReport {
+    param([Parameter(Mandatory)] [object[]]$Processes)
+
+    foreach ($process in $Processes) {
+        Write-Host "PID: $($process.PID)"
+        Write-Host "Nom: $($process.Nom)"
+        Write-Host "CommandLine: $($process.CommandLine)"
+        Write-Host ''
+    }
+}
+
+function Assert-NoMcpSearchNetProcessLock {
+    param([Parameter(Mandatory)] [string]$TargetPath)
+
+    $processes = @(Get-McpSearchNetProcesses)
+    if ($processes.Count -eq 0) {
+        return
+    }
+
+    if ($ForceStopExistingProcess) {
+        Write-Warning "Arrêt forcé demandé pour $($processes.Count) processus mcp-search-net suspect(s)."
+        Write-McpSearchNetProcessReport -Processes $processes
+        foreach ($process in $processes) {
+            Stop-Process -Id ([int]$process.PID) -Force -ErrorAction Stop
+        }
+        Start-Sleep -Milliseconds 500
+
+        $remainingProcesses = @(Get-McpSearchNetProcesses)
+        if ($remainingProcesses.Count -gt 0) {
+            Write-Host 'Des processus suspects restent actifs après arrêt forcé :'
+            Write-McpSearchNetProcessReport -Processes $remainingProcesses
+            throw "Installation interrompue : impossible d'arrêter tous les processus pouvant verrouiller $TargetPath."
+        }
+        return
+    }
+
+    Write-Host 'Une ancienne instance de mcp-search-net semble encore active.'
+    Write-Host "Fermez IntelliJ/Copilot ou arrêtez le processus ci-dessous avant de relancer l'installation."
+    Write-Host ''
+    Write-McpSearchNetProcessReport -Processes $processes
+    throw "Installation interrompue : $($processes.Count) processus suspect(s) peuvent verrouiller $TargetPath."
+}
+
+function Remove-DirectoryWithRetry {
+    param([Parameter(Mandatory)] [string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $delays = @(500, 1000, 2000, 3000, 5000)
+    $attemptCount = $delays.Count
+    $lastError = $null
+
+    for ($attempt = 1; $attempt -le $attemptCount; $attempt++) {
+        try {
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
+            return
+        }
+        catch {
+            $lastError = $_
+            Write-Warning "Suppression impossible de '$Path' (tentative $attempt/$attemptCount) : $($_.Exception.Message)"
+            if ($attempt -lt $attemptCount) {
+                Start-Sleep -Milliseconds $delays[$attempt - 1]
+            }
+        }
+    }
+
+    throw "Impossible de supprimer '$Path' après $attemptCount tentatives. Dernière erreur : $($lastError.Exception.Message)"
+}
+
+function Assert-StagedApplication {
+    param([Parameter(Mandatory)] [string]$StageAppPath)
+
+    $mainScript = Join-Path $StageAppPath 'build\bootstrap\main.js'
+    $sqlitePackage = Join-Path $StageAppPath 'node_modules\better-sqlite3'
+    if (-not (Test-Path -LiteralPath $mainScript -PathType Leaf)) {
+        throw "Application staging invalide : $mainScript est absent."
+    }
+    if (-not (Test-Path -LiteralPath $sqlitePackage -PathType Container)) {
+        throw "Application staging invalide : better-sqlite3 n'est pas installé dans $sqlitePackage."
     }
 }
 
@@ -92,32 +242,98 @@ finally {
 $StageRoot = Join-Path $InstallRoot '.install-staging'
 $StageApp = Join-Path $StageRoot 'app'
 Assert-PathInsideInstallRoot $StageRoot
-if (Test-Path -LiteralPath $StageRoot) {
-    Remove-Item -LiteralPath $StageRoot -Recurse -Force
-}
-New-Item -ItemType Directory -Force -Path $StageApp | Out-Null
-
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'build') -Destination $StageApp -Recurse
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Destination $StageApp
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package-lock.json') -Destination $StageApp
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'migrations') -Destination $StageApp -Recurse
-
-Push-Location $StageApp
-try {
-    Write-Host 'Installation des seules dépendances de production...'
-    Invoke-NativeCommand $NpmCmd 'ci' '--omit=dev' '--ignore-scripts=false'
-}
-finally {
-    Pop-Location
-}
-
 $AppRoot = Join-Path $InstallRoot 'app'
 Assert-PathInsideInstallRoot $AppRoot
-if (Test-Path -LiteralPath $AppRoot) {
-    Remove-Item -LiteralPath $AppRoot -Recurse -Force
+
+try {
+    if (Test-Path -LiteralPath $StageRoot) {
+        Write-Host "Nettoyage d'un staging précédent : $StageRoot"
+        Remove-DirectoryWithRetry -Path $StageRoot
+    }
+    New-Item -ItemType Directory -Force -Path $StageApp | Out-Null
+
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'build') -Destination $StageApp -Recurse
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Destination $StageApp
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package-lock.json') -Destination $StageApp
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'migrations') -Destination $StageApp -Recurse
+
+    Push-Location $StageApp
+    try {
+        Write-Host 'Installation des seules dépendances de production...'
+        Invoke-NativeCommand $NpmCmd 'ci' '--omit=dev' '--ignore-scripts=false'
+    }
+    finally {
+        Pop-Location
+    }
+
+    Assert-StagedApplication -StageAppPath $StageApp
+
+    $PreviousAppRoot = $null
+    if (Test-Path -LiteralPath $AppRoot) {
+        Assert-NoMcpSearchNetProcessLock -TargetPath $AppRoot
+        $PreviousAppRoot = Join-Path $InstallRoot ("app.previous-{0:yyyyMMdd-HHmmss}" -f (Get-Date))
+        Assert-PathInsideInstallRoot $PreviousAppRoot
+        Write-Host "Renommage de l'ancienne installation : $PreviousAppRoot"
+        try {
+            Move-Item -LiteralPath $AppRoot -Destination $PreviousAppRoot -ErrorAction Stop
+        }
+        catch {
+            $processes = @(Get-McpSearchNetProcesses)
+            if ($processes.Count -gt 0) {
+                Write-Host 'Processus suspects détectés après échec du renommage :'
+                Write-McpSearchNetProcessReport -Processes $processes
+            }
+            throw "Impossible de renommer l'ancienne installation '$AppRoot'. Le staging est conservé dans '$StageRoot'. Dernière erreur : $($_.Exception.Message)"
+        }
+    }
+
+    try {
+        Move-Item -LiteralPath $StageApp -Destination $AppRoot -ErrorAction Stop
+    }
+    catch {
+        Write-Warning "Impossible de déplacer le staging vers '$AppRoot' : $($_.Exception.Message)"
+        if ($null -ne $PreviousAppRoot -and
+            (Test-Path -LiteralPath $PreviousAppRoot) -and
+            -not (Test-Path -LiteralPath $AppRoot)) {
+            try {
+                Move-Item -LiteralPath $PreviousAppRoot -Destination $AppRoot -ErrorAction Stop
+                Write-Warning "Rollback effectué : ancienne installation restaurée depuis $PreviousAppRoot."
+            }
+            catch {
+                Write-Warning "Rollback impossible depuis '$PreviousAppRoot' vers '$AppRoot' : $($_.Exception.Message)"
+            }
+        }
+        throw "Installation interrompue : la nouvelle application n'a pas pu être activée. Le staging reste dans '$StageRoot'."
+    }
+
+    if (Test-Path -LiteralPath $StageRoot) {
+        try {
+            Remove-DirectoryWithRetry -Path $StageRoot
+        }
+        catch {
+            Write-Warning "Le staging reste présent : $StageRoot"
+            Write-Warning "Après fermeture des processus suspects, supprimez-le avec : Remove-Item -LiteralPath '$StageRoot' -Recurse -Force"
+        }
+    }
+
+    if ($null -ne $PreviousAppRoot -and (Test-Path -LiteralPath $PreviousAppRoot)) {
+        try {
+            Remove-DirectoryWithRetry -Path $PreviousAppRoot
+        }
+        catch {
+            Write-Warning "Ancienne installation verrouillée conservée temporairement : $PreviousAppRoot"
+            Write-Warning "La nouvelle installation est active dans : $AppRoot"
+            Write-Warning "Après fermeture des processus suspects, supprimez l'ancienne installation avec : Remove-Item -LiteralPath '$PreviousAppRoot' -Recurse -Force"
+        }
+    }
 }
-Move-Item -LiteralPath $StageApp -Destination $AppRoot
-Remove-Item -LiteralPath $StageRoot -Force
+catch {
+    if (Test-Path -LiteralPath $StageRoot) {
+        Write-Warning "Le dossier de staging reste présent : $StageRoot"
+        Write-Warning "Après fermeture des processus suspects, supprimez-le avec : Remove-Item -LiteralPath '$StageRoot' -Recurse -Force"
+    }
+    throw
+}
 
 $ConfigRoot = Join-Path $InstallRoot 'config'
 $SearxConfigRoot = Join-Path $ConfigRoot 'searxng'

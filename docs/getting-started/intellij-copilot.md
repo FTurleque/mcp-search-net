@@ -17,8 +17,13 @@ ouvertes sans commande.
 | `MCP - Install user`         | `scripts/intellij/install-user.cmd`         | Installe dans `%LOCALAPPDATA%\mcp-search-net` et démarre les providers | `mcp-search-net` |
 | `MCP - Install and run`      | `scripts/intellij/install-and-run.cmd`      | Même installation, puis lance le serveur MCP STDIO installé            | `mcp-search-net` |
 
-Les configurations passent par `scripts/intellij/run-powershell.cmd`, qui utilise
-`pwsh.exe` si disponible puis `powershell.exe` en repli. La configuration
+Les configurations passent par `scripts/intellij/run-powershell.cmd`, qui affiche
+le PowerShell retenu, utilise `pwsh.exe` si disponible puis `powershell.exe` en
+repli, et renvoie le code de sortie du script PowerShell appelé. Les
+configurations `MCP - Install user (Windows)` et
+`MCP - Install and run (Windows)` déclarent explicitement `cmd.exe /d /s /c`
+comme interpréteur Windows afin de lancer les `.cmd` de façon stable depuis
+IntelliJ. La configuration
 `MCP - Run local STDIO (Windows)` redirige les sorties de préparation vers
 `stderr` afin que `stdout` reste réservé au protocole MCP JSON-RPC pendant
 l'exécution du serveur.
@@ -48,6 +53,46 @@ la console Run d’IntelliJ n’est pas un client MCP. Pour un usage réel, GitH
 Copilot doit lancer directement le script installé.
 
 Les configurations utilisent le type JetBrains « Shell Script ». Si IntelliJ le demande, activer le plugin officiel Shell Script.
+
+## Dépannage : `better_sqlite3.node` verrouillé sous Windows
+
+Pendant une réinstallation utilisateur, Windows peut refuser la suppression de
+`%LOCALAPPDATA%\mcp-search-net\app\node_modules\better-sqlite3\build\Release\better_sqlite3.node`.
+La cause probable est une ancienne instance MCP encore lancée : IntelliJ ou
+GitHub Copilot garde un processus Node actif, et ce processus conserve le module
+natif SQLite chargé.
+
+Depuis PowerShell, diagnostiquer les processus suspects :
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object {
+    $_.CommandLine -like '*mcp-search-net*' -or
+    $_.CommandLine -like '*better_sqlite3*' -or
+    $_.CommandLine -like '*build/bootstrap/main.js*'
+  } |
+  Select-Object ProcessId, Name, CommandLine
+```
+
+Arrêter manuellement le processus identifié :
+
+```powershell
+Stop-Process -Id <PID> -Force
+```
+
+Puis relancer :
+
+```powershell
+scripts\intellij\install-user.cmd
+scripts\intellij\install-and-run.cmd
+```
+
+Règle pratique : fermer IntelliJ avant de réinstaller si le serveur MCP était
+lancé par GitHub Copilot. Par défaut, l'installateur ne tue pas automatiquement
+IntelliJ ni un processus inconnu ; il affiche les processus suspects et échoue
+avec un message explicite. L'option PowerShell `-ForceStopExistingProcess` existe
+pour une intervention volontaire, mais elle n'est pas utilisée par les
+configurations IntelliJ partagées.
 
 ## Déclarer le serveur dans Copilot
 
