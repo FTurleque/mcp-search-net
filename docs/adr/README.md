@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-Les ADR décrivent les décisions structurantes de la V1. Leur statut `Accepté` correspond au code et aux validations du 22 juin 2026. Toute évolution incompatible crée un nouvel ADR qui remplace explicitement l'ancien.
+Les ADR décrivent les décisions structurantes du projet. Leur statut `Accepté` correspond au code, aux validations ou au cadrage explicitement documenté. Toute évolution incompatible crée un nouvel ADR qui remplace explicitement l'ancien.
 
 | ADR                                       | Décision                                                |
 | ----------------------------------------- | ------------------------------------------------------- |
@@ -16,3 +16,7 @@ Les ADR décrivent les décisions structurantes de la V1. Leur statut `Accepté`
 | [010](ADR-010-v2-sqlite-fts5.md)          | Préparer la V2 avec SQLite FTS5                         |
 | [011](ADR-011-v1-v2-boundary.md)          | Figer la frontière V1/V2 et les contrats publics        |
 | [012](ADR-012-migration-sdk-mcp-v2.md)    | Planifier la migration SDK MCP v2 hors périmètre V1     |
+| [013](ADR-013-sdk-mcp-v2-start-decision.md) | Conserver le SDK MCP V1 au démarrage de la V2         |
+| [014](ADR-014-catalog-db-isolation.md)    | Isoler le catalogue V2 dans `catalog.db`                |
+| [015](ADR-015-fts5-contentless-delete.md) | Utiliser FTS5 `contentless-delete` comme index dérivé   |
+| [016](ADR-016-mcp-v2-tools-resources.md)  | Exposer la V2 avec un outil de recherche et des resources MCP |

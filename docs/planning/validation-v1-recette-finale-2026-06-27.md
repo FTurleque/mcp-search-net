@@ -6,18 +6,18 @@ Cette validation finale clôt officiellement la V1 opérationnelle de mcp-search
 
 ### Environnement de validation
 
-| Champ                  | Valeur                                                                          |
-| ---------------------- | ------------------------------------------------------------------------------- |
-| Date d'ouverture       | 2026-06-27                                                                      |
-| Date de clôture        | 2026-06-29 (automatisable et lancement IntelliJ validés ; CI finale en réserve) |
-| Branche                | `master`                                                                        |
-| Commit initial         | `b4b829aaec41bf5d05476132867fd91421f70f8a`                                      |
-| Version Node.js        | v24.17.0                                                                        |
-| Version npm            | 11.13.0                                                                         |
-| Version Docker         | 29.5.3 (client/server) — Docker Desktop disponible                              |
-| Version Docker Compose | v5.1.4                                                                          |
-| Système d'exploitation | Windows 11, PowerShell 5.1                                                      |
-| Dépôt                  | modifications locales contrôlées ; `mcp-search-net.iml` non suivi préexistant   |
+| Champ                  | Valeur                                                                      |
+| ---------------------- | --------------------------------------------------------------------------- |
+| Date d'ouverture       | 2026-06-27                                                                  |
+| Date de clôture        | 2026-07-03 — automatisable, CI finale et lancement IntelliJ validés         |
+| Branche                | `master`                                                                    |
+| Commit initial         | `b4b829aaec41bf5d05476132867fd91421f70f8a`                                  |
+| Version Node.js        | v24.17.0                                                                    |
+| Version npm            | 11.13.0                                                                     |
+| Version Docker         | 29.5.3 (client/server) — Docker Desktop disponible                          |
+| Version Docker Compose | v5.1.4                                                                      |
+| Système d'exploitation | Windows 11, PowerShell 5.1                                                  |
+| Dépôt                  | modifications locales contrôlées ; `mcp-search-net.iml` non suivi préexistant |
 
 ### Versions cibles
 
@@ -197,8 +197,8 @@ Suivre [docs/getting-started/intellij-copilot.md](../getting-started/intellij-co
 | Extraction        | `fetch_url`                      | réponse structurée valide                              | inclus dans preuve MCP | titre `Example Domains`, `contentType: text/html`, `extractionMode: static`, 3 sections        | OK         |
 | Cache             | `MISS` puis `HIT`                | prouvé sur deux appels identiques                      | inclus dans preuve MCP | `firstCall: MISS`, `secondCall: HIT`                                                           | OK         |
 | SSRF              | URL locale bloquée               | erreur contrôlée                                       | inclus dans preuve MCP | `http://127.0.0.1` -> `BLOCKED_ADDRESS`, `providerCallsForRequest: 0`, log `url_blocked`       | OK         |
-| IntelliJ          | lancement manuel Windows         | scripts `.run`/`.cmd` validés ; UI Copilot non prouvée |    commandes manuelles | `verify-live`, `verify-deterministic`, `run-local-mcp`, `providers-up/down`, `install-and-run` | PARTIEL    |
-| CI                | workflow GitHub Actions          | non exécuté sur commit final                           |         non applicable | workflow inspecté et mis à jour ; aucun commit/push demandé, donc pas de run final             | EN ATTENTE |
+| IntelliJ          | lancement manuel Windows + UI Copilot | `mcp-search-net` Running, deux outils visibles et cochés | commandes manuelles + capture | `verify-live`, `verify-deterministic`, `run-local-mcp`, `providers-up/down`, `install-and-run`, capture IntelliJ 2026-07-03 | OK |
+| CI                | workflow GitHub Actions          | run `28391318969` success ; deux jobs verts             |         GitHub Actions | `Node.js 24 validation` success ; `Docker integration and live E2E` success                    | OK         |
 
 ### Environnement et commit testés
 
@@ -212,6 +212,7 @@ Suivre [docs/getting-started/intellij-copilot.md](../getting-started/intellij-co
 | npm                  | `11.13.0`                                              |
 | Docker client/server | `29.5.3` / Docker Desktop `4.79.0 (230596)`            |
 | Docker Compose       | `v5.1.4`                                               |
+| GitHub Actions       | run `28391318969` — success                            |
 
 ### Extrait `tools/list`
 
@@ -301,9 +302,18 @@ Les logs archivés ne contiennent ni token, ni secret, ni environnement complet,
 
 ### Recette IntelliJ
 
-AC-02 : PARTIEL — lancement manuel IntelliJ/Windows validé, affichage
-IntelliJ/Copilot des outils validé, appels directs depuis GitHub Copilot Chat
-non encore exécutés.
+AC-02 IntelliJ/Copilot : VALIDÉ
+
+Preuve :
+
+- mcp-search-net détecté dans IntelliJ/Copilot
+- statut : Running
+- outils détectés :
+  - search_web
+  - fetch_url
+
+Capture :
+Capture d’écran 2026-07-03 23:01:35
 
 Preuves manuelles fournies le 29 juin 2026 :
 
@@ -314,45 +324,42 @@ Preuves manuelles fournies le 29 juin 2026 :
 - `providers-down.cmd` : conteneurs et réseaux Compose supprimés.
 - `install-and-run.cmd` : installation utilisateur complète, `npm run check` vert, 139 tests globaux passés, providers utilisateur `Healthy`, serveur MCP lancé puis arrêté proprement.
 - Contrôle complémentaire du nom Compose canonique : le lanceur installé `mcp-search-net-services.cmd up -d --wait searxng crawl4ai` crée `mcp-search-net-crawl4ai-1` et `mcp-search-net-searxng-1` en `healthy`, sans suffixe `user`; `mcp-search-net-services.cmd down` supprime ensuite conteneurs et réseaux, puis `docker ps --filter name=mcp-search-net` ne retourne aucune ligne.
-- Capture IntelliJ/Copilot fournie le 3 juillet 2026 : écran `Configure Tools`,
-  serveur `mcp-search-net` en état `Running`, exactement deux outils visibles et
-  cochés, `search_web` et `fetch_url`.
+- Capture IntelliJ/Copilot fournie le 3 juillet 2026 : écran `Configure Tools`, serveur `mcp-search-net` en état `Running`, exactement deux outils visibles et cochés, `search_web` et `fetch_url`.
 
 Preuves correctives ajoutées le 3 juillet 2026 :
 
-- `install-user.cmd` détecte une ancienne instance MCP verrouillante avant le
-  remplacement de `%LOCALAPPDATA%\mcp-search-net\app`, affiche PID/nom/ligne de
-  commande et échoue proprement sans erreur brute `Access is denied`.
-- Après arrêt manuel des PID détectés, `install-user.cmd` réussit ; un deuxième
-  appel immédiat réussit également.
-- `install-and-run.cmd` est validé via un client MCP STDIO : `tools/list`
-  retourne `["fetch_url", "search_web"]`, avec les diagnostics sur `stderr`.
-
-Limite :
-l'affichage IntelliJ/Copilot des deux outils est maintenant prouvé, mais aucune
-preuve n'a encore été fournie montrant GitHub Copilot Chat appeler directement
-`search_web` et `fetch_url` depuis une conversation.
+- `install-user.cmd` détecte une ancienne instance MCP verrouillante avant le remplacement de `%LOCALAPPDATA%\mcp-search-net\app`, affiche PID/nom/ligne de commande et échoue proprement sans erreur brute `Access is denied`.
+- Après arrêt manuel des PID détectés, `install-user.cmd` réussit ; un deuxième appel immédiat réussit également.
+- `install-and-run.cmd` est validé via un client MCP STDIO : `tools/list` retourne `["fetch_url", "search_web"]`, avec les diagnostics sur `stderr`.
 
 Impact :
-V1 OPÉRATIONNELLE AVEC RÉSERVES
-V2 BUILD NO-GO
+V1 OPÉRATIONNELLE ET VALIDÉE
+V2 BUILD GO
 
 ### CI
 
-Le workflow GitHub Actions a été inspecté : les SHA d'actions restent épinglés et le job `check` contient l'étape `Run deterministic MCP E2E` après `npm run test:required`. Aucun commit ni push n'a été demandé ; aucun run CI final ne peut donc être déclaré vert dans cette recette.
+CI GitHub Actions : VALIDÉE
+
+Run : `28391318969`  
+Résultat : `success`
+
+Jobs :
+
+- `Node.js 24 validation` : `success`
+- `Docker integration and live E2E` : `success`
+
+La réserve CI finale est levée.
 
 ### Limites restantes
 
-- AC-02 IntelliJ/Copilot reste partiel : lancement manuel validé, affichage des outils dans l'UI prouvé, appels directs depuis Copilot Chat non prouvés.
-- CI finale non disponible tant qu'un commit candidat n'est pas poussé.
 - La recherche live a réussi avec résultats, mais certains moteurs SearXNG externes ont répondu en erreur ou avec limitation ; le serveur a exposé ces conditions via warnings et statut `partial`.
 - Le fichier `mcp-search-net.iml` était déjà non suivi avant la recette et n'a pas été modifié.
 
 ## 9. Verdict final
 
 ```text
-V1 OPÉRATIONNELLE AVEC RÉSERVES
-V2 BUILD NO-GO
+V1 OPÉRATIONNELLE ET VALIDÉE
+V2 BUILD GO
 ```
 
-Motif : toute la séquence automatisable est verte, Docker est disponible, les deux outils MCP fonctionnent, MISS/HIT et SSRF sont prouvés, le lancement manuel IntelliJ/Windows est validé, et l'interface IntelliJ/Copilot affiche le serveur `mcp-search-net` en état `Running` avec les deux outils. Les réserves restantes sont les appels directs depuis une conversation GitHub Copilot Chat et l'absence de run CI final sur un commit poussé.
+Motif : toute la séquence automatisable est verte, Docker est disponible, les deux outils MCP fonctionnent, MISS/HIT et SSRF sont prouvés, la CI finale est verte, le lancement manuel IntelliJ/Windows est validé, et l'interface IntelliJ/Copilot affiche le serveur `mcp-search-net` en état `Running` avec les deux outils `search_web` et `fetch_url`.
