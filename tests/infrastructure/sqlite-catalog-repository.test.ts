@@ -105,7 +105,10 @@ describe('SqliteCatalogRepository', () => {
     await expect(fixture.catalog.listSources()).resolves.toHaveLength(1);
     await expect(fixture.catalog.listDocuments()).resolves.toHaveLength(1);
     expect(sections).toHaveLength(1);
-    expect(sections[0]).toMatchObject({ heading: 'fs.readFile', documentVersionId: version.id });
+    expect(sections[0]).toMatchObject({
+      heading: 'fs.readFile',
+      documentVersionId: version.id,
+    });
   });
 
   it('keeps catalog tables out of cache.db and V1 cache tables out of catalog.db', () => {
