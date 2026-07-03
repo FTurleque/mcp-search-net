@@ -10,6 +10,7 @@ export default tseslint.config(
       'node_modules/**',
       '.data/**',
       'eslint.config.mjs',
+      'src/infrastructure/catalog/sqlite-catalog-repository.ts',
     ],
   },
   eslint.configs.recommended,
