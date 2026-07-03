@@ -14,6 +14,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/build ./build
 COPY config ./config
 COPY migrations ./migrations
+COPY catalog-migrations ./catalog-migrations
 RUN mkdir -p /app/.data && chown -R node:node /app/.data
 USER node
 ENV MCP_CONFIG_PATH=/app/config/application.docker.yml
