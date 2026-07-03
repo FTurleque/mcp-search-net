@@ -82,7 +82,10 @@ interface DocumentSectionRow {
 export class SqliteCatalogRepository implements CatalogRepository {
   private readonly database: Database.Database;
 
-  public constructor(path: string, private readonly clock: Clock) {
+  public constructor(
+    path: string,
+    private readonly clock: Clock,
+  ) {
     this.database = openCatalogDatabase(path);
     new CatalogMigrationRunner(this.database, this.clock).apply();
   }
@@ -90,23 +93,27 @@ export class SqliteCatalogRepository implements CatalogRepository {
   public addSource(source: NewCatalogSource): Promise<CatalogSource> {
     const now = this.now();
     this.database
-      .prepare<[
-        string,
-        string,
-        string,
-        CatalogSourceType,
-        string,
-        CatalogFreshnessPolicy,
-        CatalogSyncStrategy,
-        number,
-        number,
-        number,
-      ]>(`
+      .prepare<
+        [
+          string,
+          string,
+          string,
+          CatalogSourceType,
+          string,
+          CatalogFreshnessPolicy,
+          CatalogSyncStrategy,
+          number,
+          number,
+          number,
+        ]
+      >(
+        `
         INSERT INTO catalog_sources (
           source_key, display_name, base_url, source_type, language,
           freshness_policy, sync_strategy, enabled, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
+      `,
+      )
       .run(
         source.sourceKey,
         source.displayName,
@@ -140,20 +147,23 @@ export class SqliteCatalogRepository implements CatalogRepository {
   public upsertDocument(document: CatalogDocumentInput): Promise<CatalogDocument> {
     const now = this.now();
     this.database
-      .prepare<[
-        string,
-        number,
-        string,
-        string,
-        string,
-        string,
-        string,
-        DocumentStatus,
-        number,
-        number,
-        number,
-        number,
-      ]>(`
+      .prepare<
+        [
+          string,
+          number,
+          string,
+          string,
+          string,
+          string,
+          string,
+          DocumentStatus,
+          number,
+          number,
+          number,
+          number,
+        ]
+      >(
+        `
         INSERT INTO documents (
           public_id, source_id, canonical_url, stable_key, title, mime_type,
           language, status, first_seen_at, last_seen_at, created_at, updated_at
@@ -166,7 +176,8 @@ export class SqliteCatalogRepository implements CatalogRepository {
           status = excluded.status,
           last_seen_at = excluded.last_seen_at,
           updated_at = excluded.updated_at
-      `)
+      `,
+      )
       .run(
         document.publicId,
         document.sourceId,
@@ -204,19 +215,22 @@ export class SqliteCatalogRepository implements CatalogRepository {
       }
 
       this.database
-        .prepare<[
-          number,
-          string | null,
-          string,
-          string | null,
-          string | null,
-          number | null,
-          number,
-          number,
-          'static' | 'native-render',
-          string,
-          string,
-        ]>(`
+        .prepare<
+          [
+            number,
+            string | null,
+            string,
+            string | null,
+            string | null,
+            number | null,
+            number,
+            number,
+            'static' | 'native-render',
+            string,
+            string,
+          ]
+        >(
+          `
           INSERT INTO document_versions (
             document_id, version_label, content_hash, etag, last_modified,
             published_at, fetched_at, is_current, extraction_mode, content_type, metadata_json
@@ -231,7 +245,8 @@ export class SqliteCatalogRepository implements CatalogRepository {
             extraction_mode = excluded.extraction_mode,
             content_type = excluded.content_type,
             metadata_json = excluded.metadata_json
-        `)
+        `,
+        )
         .run(
           version.documentId,
           version.versionLabel ?? null,
@@ -276,18 +291,20 @@ export class SqliteCatalogRepository implements CatalogRepository {
         .prepare<[number]>('DELETE FROM document_sections WHERE document_version_id = ?')
         .run(documentVersionId);
 
-      const insert = this.database.prepare<[
-        number,
-        number,
-        string | null,
-        string | null,
-        number | null,
-        string | null,
-        string,
-        string,
-        number,
-        number | null,
-      ]>(`
+      const insert = this.database.prepare<
+        [
+          number,
+          number,
+          string | null,
+          string | null,
+          number | null,
+          string | null,
+          string,
+          string,
+          number,
+          number | null,
+        ]
+      >(`
         INSERT INTO document_sections (
           document_version_id, ordinal, heading, heading_path, heading_level, anchor,
           content, content_hash, character_count, token_count
