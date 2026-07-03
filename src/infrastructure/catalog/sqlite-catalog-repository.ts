@@ -234,7 +234,9 @@ export class SqliteCatalogRepository implements CatalogRepository {
       const transaction = this.database.transaction((): readonly DocumentSectionRow[] => {
         this.database.prepare<[number]>(DELETE_DOCUMENT_SECTIONS_SQL).run(documentVersionId);
 
-        const insert = this.database.prepare<InsertDocumentSectionParams>(INSERT_DOCUMENT_SECTION_SQL);
+        const insert = this.database.prepare<InsertDocumentSectionParams>(
+          INSERT_DOCUMENT_SECTION_SQL,
+        );
         for (const section of sections) {
           insert.run(
             documentVersionId,
