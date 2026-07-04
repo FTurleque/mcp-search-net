@@ -178,7 +178,8 @@ export class SyncCatalogDocuments {
           sectionCount: sections.length,
         });
       } catch (error) {
-        if (isStaleHttpError(error) && existingDocument !== undefined) {
+        if (isMissingRemoteHttpError(error) && existingDocument !== undefined) {
+          const missingStatus = documentStatusForMissingRemote(error);
           const staleDocument = await this.repository.upsertDocument({
             publicId,
             sourceId: source.id,
@@ -187,7 +188,7 @@ export class SyncCatalogDocuments {
             title: existingDocument.title,
             mimeType: existingDocument.mimeType,
             language: existingDocument.language,
-            status: 'STALE',
+            status: missingStatus,
           });
           entries.push({
             sourceKey: document.sourceKey,
@@ -196,7 +197,7 @@ export class SyncCatalogDocuments {
             url: document.url,
             status: 'updated',
             document: staleDocument,
-            error: `HTTP_${error.status}_STALE`,
+            error: `HTTP_${error.status}_${missingStatus}`,
           });
           continue;
         }
@@ -289,8 +290,12 @@ function createRedirectVersionMetadata(fetched: FetchedContent): Readonly<Record
   return metadata;
 }
 
-function isStaleHttpError(error: unknown): error is HttpError & { readonly status: 404 | 410 } {
+function isMissingRemoteHttpError(error: unknown): error is HttpError & { readonly status: 404 | 410 } {
   return error instanceof HttpError && (error.status === 404 || error.status === 410);
+}
+
+function documentStatusForMissingRemote(error: HttpError & { readonly status: 404 | 410 }): DocumentStatus {
+  return error.status === 410 ? 'REMOVED' : 'STALE';
 }
 
 function createSections(title: string, fetched: FetchedContent): readonly DocumentSectionInput[] {
