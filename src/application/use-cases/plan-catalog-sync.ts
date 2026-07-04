@@ -1,4 +1,6 @@
+import type { CatalogSyncRun } from '../../domain/models/catalog.js';
 import type { CatalogRepository } from '../ports/catalog-repository.js';
+import type { Clock } from '../ports/clock.js';
 
 export type CatalogSyncPlanEntryStatus = 'planned' | 'skipped';
 
@@ -22,6 +24,7 @@ export interface CatalogSyncPlanEntry {
 export interface PlanCatalogSyncOutput {
   readonly schemaVersion: '1.0';
   readonly dryRun: true;
+  readonly syncRun: CatalogSyncRun;
   readonly plannedCount: number;
   readonly skippedCount: number;
   readonly sources: readonly CatalogSyncPlanEntry[];
@@ -29,7 +32,11 @@ export interface PlanCatalogSyncOutput {
 
 export class PlanCatalogSync {
   public constructor(
-    private readonly repository: Pick<CatalogRepository, 'listSources' | 'listDocuments'>,
+    private readonly repository: Pick<
+      CatalogRepository,
+      'listSources' | 'listDocuments' | 'addCatalogSyncRun'
+    >,
+    private readonly clock: Clock,
   ) {}
 
   public async execute(input: PlanCatalogSyncInput): Promise<PlanCatalogSyncOutput> {
@@ -76,11 +83,29 @@ export class PlanCatalogSync {
       };
     });
 
+    const plannedCount = entries.filter((entry) => entry.status === 'planned').length;
+    const skippedCount = entries.filter((entry) => entry.status === 'skipped').length;
+    const now = this.clock.now();
+    const syncRun = await this.repository.addCatalogSyncRun({
+      ...(selectedSources.length === 1 && selectedSources[0] !== undefined
+        ? { sourceId: selectedSources[0].id }
+        : {}),
+      startedAt: now,
+      completedAt: now,
+      status: 'SUCCESS',
+      documentsChecked: 0,
+      documentsAdded: 0,
+      documentsUpdated: 0,
+      documentsUnchanged: 0,
+      documentsFailed: 0,
+    });
+
     return {
       schemaVersion: '1.0',
       dryRun: true,
-      plannedCount: entries.filter((entry) => entry.status === 'planned').length,
-      skippedCount: entries.filter((entry) => entry.status === 'skipped').length,
+      syncRun,
+      plannedCount,
+      skippedCount,
       sources: entries,
     };
   }
