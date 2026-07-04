@@ -9,15 +9,28 @@ import type {
 } from '../domain/models/catalog.js';
 import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
+import { ingestTextDocument } from './catalog-ingest-text.js';
 
 const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
 const SYNC_STRATEGIES = ['manual', 'polling'] as const;
 
+type CatalogCommand = 'init' | 'status' | 'list-sources' | 'add-source' | 'ingest-text';
+
 interface CatalogCommandOptions {
-  readonly command: 'init' | 'status' | 'list-sources' | 'add-source';
+  readonly command: CatalogCommand;
   readonly path: string;
   readonly source?: NewCatalogSource;
+  readonly text?: {
+    readonly sourceKey: string;
+    readonly filePath: string;
+    readonly canonicalUrl: string;
+    readonly title: string;
+    readonly language: string;
+    readonly mimeType: string;
+    readonly stableKey?: string;
+    readonly versionLabel?: string;
+  };
 }
 
 interface CatalogStatusOutput {
@@ -36,6 +49,13 @@ async function main(argv: readonly string[]): Promise<void> {
       if (options.source === undefined) throw new Error(usage());
       const source = await repository.addSource(options.source);
       process.stdout.write(`${JSON.stringify({ schemaVersion: '1.0', source }, null, 2)}\n`);
+      return;
+    }
+
+    if (options.command === 'ingest-text') {
+      if (options.text === undefined) throw new Error(usage());
+      const result = await ingestTextDocument(repository, options.text);
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;
     }
 
@@ -64,21 +84,29 @@ async function main(argv: readonly string[]): Promise<void> {
 }
 
 function parseArguments(argv: readonly string[]): CatalogCommandOptions {
-  const command = argv[0];
-  if (
-    command !== 'init' &&
-    command !== 'status' &&
-    command !== 'list-sources' &&
-    command !== 'add-source'
-  ) {
-    throw new Error(usage());
-  }
-
+  const command = parseCommand(argv[0]);
   const path = getOption(argv, '--path') ?? defaultCatalogPath();
-  if (command !== 'add-source') return { command, path: resolve(path) };
+  if (command === 'add-source') return parseAddSource(argv, path);
+  if (command === 'ingest-text') return parseIngestText(argv, path);
+  return { command, path: resolve(path) };
+}
 
+function parseCommand(value: string | undefined): CatalogCommand {
+  if (
+    value === 'init' ||
+    value === 'status' ||
+    value === 'list-sources' ||
+    value === 'add-source' ||
+    value === 'ingest-text'
+  ) {
+    return value;
+  }
+  throw new Error(usage());
+}
+
+function parseAddSource(argv: readonly string[], path: string): CatalogCommandOptions {
   return {
-    command,
+    command: 'add-source',
     path: resolve(path),
     source: {
       sourceKey: requireOption(argv, '--key'),
@@ -89,6 +117,25 @@ function parseArguments(argv: readonly string[]): CatalogCommandOptions {
       freshnessPolicy: parseFreshnessPolicy(getOption(argv, '--freshness') ?? 'manual'),
       syncStrategy: parseSyncStrategy(getOption(argv, '--sync') ?? 'manual'),
       enabled: !argv.includes('--disabled'),
+    },
+  };
+}
+
+function parseIngestText(argv: readonly string[], path: string): CatalogCommandOptions {
+  const stableKey = getOption(argv, '--stable-key');
+  const versionLabel = getOption(argv, '--version-label');
+  return {
+    command: 'ingest-text',
+    path: resolve(path),
+    text: {
+      sourceKey: requireOption(argv, '--source-key'),
+      filePath: resolve(requireOption(argv, '--file')),
+      canonicalUrl: requireOption(argv, '--url'),
+      title: requireOption(argv, '--title'),
+      language: getOption(argv, '--language') ?? 'fr',
+      mimeType: getOption(argv, '--mime-type') ?? 'text/markdown',
+      ...(stableKey === undefined ? {} : { stableKey }),
+      ...(versionLabel === undefined ? {} : { versionLabel }),
     },
   };
 }
@@ -135,6 +182,7 @@ function usage(): string {
     '  catalog status [--path <catalog.db>]',
     '  catalog list-sources [--path <catalog.db>]',
     '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
+    '  catalog ingest-text --source-key <key> --file <file> --url <url> --title <title> [--path <catalog.db>] [--language <language>] [--mime-type <mime>] [--stable-key <key>] [--version-label <label>]',
   ].join('\n');
 }
 
