@@ -79,7 +79,10 @@ export async function ingestTextDocument(
   };
 }
 
-export function splitMarkdownSections(title: string, content: string): readonly DocumentSectionInput[] {
+export function splitMarkdownSections(
+  title: string,
+  content: string,
+): readonly DocumentSectionInput[] {
   const lines = content.split(/\r?\n/u);
   const headings = findHeadings(lines);
   if (headings.length === 0) {
