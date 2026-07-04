@@ -98,12 +98,7 @@ describe('catalog text ingestion', () => {
     const database = new Database(fixture.path, { readonly: true });
     const rows = database
       .prepare('SELECT ordinal, heading, heading_path, anchor FROM document_sections ORDER BY ordinal')
-      .all() as {
-      ordinal: number;
-      heading: string;
-      heading_path: string;
-      anchor: string;
-    }[];
+      .all() as { ordinal: number; heading: string; heading_path: string; anchor: string }[];
     expect(rows).toEqual([
       { ordinal: 0, heading: 'Guide', heading_path: 'Guide', anchor: 'guide' },
       { ordinal: 1, heading: 'Usage', heading_path: 'Guide > Usage', anchor: 'usage' },
