@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import process from 'node:process';
 
+import { RebuildCatalogIndex } from '../application/use-cases/rebuild-catalog-index.js';
 import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
 import { VerifyCatalog } from '../application/use-cases/verify-catalog.js';
 import type {
@@ -24,7 +25,8 @@ type CatalogCommand =
   | 'add-source'
   | 'ingest-text'
   | 'search'
-  | 'verify';
+  | 'verify'
+  | 'rebuild-index';
 
 interface CatalogCommandOptions {
   readonly command: CatalogCommand;
@@ -88,6 +90,12 @@ async function main(argv: readonly string[]): Promise<void> {
       return;
     }
 
+    if (options.command === 'rebuild-index') {
+      const result = await new RebuildCatalogIndex(repository).execute();
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+
     if (options.command === 'list-sources') {
       const sources = await repository.listSources();
       process.stdout.write(`${JSON.stringify({ schemaVersion: '1.0', sources }, null, 2)}\n`);
@@ -129,7 +137,8 @@ function parseCommand(value: string | undefined): CatalogCommand {
     value === 'add-source' ||
     value === 'ingest-text' ||
     value === 'search' ||
-    value === 'verify'
+    value === 'verify' ||
+    value === 'rebuild-index'
   ) {
     return value;
   }
@@ -236,6 +245,7 @@ function usage(): string {
     '  catalog init [--path <catalog.db>]',
     '  catalog status [--path <catalog.db>]',
     '  catalog verify [--path <catalog.db>]',
+    '  catalog rebuild-index [--path <catalog.db>]',
     '  catalog list-sources [--path <catalog.db>]',
     '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
     '  catalog ingest-text --source-key <key> --file <file> --url <url> --title <title> [--path <catalog.db>] [--language <language>] [--mime-type <mime>] [--stable-key <key>] [--version-label <label>]',
