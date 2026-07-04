@@ -111,6 +111,156 @@ describe('SqliteCatalogRepository', () => {
     });
   });
 
+  it('searches only enabled active documents on their current sections', async () => {
+    const fixture = createCatalogRepository();
+    const source = await fixture.catalog.addSource({
+      sourceKey: 'nodejs-docs',
+      displayName: 'Node.js Documentation',
+      baseUrl: 'https://nodejs.org/api/',
+      sourceType: 'api',
+      language: 'en-US',
+      freshnessPolicy: 'weekly',
+      syncStrategy: 'manual',
+      enabled: true,
+    });
+    const disabledSource = await fixture.catalog.addSource({
+      sourceKey: 'disabled-docs',
+      displayName: 'Disabled Documentation',
+      baseUrl: 'https://example.test/',
+      sourceType: 'documentation',
+      language: 'en-US',
+      freshnessPolicy: 'manual',
+      syncStrategy: 'manual',
+      enabled: false,
+    });
+
+    const document = await fixture.catalog.upsertDocument({
+      publicId: 'nodejs-fs',
+      sourceId: source.id,
+      canonicalUrl: 'https://nodejs.org/api/fs.html',
+      stableKey: 'fs',
+      title: 'File system',
+      mimeType: 'text/html',
+      language: 'en-US',
+      status: 'ACTIVE',
+    });
+    const firstVersion = await fixture.catalog.addDocumentVersion({
+      documentId: document.id,
+      contentHash: 'nodejs-fs-v1',
+      isCurrent: true,
+      extractionMode: 'static',
+      contentType: 'text/html',
+      metadataJson: '{}',
+    });
+    await fixture.catalog.replaceDocumentSections(firstVersion.id, [
+      {
+        ordinal: 1,
+        heading: 'Old stream section',
+        content: 'This stream section belongs to a previous version.',
+        contentHash: 'nodejs-fs-v1-section',
+        characterCount: 51,
+      },
+    ]);
+
+    const currentVersion = await fixture.catalog.addDocumentVersion({
+      documentId: document.id,
+      contentHash: 'nodejs-fs-v2',
+      isCurrent: true,
+      extractionMode: 'static',
+      contentType: 'text/html',
+      metadataJson: '{}',
+    });
+    await fixture.catalog.replaceDocumentSections(currentVersion.id, [
+      {
+        ordinal: 1,
+        heading: 'fs.createReadStream',
+        headingPath: 'File system > fs.createReadStream',
+        headingLevel: 2,
+        anchor: 'fscreatereadstream',
+        content: 'Creates a readable stream from a file path.',
+        contentHash: 'nodejs-fs-v2-section',
+        characterCount: 42,
+      },
+    ]);
+
+    const staleDocument = await fixture.catalog.upsertDocument({
+      publicId: 'nodejs-stale-stream',
+      sourceId: source.id,
+      canonicalUrl: 'https://nodejs.org/api/stale.html',
+      stableKey: 'stale-stream',
+      title: 'Stale stream',
+      mimeType: 'text/html',
+      language: 'en-US',
+      status: 'STALE',
+    });
+    const staleVersion = await fixture.catalog.addDocumentVersion({
+      documentId: staleDocument.id,
+      contentHash: 'nodejs-stale-v1',
+      isCurrent: true,
+      extractionMode: 'static',
+      contentType: 'text/html',
+      metadataJson: '{}',
+    });
+    await fixture.catalog.replaceDocumentSections(staleVersion.id, [
+      {
+        ordinal: 1,
+        content: 'A stale stream result.',
+        contentHash: 'nodejs-stale-section',
+        characterCount: 22,
+      },
+    ]);
+
+    const disabledDocument = await fixture.catalog.upsertDocument({
+      publicId: 'disabled-stream',
+      sourceId: disabledSource.id,
+      canonicalUrl: 'https://example.test/stream.html',
+      stableKey: 'stream',
+      title: 'Disabled stream',
+      mimeType: 'text/html',
+      language: 'en-US',
+      status: 'ACTIVE',
+    });
+    const disabledVersion = await fixture.catalog.addDocumentVersion({
+      documentId: disabledDocument.id,
+      contentHash: 'disabled-v1',
+      isCurrent: true,
+      extractionMode: 'static',
+      contentType: 'text/html',
+      metadataJson: '{}',
+    });
+    await fixture.catalog.replaceDocumentSections(disabledVersion.id, [
+      {
+        ordinal: 1,
+        content: 'Disabled stream result.',
+        contentHash: 'disabled-section',
+        characterCount: 23,
+      },
+    ]);
+
+    const results = await fixture.catalog.searchDocuments({
+      query: 'stream',
+      sourceKey: 'nodejs-docs',
+      language: 'en-US',
+      limit: 5,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      score: 3,
+      source: { sourceKey: 'nodejs-docs' },
+      document: { publicId: 'nodejs-fs' },
+      section: {
+        documentVersionId: currentVersion.id,
+        heading: 'fs.createReadStream',
+      },
+    });
+    expect(results[0]?.snippet).toContain('stream');
+    await expect(fixture.catalog.searchDocuments({ query: '   ' })).resolves.toEqual([]);
+    await expect(
+      fixture.catalog.searchDocuments({ query: 'stream', language: 'fr-FR' }),
+    ).resolves.toEqual([]);
+  });
+
   it('keeps catalog tables out of cache.db and V1 cache tables out of catalog.db', () => {
     const root = mkdtempSync(join(tmpdir(), 'mcp-catalog-separation-'));
     roots.push(root);
@@ -211,7 +361,7 @@ describe('SqliteCatalogRepository', () => {
     const rows = database
       .prepare('SELECT ordinal, content_hash FROM document_sections ORDER BY ordinal')
       .all() as { ordinal: number; content_hash: string }[];
-    expect(rows).toEqual([{ ordinal: 1, content_hash: 'existing-section' }]);
+    expect(rows).toEqual([{ ordinal: 1, contentHash: 'existing-section' }]);
     database.close();
   });
 });
