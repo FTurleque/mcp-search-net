@@ -343,8 +343,14 @@ function parseNumericResourceId(
 
 function parseDocumentVersionResourceIds(uri: URL): { readonly documentId: number; readonly versionId: number } {
   const match = /^mcp-search-net:\/\/documents\/(\d+)\/versions\/(\d+)$/u.exec(uri.href);
+  if (match === null) return { documentId: Number.NaN, versionId: Number.NaN };
+  const documentId = match[1];
+  const versionId = match[2];
+  if (documentId === undefined || versionId === undefined) {
+    return { documentId: Number.NaN, versionId: Number.NaN };
+  }
   return {
-    documentId: match === null ? Number.NaN : Number.parseInt(match[1], 10),
-    versionId: match === null ? Number.NaN : Number.parseInt(match[2], 10),
+    documentId: Number.parseInt(documentId, 10),
+    versionId: Number.parseInt(versionId, 10),
   };
 }
