@@ -9,6 +9,7 @@ import type {
   CatalogDocument,
   CatalogSyncRun,
   DocumentSectionInput,
+  DocumentStatus,
   DocumentVersion,
 } from '../../domain/models/catalog.js';
 import type { FetchedContent } from '../../domain/models/content.js';
@@ -129,7 +130,7 @@ export class SyncCatalogDocuments {
           title: fetched.title ?? document.title,
           mimeType: document.mimeType,
           language: document.language,
-          status: 'ACTIVE',
+          status: documentStatusFor(fetched),
         });
 
         if (currentVersion?.contentHash === fetched.contentHash) {
@@ -159,6 +160,10 @@ export class SyncCatalogDocuments {
             requestedUrl: fetched.requestedUrl,
             finalUrl: fetched.finalUrl,
             statusCode: fetched.statusCode,
+            ...(fetched.redirectChain === undefined || fetched.redirectChain.length === 0
+              ? {}
+              : { redirectChain: fetched.redirectChain }),
+            ...(fetched.redirectedPermanently === true ? { redirectedPermanently: true } : {}),
           }),
         });
         const sections = await this.repository.replaceDocumentSections(
@@ -265,6 +270,10 @@ function createCacheValidators(version: DocumentVersion): CacheValidators {
     ...(version.etag === undefined ? {} : { etag: version.etag }),
     ...(version.lastModified === undefined ? {} : { lastModified: version.lastModified }),
   };
+}
+
+function documentStatusFor(fetched: FetchedContent): DocumentStatus {
+  return fetched.redirectedPermanently === true ? 'REDIRECTED' : 'ACTIVE';
 }
 
 function isStaleHttpError(error: unknown): error is HttpError & { readonly status: 404 | 410 } {
