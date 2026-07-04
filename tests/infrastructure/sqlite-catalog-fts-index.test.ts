@@ -5,9 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Clock } from '../../src/application/ports/clock.js';
-import {
-  SqliteCatalogRepository,
-} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 class FixedClock implements Clock {
   public now(): Date {
@@ -27,16 +25,13 @@ describe('SqliteCatalogRepository FTS index', () => {
   });
 
   it('rebuilds the FTS index from current active document sections', async () => {
-    directory = mkdtempSync(join(tmpdir(), 'mcp-search-catalog-fts-'));
-    repository = new SqliteCatalogRepository(
-      join(directory, 'catalog.db'),
-      new FixedClock(),
-    );
+    directory = mkdtempSync(join(tmpdir(), 'catalog-fts-'));
+    repository = new SqliteCatalogRepository(join(directory, 'catalog.db'), new FixedClock());
 
     const source = await repository.addSource({
-      sourceKey: 'sample-docs',
-      displayName: 'Sample Documentation',
-      baseUrl: 'https://example.test/docs/',
+      sourceKey: 'sample',
+      displayName: 'Sample',
+      baseUrl: 'https://example.test/',
       sourceType: 'documentation',
       language: 'en-US',
       freshnessPolicy: 'weekly',
@@ -44,11 +39,11 @@ describe('SqliteCatalogRepository FTS index', () => {
       enabled: true,
     });
     const document = await repository.upsertDocument({
-      publicId: 'sample-guide',
+      publicId: 'guide',
       sourceId: source.id,
-      canonicalUrl: 'https://example.test/docs/guide.html',
+      canonicalUrl: 'https://example.test/guide.html',
       stableKey: 'guide',
-      title: 'Sample Guide',
+      title: 'Guide',
       mimeType: 'text/html',
       language: 'en-US',
       status: 'ACTIVE',
@@ -65,7 +60,7 @@ describe('SqliteCatalogRepository FTS index', () => {
       {
         ordinal: 1,
         heading: 'Alpha Topic',
-        headingPath: 'Sample Guide > Alpha Topic',
+        headingPath: 'Guide > Alpha Topic',
         headingLevel: 2,
         anchor: 'alpha-topic',
         content: 'Alpha beta gamma content for the catalog index.',
@@ -81,8 +76,8 @@ describe('SqliteCatalogRepository FTS index', () => {
     expect(rebuilt).toEqual({ indexedSections: 1 });
     expect(results).toHaveLength(1);
     expect(results[0]).toMatchObject({
-      source: { sourceKey: 'sample-docs' },
-      document: { publicId: 'sample-guide' },
+      source: { sourceKey: 'sample' },
+      document: { publicId: 'guide' },
       section: { heading: 'Alpha Topic' },
     });
   });
