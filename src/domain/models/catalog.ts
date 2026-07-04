@@ -113,6 +113,12 @@ export interface DocumentSectionInput {
   readonly tokenCount?: number;
 }
 
+export interface CatalogCurrentDocumentSection {
+  readonly source: CatalogSource;
+  readonly document: CatalogDocument;
+  readonly section: DocumentSection;
+}
+
 export interface CatalogDocumentSearchQuery {
   readonly query: string;
   readonly sourceKey?: string;
