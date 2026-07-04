@@ -190,6 +190,56 @@ describe('SyncCatalogDocuments', () => {
     });
   });
 
+  it('marks a permanently redirected document without changing its stable key', async () => {
+    const repository = new CatalogSyncRepositoryStub([enabledSource]);
+    const redirectChain = [
+      {
+        fromUrl: 'https://docs.example/guide.html',
+        toUrl: 'https://docs.example/new-guide.html',
+        status: 301,
+        permanent: true,
+      },
+    ];
+    const fetcher = new ContentFetcherStub(
+      fetchedContent({
+        finalUrl: 'https://docs.example/new-guide.html',
+        canonicalUrl: 'https://docs.example/new-guide.html',
+        contentHash: 'redirected-content-hash',
+        redirectChain,
+        redirectedPermanently: true,
+      }),
+    );
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument],
+      limit: 1,
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(repository.upserts[0]).toMatchObject({
+      stableKey: 'guide',
+      canonicalUrl: 'https://docs.example/new-guide.html',
+      status: 'REDIRECTED',
+    });
+    expect(result.documents[0]).toMatchObject({
+      status: 'added',
+      document: {
+        stableKey: 'guide',
+        canonicalUrl: 'https://docs.example/new-guide.html',
+        status: 'REDIRECTED',
+      },
+    });
+    const metadata = JSON.parse(repository.versions[0]?.metadataJson ?? '{}') as {
+      redirectChain?: unknown;
+      redirectedPermanently?: boolean;
+    };
+    expect(metadata.redirectedPermanently).toBe(true);
+    expect(metadata.redirectChain).toEqual(redirectChain);
+  });
+
   it('passes current version validators and does not duplicate identical content', async () => {
     const repository = new CatalogSyncRepositoryStub([enabledSource], existingDocument, currentVersion);
     const fetcher = new ContentFetcherStub(fetchedContent({ contentHash: currentVersion.contentHash }));
