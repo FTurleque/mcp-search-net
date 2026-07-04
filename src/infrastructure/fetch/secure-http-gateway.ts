@@ -37,7 +37,7 @@ export interface DownloadedResource {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: Uint8Array;
-  readonly redirectChain: readonly DownloadRedirect[];
+  readonly redirectChain?: readonly DownloadRedirect[];
 }
 
 export interface SecureDownloadLimits {
