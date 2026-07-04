@@ -106,7 +106,7 @@ describe('Crawl4aiContentFetcher', () => {
         status: 200,
         headers: { 'content-type': 'text/html' },
         body: new TextEncoder().encode(
-          '<html><head><meta http-equiv="refresh" content="0;url=http://127.0.0.1"><link rel="stylesheet" href="http://127.0.0.1/a.css"></head><body><img src="http://127.0.0.1/x"><div style="background:url(http://127.0.0.1/y)">tiny</div></body></html>',
+          '<html><head><meta http-equiv="refresh" content="0;url=http://127.0.0.1"><link rel="stylesheet" href="http://127.0.0.1/a.css"></head><body><img src="http://127.0.0.1/x"><div style="background:url(http://127.0.0.1/y)"></div></body></html>',
         ),
       }),
     } as unknown as SecureHttpGateway;
