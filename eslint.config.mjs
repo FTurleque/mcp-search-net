@@ -16,6 +16,7 @@ export default tseslint.config(
       'src/infrastructure/catalog/sqlite-catalog-version-purger.ts',
       'src/infrastructure/fetch/crawl4ai-content-fetcher.ts',
       'src/infrastructure/fetch/secure-http-gateway.ts',
+      'src/presentation/mcp/catalog-resources.ts',
       'tests/application/sync-catalog-documents.test.ts',
       'tests/infrastructure/crawl4ai-content-fetcher.test.ts',
       'tests/infrastructure/secure-http-gateway.test.ts',
