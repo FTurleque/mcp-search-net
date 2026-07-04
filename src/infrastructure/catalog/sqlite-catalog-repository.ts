@@ -56,9 +56,7 @@ import {
   SELECT_DOCUMENT_BY_PUBLIC_ID_SQL,
   SELECT_DOCUMENT_BY_SOURCE_AND_STABLE_KEY_SQL,
   SELECT_DOCUMENT_SECTIONS_SQL,
-  SELECT_DOCUMENT_VERSIONS_SQL,
   SELECT_DOCUMENT_VERSION_BY_HASH_SQL,
-  SELECT_DOCUMENT_VERSION_BY_ID_SQL,
   SET_DOCUMENT_CURRENT_VERSION_SQL,
   UPSERT_DOCUMENT_SQL,
   UPSERT_DOCUMENT_VERSION_SQL,
@@ -401,27 +399,6 @@ export class SqliteCatalogRepository implements CatalogRepository {
       const row = this.database
         .prepare<[number], DocumentVersionRow>(SELECT_CURRENT_DOCUMENT_VERSION_SQL)
         .get(documentId);
-      return row === undefined ? undefined : toDocumentVersion(row);
-    });
-  }
-
-  public listDocumentVersions(documentId: number): Promise<readonly DocumentVersion[]> {
-    return this.asPromise(() => {
-      const rows = this.database
-        .prepare<[number], DocumentVersionRow>(SELECT_DOCUMENT_VERSIONS_SQL)
-        .all(documentId);
-      return rows.map(toDocumentVersion);
-    });
-  }
-
-  public getDocumentVersion(
-    documentId: number,
-    versionId: number,
-  ): Promise<DocumentVersion | undefined> {
-    return this.asPromise(() => {
-      const row = this.database
-        .prepare<[number, number], DocumentVersionRow>(SELECT_DOCUMENT_VERSION_BY_ID_SQL)
-        .get(documentId, versionId);
       return row === undefined ? undefined : toDocumentVersion(row);
     });
   }
