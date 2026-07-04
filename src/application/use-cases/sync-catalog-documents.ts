@@ -9,6 +9,7 @@ import type {
   CatalogSyncRun,
   DocumentSectionInput,
 } from '../../domain/models/catalog.js';
+import type { FetchedContent } from '../../domain/models/content.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
 
 export interface SyncCatalogDocumentsOptions {
@@ -139,7 +140,7 @@ export class SyncCatalogDocuments {
         });
         const sections = await this.repository.replaceDocumentSections(
           version.id,
-          createSections(fetched.title ?? document.title, fetched.markdown),
+          createSections(fetched.title ?? document.title, fetched),
         );
         entries.push({
           sourceKey: document.sourceKey,
@@ -198,21 +199,31 @@ export class SyncCatalogDocuments {
   }
 }
 
-function createSections(title: string, markdown: string): readonly DocumentSectionInput[] {
+function createSections(title: string, fetched: FetchedContent): readonly DocumentSectionInput[] {
+  const extracted = fetched.documentSections.filter((section) => section.markdown.trim().length > 0);
+  const sections = extracted.length === 0 ? [{ heading: title, markdown: fetched.markdown }] : extracted;
+  return sections.map((section, index) => createSection(index, title, section.heading, section.markdown));
+}
+
+function createSection(
+  ordinal: number,
+  documentTitle: string,
+  heading: string,
+  markdown: string,
+): DocumentSectionInput {
   const content = markdown.trim();
-  return [
-    {
-      ordinal: 0,
-      heading: title,
-      headingPath: title,
-      headingLevel: 1,
-      anchor: slugify(title),
-      content,
-      contentHash: sha256(content),
-      characterCount: Array.from(content).length,
-      tokenCount: content.split(/\s+/u).filter(Boolean).length,
-    },
-  ];
+  const normalizedHeading = heading.trim() || documentTitle;
+  return {
+    ordinal,
+    heading: normalizedHeading,
+    headingPath: normalizedHeading,
+    headingLevel: 1,
+    anchor: slugify(normalizedHeading),
+    content,
+    contentHash: sha256(content),
+    characterCount: Array.from(content).length,
+    tokenCount: estimateTokenCount(content),
+  };
 }
 
 function publicDocumentId(sourceKey: string, stableKey: string): string {
@@ -228,6 +239,10 @@ function slugify(value: string): string {
       .replace(/[^a-z0-9]+/gu, '-')
       .replace(/^-+|-+$/gu, '') || 'document'
   );
+}
+
+function estimateTokenCount(content: string): number {
+  return content.trim().split(/\s+/u).filter(Boolean).length;
 }
 
 function sha256(value: string): string {
