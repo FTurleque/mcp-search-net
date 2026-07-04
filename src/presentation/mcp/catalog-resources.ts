@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 import type { CatalogRepository } from '../../application/ports/catalog-repository.js';
 import type {
@@ -13,8 +13,11 @@ const RESOURCE_MIME_TYPE = 'application/json';
 const CATALOG_RESOURCE_URIS = {
   catalog: 'mcp-search-net://catalog',
   sources: 'mcp-search-net://sources',
+  source: 'mcp-search-net://sources/{sourceId}',
   documents: 'mcp-search-net://documents',
+  document: 'mcp-search-net://documents/{documentId}',
   sections: 'mcp-search-net://sections',
+  section: 'mcp-search-net://sections/{sectionId}',
 } as const;
 
 export function registerCatalogResources(server: McpServer, repository: CatalogRepository): void {
@@ -41,6 +44,17 @@ export function registerCatalogResources(server: McpServer, repository: CatalogR
   );
 
   server.registerResource(
+    'catalog-source',
+    new ResourceTemplate(CATALOG_RESOURCE_URIS.source, { list: undefined }),
+    {
+      title: 'Catalog source',
+      description: 'Read-only catalog source details by numeric source id.',
+      mimeType: RESOURCE_MIME_TYPE,
+    },
+    async (uri) => jsonResource(uri, await createSourceResource(repository, uri)),
+  );
+
+  server.registerResource(
     'catalog-documents',
     CATALOG_RESOURCE_URIS.documents,
     {
@@ -52,6 +66,17 @@ export function registerCatalogResources(server: McpServer, repository: CatalogR
   );
 
   server.registerResource(
+    'catalog-document',
+    new ResourceTemplate(CATALOG_RESOURCE_URIS.document, { list: undefined }),
+    {
+      title: 'Catalog document',
+      description: 'Read-only catalog document details by numeric document id.',
+      mimeType: RESOURCE_MIME_TYPE,
+    },
+    async (uri) => jsonResource(uri, await createDocumentResource(repository, uri)),
+  );
+
+  server.registerResource(
     'catalog-sections',
     CATALOG_RESOURCE_URIS.sections,
     {
@@ -60,6 +85,17 @@ export function registerCatalogResources(server: McpServer, repository: CatalogR
       mimeType: RESOURCE_MIME_TYPE,
     },
     async (uri) => jsonResource(uri, await createSectionsResource(repository)),
+  );
+
+  server.registerResource(
+    'catalog-section',
+    new ResourceTemplate(CATALOG_RESOURCE_URIS.section, { list: undefined }),
+    {
+      title: 'Catalog section',
+      description: 'Read-only current catalog section details by numeric section id.',
+      mimeType: RESOURCE_MIME_TYPE,
+    },
+    async (uri) => jsonResource(uri, await createSectionResource(repository, uri)),
   );
 }
 
@@ -92,6 +128,18 @@ async function createSourcesResource(repository: CatalogRepository) {
   };
 }
 
+async function createSourceResource(repository: CatalogRepository, uri: URL) {
+  const sourceId = parseNumericResourceId(uri, 'sources');
+  const sources = await repository.listSources();
+  const source = sources.find((candidate) => candidate.id === sourceId);
+  return {
+    schemaVersion: '1.0',
+    sourceId,
+    found: source !== undefined,
+    source: source === undefined ? null : toResourceSource(source),
+  };
+}
+
 async function createDocumentsResource(repository: CatalogRepository) {
   const documents = await repository.listDocuments();
   return {
@@ -101,12 +149,36 @@ async function createDocumentsResource(repository: CatalogRepository) {
   };
 }
 
+async function createDocumentResource(repository: CatalogRepository, uri: URL) {
+  const documentId = parseNumericResourceId(uri, 'documents');
+  const documents = await repository.listDocuments();
+  const document = documents.find((candidate) => candidate.id === documentId);
+  return {
+    schemaVersion: '1.0',
+    documentId,
+    found: document !== undefined,
+    document: document === undefined ? null : toResourceDocument(document),
+  };
+}
+
 async function createSectionsResource(repository: CatalogRepository) {
   const sections = await repository.listCurrentDocumentSections();
   return {
     schemaVersion: '1.0',
     count: sections.length,
     sections: sections.map(toResourceSectionEntry),
+  };
+}
+
+async function createSectionResource(repository: CatalogRepository, uri: URL) {
+  const sectionId = parseNumericResourceId(uri, 'sections');
+  const sections = await repository.listCurrentDocumentSections();
+  const section = sections.find((candidate) => candidate.section.id === sectionId);
+  return {
+    schemaVersion: '1.0',
+    sectionId,
+    found: section !== undefined,
+    entry: section === undefined ? null : toResourceSectionEntry(section),
   };
 }
 
@@ -179,4 +251,10 @@ function toResourceSection(section: DocumentSection) {
     characterCount: section.characterCount,
     tokenCount: section.tokenCount ?? null,
   };
+}
+
+function parseNumericResourceId(uri: URL, collection: 'sources' | 'documents' | 'sections'): number {
+  const prefix = `mcp-search-net://${collection}/`;
+  if (!uri.href.startsWith(prefix)) return Number.NaN;
+  return Number.parseInt(uri.href.slice(prefix.length), 10);
 }
