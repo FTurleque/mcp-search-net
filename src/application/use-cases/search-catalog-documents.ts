@@ -65,7 +65,9 @@ function toOutputItem(result: CatalogDocumentSearchResult): SearchCatalogDocumen
     url: result.document.canonicalUrl,
     language: result.document.language,
     ...(result.section.heading === undefined ? {} : { heading: result.section.heading }),
-    ...(result.section.headingPath === undefined ? {} : { headingPath: result.section.headingPath }),
+    ...(result.section.headingPath === undefined
+      ? {}
+      : { headingPath: result.section.headingPath }),
     ...(result.section.anchor === undefined ? {} : { anchor: result.section.anchor }),
     snippet: result.snippet,
     score: result.score,
