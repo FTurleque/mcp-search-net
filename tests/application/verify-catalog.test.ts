@@ -53,12 +53,12 @@ describe('VerifyCatalog', () => {
   });
 
   it('reports missing sources, missing current versions, and mismatched current sections', async () => {
+    const { currentVersionId: _currentVersionId, ...documentWithoutCurrentVersion } = activeDocument;
     const documentWithoutSource: CatalogDocument = {
-      ...activeDocument,
+      ...documentWithoutCurrentVersion,
       id: 20,
       publicId: 'orphan-doc',
       sourceId: 999,
-      currentVersionId: undefined,
     };
     const mismatchedSection: CatalogCurrentDocumentSection = {
       ...currentSection,
