@@ -394,10 +394,14 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
-  public getCurrentDocumentVersion(documentId: number): Promise<DocumentVersion | undefined> {
+  public getCurrentDocumentVersion(
+    documentId: number,
+  ): Promise<DocumentVersion | undefined> {
     return this.asPromise(() => {
       const row = this.database
-        .prepare<[number], DocumentVersionRow>(SELECT_CURRENT_DOCUMENT_VERSION_SQL)
+        .prepare<[number], DocumentVersionRow>(
+          SELECT_CURRENT_DOCUMENT_VERSION_SQL,
+        )
         .get(documentId);
       return row === undefined ? undefined : toDocumentVersion(row);
     });
