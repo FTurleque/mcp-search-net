@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import process from 'node:process';
 
+import { LoadCatalogSources } from '../application/use-cases/load-catalog-sources.js';
 import { RebuildCatalogIndex } from '../application/use-cases/rebuild-catalog-index.js';
 import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
 import { VerifyCatalog } from '../application/use-cases/verify-catalog.js';
@@ -12,6 +13,7 @@ import type {
 } from '../domain/models/catalog.js';
 import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
+import { loadCatalogSourceConfig } from './catalog-source-config.js';
 import { ingestTextDocument } from './catalog-ingest-text.js';
 
 const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
@@ -22,6 +24,7 @@ type CatalogCommand =
   | 'init'
   | 'status'
   | 'list-sources'
+  | 'load-sources'
   | 'add-source'
   | 'ingest-text'
   | 'search'
@@ -32,6 +35,9 @@ interface CatalogCommandOptions {
   readonly command: CatalogCommand;
   readonly path: string;
   readonly source?: NewCatalogSource;
+  readonly sourceConfig?: {
+    readonly filePath: string;
+  };
   readonly text?: {
     readonly sourceKey: string;
     readonly filePath: string;
@@ -62,6 +68,14 @@ async function main(argv: readonly string[]): Promise<void> {
   const options = parseArguments(argv);
   const repository = new SqliteCatalogRepository(options.path, new SystemClock());
   try {
+    if (options.command === 'load-sources') {
+      if (options.sourceConfig === undefined) throw new Error(usage());
+      const config = await loadCatalogSourceConfig(options.sourceConfig.filePath);
+      const result = await new LoadCatalogSources(repository).execute(config);
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+
     if (options.command === 'add-source') {
       if (options.source === undefined) throw new Error(usage());
       const source = await repository.addSource(options.source);
@@ -123,6 +137,7 @@ async function main(argv: readonly string[]): Promise<void> {
 function parseArguments(argv: readonly string[]): CatalogCommandOptions {
   const command = parseCommand(argv[0]);
   const path = getOption(argv, '--path') ?? defaultCatalogPath();
+  if (command === 'load-sources') return parseLoadSources(argv, path);
   if (command === 'add-source') return parseAddSource(argv, path);
   if (command === 'ingest-text') return parseIngestText(argv, path);
   if (command === 'search') return parseSearch(argv, path);
@@ -134,6 +149,7 @@ function parseCommand(value: string | undefined): CatalogCommand {
     value === 'init' ||
     value === 'status' ||
     value === 'list-sources' ||
+    value === 'load-sources' ||
     value === 'add-source' ||
     value === 'ingest-text' ||
     value === 'search' ||
@@ -143,6 +159,16 @@ function parseCommand(value: string | undefined): CatalogCommand {
     return value;
   }
   throw new Error(usage());
+}
+
+function parseLoadSources(argv: readonly string[], path: string): CatalogCommandOptions {
+  return {
+    command: 'load-sources',
+    path: resolve(path),
+    sourceConfig: {
+      filePath: resolve(getOption(argv, '--file') ?? 'config/catalog-sources.yml'),
+    },
+  };
 }
 
 function parseAddSource(argv: readonly string[], path: string): CatalogCommandOptions {
@@ -247,6 +273,7 @@ function usage(): string {
     '  catalog verify [--path <catalog.db>]',
     '  catalog rebuild-index [--path <catalog.db>]',
     '  catalog list-sources [--path <catalog.db>]',
+    '  catalog load-sources [--path <catalog.db>] [--file <catalog-sources.yml>]',
     '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
     '  catalog ingest-text --source-key <key> --file <file> --url <url> --title <title> [--path <catalog.db>] [--language <language>] [--mime-type <mime>] [--stable-key <key>] [--version-label <label>]',
     '  catalog search --query <text> [--path <catalog.db>] [--source-key <key>] [--language <language>] [--limit <n>]',
