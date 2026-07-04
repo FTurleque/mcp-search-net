@@ -3,6 +3,8 @@ import type {
   CatalogFreshnessPolicy,
   CatalogSource,
   CatalogSourceType,
+  CatalogSyncRun,
+  CatalogSyncRunStatus,
   CatalogSyncStrategy,
   DocumentSection,
   DocumentStatus,
@@ -67,6 +69,20 @@ export interface DocumentSectionRow {
   readonly content_hash: string;
   readonly character_count: number;
   readonly token_count: number | null;
+}
+
+export interface CatalogSyncRunRow {
+  readonly id: number;
+  readonly source_id: number | null;
+  readonly started_at: number;
+  readonly completed_at: number | null;
+  readonly status: CatalogSyncRunStatus;
+  readonly documents_checked: number;
+  readonly documents_added: number;
+  readonly documents_updated: number;
+  readonly documents_unchanged: number;
+  readonly documents_failed: number;
+  readonly error_summary: string | null;
 }
 
 export function toCatalogSource(row: CatalogSourceRow): CatalogSource {
@@ -134,5 +150,21 @@ export function toDocumentSection(row: DocumentSectionRow): DocumentSection {
     contentHash: row.content_hash,
     characterCount: row.character_count,
     ...(row.token_count === null ? {} : { tokenCount: row.token_count }),
+  };
+}
+
+export function toCatalogSyncRun(row: CatalogSyncRunRow): CatalogSyncRun {
+  return {
+    id: row.id,
+    ...(row.source_id === null ? {} : { sourceId: row.source_id }),
+    startedAt: new Date(row.started_at),
+    ...(row.completed_at === null ? {} : { completedAt: new Date(row.completed_at) }),
+    status: row.status,
+    documentsChecked: row.documents_checked,
+    documentsAdded: row.documents_added,
+    documentsUpdated: row.documents_updated,
+    documentsUnchanged: row.documents_unchanged,
+    documentsFailed: row.documents_failed,
+    ...(row.error_summary === null ? {} : { errorSummary: row.error_summary }),
   };
 }
