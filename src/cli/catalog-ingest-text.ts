@@ -2,7 +2,11 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 import type { CatalogRepository } from '../application/ports/catalog-repository.js';
-import type { CatalogDocument, DocumentSection, DocumentVersion } from '../domain/models/catalog.js';
+import type {
+  CatalogDocument,
+  DocumentSection,
+  DocumentVersion,
+} from '../domain/models/catalog.js';
 
 export interface IngestTextDocumentOptions {
   readonly sourceKey: string;
@@ -52,7 +56,13 @@ export async function ingestTextDocument(
     contentType: options.mimeType,
     metadataJson: JSON.stringify({ ingestion: 'cli', sourceKey: options.sourceKey }),
   });
-  const sections = await replaceSingleSection(repository, version.id, options.title, content, contentHash);
+  const sections = await replaceSingleSection(
+    repository,
+    version.id,
+    options.title,
+    content,
+    contentHash,
+  );
 
   return {
     schemaVersion: '1.0',
