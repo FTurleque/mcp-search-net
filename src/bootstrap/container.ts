@@ -25,9 +25,7 @@ export function createContainer(loaded: LoadedConfiguration) {
   const clock = new SystemClock();
   const cache = createCache(loaded, clock, logger);
   const catalog = createCatalog(loaded, clock);
-  const crawl4aiValue = (loaded as unknown as Record<string, string>)[
-    'crawl4aiApi' + 'To' + 'ken'
-  ];
+  const crawl4aiValue = (loaded as unknown as Record<string, string>)['crawl4aiApi' + 'To' + 'ken'];
   const securityPolicy = new PublicUrlSecurityPolicy(config.security, undefined, logger);
   const secureGateway = new SecureHttpGateway(securityPolicy, {
     timeoutMs: config.crawl4ai.timeoutMs,
