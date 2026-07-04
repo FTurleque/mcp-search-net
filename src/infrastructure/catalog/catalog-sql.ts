@@ -55,6 +55,17 @@ export const UPSERT_DOCUMENT_VERSION_SQL = `
 export const SELECT_DOCUMENT_VERSION_BY_HASH_SQL =
   'SELECT * FROM document_versions WHERE document_id = ? AND content_hash = ?';
 
+export const SELECT_DOCUMENT_VERSIONS_SQL = `
+  SELECT * FROM document_versions
+  WHERE document_id = ?
+  ORDER BY fetched_at DESC, id DESC
+`;
+
+export const SELECT_DOCUMENT_VERSION_BY_ID_SQL = `
+  SELECT * FROM document_versions
+  WHERE document_id = ? AND id = ?
+`;
+
 export const SET_DOCUMENT_CURRENT_VERSION_SQL =
   'UPDATE documents SET current_version_id = ?, updated_at = ? WHERE id = ?';
 
@@ -197,9 +208,9 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL = `
     document_sections.token_count AS section_token_count,
 
     CASE
-      WHEN lower(documents.title) LIKE ? ESCAPE '\\' THEN 4
-      WHEN lower(document_sections.heading) LIKE ? ESCAPE '\\' THEN 3
-      WHEN lower(document_sections.heading_path) LIKE ? ESCAPE '\\' THEN 2
+      WHEN lower(documents.title) LIKE ? ESCAPE '\' THEN 4
+      WHEN lower(document_sections.heading) LIKE ? ESCAPE '\' THEN 3
+      WHEN lower(document_sections.heading_path) LIKE ? ESCAPE '\' THEN 2
       ELSE 1
     END AS score,
     bm25(document_section_fts) AS rank
@@ -265,9 +276,9 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL = `
     document_sections.token_count AS section_token_count,
 
     CASE
-      WHEN lower(documents.title) LIKE ? ESCAPE '\\' THEN 4
-      WHEN lower(document_sections.heading) LIKE ? ESCAPE '\\' THEN 3
-      WHEN lower(document_sections.heading_path) LIKE ? ESCAPE '\\' THEN 2
+      WHEN lower(documents.title) LIKE ? ESCAPE '\' THEN 4
+      WHEN lower(document_sections.heading) LIKE ? ESCAPE '\' THEN 3
+      WHEN lower(document_sections.heading_path) LIKE ? ESCAPE '\' THEN 2
       ELSE 1
     END AS score
   FROM document_sections
@@ -284,10 +295,10 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL = `
     AND (? IS NULL OR catalog_sources.source_key = ?)
     AND (? IS NULL OR documents.language = ?)
     AND (
-      lower(documents.title) LIKE ? ESCAPE '\\'
-      OR lower(document_sections.heading) LIKE ? ESCAPE '\\'
-      OR lower(document_sections.heading_path) LIKE ? ESCAPE '\\'
-      OR lower(document_sections.content) LIKE ? ESCAPE '\\'
+      lower(documents.title) LIKE ? ESCAPE '\'
+      OR lower(document_sections.heading) LIKE ? ESCAPE '\'
+      OR lower(document_sections.heading_path) LIKE ? ESCAPE '\'
+      OR lower(document_sections.content) LIKE ? ESCAPE '\'
     )
   ORDER BY score DESC, documents.title COLLATE NOCASE, document_sections.ordinal
   LIMIT ?
