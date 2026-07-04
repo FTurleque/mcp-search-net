@@ -27,7 +27,7 @@ describe('MCP catalog resources', () => {
     await client?.close();
   });
 
-  it('lists and reads read-only catalog resources', async () => {
+  it('lists and reads read-only catalog resources and templates', async () => {
     client = new Client({ name: 'mcp-search-net-resource-test', version: '1.0.0' });
     const transport = new StdioClientTransport({
       command: process.execPath,
