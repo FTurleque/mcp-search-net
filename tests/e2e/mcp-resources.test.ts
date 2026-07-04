@@ -14,6 +14,8 @@ const expectedResourceUris = [
 ];
 const expectedResourceTemplateUris = [
   'mcp-search-net://documents/{documentId}',
+  'mcp-search-net://documents/{documentId}/versions',
+  'mcp-search-net://documents/{documentId}/versions/{versionId}',
   'mcp-search-net://sections/{sectionId}',
   'mcp-search-net://sources/{sourceId}',
 ];
@@ -82,6 +84,36 @@ describe('MCP catalog resources', () => {
       sourceId: 999999,
       found: false,
       source: null,
+    });
+
+    const missingVersions = await readJsonResource<{
+      documentId: number;
+      available: boolean;
+      count: number;
+      versions: unknown[];
+    }>(client, 'mcp-search-net://documents/999999/versions');
+    expect(missingVersions).toEqual({
+      schemaVersion: '1.0',
+      documentId: 999999,
+      available: true,
+      count: 0,
+      versions: [],
+    });
+
+    const missingVersion = await readJsonResource<{
+      documentId: number;
+      versionId: number;
+      available: boolean;
+      found: boolean;
+      version: unknown | null;
+    }>(client, 'mcp-search-net://documents/999999/versions/888888');
+    expect(missingVersion).toEqual({
+      schemaVersion: '1.0',
+      documentId: 999999,
+      versionId: 888888,
+      available: true,
+      found: false,
+      version: null,
     });
   });
 });
