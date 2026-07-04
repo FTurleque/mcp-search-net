@@ -1,5 +1,5 @@
-import type { CatalogRepository } from '../ports/catalog-repository.js';
 import type { NewCatalogSource } from '../../domain/models/catalog.js';
+import type { CatalogRepository } from '../ports/catalog-repository.js';
 
 export type CatalogSourceLoadStatus = 'created' | 'skipped';
 
@@ -21,9 +21,7 @@ export interface LoadCatalogSourcesOutput {
 }
 
 export class LoadCatalogSources {
-  public constructor(
-    private readonly repository: Pick<CatalogRepository, 'addSource' | 'getSourceByKey'>,
-  ) {}
+  public constructor(private readonly repository: Pick<CatalogRepository, 'addSource' | 'getSourceByKey'>) {}
 
   public async execute(input: LoadCatalogSourcesInput): Promise<LoadCatalogSourcesOutput> {
     const entries: CatalogSourceLoadEntry[] = [];
