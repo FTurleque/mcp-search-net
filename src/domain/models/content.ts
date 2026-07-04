@@ -11,13 +11,6 @@ export interface FetchRequest {
   readonly renderMode: RenderMode;
 }
 
-export interface ContentRedirect {
-  readonly fromUrl: string;
-  readonly toUrl: string;
-  readonly status: number;
-  readonly permanent: boolean;
-}
-
 export interface FetchedContent {
   readonly requestedUrl: string;
   readonly finalUrl: string;
@@ -34,8 +27,6 @@ export interface FetchedContent {
   readonly contentHash: string;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly links: readonly string[];
-  readonly redirectChain?: readonly ContentRedirect[];
-  readonly redirectedPermanently?: boolean;
 }
 
 export interface NotModifiedContent {
