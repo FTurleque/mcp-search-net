@@ -11,6 +11,14 @@ import type {
 
 const RESOURCE_MIME_TYPE = 'application/json';
 
+type ListDocumentVersions = NonNullable<CatalogRepository['listDocumentVersions']>;
+type GetDocumentVersion = NonNullable<CatalogRepository['getDocumentVersion']>;
+
+interface DocumentVersionRepositoryPorts {
+  readonly listDocumentVersions?: ListDocumentVersions;
+  readonly getDocumentVersion?: GetDocumentVersion;
+}
+
 const CATALOG_RESOURCE_URIS = {
   catalog: 'mcp-search-net://catalog',
   sources: 'mcp-search-net://sources',
@@ -188,7 +196,8 @@ async function createDocumentResource(repository: CatalogRepository, uri: URL) {
 
 async function createDocumentVersionsResource(repository: CatalogRepository, uri: URL) {
   const documentId = parseNumericResourceId(uri, 'documents');
-  if (repository.listDocumentVersions === undefined) {
+  const listDocumentVersions = documentVersionPorts(repository).listDocumentVersions;
+  if (listDocumentVersions === undefined) {
     return {
       schemaVersion: '1.0',
       documentId,
@@ -197,7 +206,7 @@ async function createDocumentVersionsResource(repository: CatalogRepository, uri
       versions: [],
     };
   }
-  const versions = await repository.listDocumentVersions(documentId);
+  const versions = await listDocumentVersions.call(repository, documentId);
   return {
     schemaVersion: '1.0',
     documentId,
@@ -209,7 +218,8 @@ async function createDocumentVersionsResource(repository: CatalogRepository, uri
 
 async function createDocumentVersionResource(repository: CatalogRepository, uri: URL) {
   const { documentId, versionId } = parseDocumentVersionResourceIds(uri);
-  if (repository.getDocumentVersion === undefined) {
+  const getDocumentVersion = documentVersionPorts(repository).getDocumentVersion;
+  if (getDocumentVersion === undefined) {
     return {
       schemaVersion: '1.0',
       documentId,
@@ -219,7 +229,7 @@ async function createDocumentVersionResource(repository: CatalogRepository, uri:
       version: null,
     };
   }
-  const version = await repository.getDocumentVersion(documentId, versionId);
+  const version = await getDocumentVersion.call(repository, documentId, versionId);
   return {
     schemaVersion: '1.0',
     documentId,
@@ -261,6 +271,10 @@ function jsonResource(uri: URL, value: unknown) {
       },
     ],
   };
+}
+
+function documentVersionPorts(repository: CatalogRepository): DocumentVersionRepositoryPorts {
+  return repository;
 }
 
 function toResourceSource(source: CatalogSource) {
