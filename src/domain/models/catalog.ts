@@ -112,3 +112,18 @@ export interface DocumentSectionInput {
   readonly characterCount: number;
   readonly tokenCount?: number;
 }
+
+export interface CatalogDocumentSearchQuery {
+  readonly query: string;
+  readonly sourceKey?: string;
+  readonly language?: string;
+  readonly limit?: number;
+}
+
+export interface CatalogDocumentSearchResult {
+  readonly source: CatalogSource;
+  readonly document: CatalogDocument;
+  readonly section: DocumentSection;
+  readonly snippet: string;
+  readonly score: number;
+}
