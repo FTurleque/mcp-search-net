@@ -59,6 +59,8 @@ describe('PlanCatalogSync', () => {
       dryRun: true,
       plannedCount: 1,
       skippedCount: 1,
+      plannedDocumentCount: 0,
+      skippedDocumentCount: 0,
       sources: [
         {
           sourceKey: 'enabled-docs',
@@ -70,6 +72,8 @@ describe('PlanCatalogSync', () => {
           enabled: true,
           status: 'planned',
           currentDocumentCount: 2,
+          configuredDocumentCount: 0,
+          documents: [],
         },
         {
           sourceKey: 'disabled-docs',
@@ -82,9 +86,64 @@ describe('PlanCatalogSync', () => {
           status: 'skipped',
           reason: 'DISABLED',
           currentDocumentCount: 0,
+          configuredDocumentCount: 0,
+          documents: [],
         },
       ],
     });
+  });
+
+  it('plans declared documents and counts them on the sync run', async () => {
+    const repository = new SyncPlanRepositoryStub([enabledSource], []);
+
+    const result = await new PlanCatalogSync(repository, fixedClock).execute({
+      documents: [
+        {
+          sourceKey: 'enabled-docs',
+          stableKey: 'intro',
+          title: 'Introduction',
+          url: 'https://docs.example/enabled/intro.html',
+          language: 'en-US',
+          mimeType: 'text/html',
+          enabled: true,
+        },
+        {
+          sourceKey: 'enabled-docs',
+          stableKey: 'disabled',
+          title: 'Disabled',
+          url: 'https://docs.example/enabled/disabled.html',
+          language: 'en-US',
+          mimeType: 'text/html',
+          enabled: false,
+        },
+      ],
+    });
+
+    expect(result.plannedDocumentCount).toBe(1);
+    expect(result.skippedDocumentCount).toBe(1);
+    expect(result.syncRun.documentsChecked).toBe(1);
+    expect(result.sources[0]?.configuredDocumentCount).toBe(2);
+    expect(result.sources[0]?.documents).toEqual([
+      {
+        stableKey: 'intro',
+        title: 'Introduction',
+        url: 'https://docs.example/enabled/intro.html',
+        language: 'en-US',
+        mimeType: 'text/html',
+        enabled: true,
+        status: 'planned',
+      },
+      {
+        stableKey: 'disabled',
+        title: 'Disabled',
+        url: 'https://docs.example/enabled/disabled.html',
+        language: 'en-US',
+        mimeType: 'text/html',
+        enabled: false,
+        status: 'skipped',
+        reason: 'DISABLED',
+      },
+    ]);
   });
 
   it('filters by source key and stores the source id on the sync run', async () => {
