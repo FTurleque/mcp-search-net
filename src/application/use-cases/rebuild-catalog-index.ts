@@ -7,9 +7,7 @@ export interface RebuildCatalogIndexOutput {
 }
 
 export class RebuildCatalogIndex {
-  public constructor(
-    private readonly repository: Pick<CatalogRepository, 'rebuildSearchIndex'>,
-  ) {}
+  public constructor(private readonly repository: Pick<CatalogRepository, 'rebuildSearchIndex'>) {}
 
   public async execute(): Promise<RebuildCatalogIndexOutput> {
     const result = await this.repository.rebuildSearchIndex();
