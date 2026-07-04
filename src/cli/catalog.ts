@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import process from 'node:process';
 
+import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
 import type {
   CatalogFreshnessPolicy,
   CatalogSourceType,
@@ -15,7 +16,7 @@ const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
 const SYNC_STRATEGIES = ['manual', 'polling'] as const;
 
-type CatalogCommand = 'init' | 'status' | 'list-sources' | 'add-source' | 'ingest-text';
+type CatalogCommand = 'init' | 'status' | 'list-sources' | 'add-source' | 'ingest-text' | 'search';
 
 interface CatalogCommandOptions {
   readonly command: CatalogCommand;
@@ -30,6 +31,12 @@ interface CatalogCommandOptions {
     readonly mimeType: string;
     readonly stableKey?: string;
     readonly versionLabel?: string;
+  };
+  readonly search?: {
+    readonly query: string;
+    readonly sourceKey?: string;
+    readonly language?: string;
+    readonly limit?: number;
   };
 }
 
@@ -55,6 +62,13 @@ async function main(argv: readonly string[]): Promise<void> {
     if (options.command === 'ingest-text') {
       if (options.text === undefined) throw new Error(usage());
       const result = await ingestTextDocument(repository, options.text);
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+
+    if (options.command === 'search') {
+      if (options.search === undefined) throw new Error(usage());
+      const result = await new SearchCatalogDocuments(repository).execute(options.search);
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;
     }
@@ -88,6 +102,7 @@ function parseArguments(argv: readonly string[]): CatalogCommandOptions {
   const path = getOption(argv, '--path') ?? defaultCatalogPath();
   if (command === 'add-source') return parseAddSource(argv, path);
   if (command === 'ingest-text') return parseIngestText(argv, path);
+  if (command === 'search') return parseSearch(argv, path);
   return { command, path: resolve(path) };
 }
 
@@ -97,7 +112,8 @@ function parseCommand(value: string | undefined): CatalogCommand {
     value === 'status' ||
     value === 'list-sources' ||
     value === 'add-source' ||
-    value === 'ingest-text'
+    value === 'ingest-text' ||
+    value === 'search'
   ) {
     return value;
   }
@@ -140,6 +156,22 @@ function parseIngestText(argv: readonly string[], path: string): CatalogCommandO
   };
 }
 
+function parseSearch(argv: readonly string[], path: string): CatalogCommandOptions {
+  const sourceKey = getOption(argv, '--source-key');
+  const language = getOption(argv, '--language');
+  const limit = parseLimit(getOption(argv, '--limit'));
+  return {
+    command: 'search',
+    path: resolve(path),
+    search: {
+      query: requireOption(argv, '--query'),
+      ...(sourceKey === undefined ? {} : { sourceKey }),
+      ...(language === undefined ? {} : { language }),
+      ...(limit === undefined ? {} : { limit }),
+    },
+  };
+}
+
 function getOption(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(name);
   if (index === -1) return undefined;
@@ -152,6 +184,13 @@ function requireOption(argv: readonly string[], name: string): string {
   const value = getOption(argv, name);
   if (value === undefined) throw new Error(`Missing required option ${name}\n${usage()}`);
   return value;
+}
+
+function parseLimit(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const limit = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error(`Invalid limit ${value}`);
+  return limit;
 }
 
 function parseSourceType(value: string): CatalogSourceType {
@@ -183,6 +222,7 @@ function usage(): string {
     '  catalog list-sources [--path <catalog.db>]',
     '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
     '  catalog ingest-text --source-key <key> --file <file> --url <url> --title <title> [--path <catalog.db>] [--language <language>] [--mime-type <mime>] [--stable-key <key>] [--version-label <label>]',
+    '  catalog search --query <text> [--path <catalog.db>] [--source-key <key>] [--language <language>] [--limit <n>]',
   ].join('\n');
 }
 
