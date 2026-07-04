@@ -238,7 +238,7 @@ describe('SqliteCatalogRepository', () => {
     ]);
 
     const results = await fixture.catalog.searchDocuments({
-      query: 'stream',
+      query: 'STREAM',
       sourceKey: 'nodejs-docs',
       language: 'en-US',
       limit: 5,
