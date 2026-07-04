@@ -27,8 +27,11 @@ export interface CatalogRepository {
   ): Promise<readonly DocumentSection[]>;
   getDocumentByPublicId(publicId: string): Promise<CatalogDocument | undefined>;
   getCurrentDocumentVersion?(documentId: number): Promise<DocumentVersion | undefined>;
-  listDocumentVersions?(documentId: number): Promise<readonly DocumentVersion[]>;
-  getDocumentVersion?(documentId: number, versionId: number): Promise<DocumentVersion | undefined>;
+  readonly listDocumentVersions?: (documentId: number) => Promise<readonly DocumentVersion[]>;
+  readonly getDocumentVersion?: (
+    documentId: number,
+    versionId: number,
+  ) => Promise<DocumentVersion | undefined>;
   listDocuments(): Promise<readonly CatalogDocument[]>;
   listCurrentDocumentSections(): Promise<readonly CatalogCurrentDocumentSection[]>;
   rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult>;
