@@ -3,6 +3,7 @@ import process from 'node:process';
 
 import { LoadCatalogSources } from '../application/use-cases/load-catalog-sources.js';
 import { PlanCatalogSync } from '../application/use-cases/plan-catalog-sync.js';
+import { PurgeCatalogVersions } from '../application/use-cases/purge-catalog-versions.js';
 import { RebuildCatalogIndex } from '../application/use-cases/rebuild-catalog-index.js';
 import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
 import { SyncCatalogDocuments } from '../application/use-cases/sync-catalog-documents.js';
@@ -14,6 +15,7 @@ import type {
   NewCatalogSource,
 } from '../domain/models/catalog.js';
 import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
+import { SqliteCatalogVersionPurger } from '../infrastructure/catalog/sqlite-catalog-version-purger.js';
 import { loadConfiguration } from '../infrastructure/config/load-configuration.js';
 import { Crawl4aiContentFetcher } from '../infrastructure/fetch/crawl4ai-content-fetcher.js';
 import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.js';
@@ -27,6 +29,8 @@ const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
 const SYNC_STRATEGIES = ['manual', 'polling'] as const;
 
+const DEFAULT_KEEP_PREVIOUS_VERSIONS = 3;
+
 type CatalogCommand =
   | 'init'
   | 'status'
@@ -37,7 +41,8 @@ type CatalogCommand =
   | 'ingest-text'
   | 'search'
   | 'verify'
-  | 'rebuild-index';
+  | 'rebuild-index'
+  | 'purge-versions';
 
 interface CatalogCommandOptions {
   readonly command: CatalogCommand;
@@ -69,6 +74,11 @@ interface CatalogCommandOptions {
     readonly language?: string;
     readonly limit?: number;
   };
+  readonly purge?: {
+    readonly dryRun: boolean;
+    readonly sourceKey?: string;
+    readonly keepPreviousVersions: number;
+  };
 }
 
 interface CatalogStatusOutput {
@@ -82,6 +92,19 @@ interface CatalogStatusOutput {
 async function main(argv: readonly string[]): Promise<void> {
   const options = parseArguments(argv);
   const clock = new SystemClock();
+
+  if (options.command === 'purge-versions') {
+    if (options.purge === undefined) throw new Error(usage());
+    const purger = new SqliteCatalogVersionPurger(options.path, clock);
+    try {
+      const result = await new PurgeCatalogVersions(purger).execute(options.purge);
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    } finally {
+      purger.close();
+    }
+  }
+
   const repository = new SqliteCatalogRepository(options.path, clock);
   try {
     if (options.command === 'load-sources') {
@@ -204,6 +227,7 @@ function parseArguments(argv: readonly string[]): CatalogCommandOptions {
   if (command === 'add-source') return parseAddSource(argv, path);
   if (command === 'ingest-text') return parseIngestText(argv, path);
   if (command === 'search') return parseSearch(argv, path);
+  if (command === 'purge-versions') return parsePurgeVersions(argv, path);
   return { command, path: resolve(path) };
 }
 
@@ -218,7 +242,8 @@ function parseCommand(value: string | undefined): CatalogCommand {
     value === 'ingest-text' ||
     value === 'search' ||
     value === 'verify' ||
-    value === 'rebuild-index'
+    value === 'rebuild-index' ||
+    value === 'purge-versions'
   ) {
     return value;
   }
@@ -303,6 +328,22 @@ function parseSearch(argv: readonly string[], path: string): CatalogCommandOptio
   };
 }
 
+function parsePurgeVersions(argv: readonly string[], path: string): CatalogCommandOptions {
+  const sourceKey = getOption(argv, '--source-key') ?? getOption(argv, '--source');
+  const keepPreviousVersions =
+    parseKeepPreviousVersions(getOption(argv, '--keep') ?? getOption(argv, '--keep-previous')) ??
+    DEFAULT_KEEP_PREVIOUS_VERSIONS;
+  return {
+    command: 'purge-versions',
+    path: resolve(path),
+    purge: {
+      dryRun: argv.includes('--dry-run'),
+      keepPreviousVersions,
+      ...(sourceKey === undefined ? {} : { sourceKey }),
+    },
+  };
+}
+
 function getOption(argv: readonly string[], name: string): string | undefined {
   const index = argv.indexOf(name);
   if (index === -1) return undefined;
@@ -322,6 +363,15 @@ function parseLimit(value: string | undefined): number | undefined {
   const limit = Number.parseInt(value, 10);
   if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error(`Invalid limit ${value}`);
   return limit;
+}
+
+function parseKeepPreviousVersions(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const keepPreviousVersions = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(keepPreviousVersions) || keepPreviousVersions < 0) {
+    throw new Error(`Invalid keep ${value}`);
+  }
+  return keepPreviousVersions;
 }
 
 function parseSourceType(value: string): CatalogSourceType {
@@ -352,6 +402,7 @@ function usage(): string {
     '  catalog status [--path <catalog.db>]',
     '  catalog verify [--path <catalog.db>]',
     '  catalog rebuild-index [--path <catalog.db>]',
+    '  catalog purge-versions [--path <catalog.db>] [--source-key <key>] [--keep <previous-version-count>] [--dry-run]',
     '  catalog list-sources [--path <catalog.db>]',
     '  catalog load-sources [--path <catalog.db>] [--file <catalog-sources.yml>]',
     '  catalog sync --dry-run [--path <catalog.db>] --file <catalog-sources.yml> [--source-key <key>]',
