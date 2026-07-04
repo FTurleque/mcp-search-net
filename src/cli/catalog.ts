@@ -5,6 +5,7 @@ import { LoadCatalogSources } from '../application/use-cases/load-catalog-source
 import { PlanCatalogSync } from '../application/use-cases/plan-catalog-sync.js';
 import { RebuildCatalogIndex } from '../application/use-cases/rebuild-catalog-index.js';
 import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
+import { SyncCatalogDocuments } from '../application/use-cases/sync-catalog-documents.js';
 import { VerifyCatalog } from '../application/use-cases/verify-catalog.js';
 import type {
   CatalogFreshnessPolicy,
@@ -13,6 +14,11 @@ import type {
   NewCatalogSource,
 } from '../domain/models/catalog.js';
 import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
+import { loadConfiguration } from '../infrastructure/config/load-configuration.js';
+import { Crawl4aiContentFetcher } from '../infrastructure/fetch/crawl4ai-content-fetcher.js';
+import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.js';
+import { StructuredLogger } from '../infrastructure/logging/structured-logger.js';
+import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-security-policy.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
 import { loadCatalogSourceConfig } from './catalog-source-config.js';
 import { ingestTextDocument } from './catalog-ingest-text.js';
@@ -44,6 +50,8 @@ interface CatalogCommandOptions {
     readonly dryRun: boolean;
     readonly sourceKey?: string;
     readonly filePath?: string;
+    readonly configPath: string;
+    readonly limit: number;
   };
   readonly text?: {
     readonly sourceKey: string;
@@ -86,16 +94,47 @@ async function main(argv: readonly string[]): Promise<void> {
 
     if (options.command === 'sync') {
       if (options.sync === undefined) throw new Error(usage());
-      if (!options.sync.dryRun) throw new Error('catalog sync currently requires --dry-run');
-      const config =
-        options.sync.filePath === undefined
-          ? undefined
-          : await loadCatalogSourceConfig(options.sync.filePath);
-      const result = await new PlanCatalogSync(repository, clock).execute({
-        ...(options.sync.sourceKey === undefined ? {} : { sourceKey: options.sync.sourceKey }),
-        ...(config === undefined ? {} : { documents: config.documents }),
+      if (options.sync.filePath === undefined) {
+        throw new Error('catalog sync requires --file <catalog-sources.yml>');
+      }
+      const catalogConfig = await loadCatalogSourceConfig(options.sync.filePath);
+      if (options.sync.dryRun) {
+        const result = await new PlanCatalogSync(repository, clock).execute({
+          ...(options.sync.sourceKey === undefined ? {} : { sourceKey: options.sync.sourceKey }),
+          documents: catalogConfig.documents,
+        });
+        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+        return;
+      }
+
+      const loaded = await loadConfiguration(options.sync.configPath);
+      const appConfig = loaded.application;
+      const logger = new StructuredLogger(appConfig.logging.level);
+      const securityPolicy = new PublicUrlSecurityPolicy(appConfig.security, undefined, logger);
+      const gateway = new SecureHttpGateway(securityPolicy, {
+        timeoutMs: appConfig.crawl4ai.timeoutMs,
+        maxBytes: appConfig.security.maxDownloadBytes,
+        maxRedirects: appConfig.security.maxRedirects,
+        maxConcurrency: appConfig.security.maxConcurrency,
+        minimumDelayMs: appConfig.security.minimumDelayMs,
+        respectRobotsTxt: appConfig.security.respectRobotsTxt,
+        userAgent: `${appConfig.application.name}/${appConfig.application.version}`,
       });
-      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      const fetcher = new Crawl4aiContentFetcher(
+        appConfig.crawl4ai.baseUrl,
+        loaded.crawl4aiApiToken,
+        gateway,
+      );
+      const result = await new SyncCatalogDocuments(repository, fetcher, clock).execute({
+        ...(options.sync.sourceKey === undefined ? {} : { sourceKey: options.sync.sourceKey }),
+        documents: catalogConfig.documents,
+        limit: options.sync.limit,
+        timeoutMs: appConfig.crawl4ai.timeoutMs,
+        maxResponseBytes: appConfig.security.maxDownloadBytes,
+        maxRedirects: appConfig.security.maxRedirects,
+      });
+      const index = await repository.rebuildSearchIndex();
+      process.stdout.write(`${JSON.stringify({ ...result, index }, null, 2)}\n`);
       return;
     }
 
@@ -204,6 +243,8 @@ function parseSync(argv: readonly string[], path: string): CatalogCommandOptions
     path: resolve(path),
     sync: {
       dryRun: argv.includes('--dry-run'),
+      configPath: resolve(getOption(argv, '--config') ?? 'config/application.yml'),
+      limit: parseLimit(getOption(argv, '--limit')) ?? 1,
       ...(sourceKey === undefined ? {} : { sourceKey }),
       ...(filePath === undefined ? {} : { filePath: resolve(filePath) }),
     },
@@ -313,7 +354,8 @@ function usage(): string {
     '  catalog rebuild-index [--path <catalog.db>]',
     '  catalog list-sources [--path <catalog.db>]',
     '  catalog load-sources [--path <catalog.db>] [--file <catalog-sources.yml>]',
-    '  catalog sync --dry-run [--path <catalog.db>] [--source-key <key>] [--file <catalog-sources.yml>]',
+    '  catalog sync --dry-run [--path <catalog.db>] --file <catalog-sources.yml> [--source-key <key>]',
+    '  catalog sync [--path <catalog.db>] --file <catalog-sources.yml> [--config <application.yml>] [--source-key <key>] [--limit <n>]',
     '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
     '  catalog ingest-text --source-key <key> --file <file> --url <url> --title <title> [--path <catalog.db>] [--language <language>] [--mime-type <mime>] [--stable-key <key>] [--version-label <label>]',
     '  catalog search --query <text> [--path <catalog.db>] [--source-key <key>] [--language <language>] [--limit <n>]',
