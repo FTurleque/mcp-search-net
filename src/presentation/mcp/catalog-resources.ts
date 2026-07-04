@@ -367,7 +367,7 @@ function parseDocumentVersionResourceIds(uri: URL): {
   readonly versionId: number;
 } {
   const parts = uri.href.split('/');
-  const documentId = parts.length >= 5 ? Number.parseInt(parts[3] ?? '', 10) : Number.NaN;
-  const versionId = parts.length >= 7 ? Number.parseInt(parts[5] ?? '', 10) : Number.NaN;
+  const documentId = parts.length >= 4 ? Number.parseInt(parts[3] ?? '', 10) : Number.NaN;
+  const versionId = parts.length >= 6 ? Number.parseInt(parts[5] ?? '', 10) : Number.NaN;
   return { documentId, versionId };
 }
