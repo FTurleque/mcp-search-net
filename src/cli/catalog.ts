@@ -1,12 +1,23 @@
 import { resolve } from 'node:path';
 import process from 'node:process';
 
+import type {
+  CatalogFreshnessPolicy,
+  CatalogSourceType,
+  CatalogSyncStrategy,
+  NewCatalogSource,
+} from '../domain/models/catalog.js';
 import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
 
+const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
+const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
+const SYNC_STRATEGIES = ['manual', 'polling'] as const;
+
 interface CatalogCommandOptions {
-  readonly command: 'init' | 'status';
+  readonly command: 'init' | 'status' | 'list-sources' | 'add-source';
   readonly path: string;
+  readonly source?: NewCatalogSource;
 }
 
 interface CatalogStatusOutput {
@@ -21,6 +32,19 @@ async function main(argv: readonly string[]): Promise<void> {
   const options = parseArguments(argv);
   const repository = new SqliteCatalogRepository(options.path, new SystemClock());
   try {
+    if (options.command === 'add-source') {
+      if (options.source === undefined) throw new Error(usage());
+      const source = await repository.addSource(options.source);
+      process.stdout.write(`${JSON.stringify({ schemaVersion: '1.0', source }, null, 2)}\n`);
+      return;
+    }
+
+    if (options.command === 'list-sources') {
+      const sources = await repository.listSources();
+      process.stdout.write(`${JSON.stringify({ schemaVersion: '1.0', sources }, null, 2)}\n`);
+      return;
+    }
+
     const [sources, documents] = await Promise.all([
       repository.listSources(),
       repository.listDocuments(),
@@ -41,13 +65,63 @@ async function main(argv: readonly string[]): Promise<void> {
 
 function parseArguments(argv: readonly string[]): CatalogCommandOptions {
   const command = argv[0];
-  if (command !== 'init' && command !== 'status') throw new Error(usage());
+  if (
+    command !== 'init' &&
+    command !== 'status' &&
+    command !== 'list-sources' &&
+    command !== 'add-source'
+  ) {
+    throw new Error(usage());
+  }
 
-  const pathFlagIndex = argv.indexOf('--path');
-  const path = pathFlagIndex === -1 ? defaultCatalogPath() : argv[pathFlagIndex + 1];
-  if (path === undefined || path === '') throw new Error(usage());
+  const path = getOption(argv, '--path') ?? defaultCatalogPath();
+  if (command !== 'add-source') return { command, path: resolve(path) };
 
-  return { command, path: resolve(path) };
+  return {
+    command,
+    path: resolve(path),
+    source: {
+      sourceKey: requireOption(argv, '--key'),
+      displayName: requireOption(argv, '--name'),
+      baseUrl: requireOption(argv, '--base-url'),
+      sourceType: parseSourceType(getOption(argv, '--type') ?? 'documentation'),
+      language: getOption(argv, '--language') ?? 'fr',
+      freshnessPolicy: parseFreshnessPolicy(getOption(argv, '--freshness') ?? 'manual'),
+      syncStrategy: parseSyncStrategy(getOption(argv, '--sync') ?? 'manual'),
+      enabled: !argv.includes('--disabled'),
+    },
+  };
+}
+
+function getOption(argv: readonly string[], name: string): string | undefined {
+  const index = argv.indexOf(name);
+  if (index === -1) return undefined;
+  const value = argv[index + 1];
+  if (value === undefined || value === '') throw new Error(`Missing value for ${name}`);
+  return value;
+}
+
+function requireOption(argv: readonly string[], name: string): string {
+  const value = getOption(argv, name);
+  if (value === undefined) throw new Error(`Missing required option ${name}\n${usage()}`);
+  return value;
+}
+
+function parseSourceType(value: string): CatalogSourceType {
+  if (SOURCE_TYPES.includes(value as CatalogSourceType)) return value as CatalogSourceType;
+  throw new Error(`Invalid source type ${value}`);
+}
+
+function parseFreshnessPolicy(value: string): CatalogFreshnessPolicy {
+  if (FRESHNESS_POLICIES.includes(value as CatalogFreshnessPolicy)) {
+    return value as CatalogFreshnessPolicy;
+  }
+  throw new Error(`Invalid freshness policy ${value}`);
+}
+
+function parseSyncStrategy(value: string): CatalogSyncStrategy {
+  if (SYNC_STRATEGIES.includes(value as CatalogSyncStrategy)) return value as CatalogSyncStrategy;
+  throw new Error(`Invalid sync strategy ${value}`);
 }
 
 function defaultCatalogPath(): string {
@@ -55,7 +129,13 @@ function defaultCatalogPath(): string {
 }
 
 function usage(): string {
-  return 'Usage: catalog <init|status> [--path <catalog.db>]';
+  return [
+    'Usage:',
+    '  catalog init [--path <catalog.db>]',
+    '  catalog status [--path <catalog.db>]',
+    '  catalog list-sources [--path <catalog.db>]',
+    '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
+  ].join('\n');
 }
 
 main(process.argv.slice(2)).catch((error: unknown) => {
