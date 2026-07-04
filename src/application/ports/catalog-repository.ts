@@ -31,7 +31,6 @@ export interface CatalogRepository {
   listCurrentDocumentSections(): Promise<readonly CatalogCurrentDocumentSection[]>;
   rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult>;
   addCatalogSyncRun(input: CatalogSyncRunInput): Promise<CatalogSyncRun>;
-  completeCatalogSyncRun(id: number, input: CatalogSyncRunInput): Promise<CatalogSyncRun>;
   searchDocuments(
     query: CatalogDocumentSearchQuery,
   ): Promise<readonly CatalogDocumentSearchResult[]>;
