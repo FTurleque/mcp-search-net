@@ -1,14 +1,23 @@
 import type { CatalogSyncRun } from '../../domain/models/catalog.js';
-import type { CatalogSourceDocumentConfig } from '../../cli/catalog-source-config.js';
 import type { CatalogRepository } from '../ports/catalog-repository.js';
 import type { Clock } from '../ports/clock.js';
 
 export type CatalogSyncPlanEntryStatus = 'planned' | 'skipped';
 export type CatalogSyncDocumentPlanStatus = 'planned' | 'skipped';
 
+export interface CatalogSyncDocumentInput {
+  readonly sourceKey: string;
+  readonly stableKey: string;
+  readonly title: string;
+  readonly url: string;
+  readonly language: string;
+  readonly mimeType: string;
+  readonly enabled: boolean;
+}
+
 export interface PlanCatalogSyncInput {
   readonly sourceKey?: string;
-  readonly documents?: readonly CatalogSourceDocumentConfig[];
+  readonly documents?: readonly CatalogSyncDocumentInput[];
 }
 
 export interface CatalogSyncDocumentPlanEntry {
