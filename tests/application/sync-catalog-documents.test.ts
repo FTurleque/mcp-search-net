@@ -205,8 +205,7 @@ describe('SyncCatalogDocuments', () => {
         finalUrl: 'https://docs.example/new-guide.html',
         canonicalUrl: 'https://docs.example/new-guide.html',
         contentHash: 'redirected-content-hash',
-        redirectChain,
-        redirectedPermanently: true,
+        metadata: { redirectChain, redirectedPermanently: true },
       }),
     );
 
