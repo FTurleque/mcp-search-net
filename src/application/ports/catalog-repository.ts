@@ -26,6 +26,7 @@ export interface CatalogRepository {
     sections: readonly DocumentSectionInput[],
   ): Promise<readonly DocumentSection[]>;
   getDocumentByPublicId(publicId: string): Promise<CatalogDocument | undefined>;
+  getCurrentDocumentVersion?(documentId: number): Promise<DocumentVersion | undefined>;
   listDocuments(): Promise<readonly CatalogDocument[]>;
   listCurrentDocumentSections(): Promise<readonly CatalogCurrentDocumentSection[]>;
   rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult>;
