@@ -70,3 +70,73 @@ export const INSERT_DOCUMENT_SECTION_SQL = `
 
 export const SELECT_DOCUMENT_SECTIONS_SQL =
   'SELECT * FROM document_sections WHERE document_version_id = ? ORDER BY ordinal';
+
+export const SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL = `
+  SELECT
+    catalog_sources.id AS source_id,
+    catalog_sources.source_key AS source_source_key,
+    catalog_sources.display_name AS source_display_name,
+    catalog_sources.base_url AS source_base_url,
+    catalog_sources.source_type AS source_source_type,
+    catalog_sources.language AS source_language,
+    catalog_sources.freshness_policy AS source_freshness_policy,
+    catalog_sources.sync_strategy AS source_sync_strategy,
+    catalog_sources.enabled AS source_enabled,
+    catalog_sources.created_at AS source_created_at,
+    catalog_sources.updated_at AS source_updated_at,
+
+    documents.id AS document_id,
+    documents.public_id AS document_public_id,
+    documents.source_id AS document_source_id,
+    documents.canonical_url AS document_canonical_url,
+    documents.stable_key AS document_stable_key,
+    documents.title AS document_title,
+    documents.mime_type AS document_mime_type,
+    documents.language AS document_language,
+    documents.status AS document_status,
+    documents.current_version_id AS document_current_version_id,
+    documents.first_seen_at AS document_first_seen_at,
+    documents.last_seen_at AS document_last_seen_at,
+    documents.created_at AS document_created_at,
+    documents.updated_at AS document_updated_at,
+
+    document_sections.id AS section_id,
+    document_sections.document_version_id AS section_document_version_id,
+    document_sections.ordinal AS section_ordinal,
+    document_sections.heading AS section_heading,
+    document_sections.heading_path AS section_heading_path,
+    document_sections.heading_level AS section_heading_level,
+    document_sections.anchor AS section_anchor,
+    document_sections.content AS section_content,
+    document_sections.content_hash AS section_content_hash,
+    document_sections.character_count AS section_character_count,
+    document_sections.token_count AS section_token_count,
+
+    CASE
+      WHEN lower(documents.title) LIKE ? ESCAPE '\\' THEN 4
+      WHEN lower(document_sections.heading) LIKE ? ESCAPE '\\' THEN 3
+      WHEN lower(document_sections.heading_path) LIKE ? ESCAPE '\\' THEN 2
+      ELSE 1
+    END AS score
+  FROM document_sections
+  INNER JOIN document_versions
+    ON document_versions.id = document_sections.document_version_id
+   AND document_versions.is_current = 1
+  INNER JOIN documents
+    ON documents.id = document_versions.document_id
+   AND documents.current_version_id = document_versions.id
+  INNER JOIN catalog_sources
+    ON catalog_sources.id = documents.source_id
+  WHERE catalog_sources.enabled = 1
+    AND documents.status = 'ACTIVE'
+    AND (? IS NULL OR catalog_sources.source_key = ?)
+    AND (? IS NULL OR documents.language = ?)
+    AND (
+      lower(documents.title) LIKE ? ESCAPE '\\'
+      OR lower(document_sections.heading) LIKE ? ESCAPE '\\'
+      OR lower(document_sections.heading_path) LIKE ? ESCAPE '\\'
+      OR lower(document_sections.content) LIKE ? ESCAPE '\\'
+    )
+  ORDER BY score DESC, documents.title COLLATE NOCASE, document_sections.ordinal
+  LIMIT ?
+`;
