@@ -53,13 +53,20 @@ describe('VerifyCatalog', () => {
   });
 
   it('reports missing sources, missing current versions, and mismatched current sections', async () => {
-    const { currentVersionId: _currentVersionId, ...documentWithoutCurrentVersion } =
-      activeDocument;
     const documentWithoutSource: CatalogDocument = {
-      ...documentWithoutCurrentVersion,
       id: 20,
       publicId: 'orphan-doc',
       sourceId: 999,
+      canonicalUrl: 'https://nodejs.org/api/orphan.html',
+      stableKey: 'orphan',
+      title: 'Orphan document',
+      mimeType: 'text/html',
+      language: 'en-US',
+      status: 'ACTIVE',
+      firstSeenAt: now,
+      lastSeenAt: now,
+      createdAt: now,
+      updatedAt: now,
     };
     const mismatchedSection: CatalogCurrentDocumentSection = {
       ...currentSection,
