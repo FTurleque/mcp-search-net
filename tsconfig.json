@@ -20,6 +20,5 @@
     "types": ["node", "vitest/globals"],
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest*.config.ts", "eslint.config.mjs"],
-  "exclude": ["src/bootstrap/crawl4ai-*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest*.config.ts", "eslint.config.mjs"]
 }
