@@ -362,6 +362,53 @@ describe('SyncCatalogDocuments', () => {
     expect(repository.versions).toHaveLength(0);
     expect(repository.sections).toHaveLength(0);
   });
+
+  it('marks an existing document removed without replacing versions when it returns 410', async () => {
+    const repository = new CatalogSyncRepositoryStub([enabledSource], existingDocument, currentVersion);
+    const fetcher = new ContentFetcherStub(new HttpError('Remote server returned HTTP 410', 410));
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument],
+      limit: 1,
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(result).toMatchObject({
+      checkedCount: 1,
+      addedCount: 0,
+      updatedCount: 1,
+      unchangedCount: 0,
+      failedCount: 0,
+      syncRun: {
+        status: 'SUCCESS',
+        documentsUpdated: 1,
+        documentsFailed: 0,
+      },
+      documents: [
+        {
+          sourceKey: 'enabled-docs',
+          stableKey: 'guide',
+          status: 'updated',
+          error: 'HTTP_410_REMOVED',
+          document: {
+            id: existingDocument.id,
+            status: 'REMOVED',
+            currentVersionId: currentVersion.id,
+          },
+        },
+      ],
+    });
+    expect(repository.upserts).toHaveLength(1);
+    expect(repository.upserts[0]).toMatchObject({
+      canonicalUrl: existingDocument.canonicalUrl,
+      status: 'REMOVED',
+    });
+    expect(repository.versions).toHaveLength(0);
+    expect(repository.sections).toHaveLength(0);
+  });
 });
 
 const now = new Date(1_000);
