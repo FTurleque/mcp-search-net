@@ -11,6 +11,7 @@ src/application/use-cases/plan-catalog-sync.ts
 src/application/use-cases/sync-catalog-documents.ts
 src/cli/catalog-source-config.ts
 src/infrastructure/catalog/sqlite-catalog-repository.ts
+src/infrastructure/catalog/sqlite-catalog-version-purger.ts
 src/presentation/mcp/mcp-server-v2.ts
 tests/application/catalog-source-config.test.ts
 tests/application/load-catalog-sources.test.ts
