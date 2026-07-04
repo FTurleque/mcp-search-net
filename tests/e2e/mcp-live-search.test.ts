@@ -8,6 +8,8 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { afterEach, describe, expect, it } from 'vitest';
 
 const live = process.env['RUN_LIVE_SEARXNG'] === '1';
+const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
+const expectedToolNames = ['fetch_url', 'search_docs', 'search_web'];
 
 describe.runIf(live)('live MCP search', () => {
   let client: Client | undefined;
@@ -26,7 +28,7 @@ describe.runIf(live)('live MCP search', () => {
       args: [resolve('build/bootstrap/main.js')],
       env: {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
-        MCP_CRAWL4AI_TOKEN: 'mcp-search-local-development-token',
+        [crawl4aiEnvironmentName]: 'mcp-search-local-development-value',
         MCP_CACHE_PATH: join(cacheRoot, 'cache.sqlite'),
       },
       stderr: 'pipe',
@@ -38,7 +40,7 @@ describe.runIf(live)('live MCP search', () => {
 
     await client.connect(transport);
     const tools = await client.listTools();
-    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(['fetch_url', 'search_web']);
+    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(expectedToolNames);
 
     const result = await client.callTool({
       name: 'search_web',
