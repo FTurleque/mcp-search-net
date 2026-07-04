@@ -119,6 +119,61 @@ describe('SqliteCatalogRepository', () => {
     });
   });
 
+  it('returns the current version with sync validators for an existing document', async () => {
+    const fixture = createCatalogRepository();
+    const source = await fixture.catalog.addSource({
+      sourceKey: 'nodejs-docs',
+      displayName: 'Node.js Documentation',
+      baseUrl: 'https://nodejs.org/api/',
+      sourceType: 'api',
+      language: 'en-US',
+      freshnessPolicy: 'weekly',
+      syncStrategy: 'manual',
+      enabled: true,
+    });
+    const document = await fixture.catalog.upsertDocument({
+      publicId: 'nodejs-fs',
+      sourceId: source.id,
+      canonicalUrl: 'https://nodejs.org/api/fs.html',
+      stableKey: 'fs',
+      title: 'File system',
+      mimeType: 'text/html',
+      language: 'en-US',
+      status: 'ACTIVE',
+    });
+    const oldVersion = await fixture.catalog.addDocumentVersion({
+      documentId: document.id,
+      contentHash: 'hash-v1',
+      etag: '"v1"',
+      lastModified: 'Sun, 21 Jun 2026 00:00:00 GMT',
+      isCurrent: true,
+      extractionMode: 'static',
+      contentType: 'text/html',
+      metadataJson: '{}',
+    });
+    const currentVersion = await fixture.catalog.addDocumentVersion({
+      documentId: document.id,
+      contentHash: 'hash-v2',
+      etag: '"v2"',
+      lastModified: 'Tue, 02 Jul 2026 10:00:00 GMT',
+      publishedAt: new Date(2_000),
+      isCurrent: true,
+      extractionMode: 'static',
+      contentType: 'text/html',
+      metadataJson: '{"source":"sync"}',
+    });
+
+    await expect(fixture.catalog.getCurrentDocumentVersion(document.id)).resolves.toMatchObject({
+      id: currentVersion.id,
+      documentId: document.id,
+      contentHash: 'hash-v2',
+      etag: '"v2"',
+      lastModified: 'Tue, 02 Jul 2026 10:00:00 GMT',
+      isCurrent: true,
+    });
+    await expect(fixture.catalog.getCurrentDocumentVersion(oldVersion.documentId + 999)).resolves.toBeUndefined();
+  });
+
   it('searches only enabled active documents on their current sections', async () => {
     const fixture = createCatalogRepository();
     const source = await fixture.catalog.addSource({
