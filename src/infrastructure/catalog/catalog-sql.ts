@@ -55,17 +55,6 @@ export const UPSERT_DOCUMENT_VERSION_SQL = `
 export const SELECT_DOCUMENT_VERSION_BY_HASH_SQL =
   'SELECT * FROM document_versions WHERE document_id = ? AND content_hash = ?';
 
-export const SELECT_DOCUMENT_VERSIONS_SQL = `
-  SELECT * FROM document_versions
-  WHERE document_id = ?
-  ORDER BY fetched_at DESC, id DESC
-`;
-
-export const SELECT_DOCUMENT_VERSION_BY_ID_SQL = `
-  SELECT * FROM document_versions
-  WHERE document_id = ? AND id = ?
-`;
-
 export const SET_DOCUMENT_CURRENT_VERSION_SQL =
   'UPDATE documents SET current_version_id = ?, updated_at = ? WHERE id = ?';
 
