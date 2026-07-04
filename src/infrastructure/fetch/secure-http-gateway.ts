@@ -40,6 +40,12 @@ export interface DownloadedResource {
   readonly redirectChain?: readonly DownloadRedirect[];
 }
 
+interface PinnedResponse {
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: Uint8Array;
+}
+
 export interface SecureDownloadLimits {
   readonly timeoutMs: number;
   readonly maxBytes: number;
@@ -103,7 +109,7 @@ export class SecureHttpGateway {
       if (location === undefined)
         throw new HttpError('Redirect response has no Location header', response.status);
       const target = new URL(location, approved.value).toString();
-      const redirect = {
+      const redirect: DownloadRedirect = {
         fromUrl: approved.value,
         toUrl: target,
         status: response.status,
@@ -154,7 +160,7 @@ export class SecureHttpGateway {
     deadline: number,
     conditionalHeaders: Readonly<Record<string, string>>,
     maxBytes: number,
-  ): Promise<Omit<DownloadedResource, 'requestedUrl' | 'finalUrl' | 'redirectChain'>> {
+  ): Promise<PinnedResponse> {
     const url = new URL(approved.value);
     const address = approved.addresses[0];
     if (address === undefined) throw new UrlSecurityError('No approved address is available');
