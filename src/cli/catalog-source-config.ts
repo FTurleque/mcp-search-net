@@ -14,8 +14,19 @@ const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
 const SYNC_STRATEGIES = ['manual', 'polling'] as const;
 
+export interface CatalogSourceDocumentConfig {
+  readonly sourceKey: string;
+  readonly stableKey: string;
+  readonly title: string;
+  readonly url: string;
+  readonly language: string;
+  readonly mimeType: string;
+  readonly enabled: boolean;
+}
+
 export interface CatalogSourceConfig {
   readonly sources: readonly NewCatalogSource[];
+  readonly documents: readonly CatalogSourceDocumentConfig[];
 }
 
 export async function loadCatalogSourceConfig(filePath: string): Promise<CatalogSourceConfig> {
@@ -31,29 +42,71 @@ export function parseCatalogSourceConfig(content: string): CatalogSourceConfig {
   if (schemaVersion !== 1) throw new Error('catalog-sources.yml schema_version must be 1');
 
   const sourcesRecord = asRecord(root['sources'], 'catalog source config sources');
-  const sources = Object.entries(sourcesRecord).map(([sourceKey, value]) =>
-    parseCatalogSource(sourceKey, value),
+  const entries = Object.entries(sourcesRecord).map(([sourceKey, value]) =>
+    parseCatalogSourceEntry(sourceKey, value),
   );
 
-  if (sources.length === 0) throw new Error('catalog-sources.yml must declare at least one source');
-  return { sources };
+  if (entries.length === 0) throw new Error('catalog-sources.yml must declare at least one source');
+  return {
+    sources: entries.map((entry) => entry.source),
+    documents: entries.flatMap((entry) => entry.documents),
+  };
 }
 
-function parseCatalogSource(sourceKey: string, value: unknown): NewCatalogSource {
+interface CatalogSourceConfigEntry {
+  readonly source: NewCatalogSource;
+  readonly documents: readonly CatalogSourceDocumentConfig[];
+}
+
+function parseCatalogSourceEntry(sourceKey: string, value: unknown): CatalogSourceConfigEntry {
   if (sourceKey.trim().length === 0) throw new Error('catalog source key must not be empty');
   const source = asRecord(value, `catalog source ${sourceKey}`);
-  return {
+  const language = optionalString(source, 'language') ?? 'fr';
+  const parsedSource: NewCatalogSource = {
     sourceKey,
     displayName: requiredString(source, 'display_name', sourceKey),
     baseUrl: validateHttpUrl(requiredString(source, 'base_url', sourceKey), sourceKey),
     sourceType: parseSourceType(optionalString(source, 'source_type') ?? 'documentation', sourceKey),
-    language: optionalString(source, 'language') ?? 'fr',
+    language,
     freshnessPolicy: parseFreshnessPolicy(
       optionalString(source, 'freshness_policy') ?? 'manual',
       sourceKey,
     ),
     syncStrategy: parseSyncStrategy(optionalString(source, 'sync_strategy') ?? 'manual', sourceKey),
     enabled: optionalBoolean(source, 'enabled') ?? true,
+  };
+  return {
+    source: parsedSource,
+    documents: parseDocuments(sourceKey, source['documents'], language),
+  };
+}
+
+function parseDocuments(
+  sourceKey: string,
+  value: unknown,
+  sourceLanguage: string,
+): readonly CatalogSourceDocumentConfig[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error(`catalog source ${sourceKey} documents must be an array`);
+  return value.map((entry, index) => parseDocument(sourceKey, index, entry, sourceLanguage));
+}
+
+function parseDocument(
+  sourceKey: string,
+  index: number,
+  value: unknown,
+  sourceLanguage: string,
+): CatalogSourceDocumentConfig {
+  const document = asRecord(value, `catalog source ${sourceKey} document ${index + 1}`);
+  const stableKey = requiredString(document, 'stable_key', sourceKey);
+  return {
+    sourceKey,
+    stableKey,
+    title: requiredString(document, 'title', sourceKey),
+    url: validateHttpUrl(requiredString(document, 'url', sourceKey), sourceKey),
+    language: optionalString(document, 'language') ?? sourceLanguage,
+    mimeType: optionalString(document, 'mime_type') ?? 'text/html',
+    enabled: optionalBoolean(document, 'enabled') ?? true,
   };
 }
 
