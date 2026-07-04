@@ -273,7 +273,7 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL = `
     document_sections.content AS section_content,
     document_sections.content_hash AS section_content_hash,
     document_sections.character_count AS section_character_count,
-    document_sections.tokenCount AS section_token_count,
+    document_sections.token_count AS section_token_count,
 
     CASE
       WHEN lower(documents.title) LIKE ? ESCAPE '\\' THEN 4
