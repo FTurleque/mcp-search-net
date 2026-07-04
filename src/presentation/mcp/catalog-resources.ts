@@ -188,7 +188,6 @@ async function createDocumentResource(repository: CatalogRepository, uri: URL) {
 
 async function createDocumentVersionsResource(repository: CatalogRepository, uri: URL) {
   const documentId = parseNumericResourceId(uri, 'documents');
-  // eslint-disable-next-line @typescript-eslint/unbound-method
   if (repository.listDocumentVersions === undefined) {
     return {
       schemaVersion: '1.0',
@@ -210,7 +209,6 @@ async function createDocumentVersionsResource(repository: CatalogRepository, uri
 
 async function createDocumentVersionResource(repository: CatalogRepository, uri: URL) {
   const { documentId, versionId } = parseDocumentVersionResourceIds(uri);
-  // eslint-disable-next-line @typescript-eslint/unbound-method
   if (repository.getDocumentVersion === undefined) {
     return {
       schemaVersion: '1.0',
