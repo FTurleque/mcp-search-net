@@ -80,6 +80,8 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     if (markdown.trim() === '')
       throw new ExtractionError('No usable textual content was extracted');
 
+    const redirectChain = resource.redirectChain ?? [];
+
     return {
       requestedUrl: resource.requestedUrl,
       finalUrl: resource.finalUrl,
@@ -103,8 +105,11 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
         ...(resource.headers['last-modified'] === undefined
           ? {}
           : { lastModified: resource.headers['last-modified'] }),
+        ...(redirectChain.length === 0 ? {} : { redirectChain }),
       },
       links: decoded.links,
+      redirectChain,
+      redirectedPermanently: redirectChain.some((redirect) => redirect.permanent),
     };
   }
 
@@ -257,64 +262,21 @@ function decodeHtml(html: string, baseUrl: string): DecodedContent {
 
 function removeNoisyBlocks(value: string): string {
   let cleaned = value;
-  const noisyAttribute =
-    /<(\w+)\b[^>]*(?:aria-hidden\s*=\s*["']?true|\bhidden\b|style\s*=\s*["'][^"']*(?:display\s*:\s*none|visibility\s*:\s*hidden)|(?:class|id|role)\s*=\s*["'][^"']*(?:advert|banner|cookie|menu|navigation|popup|sidebar))[^>]*>[\s\S]*?<\/\1>/giu;
-  for (let pass = 0; pass < 3; pass += 1) cleaned = cleaned.replace(noisyAttribute, ' ');
+  const noisyAttribute = '(?:class|id|aria-label|role|data-testid|data-test|data-component)';
+  const noisyPattern =
+    String.raw`<([a-z][\w:-]*)\b[^>]*${noisyAttribute}\s*=\s*["'][^"']*(?:` +
+    String.raw`cookie|consent|banner|modal|dialog|sidebar|breadcrumb|pagination|advert|promo|tracking|analytics|footer|header|nav|menu|share|social|newsletter|subscribe|search)[^"']*["'][^>]*>[\s\S]*?<\/\1>`;
+  for (let index = 0; index < 3; index += 1) {
+    cleaned = cleaned.replace(new RegExp(noisyPattern, 'giu'), ' ');
+  }
   return cleaned;
 }
 
-async function decodePdf(bytes: Uint8Array): Promise<DecodedContent> {
-  try {
-    const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-    const loadingTask = getDocument({ data: new Uint8Array(bytes), useSystemFonts: true });
-    const document = await loadingTask.promise;
-    const pages: string[] = [];
-    try {
-      for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-        const page = await document.getPage(pageNumber);
-        const content = await page.getTextContent();
-        const text = content.items
-          .flatMap((item) => ('str' in item && typeof item.str === 'string' ? [item.str] : []))
-          .join(' ')
-          .replace(/\s+/gu, ' ')
-          .trim();
-        if (text !== '') pages.push(`## Page ${pageNumber}\n\n${text}`);
-      }
-    } finally {
-      await loadingTask.destroy();
-    }
-    const markdown = pages.join('\n\n');
-    if (markdown.replace(/[^\p{L}\p{N}]/gu, '').length < 20)
-      throw new OcrRequiredNotSupportedError();
-    return { markdown, links: [] };
-  } catch (error) {
-    if (error instanceof OcrRequiredNotSupportedError) throw error;
-    throw new ExtractionError('The PDF document is invalid or cannot be parsed', { cause: error });
-  }
-}
-
-function detectContentType(resource: DownloadedResource): string {
-  const header = resource.headers['content-type']?.split(';')[0]?.trim().toLowerCase();
-  if (header !== undefined && header !== '' && header !== 'application/octet-stream') return header;
-  const path = new URL(resource.finalUrl).pathname.toLowerCase();
-  if (path.endsWith('.md') || path.endsWith('/readme') || path.endsWith('/llms.txt'))
-    return 'text/markdown';
-  if (path.endsWith('.json')) return 'application/json';
-  if (path.endsWith('.xml') || path.endsWith('/sitemap.xml')) return 'application/xml';
-  if (path.endsWith('.yaml') || path.endsWith('.yml')) return 'application/yaml';
-  if (path.endsWith('.pdf')) return 'application/pdf';
-  if (path.endsWith('.txt') || path.endsWith('/robots.txt')) return 'text/plain';
-  return 'application/octet-stream';
-}
-
-function collectPlainLinks(value: string, baseUrl: string): readonly string[] {
-  return [
-    ...new Set(
-      [...value.matchAll(/https?:\/\/[^\s<>"')]+/giu)].flatMap((match) =>
-        normalizeLink(match[0], baseUrl),
-      ),
-    ),
-  ];
+function collectPlainLinks(text: string, baseUrl: string): readonly string[] {
+  const urls = [...text.matchAll(/https?:\/\/[^\s)>'"]+/giu)].flatMap((match) =>
+    normalizeLink(match[0] ?? '', baseUrl),
+  );
+  return [...new Set(urls)];
 }
 
 function normalizeLink(value: string, baseUrl: string): readonly string[] {
@@ -326,30 +288,42 @@ function normalizeLink(value: string, baseUrl: string): readonly string[] {
   }
 }
 
-function stripTags(value: string): string {
-  return value.replace(/<[^>]+>/gu, ' ');
+function detectContentType(resource: DownloadedResource): string {
+  return (resource.headers['content-type'] ?? 'text/plain').split(';')[0]?.trim().toLowerCase() ?? 'text/plain';
 }
+
+function isHtml(contentType: string): boolean {
+  return contentType === 'text/html' || contentType === 'application/xhtml+xml';
+}
+
+function isUseful(markdown: string): boolean {
+  return markdown.trim().split(/\s+/u).length >= 8;
+}
+
 function decodeEntities(value: string): string {
-  const named: Readonly<Record<string, string>> = {
-    amp: '&',
-    apos: "'",
-    gt: '>',
-    lt: '<',
-    nbsp: ' ',
-    quot: '"',
-  };
-  return value.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/giu, (_all, entity: string) => {
-    if (entity.startsWith('#x')) return String.fromCodePoint(Number.parseInt(entity.slice(2), 16));
-    if (entity.startsWith('#')) return String.fromCodePoint(Number.parseInt(entity.slice(1), 10));
-    return named[entity.toLowerCase()] ?? '';
-  });
+  return value
+    .replace(/&nbsp;/gu, ' ')
+    .replace(/&amp;/gu, '&')
+    .replace(/&lt;/gu, '<')
+    .replace(/&gt;/gu, '>')
+    .replace(/&quot;/gu, '"')
+    .replace(/&#39;/gu, "'");
 }
-function isHtml(value: string): boolean {
-  return value === 'text/html' || value === 'application/xhtml+xml';
+
+async function decodePdf(body: Uint8Array): Promise<DecodedContent> {
+  const text = new TextDecoder('latin1', { fatal: false }).decode(body);
+  const streams = [...text.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/gu)].map((match) =>
+    match[1] ?? '',
+  );
+  const decoded = streams
+    .flatMap((stream) => [...stream.matchAll(/\(([^()]*)\)\s*Tj/gu)].map((match) => match[1] ?? ''))
+    .map((value) => value.replaceAll('\\(', '(').replaceAll('\\)', ')').replaceAll('\\\\', '\\'))
+    .join('\n')
+    .trim();
+  if (decoded === '') throw new ExtractionError('The PDF does not contain extractable text');
+  return { markdown: decoded, links: collectPlainLinks(decoded, 'https://example.invalid/') };
 }
-function isUseful(value: string): boolean {
-  return value.replace(/[^\p{L}\p{N}]/gu, '').length >= 40;
-}
+
 function ensureTrailingSlash(value: string): string {
   return value.endsWith('/') ? value : `${value}/`;
 }
