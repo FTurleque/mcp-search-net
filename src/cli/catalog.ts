@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import process from 'node:process';
 
 import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
+import { VerifyCatalog } from '../application/use-cases/verify-catalog.js';
 import type {
   CatalogFreshnessPolicy,
   CatalogSourceType,
@@ -16,7 +17,14 @@ const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
 const SYNC_STRATEGIES = ['manual', 'polling'] as const;
 
-type CatalogCommand = 'init' | 'status' | 'list-sources' | 'add-source' | 'ingest-text' | 'search';
+type CatalogCommand =
+  | 'init'
+  | 'status'
+  | 'list-sources'
+  | 'add-source'
+  | 'ingest-text'
+  | 'search'
+  | 'verify';
 
 interface CatalogCommandOptions {
   readonly command: CatalogCommand;
@@ -73,6 +81,13 @@ async function main(argv: readonly string[]): Promise<void> {
       return;
     }
 
+    if (options.command === 'verify') {
+      const result = await new VerifyCatalog(repository).execute();
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      if (result.status === 'FAILED') process.exitCode = 1;
+      return;
+    }
+
     if (options.command === 'list-sources') {
       const sources = await repository.listSources();
       process.stdout.write(`${JSON.stringify({ schemaVersion: '1.0', sources }, null, 2)}\n`);
@@ -113,7 +128,8 @@ function parseCommand(value: string | undefined): CatalogCommand {
     value === 'list-sources' ||
     value === 'add-source' ||
     value === 'ingest-text' ||
-    value === 'search'
+    value === 'search' ||
+    value === 'verify'
   ) {
     return value;
   }
@@ -219,6 +235,7 @@ function usage(): string {
     'Usage:',
     '  catalog init [--path <catalog.db>]',
     '  catalog status [--path <catalog.db>]',
+    '  catalog verify [--path <catalog.db>]',
     '  catalog list-sources [--path <catalog.db>]',
     '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
     '  catalog ingest-text --source-key <key> --file <file> --url <url> --title <title> [--path <catalog.db>] [--language <language>] [--mime-type <mime>] [--stable-key <key>] [--version-label <label>]',
