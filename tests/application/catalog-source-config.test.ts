@@ -42,6 +42,47 @@ sources:
         enabled: false,
       },
     ]);
+    expect(config.documents).toEqual([]);
+  });
+
+  it('parses declared documents', () => {
+    const config = parseCatalogSourceConfig(`
+schema_version: 1
+sources:
+  sample-docs:
+    display_name: Sample Documentation
+    base_url: https://example.test/docs/
+    language: en-US
+    documents:
+      - stable_key: intro
+        title: Introduction
+        url: https://example.test/docs/intro.html
+      - stable_key: disabled
+        title: Disabled
+        url: https://example.test/docs/disabled.html
+        enabled: false
+`);
+
+    expect(config.documents).toEqual([
+      {
+        sourceKey: 'sample-docs',
+        stableKey: 'intro',
+        title: 'Introduction',
+        url: 'https://example.test/docs/intro.html',
+        language: 'en-US',
+        mimeType: 'text/html',
+        enabled: true,
+      },
+      {
+        sourceKey: 'sample-docs',
+        stableKey: 'disabled',
+        title: 'Disabled',
+        url: 'https://example.test/docs/disabled.html',
+        language: 'en-US',
+        mimeType: 'text/html',
+        enabled: false,
+      },
+    ]);
   });
 
   it('rejects unsupported schema versions', () => {
@@ -60,7 +101,7 @@ schema_version: 1
 sources:
   bad:
     display_name: Bad
-    base_url: file:///tmp/docs
+    base_url: ftp://example.test/docs
 `),
     ).toThrow('base_url must be an HTTP(S) URL');
   });
