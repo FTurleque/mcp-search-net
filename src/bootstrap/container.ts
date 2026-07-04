@@ -76,6 +76,7 @@ export function createContainer(loaded: LoadedConfiguration) {
   const mcpServer = createMcpServer({
     searchWeb,
     fetchUrl,
+    catalogRepository: catalog,
     searchCatalogDocuments,
     config,
     logger,
