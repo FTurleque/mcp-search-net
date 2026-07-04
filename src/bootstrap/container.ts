@@ -17,7 +17,7 @@ import { StructuredLogger } from '../infrastructure/logging/structured-logger.js
 import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-security-policy.js';
 import { SearxngSearchProvider } from '../infrastructure/search/searxng-search-provider.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
-import { createMcpServer } from '../presentation/mcp/mcp-server.js';
+import { createMcpServer } from '../presentation/mcp/mcp-server-v2.js';
 
 export function createContainer(loaded: LoadedConfiguration) {
   const config = loaded.application;
