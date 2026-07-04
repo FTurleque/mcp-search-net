@@ -25,13 +25,13 @@ src/bootstrap       Composition des dépendances et cycle de vie STDIO uniquemen
 
 ### Règle d'import par couche
 
-| Couche             | Peut importer                 | Ne peut jamais importer                                                          |
-| ------------------ | ----------------------------- | -------------------------------------------------------------------------------- |
+| Couche             | Peut importer                 | Ne peut jamais importer                                                         |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------- |
 | `domain`           | Rien d'externe                | `infrastructure`, `presentation`, MCP SDK, SQLite, YAML, Zod, SearXNG, Crawl4AI |
-| `application`      | `domain`                      | `infrastructure`, MCP SDK, SQLite, HTTP, DNS                                     |
-| `infrastructure`   | `domain`, `application/ports` | `presentation`, `bootstrap`                                                      |
-| `presentation/mcp` | `domain`, `application`       | `infrastructure` directement (via use cases uniquement)                          |
-| `bootstrap`        | Tout                          | Point de composition uniquement                                                  |
+| `application`      | `domain`                      | `infrastructure`, MCP SDK, SQLite, HTTP, DNS                                    |
+| `infrastructure`   | `domain`, `application/ports` | `presentation`, `bootstrap`                                                     |
+| `presentation/mcp` | `domain`, `application`       | `infrastructure` directement (via use cases uniquement)                         |
+| `bootstrap`        | Tout                          | Point de composition uniquement                                                 |
 
 Vérification : `grep -r "from.*infrastructure" src/domain/` doit retourner vide.
 
@@ -122,16 +122,15 @@ docker compose config --quiet
 
 Les tests ordinaires passent sans accès réseau, sans Docker, sans variable d'environnement spéciale et dans n'importe quel ordre.
 
-| Dossier                  | Contenu                                                    |
-| ------------------------ | ---------------------------------------------------------- |
-| `tests/domain/`          | Règles déterministes pures, sans mock                      |
-| `tests/application/`     | Use cases avec doubles de test pour chaque port            |
-| `tests/infrastructure/`  | Providers HTTP, SQLite `:memory:`, résolveurs DNS de test  |
-| `tests/presentation/`    | Mapping schéma Zod → use case → réponse MCP                |
-| `tests/security/`        | Couverture SSRF, bloquage URL, DNS rebinding               |
-| `tests/e2e/`             | Tests live gatedés par `RUN_LIVE_SEARXNG=1` ou `RUN_LIVE_CRAWL4AI=1` |
+| Dossier                 | Contenu                                                              |
+| ----------------------- | -------------------------------------------------------------------- |
+| `tests/domain/`         | Règles déterministes pures, sans mock                                |
+| `tests/application/`    | Use cases avec doubles de test pour chaque port                      |
+| `tests/infrastructure/` | Providers HTTP, SQLite `:memory:`, résolveurs DNS de test            |
+| `tests/presentation/`   | Mapping schéma Zod → use case → réponse MCP                          |
+| `tests/security/`       | Couverture SSRF, bloquage URL, DNS rebinding                         |
+| `tests/e2e/`            | Tests live gatedés par `RUN_LIVE_SEARXNG=1` ou `RUN_LIVE_CRAWL4AI=1` |
 
 ## Gestion des erreurs
 
 Les erreurs attendues se mappent vers des codes d'erreur publics stables (`SEARCH_PROVIDER_UNAVAILABLE`, `URL_BLOCKED`, etc.) définis dans `src/domain/errors/`. Les détails inattendus (messages d'exception, stack traces, corps provider) appartiennent uniquement aux logs structurés vers `stderr`. Ne jamais exposer de message d'erreur infrastructure dans une réponse MCP cliente.
-
