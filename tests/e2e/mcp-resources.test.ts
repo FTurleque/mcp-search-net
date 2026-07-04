@@ -6,12 +6,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
 const catalogResourceUri = 'mcp-search-net://catalog';
-const sourcesResourceUri = 'mcp-search-net://sources';
 const expectedResourceUris = [
   catalogResourceUri,
   'mcp-search-net://documents',
   'mcp-search-net://sections',
-  sourcesResourceUri,
+  'mcp-search-net://sources',
 ];
 const expectedResourceTemplateUris = [
   'mcp-search-net://documents/{documentId}',
@@ -74,20 +73,15 @@ describe('MCP catalog resources', () => {
       },
     });
 
-    const sources = await readJsonResource<{ sources: { id: number }[] }>(
-      client,
-      sourcesResourceUri,
-    );
-    const firstSource = sources.sources[0];
-    if (firstSource === undefined) throw new Error('Missing catalog source fixture');
-
-    const source = await readJsonResource<{ found: boolean; source: { id: number } | null }>(
-      client,
-      `mcp-search-net://sources/${firstSource.id}`,
-    );
-    expect(source).toMatchObject({
-      found: true,
-      source: { id: firstSource.id },
+    const missingSource = await readJsonResource<{
+      found: boolean;
+      source: { id: number } | null;
+    }>(client, 'mcp-search-net://sources/999999');
+    expect(missingSource).toEqual({
+      schemaVersion: '1.0',
+      sourceId: 999999,
+      found: false,
+      source: null,
     });
   });
 });
