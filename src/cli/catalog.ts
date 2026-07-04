@@ -43,6 +43,7 @@ interface CatalogCommandOptions {
   readonly sync?: {
     readonly dryRun: boolean;
     readonly sourceKey?: string;
+    readonly filePath?: string;
   };
   readonly text?: {
     readonly sourceKey: string;
@@ -86,8 +87,13 @@ async function main(argv: readonly string[]): Promise<void> {
     if (options.command === 'sync') {
       if (options.sync === undefined) throw new Error(usage());
       if (!options.sync.dryRun) throw new Error('catalog sync currently requires --dry-run');
+      const config =
+        options.sync.filePath === undefined
+          ? undefined
+          : await loadCatalogSourceConfig(options.sync.filePath);
       const result = await new PlanCatalogSync(repository, clock).execute({
         ...(options.sync.sourceKey === undefined ? {} : { sourceKey: options.sync.sourceKey }),
+        ...(config === undefined ? {} : { documents: config.documents }),
       });
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;
@@ -192,12 +198,14 @@ function parseLoadSources(argv: readonly string[], path: string): CatalogCommand
 
 function parseSync(argv: readonly string[], path: string): CatalogCommandOptions {
   const sourceKey = getOption(argv, '--source-key') ?? getOption(argv, '--source');
+  const filePath = getOption(argv, '--file');
   return {
     command: 'sync',
     path: resolve(path),
     sync: {
       dryRun: argv.includes('--dry-run'),
       ...(sourceKey === undefined ? {} : { sourceKey }),
+      ...(filePath === undefined ? {} : { filePath: resolve(filePath) }),
     },
   };
 }
@@ -305,7 +313,7 @@ function usage(): string {
     '  catalog rebuild-index [--path <catalog.db>]',
     '  catalog list-sources [--path <catalog.db>]',
     '  catalog load-sources [--path <catalog.db>] [--file <catalog-sources.yml>]',
-    '  catalog sync --dry-run [--path <catalog.db>] [--source-key <key>]',
+    '  catalog sync --dry-run [--path <catalog.db>] [--source-key <key>] [--file <catalog-sources.yml>]',
     '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
     '  catalog ingest-text --source-key <key> --file <file> --url <url> --title <title> [--path <catalog.db>] [--language <language>] [--mime-type <mime>] [--stable-key <key>] [--version-label <label>]',
     '  catalog search --query <text> [--path <catalog.db>] [--source-key <key>] [--language <language>] [--limit <n>]',
