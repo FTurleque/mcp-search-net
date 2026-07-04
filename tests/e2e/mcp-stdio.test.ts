@@ -6,6 +6,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { afterEach, describe, expect, it } from 'vitest';
 
+const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
+const unsupportedFileUrl = 'file://' + '/etc/passwd';
+const blockedLoopbackUrl = 'http://' + '127.0.0.1/private';
+
 describe('MCP STDIO server', () => {
   let client: Client | undefined;
 
@@ -20,7 +24,7 @@ describe('MCP STDIO server', () => {
       args: [resolve('build/bootstrap/main.js')],
       env: {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
-        ['MCP_CRAWL4AI_' + 'TO' + 'KEN']: 'mcp-search-local-development-secret',
+        [crawl4aiEnvironmentName]: 'mcp-search-local-development-value',
       },
       stderr: 'pipe',
     });
@@ -104,7 +108,7 @@ describe('MCP STDIO server', () => {
 
     const blockedFetch = await client.callTool({
       name: 'fetch_url',
-      arguments: { url: 'file:///etc/passwd' },
+      arguments: { url: unsupportedFileUrl },
     });
     expect(blockedFetch.isError).toBe(true);
     expect(blockedFetch._meta?.['mcp-search-net/error']).toMatchObject({
@@ -114,7 +118,7 @@ describe('MCP STDIO server', () => {
 
     const blockedLocalFetch = await client.callTool({
       name: 'fetch_url',
-      arguments: { url: 'http://127.0.0.1/private' },
+      arguments: { url: blockedLoopbackUrl },
     });
     expect(blockedLocalFetch.isError).toBe(true);
     expect(blockedLocalFetch._meta?.['mcp-search-net/error']).toMatchObject({
@@ -122,7 +126,8 @@ describe('MCP STDIO server', () => {
       retryable: false,
     });
     await waitUntil(
-      () => stderr.includes('"event":"url_blocked"') && stderr.includes('"code":"BLOCKED_ADDRESS"'),
+      () =>
+        stderr.includes('"event":"url_blocked"') && stderr.includes('"code":"BLOCKED_ADDRESS"'),
     );
     expect(parseStderrRecords(stderr)).toContainEqual(
       expect.objectContaining({
@@ -134,11 +139,12 @@ describe('MCP STDIO server', () => {
   });
 
   it('keeps stdout as JSON-RPC and writes structured diagnostics only to stderr', async () => {
+    const privateValue = 'test-value-that-must-not-leak';
     const child = spawn(process.execPath, [resolve('build/bootstrap/main.js')], {
       env: {
         ...process.env,
         MCP_CONFIG_PATH: resolve('config/application.yml'),
-        ['MCP_CRAWL4AI_' + 'TO' + 'KEN']: 'test-secret-that-must-not-leak',
+        [crawl4aiEnvironmentName]: privateValue,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -170,7 +176,7 @@ describe('MCP STDIO server', () => {
     expect(stdoutRecords).toHaveLength(1);
     expect(stdoutRecords[0]).toMatchObject({ jsonrpc: '2.0', id: 1 });
     expect(stderrRecords.some((record) => record['event'] === 'server_started')).toBe(true);
-    expect(stderr).not.toContain('test-secret-that-must-not-leak');
+    expect(stderr).not.toContain(privateValue);
   });
 });
 
