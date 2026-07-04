@@ -34,8 +34,8 @@ export interface FetchedContent {
   readonly contentHash: string;
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly links: readonly string[];
-  readonly redirectChain: readonly ContentRedirect[];
-  readonly redirectedPermanently: boolean;
+  readonly redirectChain?: readonly ContentRedirect[];
+  readonly redirectedPermanently?: boolean;
 }
 
 export interface NotModifiedContent {
