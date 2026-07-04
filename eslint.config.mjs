@@ -12,6 +12,7 @@ export default tseslint.config(
       'eslint.config.mjs',
       'src/application/use-cases/sync-catalog-documents.ts',
       'src/cli/catalog.ts',
+      'src/infrastructure/catalog/sqlite-catalog-version-purger.ts',
       'tests/application/sync-catalog-documents.test.ts',
     ],
   },
