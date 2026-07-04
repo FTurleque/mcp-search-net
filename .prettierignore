@@ -6,8 +6,12 @@ package-lock.json
 
 catalog-migrations/*.sql
 
+src/application/use-cases/load-catalog-sources.ts
+src/cli/catalog-source-config.ts
 src/infrastructure/catalog/sqlite-catalog-repository.ts
 src/presentation/mcp/mcp-server-v2.ts
+tests/application/catalog-source-config.test.ts
+tests/application/load-catalog-sources.test.ts
 tests/e2e/mcp-stdio.test.ts
 tests/infrastructure/sqlite-catalog-fts-index.test.ts
 
