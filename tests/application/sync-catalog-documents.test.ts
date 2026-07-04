@@ -8,6 +8,7 @@ import type {
   CatalogSource,
   CatalogSyncRun,
   CatalogSyncRunInput,
+  DocumentSection,
   DocumentSectionInput,
   DocumentVersion,
   DocumentVersionInput,
@@ -27,7 +28,8 @@ class CatalogSyncRepositoryStub {
     return this.sources;
   }
 
-  public async getDocumentByPublicId(_publicId: string): Promise<CatalogDocument | undefined> {
+  public async getDocumentByPublicId(publicId: string): Promise<CatalogDocument | undefined> {
+    void publicId;
     return undefined;
   }
 
@@ -57,11 +59,15 @@ class CatalogSyncRepositoryStub {
   }
 
   public async replaceDocumentSections(
-    _documentVersionId: number,
+    documentVersionId: number,
     sections: readonly DocumentSectionInput[],
-  ): Promise<readonly { readonly id: number }[]> {
+  ): Promise<readonly DocumentSection[]> {
     this.sections.push([...sections]);
-    return sections.map((_, index) => ({ id: index + 1 }));
+    return sections.map((section, index) => ({
+      id: index + 1,
+      documentVersionId,
+      ...section,
+    }));
   }
 
   public async addCatalogSyncRun(input: CatalogSyncRunInput): Promise<CatalogSyncRun> {
