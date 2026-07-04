@@ -133,3 +133,7 @@ export interface CatalogDocumentSearchResult {
   readonly snippet: string;
   readonly score: number;
 }
+
+export interface CatalogSearchIndexRebuildResult {
+  readonly indexedSections: number;
+}
