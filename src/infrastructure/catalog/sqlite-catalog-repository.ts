@@ -451,7 +451,17 @@ export class SqliteCatalogRepository implements CatalogRepository {
       .prepare<SearchCurrentDocumentSectionsFtsParams, CatalogDocumentSearchRow>(
         SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
       )
-      .all(pattern, pattern, pattern, ftsQuery, sourceKey, sourceKey, language, language, limit);
+      .all(
+        pattern,
+        pattern,
+        pattern,
+        ftsQuery,
+        sourceKey,
+        sourceKey,
+        language,
+        language,
+        limit,
+      );
   }
 
   private searchDocumentsWithLike(
