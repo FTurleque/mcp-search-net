@@ -6,6 +6,7 @@ import type {
   ContentFetcher,
 } from '../../src/application/ports/content-fetcher.js';
 import { SyncCatalogDocuments } from '../../src/application/use-cases/sync-catalog-documents.js';
+import { HttpError } from '../../src/domain/errors/domain-errors.js';
 import type {
   CatalogDocument,
   CatalogDocumentInput,
@@ -107,7 +108,7 @@ class ContentFetcherStub implements ContentFetcher {
   public readonly requests: ContentFetchRequest[] = [];
   public readonly contexts: Array<ContentFetchContext | undefined> = [];
 
-  public constructor(private readonly result: ContentFetchResult = fetchedContent()) {}
+  public constructor(private readonly result: ContentFetchResult | Error = fetchedContent()) {}
 
   public async fetch(
     request: ContentFetchRequest,
@@ -115,6 +116,7 @@ class ContentFetcherStub implements ContentFetcher {
   ): Promise<ContentFetchResult> {
     this.requests.push(request);
     this.contexts.push(context);
+    if (this.result instanceof Error) throw this.result;
     return this.result;
   }
 }
@@ -261,6 +263,54 @@ describe('SyncCatalogDocuments', () => {
       ],
     });
     expect(repository.upserts).toHaveLength(0);
+    expect(repository.versions).toHaveLength(0);
+    expect(repository.sections).toHaveLength(0);
+  });
+
+  it('marks an existing document stale without replacing versions when it returns 404', async () => {
+    const repository = new CatalogSyncRepositoryStub([enabledSource], existingDocument, currentVersion);
+    const fetcher = new ContentFetcherStub(new HttpError('Remote server returned HTTP 404', 404));
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument],
+      limit: 1,
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(result).toMatchObject({
+      checkedCount: 1,
+      addedCount: 0,
+      updatedCount: 1,
+      unchangedCount: 0,
+      failedCount: 0,
+      syncRun: {
+        status: 'SUCCESS',
+        documentsUpdated: 1,
+        documentsFailed: 0,
+      },
+      documents: [
+        {
+          sourceKey: 'enabled-docs',
+          stableKey: 'guide',
+          status: 'updated',
+          error: 'HTTP_404_STALE',
+          document: {
+            id: existingDocument.id,
+            status: 'STALE',
+            currentVersionId: currentVersion.id,
+          },
+        },
+      ],
+    });
+    expect(repository.upserts).toHaveLength(1);
+    expect(repository.upserts[0]).toMatchObject({
+      publicId: existingDocument.publicId,
+      canonicalUrl: existingDocument.canonicalUrl,
+      status: 'STALE',
+    });
     expect(repository.versions).toHaveLength(0);
     expect(repository.sections).toHaveLength(0);
   });
