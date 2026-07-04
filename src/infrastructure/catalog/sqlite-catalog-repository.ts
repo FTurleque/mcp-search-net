@@ -402,7 +402,9 @@ export class SqliteCatalogRepository implements CatalogRepository {
           ? []
           : this.searchDocumentsWithFts(ftsQuery, pattern, sourceKey, language, limit);
       const rows =
-        ftsRows.length > 0 ? ftsRows : this.searchDocumentsWithLike(pattern, sourceKey, language, limit);
+        ftsRows.length > 0
+          ? ftsRows
+          : this.searchDocumentsWithLike(pattern, sourceKey, language, limit);
 
       return rows.map((row) => toCatalogDocumentSearchResult(row, term));
     });
@@ -449,17 +451,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
       .prepare<SearchCurrentDocumentSectionsFtsParams, CatalogDocumentSearchRow>(
         SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
       )
-      .all(
-        pattern,
-        pattern,
-        pattern,
-        ftsQuery,
-        sourceKey,
-        sourceKey,
-        language,
-        language,
-        limit,
-      );
+      .all(pattern, pattern, pattern, ftsQuery, sourceKey, sourceKey, language, language, limit);
   }
 
   private searchDocumentsWithLike(
