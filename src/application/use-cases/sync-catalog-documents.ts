@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
-import type { ContentFetcher } from '../ports/content-fetcher.js';
+import type { CacheValidators } from '../ports/cache-repository.js';
+import type { ContentFetchContext, ContentFetcher } from '../ports/content-fetcher.js';
 import type { CatalogRepository } from '../ports/catalog-repository.js';
 import type { Clock } from '../ports/clock.js';
 import type { CatalogSyncDocumentInput } from './plan-catalog-sync.js';
@@ -8,6 +9,7 @@ import type {
   CatalogDocument,
   CatalogSyncRun,
   DocumentSectionInput,
+  DocumentVersion,
 } from '../../domain/models/catalog.js';
 import type { FetchedContent } from '../../domain/models/content.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
@@ -47,17 +49,20 @@ export interface SyncCatalogDocumentsOutput {
   readonly documents: readonly SyncedCatalogDocumentEntry[];
 }
 
+type SyncCatalogRepository = Pick<
+  CatalogRepository,
+  | 'listSources'
+  | 'getDocumentByPublicId'
+  | 'getCurrentDocumentVersion'
+  | 'upsertDocument'
+  | 'addDocumentVersion'
+  | 'replaceDocumentSections'
+  | 'addCatalogSyncRun'
+>;
+
 export class SyncCatalogDocuments {
   public constructor(
-    private readonly repository: Pick<
-      CatalogRepository,
-      | 'listSources'
-      | 'getDocumentByPublicId'
-      | 'upsertDocument'
-      | 'addDocumentVersion'
-      | 'replaceDocumentSections'
-      | 'addCatalogSyncRun'
-    >,
+    private readonly repository: SyncCatalogRepository,
     private readonly fetcher: ContentFetcher,
     private readonly clock: Clock,
   ) {}
@@ -91,14 +96,18 @@ export class SyncCatalogDocuments {
 
       const publicId = publicDocumentId(document.sourceKey, document.stableKey);
       const existingDocument = await this.repository.getDocumentByPublicId(publicId);
+      const currentVersion = await this.getCurrentVersion(existingDocument);
       try {
-        const fetched = await this.fetcher.fetch({
-          url: WebUrl.create(document.url),
-          renderMode: 'auto',
-          timeoutMs: options.timeoutMs,
-          maxResponseBytes: options.maxResponseBytes,
-          maxRedirects: options.maxRedirects,
-        });
+        const fetched = await this.fetcher.fetch(
+          {
+            url: WebUrl.create(document.url),
+            renderMode: 'auto',
+            timeoutMs: options.timeoutMs,
+            maxResponseBytes: options.maxResponseBytes,
+            maxRedirects: options.maxRedirects,
+          },
+          createFetchContext(currentVersion),
+        );
         if ('notModified' in fetched) {
           entries.push({
             sourceKey: document.sourceKey,
@@ -121,6 +130,19 @@ export class SyncCatalogDocuments {
           language: document.language,
           status: 'ACTIVE',
         });
+
+        if (currentVersion?.contentHash === fetched.contentHash) {
+          entries.push({
+            sourceKey: document.sourceKey,
+            stableKey: document.stableKey,
+            title: fetched.title ?? document.title,
+            url: document.url,
+            status: 'unchanged',
+            document: storedDocument,
+          });
+          continue;
+        }
+
         const version = await this.repository.addDocumentVersion({
           documentId: storedDocument.id,
           contentHash: fetched.contentHash,
@@ -197,6 +219,28 @@ export class SyncCatalogDocuments {
       documents: entries,
     };
   }
+
+  private async getCurrentVersion(
+    document: CatalogDocument | undefined,
+  ): Promise<DocumentVersion | undefined> {
+    if (document === undefined) return undefined;
+    if (this.repository.getCurrentDocumentVersion === undefined) return undefined;
+    return this.repository.getCurrentDocumentVersion(document.id);
+  }
+}
+
+function createFetchContext(version: DocumentVersion | undefined): ContentFetchContext | undefined {
+  if (version === undefined) return undefined;
+  const cacheValidators = createCacheValidators(version);
+  return Object.keys(cacheValidators).length === 0 ? undefined : { cacheValidators };
+}
+
+function createCacheValidators(version: DocumentVersion): CacheValidators {
+  return {
+    contentHash: version.contentHash,
+    ...(version.etag === undefined ? {} : { etag: version.etag }),
+    ...(version.lastModified === undefined ? {} : { lastModified: version.lastModified }),
+  };
 }
 
 function createSections(title: string, fetched: FetchedContent): readonly DocumentSectionInput[] {
