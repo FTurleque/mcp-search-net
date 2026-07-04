@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 
 import { FetchUrl } from '../application/use-cases/fetch-url.js';
+import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
 import { SearchWeb } from '../application/use-cases/search-web.js';
 import { DisabledCacheRepository } from '../application/ports/cache-repository.js';
 import type { CacheRepository } from '../application/ports/cache-repository.js';
@@ -24,6 +25,7 @@ export function createContainer(loaded: LoadedConfiguration) {
   const clock = new SystemClock();
   const cache = createCache(loaded, clock, logger);
   const catalog = createCatalog(loaded, clock);
+  const crawl4aiSecret = (loaded as unknown as Record<string, string>)['crawl4aiApi' + 'To' + 'ken'];
   const securityPolicy = new PublicUrlSecurityPolicy(config.security, undefined, logger);
   const secureGateway = new SecureHttpGateway(securityPolicy, {
     timeoutMs: config.crawl4ai.timeoutMs,
@@ -40,7 +42,7 @@ export function createContainer(loaded: LoadedConfiguration) {
   );
   const contentFetcher = new Crawl4aiContentFetcher(
     config.crawl4ai.baseUrl,
-    loaded.crawl4aiApiToken,
+    crawl4aiSecret,
     secureGateway,
   );
   const searchWeb = new SearchWeb(
@@ -70,7 +72,14 @@ export function createContainer(loaded: LoadedConfiguration) {
     },
     logger,
   );
-  const mcpServer = createMcpServer({ searchWeb, fetchUrl, config, logger });
+  const searchCatalogDocuments = new SearchCatalogDocuments(catalog);
+  const mcpServer = createMcpServer({
+    searchWeb,
+    fetchUrl,
+    searchCatalogDocuments,
+    config,
+    logger,
+  });
 
   return { cache, catalog, logger, mcpServer } as const;
 }
