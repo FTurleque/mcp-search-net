@@ -474,9 +474,9 @@ function toCatalogDocumentSearchResult(
 
 function createSnippet(content: string, term: string): string {
   const normalizedContent = content.toLocaleLowerCase();
-  const index = normalizedContent.indexOf(term);
-  if (index < 0) return content.slice(0, SEARCH_SNIPPET_RADIUS * 2).trim();
+  if (!normalizedContent.includes(term)) return content.slice(0, SEARCH_SNIPPET_RADIUS * 2).trim();
 
+  const index = normalizedContent.indexOf(term);
   const start = Math.max(0, index - SEARCH_SNIPPET_RADIUS);
   const end = Math.min(content.length, index + term.length + SEARCH_SNIPPET_RADIUS);
   const prefix = start > 0 ? '…' : '';
