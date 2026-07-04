@@ -12,6 +12,9 @@ import type {
   CatalogSearchIndexRebuildResult,
   CatalogSource,
   CatalogSourceType,
+  CatalogSyncRun,
+  CatalogSyncRunInput,
+  CatalogSyncRunStatus,
   CatalogSyncStrategy,
   DocumentSection,
   DocumentSectionInput,
@@ -25,12 +28,14 @@ import { CatalogMigrationRunner } from './catalog-migration-runner.js';
 import type {
   CatalogDocumentRow,
   CatalogSourceRow,
+  CatalogSyncRunRow,
   DocumentSectionRow,
   DocumentVersionRow,
 } from './catalog-row-mappers.js';
 import {
   toCatalogDocument,
   toCatalogSource,
+  toCatalogSyncRun,
   toDocumentSection,
   toDocumentVersion,
 } from './catalog-row-mappers.js';
@@ -60,6 +65,16 @@ import {
 const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SEARCH_LIMIT = 50;
 const SEARCH_SNIPPET_RADIUS = 80;
+
+const INSERT_CATALOG_SYNC_RUN_SQL = `
+  INSERT INTO sync_runs (
+    source_id, started_at, completed_at, status,
+    documents_checked, documents_added, documents_updated, documents_unchanged,
+    documents_failed, error_summary
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`;
+
+const SELECT_CATALOG_SYNC_RUN_BY_ID_SQL = 'SELECT * FROM sync_runs WHERE id = ?';
 
 type InsertCatalogSourceParams = [
   string,
@@ -114,6 +129,19 @@ type InsertDocumentSectionParams = [
   string,
   number,
   number | null,
+];
+
+type InsertCatalogSyncRunParams = [
+  number | null,
+  number,
+  number | null,
+  CatalogSyncRunStatus,
+  number,
+  number,
+  number,
+  number,
+  number,
+  string | null,
 ];
 
 type SearchCurrentDocumentSectionsParams = [
@@ -382,6 +410,30 @@ export class SqliteCatalogRepository implements CatalogRepository {
       });
 
       return transaction();
+    });
+  }
+
+  public addCatalogSyncRun(input: CatalogSyncRunInput): Promise<CatalogSyncRun> {
+    return this.asPromise(() => {
+      const info = this.database
+        .prepare<InsertCatalogSyncRunParams>(INSERT_CATALOG_SYNC_RUN_SQL)
+        .run(
+          input.sourceId ?? null,
+          input.startedAt.getTime(),
+          input.completedAt?.getTime() ?? null,
+          input.status,
+          input.documentsChecked,
+          input.documentsAdded,
+          input.documentsUpdated,
+          input.documentsUnchanged,
+          input.documentsFailed,
+          input.errorSummary ?? null,
+        );
+      const row = this.database
+        .prepare<[number], CatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
+        .get(Number(info.lastInsertRowid));
+      if (row === undefined) throw new Error('CATALOG_SYNC_RUN_INSERT_FAILED');
+      return toCatalogSyncRun(row);
     });
   }
 
