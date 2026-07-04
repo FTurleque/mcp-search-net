@@ -43,6 +43,41 @@ describe('SecureHttpGateway', () => {
     ).rejects.toMatchObject({ code: 'TOO_MANY_REDIRECTS' });
   });
 
+  it('records permanent and temporary redirects in the returned resource', async () => {
+    const server = await listen((request, response) => {
+      if (request.url === '/old') {
+        response.writeHead(301, { location: '/temporary' });
+        response.end();
+        return;
+      }
+      if (request.url === '/temporary') {
+        response.writeHead(302, { location: '/final' });
+        response.end();
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end('final content');
+    });
+
+    const resource = await createGateway(policyFor(server.port)).download(`${server.url}/old`);
+
+    expect(resource.finalUrl).toBe(`${server.url}/final`);
+    expect(resource.redirectChain).toEqual([
+      {
+        fromUrl: `${server.url}/old`,
+        toUrl: `${server.url}/temporary`,
+        status: 301,
+        permanent: true,
+      },
+      {
+        fromUrl: `${server.url}/temporary`,
+        toUrl: `${server.url}/final`,
+        status: 302,
+        permanent: false,
+      },
+    ]);
+  });
+
   it('interrupts a response before it exceeds the byte budget', async () => {
     const server = await listen((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/plain' });
