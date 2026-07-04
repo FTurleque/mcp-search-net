@@ -33,13 +33,9 @@ export interface SearchCatalogDocumentsItem {
 }
 
 export class SearchCatalogDocuments {
-  public constructor(
-    private readonly repository: Pick<CatalogRepository, 'searchDocuments'>,
-  ) {}
+  public constructor(private readonly repository: Pick<CatalogRepository, 'searchDocuments'>) {}
 
-  public async execute(
-    input: SearchCatalogDocumentsInput,
-  ): Promise<SearchCatalogDocumentsOutput> {
+  public async execute(input: SearchCatalogDocumentsInput): Promise<SearchCatalogDocumentsOutput> {
     const query = input.query.trim();
     if (query.length === 0) throw new Error('Catalog search query must not be empty');
 
@@ -69,9 +65,7 @@ function toOutputItem(result: CatalogDocumentSearchResult): SearchCatalogDocumen
     url: result.document.canonicalUrl,
     language: result.document.language,
     ...(result.section.heading === undefined ? {} : { heading: result.section.heading }),
-    ...(result.section.headingPath === undefined
-      ? {}
-      : { headingPath: result.section.headingPath }),
+    ...(result.section.headingPath === undefined ? {} : { headingPath: result.section.headingPath }),
     ...(result.section.anchor === undefined ? {} : { anchor: result.section.anchor }),
     snippet: result.snippet,
     score: result.score,
