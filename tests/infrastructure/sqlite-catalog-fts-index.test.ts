@@ -5,7 +5,9 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Clock } from '../../src/application/ports/clock.js';
-import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import {
+  SqliteCatalogRepository,
+} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 class FixedClock implements Clock {
   public now(): Date {
@@ -26,7 +28,10 @@ describe('SqliteCatalogRepository FTS index', () => {
 
   it('rebuilds the FTS index from current active document sections', async () => {
     directory = mkdtempSync(join(tmpdir(), 'mcp-search-catalog-fts-'));
-    repository = new SqliteCatalogRepository(join(directory, 'catalog.db'), new FixedClock());
+    repository = new SqliteCatalogRepository(
+      join(directory, 'catalog.db'),
+      new FixedClock(),
+    );
 
     const source = await repository.addSource({
       sourceKey: 'sample-docs',
