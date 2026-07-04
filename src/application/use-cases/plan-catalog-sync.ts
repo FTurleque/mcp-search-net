@@ -1,11 +1,25 @@
 import type { CatalogSyncRun } from '../../domain/models/catalog.js';
+import type { CatalogSourceDocumentConfig } from '../../cli/catalog-source-config.js';
 import type { CatalogRepository } from '../ports/catalog-repository.js';
 import type { Clock } from '../ports/clock.js';
 
 export type CatalogSyncPlanEntryStatus = 'planned' | 'skipped';
+export type CatalogSyncDocumentPlanStatus = 'planned' | 'skipped';
 
 export interface PlanCatalogSyncInput {
   readonly sourceKey?: string;
+  readonly documents?: readonly CatalogSourceDocumentConfig[];
+}
+
+export interface CatalogSyncDocumentPlanEntry {
+  readonly stableKey: string;
+  readonly title: string;
+  readonly url: string;
+  readonly language: string;
+  readonly mimeType: string;
+  readonly enabled: boolean;
+  readonly status: CatalogSyncDocumentPlanStatus;
+  readonly reason?: 'DISABLED';
 }
 
 export interface CatalogSyncPlanEntry {
@@ -19,6 +33,8 @@ export interface CatalogSyncPlanEntry {
   readonly status: CatalogSyncPlanEntryStatus;
   readonly reason?: 'DISABLED';
   readonly currentDocumentCount: number;
+  readonly configuredDocumentCount: number;
+  readonly documents: readonly CatalogSyncDocumentPlanEntry[];
 }
 
 export interface PlanCatalogSyncOutput {
@@ -27,6 +43,8 @@ export interface PlanCatalogSyncOutput {
   readonly syncRun: CatalogSyncRun;
   readonly plannedCount: number;
   readonly skippedCount: number;
+  readonly plannedDocumentCount: number;
+  readonly skippedDocumentCount: number;
   readonly sources: readonly CatalogSyncPlanEntry[];
 }
 
@@ -53,8 +71,36 @@ export class PlanCatalogSync {
       throw new Error(`Catalog source ${input.sourceKey} was not found`);
     }
 
+    const configuredDocuments = input.documents ?? [];
     const entries = selectedSources.map((source): CatalogSyncPlanEntry => {
       const currentDocumentCount = documents.filter((document) => document.sourceId === source.id).length;
+      const documentEntries = configuredDocuments
+        .filter((document) => document.sourceKey === source.sourceKey)
+        .map((document): CatalogSyncDocumentPlanEntry => {
+          if (!document.enabled) {
+            return {
+              stableKey: document.stableKey,
+              title: document.title,
+              url: document.url,
+              language: document.language,
+              mimeType: document.mimeType,
+              enabled: false,
+              status: 'skipped',
+              reason: 'DISABLED',
+            };
+          }
+
+          return {
+            stableKey: document.stableKey,
+            title: document.title,
+            url: document.url,
+            language: document.language,
+            mimeType: document.mimeType,
+            enabled: true,
+            status: source.enabled ? 'planned' : 'skipped',
+            ...(source.enabled ? {} : { reason: 'DISABLED' as const }),
+          };
+        });
       if (!source.enabled) {
         return {
           sourceKey: source.sourceKey,
@@ -67,6 +113,8 @@ export class PlanCatalogSync {
           status: 'skipped',
           reason: 'DISABLED',
           currentDocumentCount,
+          configuredDocumentCount: documentEntries.length,
+          documents: documentEntries,
         };
       }
 
@@ -80,11 +128,15 @@ export class PlanCatalogSync {
         enabled: true,
         status: 'planned',
         currentDocumentCount,
+        configuredDocumentCount: documentEntries.length,
+        documents: documentEntries,
       };
     });
 
     const plannedCount = entries.filter((entry) => entry.status === 'planned').length;
     const skippedCount = entries.filter((entry) => entry.status === 'skipped').length;
+    const plannedDocumentCount = entries.flatMap((entry) => entry.documents).filter((entry) => entry.status === 'planned').length;
+    const skippedDocumentCount = entries.flatMap((entry) => entry.documents).filter((entry) => entry.status === 'skipped').length;
     const now = this.clock.now();
     const syncRun = await this.repository.addCatalogSyncRun({
       ...(selectedSources.length === 1 && selectedSources[0] !== undefined
@@ -93,7 +145,7 @@ export class PlanCatalogSync {
       startedAt: now,
       completedAt: now,
       status: 'SUCCESS',
-      documentsChecked: 0,
+      documentsChecked: plannedDocumentCount,
       documentsAdded: 0,
       documentsUpdated: 0,
       documentsUnchanged: 0,
@@ -106,6 +158,8 @@ export class PlanCatalogSync {
       syncRun,
       plannedCount,
       skippedCount,
+      plannedDocumentCount,
+      skippedDocumentCount,
       sources: entries,
     };
   }
