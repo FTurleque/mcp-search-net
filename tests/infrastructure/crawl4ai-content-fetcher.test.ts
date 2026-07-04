@@ -19,6 +19,7 @@ describe('Crawl4aiContentFetcher', () => {
         body: new TextEncoder().encode(
           '<html><head><title>Docs</title><link rel="canonical" href="/canonical"></head><body><nav>Menu</nav><h1>Guide</h1><p>Useful documentation content with enough text to extract safely.</p><script>steal()</script><a href="/next?utm_source=x">Next</a></body></html>',
         ),
+        redirectChain: [],
       })),
     } as unknown as SecureHttpGateway;
     const crawl = vi.fn() as unknown as typeof fetch;
@@ -31,6 +32,7 @@ describe('Crawl4aiContentFetcher', () => {
       canonicalUrl: 'https://example.com/canonical',
       contentType: 'text/html',
       extractionMode: 'static',
+      redirectedPermanently: false,
     });
     expect(result.markdown).toContain('# Guide');
     expect(result.markdown).not.toContain('steal');
@@ -38,6 +40,41 @@ describe('Crawl4aiContentFetcher', () => {
     expect(result.contentHash).toMatch(/^[a-f0-9]{64}$/u);
     expect(result.documentSections.map((section) => section.heading)).toContain('Guide');
     expect(crawl).not.toHaveBeenCalled();
+  });
+
+  it('propagates permanent redirect metadata from the gateway', async () => {
+    const redirectChain = [
+      {
+        fromUrl: 'https://example.com/docs',
+        toUrl: 'https://www.example.com/docs',
+        status: 301,
+        permanent: true,
+      },
+    ];
+    const gateway = {
+      download: vi.fn(async () => ({
+        requestedUrl: 'https://example.com/docs',
+        finalUrl: 'https://www.example.com/docs',
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+        body: new TextEncoder().encode(
+          '<html><head><title>Moved Docs</title></head><body><h1>Moved</h1><p>Useful documentation content after a permanent redirect.</p></body></html>',
+        ),
+        redirectChain,
+      })),
+    } as unknown as SecureHttpGateway;
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
+
+    const result = await fetcher.fetch(fetchRequest('https://example.com/docs', 'static'));
+
+    if ('notModified' in result) throw new Error('Expected fetched content');
+    expect(result).toMatchObject({
+      finalUrl: 'https://www.example.com/docs',
+      canonicalUrl: 'https://www.example.com/docs',
+      redirectChain,
+      redirectedPermanently: true,
+      metadata: { redirectChain },
+    });
   });
 
   it.each([
@@ -138,6 +175,7 @@ describe('Crawl4aiContentFetcher', () => {
       status: 304,
       headers: {},
       body: new Uint8Array(),
+      redirectChain: [],
     }));
     const gateway = { download } as unknown as SecureHttpGateway;
     const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
