@@ -72,7 +72,8 @@ interface CatalogStatusOutput {
 
 async function main(argv: readonly string[]): Promise<void> {
   const options = parseArguments(argv);
-  const repository = new SqliteCatalogRepository(options.path, new SystemClock());
+  const clock = new SystemClock();
+  const repository = new SqliteCatalogRepository(options.path, clock);
   try {
     if (options.command === 'load-sources') {
       if (options.sourceConfig === undefined) throw new Error(usage());
@@ -85,7 +86,7 @@ async function main(argv: readonly string[]): Promise<void> {
     if (options.command === 'sync') {
       if (options.sync === undefined) throw new Error(usage());
       if (!options.sync.dryRun) throw new Error('catalog sync currently requires --dry-run');
-      const result = await new PlanCatalogSync(repository).execute({
+      const result = await new PlanCatalogSync(repository, clock).execute({
         ...(options.sync.sourceKey === undefined ? {} : { sourceKey: options.sync.sourceKey }),
       });
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
