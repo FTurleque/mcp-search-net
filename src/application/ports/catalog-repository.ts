@@ -1,6 +1,8 @@
 import type {
   CatalogDocument,
   CatalogDocumentInput,
+  CatalogDocumentSearchQuery,
+  CatalogDocumentSearchResult,
   CatalogSource,
   DocumentSection,
   DocumentSectionInput,
@@ -21,5 +23,8 @@ export interface CatalogRepository {
   ): Promise<readonly DocumentSection[]>;
   getDocumentByPublicId(publicId: string): Promise<CatalogDocument | undefined>;
   listDocuments(): Promise<readonly CatalogDocument[]>;
+  searchDocuments(
+    query: CatalogDocumentSearchQuery,
+  ): Promise<readonly CatalogDocumentSearchResult[]>;
   close(): void;
 }
