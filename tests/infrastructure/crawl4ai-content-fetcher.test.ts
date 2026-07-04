@@ -123,7 +123,8 @@ describe('Crawl4aiContentFetcher', () => {
           results: [
             {
               success: true,
-              markdown: '# Rendered\n\nUseful native rendered documentation content.',
+              markdown:
+                '# Rendered\n\nUseful native rendered documentation content with enough reliable fallback words.',
             },
           ],
         }),
