@@ -76,6 +76,16 @@ const INSERT_CATALOG_SYNC_RUN_SQL = `
 
 const SELECT_CATALOG_SYNC_RUN_BY_ID_SQL = 'SELECT * FROM sync_runs WHERE id = ?';
 
+const SELECT_CURRENT_DOCUMENT_VERSION_SQL = `
+  SELECT document_versions.*
+  FROM documents
+  INNER JOIN document_versions
+    ON document_versions.id = documents.current_version_id
+   AND document_versions.document_id = documents.id
+   AND document_versions.is_current = 1
+  WHERE documents.id = ?
+`;
+
 type InsertCatalogSourceParams = [
   string,
   string,
@@ -381,6 +391,15 @@ export class SqliteCatalogRepository implements CatalogRepository {
     return this.asPromise(() => {
       const row = this.selectDocumentByPublicId(publicId);
       return row === undefined ? undefined : toCatalogDocument(row);
+    });
+  }
+
+  public getCurrentDocumentVersion(documentId: number): Promise<DocumentVersion | undefined> {
+    return this.asPromise(() => {
+      const row = this.database
+        .prepare<[number], DocumentVersionRow>(SELECT_CURRENT_DOCUMENT_VERSION_SQL)
+        .get(documentId);
+      return row === undefined ? undefined : toDocumentVersion(row);
     });
   }
 
