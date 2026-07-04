@@ -47,7 +47,7 @@ describe('MCP catalog resources', () => {
       mimeType: 'application/json',
     });
     const parsed = JSON.parse(firstContent.text) as { resources: string[] };
-    expect(parsed.resources.toSorted()).toEqual(expectedResourceUris);
+    expect([...parsed.resources].sort()).toEqual(expectedResourceUris);
     expect(parsed).toMatchObject({
       schemaVersion: '1.0',
       counts: {
