@@ -78,8 +78,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Build TypeScript
-        run: npm run build
+      - run: npm run build
       - name: Build MCP container
         run: docker compose build mcp-search-net
       - name: Start real providers
