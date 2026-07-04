@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,22 +6,30 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 import { ingestTextDocument, splitMarkdownSections } from '../../src/cli/catalog-ingest-text.js';
+import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
-const roots: string[] = [];
 const catalogs: SqliteCatalogRepository[] = [];
 
 afterEach(() => {
   catalogs.splice(0).forEach((catalog) => catalog.close());
-  roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true }));
 });
 
 describe('catalog text ingestion', () => {
   it('splits markdown content into heading sections', () => {
     const sections = splitMarkdownSections(
       'Guide',
-      ['# Guide', '', 'Intro.', '## Install', '', 'Run npm install.', '## Usage', '', 'Run it.'].join('\n'),
+      [
+        '# Guide',
+        '',
+        'Intro.',
+        '## Install',
+        '',
+        'Run npm install.',
+        '## Usage',
+        '',
+        'Run it.',
+      ].join('\n'),
     );
 
     expect(sections).toMatchObject([
@@ -106,7 +114,6 @@ describe('catalog text ingestion', () => {
 
 function createCatalogRepository() {
   const root = mkdtempSync(join(tmpdir(), 'mcp-catalog-ingest-'));
-  roots.push(root);
   const path = join(root, 'catalog.db');
   const clock = { now: () => new Date(1_000) };
   const catalog = new SqliteCatalogRepository(path, clock);
