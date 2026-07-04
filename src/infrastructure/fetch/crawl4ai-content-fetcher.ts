@@ -80,7 +80,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     if (markdown.trim() === '')
       throw new ExtractionError('No usable textual content was extracted');
 
-    const redirectChain = resource.redirectChain;
+    const redirectChain = resource.redirectChain ?? [];
 
     return {
       requestedUrl: resource.requestedUrl,
