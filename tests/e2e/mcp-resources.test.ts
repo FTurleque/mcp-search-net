@@ -74,12 +74,12 @@ describe('MCP catalog resources', () => {
       },
     });
 
-    const sources = await readJsonResource<{ sources: Array<{ id: number }> }>(
+    const sources = await readJsonResource<{ sources: { id: number }[] }>(
       client,
       sourcesResourceUri,
     );
     const firstSource = sources.sources[0];
-    expect(firstSource).toBeDefined();
+    if (firstSource === undefined) throw new Error('Missing catalog source fixture');
 
     const source = await readJsonResource<{ found: boolean; source: { id: number } | null }>(
       client,
