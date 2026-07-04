@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import type { CatalogRepository } from '../../application/ports/catalog-repository.js';
 import type { Clock } from '../../application/ports/clock.js';
 import type {
+  CatalogCurrentDocumentSection,
   CatalogDocument,
   CatalogDocumentInput,
   CatalogDocumentSearchQuery,
@@ -40,6 +41,7 @@ import {
   SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
   SELECT_CATALOG_SOURCE_BY_KEY_SQL,
   SELECT_CATALOG_SOURCES_SQL,
+  SELECT_CURRENT_DOCUMENT_SECTIONS_SQL,
   SELECT_DOCUMENTS_SQL,
   SELECT_DOCUMENT_BY_PUBLIC_ID_SQL,
   SELECT_DOCUMENT_BY_SOURCE_AND_STABLE_KEY_SQL,
@@ -124,7 +126,7 @@ type SearchCurrentDocumentSectionsParams = [
   number,
 ];
 
-interface CatalogDocumentSearchRow {
+interface CatalogCurrentDocumentSectionRow {
   readonly source_id: number;
   readonly source_source_key: string;
   readonly source_display_name: string;
@@ -163,7 +165,9 @@ interface CatalogDocumentSearchRow {
   readonly section_content_hash: string;
   readonly section_character_count: number;
   readonly section_token_count: number | null;
+}
 
+interface CatalogDocumentSearchRow extends CatalogCurrentDocumentSectionRow {
   readonly score: number;
 }
 
@@ -338,6 +342,15 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
+  public listCurrentDocumentSections(): Promise<readonly CatalogCurrentDocumentSection[]> {
+    return this.asPromise(() => {
+      const rows = this.database
+        .prepare<[], CatalogCurrentDocumentSectionRow>(SELECT_CURRENT_DOCUMENT_SECTIONS_SQL)
+        .all();
+      return rows.map(toCatalogCurrentDocumentSection);
+    });
+  }
+
   public searchDocuments(
     query: CatalogDocumentSearchQuery,
   ): Promise<readonly CatalogDocumentSearchResult[]> {
@@ -414,11 +427,29 @@ function escapeLikePattern(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
 }
 
+function toCatalogCurrentDocumentSection(
+  row: CatalogCurrentDocumentSectionRow,
+): CatalogCurrentDocumentSection {
+  return {
+    source: toCatalogSourceFromJoinedRow(row),
+    document: toCatalogDocumentFromJoinedRow(row),
+    section: toDocumentSectionFromJoinedRow(row),
+  };
+}
+
 function toCatalogDocumentSearchResult(
   row: CatalogDocumentSearchRow,
   term: string,
 ): CatalogDocumentSearchResult {
-  const source = toCatalogSource({
+  return {
+    ...toCatalogCurrentDocumentSection(row),
+    snippet: createSnippet(row.section_content, term),
+    score: row.score,
+  };
+}
+
+function toCatalogSourceFromJoinedRow(row: CatalogCurrentDocumentSectionRow): CatalogSource {
+  return toCatalogSource({
     id: row.source_id,
     source_key: row.source_source_key,
     display_name: row.source_display_name,
@@ -431,8 +462,10 @@ function toCatalogDocumentSearchResult(
     created_at: row.source_created_at,
     updated_at: row.source_updated_at,
   });
+}
 
-  const document = toCatalogDocument({
+function toCatalogDocumentFromJoinedRow(row: CatalogCurrentDocumentSectionRow): CatalogDocument {
+  return toCatalogDocument({
     id: row.document_id,
     public_id: row.document_public_id,
     source_id: row.document_source_id,
@@ -448,8 +481,10 @@ function toCatalogDocumentSearchResult(
     created_at: row.document_created_at,
     updated_at: row.document_updated_at,
   });
+}
 
-  const section = toDocumentSection({
+function toDocumentSectionFromJoinedRow(row: CatalogCurrentDocumentSectionRow): DocumentSection {
+  return toDocumentSection({
     id: row.section_id,
     document_version_id: row.section_document_version_id,
     ordinal: row.section_ordinal,
@@ -462,14 +497,6 @@ function toCatalogDocumentSearchResult(
     character_count: row.section_character_count,
     token_count: row.section_token_count,
   });
-
-  return {
-    source,
-    document,
-    section,
-    snippet: createSnippet(row.section_content, term),
-    score: row.score,
-  };
 }
 
 function createSnippet(content: string, term: string): string {
