@@ -12,6 +12,7 @@ import type {
   DocumentVersion,
 } from '../../domain/models/catalog.js';
 import type { FetchedContent } from '../../domain/models/content.js';
+import { HttpError } from '../../domain/errors/domain-errors.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
 
 export interface SyncCatalogDocumentsOptions {
@@ -174,6 +175,29 @@ export class SyncCatalogDocuments {
           sectionCount: sections.length,
         });
       } catch (error) {
+        if (isStaleHttpError(error) && existingDocument !== undefined) {
+          const staleDocument = await this.repository.upsertDocument({
+            publicId,
+            sourceId: source.id,
+            canonicalUrl: existingDocument.canonicalUrl,
+            stableKey: document.stableKey,
+            title: existingDocument.title,
+            mimeType: existingDocument.mimeType,
+            language: existingDocument.language,
+            status: 'STALE',
+          });
+          entries.push({
+            sourceKey: document.sourceKey,
+            stableKey: document.stableKey,
+            title: existingDocument.title,
+            url: document.url,
+            status: 'updated',
+            document: staleDocument,
+            error: `HTTP_${error.status}_STALE`,
+          });
+          continue;
+        }
+
         entries.push({
           sourceKey: document.sourceKey,
           stableKey: document.stableKey,
@@ -241,6 +265,10 @@ function createCacheValidators(version: DocumentVersion): CacheValidators {
     ...(version.etag === undefined ? {} : { etag: version.etag }),
     ...(version.lastModified === undefined ? {} : { lastModified: version.lastModified }),
   };
+}
+
+function isStaleHttpError(error: unknown): error is HttpError & { readonly status: 404 | 410 } {
+  return error instanceof HttpError && (error.status === 404 || error.status === 410);
 }
 
 function createSections(title: string, fetched: FetchedContent): readonly DocumentSectionInput[] {
