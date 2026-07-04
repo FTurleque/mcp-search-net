@@ -16,13 +16,7 @@ const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
 const SYNC_STRATEGIES = ['manual', 'polling'] as const;
 
-type CatalogCommand =
-  | 'init'
-  | 'status'
-  | 'list-sources'
-  | 'add-source'
-  | 'ingest-text'
-  | 'search';
+type CatalogCommand = 'init' | 'status' | 'list-sources' | 'add-source' | 'ingest-text' | 'search';
 
 interface CatalogCommandOptions {
   readonly command: CatalogCommand;
