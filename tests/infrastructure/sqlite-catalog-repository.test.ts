@@ -163,9 +163,7 @@ describe('SqliteCatalogRepository', () => {
       metadataJson: '{"source":"sync"}',
     });
 
-    await expect(
-      fixture.catalog.getCurrentDocumentVersion(document.id),
-    ).resolves.toMatchObject({
+    await expect(fixture.catalog.getCurrentDocumentVersion(document.id)).resolves.toMatchObject({
       id: currentVersion.id,
       documentId: document.id,
       contentHash: 'hash-v2',
