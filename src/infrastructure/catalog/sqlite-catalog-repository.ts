@@ -350,9 +350,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
       const language = query.language ?? null;
       const limit = normalizeSearchLimit(query.limit);
       const rows = this.database
-        .prepare<SearchCurrentDocumentSectionsParams, CatalogDocumentSearchRow>(
-          SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
-        )
+        .prepare<
+          SearchCurrentDocumentSectionsParams,
+          CatalogDocumentSearchRow
+        >(SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL)
         .all(
           pattern,
           pattern,
@@ -410,7 +411,7 @@ function normalizeSearchLimit(limit: number | undefined): number {
 }
 
 function escapeLikePattern(value: string): string {
-  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+  return value.replace(/[\%_]/g, (character) => `\${character}`);
 }
 
 function toCatalogDocumentSearchResult(
