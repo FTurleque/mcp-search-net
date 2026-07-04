@@ -288,6 +288,10 @@ function normalizeLink(value: string, baseUrl: string): readonly string[] {
   }
 }
 
+function stripTags(value: string): string {
+  return value.replace(/<[^>]+>/gu, ' ');
+}
+
 function detectContentType(resource: DownloadedResource): string {
   return (resource.headers['content-type'] ?? 'text/plain').split(';')[0]?.trim().toLowerCase() ?? 'text/plain';
 }
@@ -297,7 +301,7 @@ function isHtml(contentType: string): boolean {
 }
 
 function isUseful(markdown: string): boolean {
-  return markdown.trim().split(/\s+/u).length >= 8;
+  return markdown.trim().split(/\s+/u).filter(Boolean).length >= 8;
 }
 
 function decodeEntities(value: string): string {
