@@ -6,6 +6,8 @@ import type {
   CatalogDocumentSearchResult,
   CatalogSearchIndexRebuildResult,
   CatalogSource,
+  CatalogSyncRun,
+  CatalogSyncRunInput,
   DocumentSection,
   DocumentSectionInput,
   DocumentVersion,
@@ -27,6 +29,7 @@ export interface CatalogRepository {
   listDocuments(): Promise<readonly CatalogDocument[]>;
   listCurrentDocumentSections(): Promise<readonly CatalogCurrentDocumentSection[]>;
   rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult>;
+  addCatalogSyncRun(input: CatalogSyncRunInput): Promise<CatalogSyncRun>;
   searchDocuments(
     query: CatalogDocumentSearchQuery,
   ): Promise<readonly CatalogDocumentSearchResult[]>;
