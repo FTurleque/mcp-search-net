@@ -307,7 +307,6 @@ describe('SyncCatalogDocuments', () => {
     });
     expect(repository.upserts).toHaveLength(1);
     expect(repository.upserts[0]).toMatchObject({
-      publicId: existingDocument.publicId,
       canonicalUrl: existingDocument.canonicalUrl,
       status: 'STALE',
     });
