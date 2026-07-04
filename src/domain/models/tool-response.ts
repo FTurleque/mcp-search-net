@@ -40,7 +40,7 @@ export const TOOL_ERROR_CODES = [
 ] as const;
 export type ToolErrorCode = (typeof TOOL_ERROR_CODES)[number];
 
-export type ToolName = 'search_web' | 'fetch_url';
+export type ToolName = 'search_web' | 'fetch_url' | 'search_docs';
 export type ToolResponseStatus = 'success' | 'partial';
 
 export interface ToolWarningDescriptor {
