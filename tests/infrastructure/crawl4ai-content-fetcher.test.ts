@@ -32,7 +32,6 @@ describe('Crawl4aiContentFetcher', () => {
       canonicalUrl: 'https://example.com/canonical',
       contentType: 'text/html',
       extractionMode: 'static',
-      redirectedPermanently: false,
     });
     expect(result.markdown).toContain('# Guide');
     expect(result.markdown).not.toContain('steal');
@@ -71,9 +70,7 @@ describe('Crawl4aiContentFetcher', () => {
     expect(result).toMatchObject({
       finalUrl: 'https://www.example.com/docs',
       canonicalUrl: 'https://www.example.com/docs',
-      redirectChain,
-      redirectedPermanently: true,
-      metadata: { redirectChain },
+      metadata: { redirectChain, redirectedPermanently: true },
     });
   });
 
