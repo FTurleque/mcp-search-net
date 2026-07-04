@@ -90,8 +90,11 @@ class ContentFetcherStub implements ContentFetcher {
       finalUrl: 'https://docs.example/guide.html',
       canonicalUrl: 'https://docs.example/guide.html',
       title: 'Fetched Guide',
-      markdown: '# Fetched Guide\n\nContent body.',
-      documentSections: [{ heading: 'Fetched Guide', markdown: '# Fetched Guide\n\nContent body.' }],
+      markdown: '# Fetched Guide\n\n## Overview\n\nContent body.\n\n## Usage\n\nRun it.',
+      documentSections: [
+        { heading: 'Overview', markdown: '## Overview\n\nContent body.' },
+        { heading: 'Usage', markdown: '## Usage\n\nRun it.' },
+      ],
       contentType: 'text/html',
       fetchedAt: now.toISOString(),
       extractionMode: 'static',
@@ -104,7 +107,7 @@ class ContentFetcherStub implements ContentFetcher {
 }
 
 describe('SyncCatalogDocuments', () => {
-  it('fetches one declared document, stores it and records a successful run', async () => {
+  it('fetches one declared document, stores extracted sections and records a successful run', async () => {
     const repository = new CatalogSyncRepositoryStub([enabledSource]);
     const fetcher = new ContentFetcherStub();
 
@@ -154,7 +157,7 @@ describe('SyncCatalogDocuments', () => {
           title: 'Fetched Guide',
           url: 'https://docs.example/guide.html',
           status: 'added',
-          sectionCount: 1,
+          sectionCount: 2,
         },
       ],
     });
@@ -164,9 +167,20 @@ describe('SyncCatalogDocuments', () => {
       extractionMode: 'static',
       contentType: 'text/html',
     });
+    expect(repository.sections[0]).toHaveLength(2);
     expect(repository.sections[0]?.[0]).toMatchObject({
-      heading: 'Fetched Guide',
-      content: '# Fetched Guide\n\nContent body.',
+      ordinal: 0,
+      heading: 'Overview',
+      headingPath: 'Overview',
+      anchor: 'overview',
+      content: '## Overview\n\nContent body.',
+    });
+    expect(repository.sections[0]?.[1]).toMatchObject({
+      ordinal: 1,
+      heading: 'Usage',
+      headingPath: 'Usage',
+      anchor: 'usage',
+      content: '## Usage\n\nRun it.',
     });
   });
 });
