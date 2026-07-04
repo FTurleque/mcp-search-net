@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import { PlanCatalogSync } from '../../src/application/use-cases/plan-catalog-sync.js';
-import type { CatalogDocument, CatalogSource } from '../../src/domain/models/catalog.js';
+import type {
+  CatalogDocument,
+  CatalogSource,
+  CatalogSyncRun,
+  CatalogSyncRunInput,
+} from '../../src/domain/models/catalog.js';
 
 class SyncPlanRepositoryStub {
+  private nextRunId = 1;
+
   public constructor(
     private readonly sources: readonly CatalogSource[],
     private readonly documents: readonly CatalogDocument[],
@@ -16,6 +23,15 @@ class SyncPlanRepositoryStub {
   public async listDocuments(): Promise<readonly CatalogDocument[]> {
     return this.documents;
   }
+
+  public async addCatalogSyncRun(input: CatalogSyncRunInput): Promise<CatalogSyncRun> {
+    const syncRun = {
+      id: this.nextRunId,
+      ...input,
+    };
+    this.nextRunId += 1;
+    return syncRun;
+  }
 }
 
 describe('PlanCatalogSync', () => {
@@ -25,9 +41,20 @@ describe('PlanCatalogSync', () => {
       [documentFor(enabledSource.id, 1), documentFor(enabledSource.id, 2)],
     );
 
-    const result = await new PlanCatalogSync(repository).execute({});
+    const result = await new PlanCatalogSync(repository, fixedClock).execute({});
 
-    expect(result).toEqual({
+    expect(result.syncRun).toEqual({
+      id: 1,
+      startedAt: now,
+      completedAt: now,
+      status: 'SUCCESS',
+      documentsChecked: 0,
+      documentsAdded: 0,
+      documentsUpdated: 0,
+      documentsUnchanged: 0,
+      documentsFailed: 0,
+    });
+    expect(result).toMatchObject({
       schemaVersion: '1.0',
       dryRun: true,
       plannedCount: 1,
@@ -60,14 +87,21 @@ describe('PlanCatalogSync', () => {
     });
   });
 
-  it('filters by source key', async () => {
+  it('filters by source key and stores the source id on the sync run', async () => {
     const repository = new SyncPlanRepositoryStub(
       [enabledSource, disabledSource],
       [documentFor(enabledSource.id, 1)],
     );
 
-    const result = await new PlanCatalogSync(repository).execute({ sourceKey: 'enabled-docs' });
+    const result = await new PlanCatalogSync(repository, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+    });
 
+    expect(result.syncRun).toMatchObject({
+      id: 1,
+      sourceId: enabledSource.id,
+      status: 'SUCCESS',
+    });
     expect(result.plannedCount).toBe(1);
     expect(result.skippedCount).toBe(0);
     expect(result.sources).toHaveLength(1);
@@ -81,12 +115,13 @@ describe('PlanCatalogSync', () => {
     const repository = new SyncPlanRepositoryStub([enabledSource], []);
 
     await expect(
-      new PlanCatalogSync(repository).execute({ sourceKey: 'missing-docs' }),
+      new PlanCatalogSync(repository, fixedClock).execute({ sourceKey: 'missing-docs' }),
     ).rejects.toThrow('Catalog source missing-docs was not found');
   });
 });
 
 const now = new Date(1_000);
+const fixedClock = { now: () => now };
 
 const enabledSource: CatalogSource = {
   id: 1,
