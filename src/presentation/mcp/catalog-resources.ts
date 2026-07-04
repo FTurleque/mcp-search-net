@@ -188,8 +188,8 @@ async function createDocumentResource(repository: CatalogRepository, uri: URL) {
 
 async function createDocumentVersionsResource(repository: CatalogRepository, uri: URL) {
   const documentId = parseNumericResourceId(uri, 'documents');
-  const versionListingAvailable = repository.listDocumentVersions !== undefined;
-  if (!versionListingAvailable) {
+  const listDocumentVersions = repository.listDocumentVersions?.bind(repository);
+  if (listDocumentVersions === undefined) {
     return {
       schemaVersion: '1.0',
       documentId,
@@ -198,7 +198,7 @@ async function createDocumentVersionsResource(repository: CatalogRepository, uri
       versions: [],
     };
   }
-  const versions = await repository.listDocumentVersions(documentId);
+  const versions = await listDocumentVersions(documentId);
   return {
     schemaVersion: '1.0',
     documentId,
@@ -210,15 +210,14 @@ async function createDocumentVersionsResource(repository: CatalogRepository, uri
 
 async function createDocumentVersionResource(repository: CatalogRepository, uri: URL) {
   const { documentId, versionId } = parseDocumentVersionResourceIds(uri);
-  const versionLookupAvailable = repository.getDocumentVersion !== undefined;
-  const version = versionLookupAvailable
-    ? await repository.getDocumentVersion(documentId, versionId)
-    : undefined;
+  const getDocumentVersion = repository.getDocumentVersion?.bind(repository);
+  const version =
+    getDocumentVersion === undefined ? undefined : await getDocumentVersion(documentId, versionId);
   return {
     schemaVersion: '1.0',
     documentId,
     versionId,
-    available: versionLookupAvailable,
+    available: getDocumentVersion !== undefined,
     found: version !== undefined,
     version: version === undefined ? null : toResourceDocumentVersion(version),
   };
