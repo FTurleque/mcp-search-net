@@ -12,6 +12,23 @@ const roots: string[] = [];
 const catalogs: SqliteCatalogRepository[] = [];
 const caches: SqliteCacheRepository[] = [];
 
+const EXPECTED_CATALOG_TABLES = [
+  'catalog_schema_migrations',
+  'catalog_sources',
+  'document_aliases',
+  'document_section_fts',
+  'document_section_fts_config',
+  'document_section_fts_content',
+  'document_section_fts_data',
+  'document_section_fts_docsize',
+  'document_section_fts_idx',
+  'document_sections',
+  'document_versions',
+  'documents',
+  'staleness_events',
+  'sync_runs',
+];
+
 afterEach(() => {
   catalogs.splice(0).forEach((catalog) => catalog.close());
   caches.splice(0).forEach((cache) => cache.close());
@@ -28,20 +45,11 @@ describe('SqliteCatalogRepository', () => {
     catalogs.push(secondRepository);
 
     const database = new Database(fixture.path, { readonly: true });
-    expect(readTables(database)).toEqual([
-      'catalog_schema_migrations',
-      'catalog_sources',
-      'document_aliases',
-      'document_sections',
-      'document_versions',
-      'documents',
-      'staleness_events',
-      'sync_runs',
-    ]);
+    expect(readTables(database)).toEqual(EXPECTED_CATALOG_TABLES);
     const versions = database
       .prepare('SELECT version FROM catalog_schema_migrations ORDER BY version')
       .all() as { version: number }[];
-    expect(versions.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5]);
+    expect(versions.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6]);
     database.close();
   });
 
