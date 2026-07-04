@@ -163,7 +163,9 @@ describe('SqliteCatalogRepository', () => {
       metadataJson: '{"source":"sync"}',
     });
 
-    await expect(fixture.catalog.getCurrentDocumentVersion(document.id)).resolves.toMatchObject({
+    await expect(
+      fixture.catalog.getCurrentDocumentVersion(document.id),
+    ).resolves.toMatchObject({
       id: currentVersion.id,
       documentId: document.id,
       contentHash: 'hash-v2',
@@ -171,7 +173,9 @@ describe('SqliteCatalogRepository', () => {
       lastModified: 'Tue, 02 Jul 2026 10:00:00 GMT',
       isCurrent: true,
     });
-    await expect(fixture.catalog.getCurrentDocumentVersion(oldVersion.documentId + 999)).resolves.toBeUndefined();
+    await expect(
+      fixture.catalog.getCurrentDocumentVersion(oldVersion.documentId + 999),
+    ).resolves.toBeUndefined();
   });
 
   it('searches only enabled active documents on their current sections', async () => {
