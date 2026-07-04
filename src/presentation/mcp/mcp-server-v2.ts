@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
+import type { CatalogRepository } from '../../application/ports/catalog-repository.js';
 import type {
   SearchCatalogDocuments,
   SearchCatalogDocumentsOutput,
@@ -8,6 +9,7 @@ import { InvalidArgumentError } from '../../domain/errors/domain-errors.js';
 import type { ToolResponse, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import type { ApplicationConfig } from '../../infrastructure/config/application-config.js';
 import type { Logger } from '../../application/ports/logger.js';
+import { registerCatalogResources } from './catalog-resources.js';
 import type { McpServerDependencies as V1McpServerDependencies } from './mcp-server.js';
 import { createMcpServer as createV1McpServer } from './mcp-server.js';
 import { isInvalidToolInput } from './schemas/invalid-tool-input.js';
@@ -15,6 +17,7 @@ import { createSearchDocsSchemas } from './schemas/search-docs-schema.js';
 import { executeToolCall } from './tool-call.js';
 
 export interface McpServerV2Dependencies extends V1McpServerDependencies {
+  readonly catalogRepository: CatalogRepository;
   readonly searchCatalogDocuments: SearchCatalogDocuments;
   readonly config: ApplicationConfig;
   readonly logger: Logger;
@@ -24,6 +27,7 @@ type SearchDocsData = Omit<SearchCatalogDocumentsOutput, 'schemaVersion'>;
 
 export function createMcpServer(dependencies: McpServerV2Dependencies): McpServer {
   const server = createV1McpServer(dependencies);
+  registerCatalogResources(server, dependencies.catalogRepository);
   const schemas = createSearchDocsSchemas(
     dependencies.config.limits.defaultSearchResults,
     dependencies.config.limits.maxSearchResults,
