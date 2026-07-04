@@ -67,11 +67,9 @@ describe('SqliteCatalogVersionPurger', () => {
       purgedVersions: 0,
       purgedSections: 0,
     });
-    expect(readColumn(fixture.path, 'SELECT content_hash FROM document_versions ORDER BY id')).toEqual([
-      'hash-v1',
-      'hash-v2',
-      'hash-v3',
-    ]);
+    expect(
+      readColumn(fixture.path, 'SELECT content_hash FROM document_versions ORDER BY id'),
+    ).toEqual(['hash-v1', 'hash-v2', 'hash-v3']);
 
     await expect(
       purger.purgeOldDocumentVersions({ keepPreviousVersions: 1, dryRun: false }),
@@ -85,14 +83,12 @@ describe('SqliteCatalogVersionPurger', () => {
       purgedSections: 1,
     });
 
-    expect(readColumn(fixture.path, 'SELECT content_hash FROM document_versions ORDER BY id')).toEqual([
-      'hash-v2',
-      'hash-v3',
-    ]);
-    expect(readColumn(fixture.path, 'SELECT content_hash FROM document_sections ORDER BY id')).toEqual([
-      'section-v2',
-      'section-v3',
-    ]);
+    expect(
+      readColumn(fixture.path, 'SELECT content_hash FROM document_versions ORDER BY id'),
+    ).toEqual(['hash-v2', 'hash-v3']);
+    expect(
+      readColumn(fixture.path, 'SELECT content_hash FROM document_sections ORDER BY id'),
+    ).toEqual(['section-v2', 'section-v3']);
     await expect(fixture.catalog.getDocumentByPublicId('nodejs-fs')).resolves.toMatchObject({
       currentVersionId: currentVersion.id,
     });
@@ -146,7 +142,9 @@ async function addVersionWithSection(
 function readColumn(path: string, sql: string): readonly string[] {
   const database = new Database(path, { readonly: true });
   try {
-    return (database.prepare(sql).all() as { content_hash: string }[]).map((row) => row.content_hash);
+    return (database.prepare(sql).all() as { content_hash: string }[]).map(
+      (row) => row.content_hash,
+    );
   } finally {
     database.close();
   }
