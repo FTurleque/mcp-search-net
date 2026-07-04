@@ -55,6 +55,17 @@ export const UPSERT_DOCUMENT_VERSION_SQL = `
 export const SELECT_DOCUMENT_VERSION_BY_HASH_SQL =
   'SELECT * FROM document_versions WHERE document_id = ? AND content_hash = ?';
 
+export const SELECT_DOCUMENT_VERSIONS_SQL = `
+  SELECT * FROM document_versions
+  WHERE document_id = ?
+  ORDER BY fetched_at DESC, id DESC
+`;
+
+export const SELECT_DOCUMENT_VERSION_BY_ID_SQL = `
+  SELECT * FROM document_versions
+  WHERE document_id = ? AND id = ?
+`;
+
 export const SET_DOCUMENT_CURRENT_VERSION_SQL =
   'UPDATE documents SET current_version_id = ?, updated_at = ? WHERE id = ?';
 
@@ -262,7 +273,7 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL = `
     document_sections.content AS section_content,
     document_sections.content_hash AS section_content_hash,
     document_sections.character_count AS section_character_count,
-    document_sections.token_count AS section_token_count,
+    document_sections.tokenCount AS section_token_count,
 
     CASE
       WHEN lower(documents.title) LIKE ? ESCAPE '\\' THEN 4
