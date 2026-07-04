@@ -9,6 +9,7 @@ import type {
   CatalogDocumentSearchQuery,
   CatalogDocumentSearchResult,
   CatalogFreshnessPolicy,
+  CatalogSearchIndexRebuildResult,
   CatalogSource,
   CatalogSourceType,
   CatalogSyncStrategy,
@@ -35,9 +36,13 @@ import {
 } from './catalog-row-mappers.js';
 import {
   CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL,
+  COUNT_DOCUMENT_SECTION_FTS_SQL,
   DELETE_DOCUMENT_SECTIONS_SQL,
+  DELETE_DOCUMENT_SECTION_FTS_SQL,
   INSERT_CATALOG_SOURCE_SQL,
+  INSERT_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
   INSERT_DOCUMENT_SECTION_SQL,
+  SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
   SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
   SELECT_CATALOG_SOURCE_BY_KEY_SQL,
   SELECT_CATALOG_SOURCES_SQL,
@@ -125,6 +130,22 @@ type SearchCurrentDocumentSectionsParams = [
   string,
   number,
 ];
+
+type SearchCurrentDocumentSectionsFtsParams = [
+  string,
+  string,
+  string,
+  string,
+  string | null,
+  string | null,
+  string | null,
+  string | null,
+  number,
+];
+
+interface CountRow {
+  readonly count: number;
+}
 
 interface CatalogCurrentDocumentSectionRow {
   readonly source_id: number;
@@ -351,6 +372,19 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
+  public rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult> {
+    return this.asPromise(() => {
+      const transaction = this.database.transaction((): CatalogSearchIndexRebuildResult => {
+        this.database.prepare(DELETE_DOCUMENT_SECTION_FTS_SQL).run();
+        this.database.prepare(INSERT_CURRENT_DOCUMENT_SECTIONS_FTS_SQL).run();
+        const row = this.database.prepare<[], CountRow>(COUNT_DOCUMENT_SECTION_FTS_SQL).get();
+        return { indexedSections: row?.count ?? 0 };
+      });
+
+      return transaction();
+    });
+  }
+
   public searchDocuments(
     query: CatalogDocumentSearchQuery,
   ): Promise<readonly CatalogDocumentSearchResult[]> {
@@ -362,25 +396,15 @@ export class SqliteCatalogRepository implements CatalogRepository {
       const sourceKey = query.sourceKey ?? null;
       const language = query.language ?? null;
       const limit = normalizeSearchLimit(query.limit);
-      const rows = this.database
-        .prepare<
-          SearchCurrentDocumentSectionsParams,
-          CatalogDocumentSearchRow
-        >(SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL)
-        .all(
-          pattern,
-          pattern,
-          pattern,
-          sourceKey,
-          sourceKey,
-          language,
-          language,
-          pattern,
-          pattern,
-          pattern,
-          pattern,
-          limit,
-        );
+      const ftsQuery = createFtsQuery(term);
+      const ftsRows =
+        ftsQuery === undefined
+          ? []
+          : this.searchDocumentsWithFts(ftsQuery, pattern, sourceKey, language, limit);
+      const rows =
+        ftsRows.length > 0
+          ? ftsRows
+          : this.searchDocumentsWithLike(pattern, sourceKey, language, limit);
 
       return rows.map((row) => toCatalogDocumentSearchResult(row, term));
     });
@@ -415,6 +439,46 @@ export class SqliteCatalogRepository implements CatalogRepository {
       .prepare<[number], DocumentSectionRow>(SELECT_DOCUMENT_SECTIONS_SQL)
       .all(documentVersionId);
   }
+
+  private searchDocumentsWithFts(
+    ftsQuery: string,
+    pattern: string,
+    sourceKey: string | null,
+    language: string | null,
+    limit: number,
+  ): readonly CatalogDocumentSearchRow[] {
+    return this.database
+      .prepare<SearchCurrentDocumentSectionsFtsParams, CatalogDocumentSearchRow>(
+        SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
+      )
+      .all(pattern, pattern, pattern, ftsQuery, sourceKey, sourceKey, language, language, limit);
+  }
+
+  private searchDocumentsWithLike(
+    pattern: string,
+    sourceKey: string | null,
+    language: string | null,
+    limit: number,
+  ): readonly CatalogDocumentSearchRow[] {
+    return this.database
+      .prepare<SearchCurrentDocumentSectionsParams, CatalogDocumentSearchRow>(
+        SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
+      )
+      .all(
+        pattern,
+        pattern,
+        pattern,
+        sourceKey,
+        sourceKey,
+        language,
+        language,
+        pattern,
+        pattern,
+        pattern,
+        pattern,
+        limit,
+      );
+  }
 }
 
 function normalizeSearchLimit(limit: number | undefined): number {
@@ -425,6 +489,15 @@ function normalizeSearchLimit(limit: number | undefined): number {
 
 function escapeLikePattern(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
+}
+
+function createFtsQuery(value: string): string | undefined {
+  const terms = value
+    .split(/\s+/u)
+    .map((term) => term.replaceAll('"', '').trim())
+    .filter((term) => term.length > 0);
+  if (terms.length === 0) return undefined;
+  return terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(' AND ');
 }
 
 function toCatalogCurrentDocumentSection(
