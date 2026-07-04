@@ -188,7 +188,8 @@ async function createDocumentResource(repository: CatalogRepository, uri: URL) {
 
 async function createDocumentVersionsResource(repository: CatalogRepository, uri: URL) {
   const documentId = parseNumericResourceId(uri, 'documents');
-  if (repository.listDocumentVersions === undefined) {
+  const versionListingAvailable = repository.listDocumentVersions !== undefined;
+  if (!versionListingAvailable) {
     return {
       schemaVersion: '1.0',
       documentId,
@@ -209,15 +210,15 @@ async function createDocumentVersionsResource(repository: CatalogRepository, uri
 
 async function createDocumentVersionResource(repository: CatalogRepository, uri: URL) {
   const { documentId, versionId } = parseDocumentVersionResourceIds(uri);
-  const version =
-    repository.getDocumentVersion === undefined
-      ? undefined
-      : await repository.getDocumentVersion(documentId, versionId);
+  const versionLookupAvailable = repository.getDocumentVersion !== undefined;
+  const version = versionLookupAvailable
+    ? await repository.getDocumentVersion(documentId, versionId)
+    : undefined;
   return {
     schemaVersion: '1.0',
     documentId,
     versionId,
-    available: repository.getDocumentVersion !== undefined,
+    available: versionLookupAvailable,
     found: version !== undefined,
     version: version === undefined ? null : toResourceDocumentVersion(version),
   };
@@ -347,11 +348,8 @@ function parseDocumentVersionResourceIds(uri: URL): {
 } {
   const match = /^mcp-search-net:\/\/documents\/(\d+)\/versions\/(\d+)$/u.exec(uri.href);
   if (match === null) return { documentId: Number.NaN, versionId: Number.NaN };
-  const documentId = match[1];
-  const versionId = match[2];
-  if (documentId === undefined || versionId === undefined) {
-    return { documentId: Number.NaN, versionId: Number.NaN };
-  }
+  const documentId = match[1] ?? String(Number.NaN);
+  const versionId = match[2] ?? String(Number.NaN);
   return {
     documentId: Number.parseInt(documentId, 10),
     versionId: Number.parseInt(versionId, 10),
