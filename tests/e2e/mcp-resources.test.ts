@@ -6,11 +6,17 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
 const catalogResourceUri = 'mcp-search-net://catalog';
+const sourcesResourceUri = 'mcp-search-net://sources';
 const expectedResourceUris = [
   catalogResourceUri,
   'mcp-search-net://documents',
   'mcp-search-net://sections',
-  'mcp-search-net://sources',
+  sourcesResourceUri,
+];
+const expectedResourceTemplateUris = [
+  'mcp-search-net://documents/{documentId}',
+  'mcp-search-net://sections/{sectionId}',
+  'mcp-search-net://sources/{sourceId}',
 ];
 
 describe('MCP catalog resources', () => {
@@ -38,6 +44,11 @@ describe('MCP catalog resources', () => {
       expectedResourceUris,
     );
 
+    const templates = await client.listResourceTemplates();
+    expect(templates.resourceTemplates.map((resource) => resource.uriTemplate).sort()).toEqual(
+      expectedResourceTemplateUris,
+    );
+
     const catalog = await client.readResource({ uri: catalogResourceUri });
     const firstContent = catalog.contents[0];
     if (firstContent === undefined || !('text' in firstContent)) {
@@ -49,7 +60,9 @@ describe('MCP catalog resources', () => {
       mimeType: 'application/json',
     });
     const parsed = JSON.parse(firstContent.text) as { resources: string[] };
-    expect([...parsed.resources].sort()).toEqual(expectedResourceUris);
+    expect([...parsed.resources].sort()).toEqual(
+      [...expectedResourceUris, ...expectedResourceTemplateUris].sort(),
+    );
     expect(parsed).toMatchObject({
       schemaVersion: '1.0',
       counts: {
@@ -60,5 +73,30 @@ describe('MCP catalog resources', () => {
         currentSections: expect.any(Number),
       },
     });
+
+    const sources = await readJsonResource<{ sources: Array<{ id: number }> }>(
+      client,
+      sourcesResourceUri,
+    );
+    const firstSource = sources.sources[0];
+    expect(firstSource).toBeDefined();
+
+    const source = await readJsonResource<{ found: boolean; source: { id: number } | null }>(
+      client,
+      `mcp-search-net://sources/${firstSource.id}`,
+    );
+    expect(source).toMatchObject({
+      found: true,
+      source: { id: firstSource.id },
+    });
   });
 });
+
+async function readJsonResource<T>(client: Client, uri: string): Promise<T> {
+  const resource = await client.readResource({ uri });
+  const content = resource.contents[0];
+  if (content === undefined || !('text' in content)) {
+    throw new Error(`Resource ${uri} must return JSON text content`);
+  }
+  return JSON.parse(content.text) as T;
+}
