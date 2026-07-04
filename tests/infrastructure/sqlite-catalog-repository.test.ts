@@ -361,7 +361,7 @@ describe('SqliteCatalogRepository', () => {
     const rows = database
       .prepare('SELECT ordinal, content_hash FROM document_sections ORDER BY ordinal')
       .all() as { ordinal: number; content_hash: string }[];
-    expect(rows).toEqual([{ ordinal: 1, contentHash: 'existing-section' }]);
+    expect(rows).toEqual([{ ordinal: 1, content_hash: 'existing-section' }]);
     database.close();
   });
 });
