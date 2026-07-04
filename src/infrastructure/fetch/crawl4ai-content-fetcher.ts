@@ -81,6 +81,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       throw new ExtractionError('No usable textual content was extracted');
 
     const redirectChain = resource.redirectChain ?? [];
+    const redirectedPermanently = redirectChain.some((redirect) => redirect.permanent);
 
     return {
       requestedUrl: resource.requestedUrl,
@@ -106,10 +107,9 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
           ? {}
           : { lastModified: resource.headers['last-modified'] }),
         ...(redirectChain.length === 0 ? {} : { redirectChain }),
+        ...(redirectedPermanently ? { redirectedPermanently: true } : {}),
       },
       links: decoded.links,
-      redirectChain,
-      redirectedPermanently: redirectChain.some((redirect) => redirect.permanent),
     };
   }
 
