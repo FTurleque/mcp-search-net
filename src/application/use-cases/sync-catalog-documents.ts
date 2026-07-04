@@ -145,6 +145,7 @@ export class SyncCatalogDocuments {
           continue;
         }
 
+        const redirectMetadata = createRedirectVersionMetadata(fetched);
         const version = await this.repository.addDocumentVersion({
           documentId: storedDocument.id,
           contentHash: fetched.contentHash,
@@ -160,10 +161,7 @@ export class SyncCatalogDocuments {
             requestedUrl: fetched.requestedUrl,
             finalUrl: fetched.finalUrl,
             statusCode: fetched.statusCode,
-            ...(fetched.redirectChain === undefined || fetched.redirectChain.length === 0
-              ? {}
-              : { redirectChain: fetched.redirectChain }),
-            ...(fetched.redirectedPermanently === true ? { redirectedPermanently: true } : {}),
+            ...redirectMetadata,
           }),
         });
         const sections = await this.repository.replaceDocumentSections(
@@ -273,7 +271,22 @@ function createCacheValidators(version: DocumentVersion): CacheValidators {
 }
 
 function documentStatusFor(fetched: FetchedContent): DocumentStatus {
-  return fetched.redirectedPermanently === true ? 'REDIRECTED' : 'ACTIVE';
+  return isPermanentlyRedirected(fetched) ? 'REDIRECTED' : 'ACTIVE';
+}
+
+function isPermanentlyRedirected(fetched: FetchedContent): boolean {
+  return fetched.metadata['redirectedPermanently'] === true;
+}
+
+function createRedirectVersionMetadata(fetched: FetchedContent): Readonly<Record<string, unknown>> {
+  const metadata: Record<string, unknown> = {};
+  if (Array.isArray(fetched.metadata['redirectChain'])) {
+    metadata['redirectChain'] = fetched.metadata['redirectChain'];
+  }
+  if (fetched.metadata['redirectedPermanently'] === true) {
+    metadata['redirectedPermanently'] = true;
+  }
+  return metadata;
 }
 
 function isStaleHttpError(error: unknown): error is HttpError & { readonly status: 404 | 410 } {
