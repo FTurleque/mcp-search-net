@@ -341,7 +341,10 @@ function parseNumericResourceId(
   return Number.parseInt(uri.href.slice(prefix.length), 10);
 }
 
-function parseDocumentVersionResourceIds(uri: URL): { readonly documentId: number; readonly versionId: number } {
+function parseDocumentVersionResourceIds(uri: URL): {
+  readonly documentId: number;
+  readonly versionId: number;
+} {
   const match = /^mcp-search-net:\/\/documents\/(\d+)\/versions\/(\d+)$/u.exec(uri.href);
   if (match === null) return { documentId: Number.NaN, versionId: Number.NaN };
   const documentId = match[1];
