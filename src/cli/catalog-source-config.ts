@@ -64,11 +64,7 @@ function asRecord(value: unknown, context: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function requiredString(
-  source: Record<string, unknown>,
-  propertyName: string,
-  sourceKey: string,
-): string {
+function requiredString(source: Record<string, unknown>, propertyName: string, sourceKey: string): string {
   const value = optionalString(source, propertyName);
   if (value === undefined || value.length === 0) {
     throw new Error(`catalog source ${sourceKey} must define ${propertyName}`);
