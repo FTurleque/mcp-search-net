@@ -34,7 +34,9 @@ describe('MCP catalog resources', () => {
 
     await client.connect(transport);
     const resources = await client.listResources();
-    expect(resources.resources.map((resource) => resource.uri).sort()).toEqual(expectedResourceUris);
+    expect(resources.resources.map((resource) => resource.uri).sort()).toEqual(
+      expectedResourceUris,
+    );
 
     const catalog = await client.readResource({ uri: catalogResourceUri });
     const firstContent = catalog.contents[0];
