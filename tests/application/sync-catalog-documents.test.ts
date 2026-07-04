@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ContentFetcher } from '../../src/application/ports/content-fetcher.js';
+import type {
+  ContentFetchContext,
+  ContentFetchRequest,
+  ContentFetcher,
+} from '../../src/application/ports/content-fetcher.js';
 import { SyncCatalogDocuments } from '../../src/application/use-cases/sync-catalog-documents.js';
 import type {
   CatalogDocument,
@@ -13,7 +17,7 @@ import type {
   DocumentVersion,
   DocumentVersionInput,
 } from '../../src/domain/models/catalog.js';
-import type { ContentFetchResult } from '../../src/domain/models/content.js';
+import type { ContentFetchResult, FetchedContent } from '../../src/domain/models/content.js';
 
 class CatalogSyncRepositoryStub {
   private nextDocumentId = 1;
@@ -21,8 +25,13 @@ class CatalogSyncRepositoryStub {
   private nextRunId = 1;
   public readonly versions: DocumentVersionInput[] = [];
   public readonly sections: DocumentSectionInput[][] = [];
+  public readonly upserts: CatalogDocumentInput[] = [];
 
-  public constructor(private readonly sources: readonly CatalogSource[]) {}
+  public constructor(
+    private readonly sources: readonly CatalogSource[],
+    private readonly existingDocument?: CatalogDocument,
+    private readonly currentVersion?: DocumentVersion,
+  ) {}
 
   public async listSources(): Promise<readonly CatalogSource[]> {
     return this.sources;
@@ -30,10 +39,24 @@ class CatalogSyncRepositoryStub {
 
   public async getDocumentByPublicId(publicId: string): Promise<CatalogDocument | undefined> {
     void publicId;
-    return undefined;
+    return this.existingDocument;
+  }
+
+  public async getCurrentDocumentVersion(documentId: number): Promise<DocumentVersion | undefined> {
+    return this.currentVersion?.documentId === documentId ? this.currentVersion : undefined;
   }
 
   public async upsertDocument(input: CatalogDocumentInput): Promise<CatalogDocument> {
+    this.upserts.push(input);
+    if (this.existingDocument !== undefined) {
+      return {
+        ...this.existingDocument,
+        ...input,
+        lastSeenAt: now,
+        updatedAt: now,
+      };
+    }
+
     const document: CatalogDocument = {
       id: this.nextDocumentId,
       ...input,
@@ -81,28 +104,18 @@ class CatalogSyncRepositoryStub {
 }
 
 class ContentFetcherStub implements ContentFetcher {
-  public calls = 0;
+  public readonly requests: ContentFetchRequest[] = [];
+  public readonly contexts: Array<ContentFetchContext | undefined> = [];
 
-  public async fetch(): Promise<ContentFetchResult> {
-    this.calls += 1;
-    return {
-      requestedUrl: 'https://docs.example/guide.html',
-      finalUrl: 'https://docs.example/guide.html',
-      canonicalUrl: 'https://docs.example/guide.html',
-      title: 'Fetched Guide',
-      markdown: '# Fetched Guide\n\n## Overview\n\nContent body.\n\n## Usage\n\nRun it.',
-      documentSections: [
-        { heading: 'Overview', markdown: '## Overview\n\nContent body.' },
-        { heading: 'Usage', markdown: '## Usage\n\nRun it.' },
-      ],
-      contentType: 'text/html',
-      fetchedAt: now.toISOString(),
-      extractionMode: 'static',
-      statusCode: 200,
-      contentHash: 'content-hash',
-      metadata: {},
-      links: [],
-    };
+  public constructor(private readonly result: ContentFetchResult = fetchedContent()) {}
+
+  public async fetch(
+    request: ContentFetchRequest,
+    context?: ContentFetchContext,
+  ): Promise<ContentFetchResult> {
+    this.requests.push(request);
+    this.contexts.push(context);
+    return this.result;
   }
 }
 
@@ -113,24 +126,15 @@ describe('SyncCatalogDocuments', () => {
 
     const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
       sourceKey: 'enabled-docs',
-      documents: [
-        {
-          sourceKey: 'enabled-docs',
-          stableKey: 'guide',
-          title: 'Guide',
-          url: 'https://docs.example/guide.html',
-          language: 'en-US',
-          mimeType: 'text/html',
-          enabled: true,
-        },
-      ],
+      documents: [declaredDocument],
       limit: 1,
       timeoutMs: 1_000,
       maxResponseBytes: 10_000,
       maxRedirects: 3,
     });
 
-    expect(fetcher.calls).toBe(1);
+    expect(fetcher.requests).toHaveLength(1);
+    expect(fetcher.contexts[0]).toBeUndefined();
     expect(result).toMatchObject({
       schemaVersion: '1.0',
       dryRun: false,
@@ -183,6 +187,83 @@ describe('SyncCatalogDocuments', () => {
       content: '## Usage\n\nRun it.',
     });
   });
+
+  it('passes current version validators and does not duplicate identical content', async () => {
+    const repository = new CatalogSyncRepositoryStub([enabledSource], existingDocument, currentVersion);
+    const fetcher = new ContentFetcherStub(fetchedContent({ contentHash: currentVersion.contentHash }));
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument],
+      limit: 1,
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(fetcher.contexts[0]).toEqual({
+      cacheValidators: {
+        contentHash: 'content-hash',
+        etag: '"v1"',
+        lastModified: 'Tue, 02 Jul 2026 10:00:00 GMT',
+      },
+    });
+    expect(result).toMatchObject({
+      checkedCount: 1,
+      addedCount: 0,
+      updatedCount: 0,
+      unchangedCount: 1,
+      failedCount: 0,
+      documents: [
+        {
+          sourceKey: 'enabled-docs',
+          stableKey: 'guide',
+          status: 'unchanged',
+        },
+      ],
+    });
+    expect(repository.upserts).toHaveLength(1);
+    expect(repository.versions).toHaveLength(0);
+    expect(repository.sections).toHaveLength(0);
+  });
+
+  it('keeps an existing document unchanged when the remote source returns not modified', async () => {
+    const repository = new CatalogSyncRepositoryStub([enabledSource], existingDocument, currentVersion);
+    const fetcher = new ContentFetcherStub({ notModified: true });
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument],
+      limit: 1,
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(fetcher.contexts[0]?.cacheValidators).toMatchObject({
+      contentHash: 'content-hash',
+      etag: '"v1"',
+      lastModified: 'Tue, 02 Jul 2026 10:00:00 GMT',
+    });
+    expect(result).toMatchObject({
+      checkedCount: 1,
+      addedCount: 0,
+      updatedCount: 0,
+      unchangedCount: 1,
+      failedCount: 0,
+      documents: [
+        {
+          sourceKey: 'enabled-docs',
+          stableKey: 'guide',
+          status: 'unchanged',
+          document: existingDocument,
+        },
+      ],
+    });
+    expect(repository.upserts).toHaveLength(0);
+    expect(repository.versions).toHaveLength(0);
+    expect(repository.sections).toHaveLength(0);
+  });
 });
 
 const now = new Date(1_000);
@@ -201,3 +282,65 @@ const enabledSource: CatalogSource = {
   createdAt: now,
   updatedAt: now,
 };
+
+const declaredDocument = {
+  sourceKey: 'enabled-docs',
+  stableKey: 'guide',
+  title: 'Guide',
+  url: 'https://docs.example/guide.html',
+  language: 'en-US',
+  mimeType: 'text/html',
+  enabled: true,
+};
+
+const existingDocument: CatalogDocument = {
+  id: 42,
+  publicId: 'doc_existing',
+  sourceId: enabledSource.id,
+  canonicalUrl: 'https://docs.example/guide.html',
+  stableKey: 'guide',
+  title: 'Guide',
+  mimeType: 'text/html',
+  language: 'en-US',
+  status: 'ACTIVE',
+  currentVersionId: 7,
+  firstSeenAt: now,
+  lastSeenAt: now,
+  createdAt: now,
+  updatedAt: now,
+};
+
+const currentVersion: DocumentVersion = {
+  id: 7,
+  documentId: existingDocument.id,
+  contentHash: 'content-hash',
+  etag: '"v1"',
+  lastModified: 'Tue, 02 Jul 2026 10:00:00 GMT',
+  fetchedAt: now,
+  isCurrent: true,
+  extractionMode: 'static',
+  contentType: 'text/html',
+  metadataJson: '{}',
+};
+
+function fetchedContent(overrides: Partial<FetchedContent> = {}): FetchedContent {
+  return {
+    requestedUrl: 'https://docs.example/guide.html',
+    finalUrl: 'https://docs.example/guide.html',
+    canonicalUrl: 'https://docs.example/guide.html',
+    title: 'Fetched Guide',
+    markdown: '# Fetched Guide\n\n## Overview\n\nContent body.\n\n## Usage\n\nRun it.',
+    documentSections: [
+      { heading: 'Overview', markdown: '## Overview\n\nContent body.' },
+      { heading: 'Usage', markdown: '## Usage\n\nRun it.' },
+    ],
+    contentType: 'text/html',
+    fetchedAt: now.toISOString(),
+    extractionMode: 'static',
+    statusCode: 200,
+    contentHash: 'content-hash',
+    metadata: {},
+    links: [],
+    ...overrides,
+  };
+}
