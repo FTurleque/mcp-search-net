@@ -6,18 +6,9 @@ import type {
   CatalogDocument,
   CatalogSource,
   DocumentSection,
-  DocumentVersion,
 } from '../../domain/models/catalog.js';
 
 const RESOURCE_MIME_TYPE = 'application/json';
-
-type ListDocumentVersions = NonNullable<CatalogRepository['listDocumentVersions']>;
-type GetDocumentVersion = NonNullable<CatalogRepository['getDocumentVersion']>;
-
-interface DocumentVersionRepositoryPorts {
-  readonly listDocumentVersions?: ListDocumentVersions;
-  readonly getDocumentVersion?: GetDocumentVersion;
-}
 
 const CATALOG_RESOURCE_URIS = {
   catalog: 'mcp-search-net://catalog',
@@ -25,8 +16,6 @@ const CATALOG_RESOURCE_URIS = {
   source: 'mcp-search-net://sources/{sourceId}',
   documents: 'mcp-search-net://documents',
   document: 'mcp-search-net://documents/{documentId}',
-  documentVersions: 'mcp-search-net://documents/{documentId}/versions',
-  documentVersion: 'mcp-search-net://documents/{documentId}/versions/{versionId}',
   sections: 'mcp-search-net://sections',
   section: 'mcp-search-net://sections/{sectionId}',
 } as const;
@@ -85,28 +74,6 @@ export function registerCatalogResources(server: McpServer, repository: CatalogR
       mimeType: RESOURCE_MIME_TYPE,
     },
     async (uri) => jsonResource(uri, await createDocumentResource(repository, uri)),
-  );
-
-  server.registerResource(
-    'catalog-document-versions',
-    new ResourceTemplate(CATALOG_RESOURCE_URIS.documentVersions, { list: undefined }),
-    {
-      title: 'Catalog document versions',
-      description: 'Read-only historical version list for one catalog document.',
-      mimeType: RESOURCE_MIME_TYPE,
-    },
-    async (uri) => jsonResource(uri, await createDocumentVersionsResource(repository, uri)),
-  );
-
-  server.registerResource(
-    'catalog-document-version',
-    new ResourceTemplate(CATALOG_RESOURCE_URIS.documentVersion, { list: undefined }),
-    {
-      title: 'Catalog document version',
-      description: 'Read-only catalog document version details by numeric version id.',
-      mimeType: RESOURCE_MIME_TYPE,
-    },
-    async (uri) => jsonResource(uri, await createDocumentVersionResource(repository, uri)),
   );
 
   server.registerResource(
@@ -194,52 +161,6 @@ async function createDocumentResource(repository: CatalogRepository, uri: URL) {
   };
 }
 
-async function createDocumentVersionsResource(repository: CatalogRepository, uri: URL) {
-  const documentId = parseNumericResourceId(uri, 'documents');
-  const listDocumentVersions = documentVersionPorts(repository).listDocumentVersions;
-  if (listDocumentVersions === undefined) {
-    return {
-      schemaVersion: '1.0',
-      documentId,
-      available: false,
-      count: 0,
-      versions: [],
-    };
-  }
-  const versions = await listDocumentVersions.call(repository, documentId);
-  return {
-    schemaVersion: '1.0',
-    documentId,
-    available: true,
-    count: versions.length,
-    versions: versions.map(toResourceDocumentVersion),
-  };
-}
-
-async function createDocumentVersionResource(repository: CatalogRepository, uri: URL) {
-  const { documentId, versionId } = parseDocumentVersionResourceIds(uri);
-  const getDocumentVersion = documentVersionPorts(repository).getDocumentVersion;
-  if (getDocumentVersion === undefined) {
-    return {
-      schemaVersion: '1.0',
-      documentId,
-      versionId,
-      available: false,
-      found: false,
-      version: null,
-    };
-  }
-  const version = await getDocumentVersion.call(repository, documentId, versionId);
-  return {
-    schemaVersion: '1.0',
-    documentId,
-    versionId,
-    available: true,
-    found: version !== undefined,
-    version: version === undefined ? null : toResourceDocumentVersion(version),
-  };
-}
-
 async function createSectionsResource(repository: CatalogRepository) {
   const sections = await repository.listCurrentDocumentSections();
   return {
@@ -271,10 +192,6 @@ function jsonResource(uri: URL, value: unknown) {
       },
     ],
   };
-}
-
-function documentVersionPorts(repository: CatalogRepository): DocumentVersionRepositoryPorts {
-  return repository;
 }
 
 function toResourceSource(source: CatalogSource) {
@@ -312,23 +229,6 @@ function toResourceDocument(document: CatalogDocument) {
   };
 }
 
-function toResourceDocumentVersion(version: DocumentVersion) {
-  return {
-    id: version.id,
-    documentId: version.documentId,
-    versionLabel: version.versionLabel ?? null,
-    contentHash: version.contentHash,
-    etag: version.etag ?? null,
-    lastModified: version.lastModified ?? null,
-    publishedAt: version.publishedAt?.toISOString() ?? null,
-    fetchedAt: version.fetchedAt.toISOString(),
-    isCurrent: version.isCurrent,
-    extractionMode: version.extractionMode,
-    contentType: version.contentType,
-    metadataJson: version.metadataJson,
-  };
-}
-
 function toResourceSectionEntry(entry: CatalogCurrentDocumentSection) {
   return {
     source: toResourceSource(entry.source),
@@ -360,18 +260,4 @@ function parseNumericResourceId(
   const prefix = `mcp-search-net://${collection}/`;
   if (!uri.href.startsWith(prefix)) return Number.NaN;
   return Number.parseInt(uri.href.slice(prefix.length), 10);
-}
-
-function parseDocumentVersionResourceIds(uri: URL): {
-  readonly documentId: number;
-  readonly versionId: number;
-} {
-  const match = /^mcp-search-net:\/\/documents\/(\d+)\/versions\/(\d+)$/u.exec(uri.href);
-  if (match === null) return { documentId: Number.NaN, versionId: Number.NaN };
-  const documentId = match[1] ?? String(Number.NaN);
-  const versionId = match[2] ?? String(Number.NaN);
-  return {
-    documentId: Number.parseInt(documentId, 10),
-    versionId: Number.parseInt(versionId, 10),
-  };
 }
