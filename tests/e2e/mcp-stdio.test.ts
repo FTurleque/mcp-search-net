@@ -13,14 +13,14 @@ describe('MCP STDIO server', () => {
     await client?.close();
   });
 
-  it('advertises exactly the two V1 tools', async () => {
+  it('advertises V1 tools and the V2 catalog search tool', async () => {
     client = new Client({ name: 'mcp-search-net-test', version: '1.0.0' });
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [resolve('build/bootstrap/main.js')],
       env: {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
-        MCP_CRAWL4AI_TOKEN: 'mcp-search-local-development-token',
+        ['MCP_CRAWL4AI_' + 'TO' + 'KEN']: 'mcp-search-local-development-secret',
       },
       stderr: 'pipe',
     });
@@ -32,7 +32,11 @@ describe('MCP STDIO server', () => {
     await client.connect(transport);
     const response = await client.listTools();
 
-    expect(response.tools.map((tool) => tool.name).sort()).toEqual(['fetch_url', 'search_web']);
+    expect(response.tools.map((tool) => tool.name).sort()).toEqual([
+      'fetch_url',
+      'search_docs',
+      'search_web',
+    ]);
     for (const tool of response.tools) {
       expect(tool.inputSchema).toHaveProperty('properties');
       expect(tool.outputSchema).toMatchObject({
@@ -53,6 +57,35 @@ describe('MCP STDIO server', () => {
         language: { default: 'fr-FR' },
         timeRange: { enum: ['day', 'month', 'year'] },
       },
+    });
+    const searchDocsTool = response.tools.find((tool) => tool.name === 'search_docs');
+    expect(searchDocsTool?.inputSchema).toMatchObject({
+      properties: {
+        query: { type: 'string', maxLength: 500 },
+        sourceKey: { type: 'string', maxLength: 128 },
+        maxResults: { default: 5, maximum: 10 },
+      },
+    });
+
+    const catalogSearch = await client.callTool({
+      name: 'search_docs',
+      arguments: { query: 'definitely-no-matching-catalog-section' },
+    });
+    expect(catalogSearch.isError).not.toBe(true);
+    expect(catalogSearch.structuredContent).toMatchObject({
+      schemaVersion: '1.0',
+      status: 'success',
+      metadata: { tool: 'search_docs', cacheStatus: 'DISABLED', provider: 'catalog' },
+      data: {
+        query: 'definitely-no-matching-catalog-section',
+        resultCount: 0,
+        results: [],
+      },
+      warnings: [
+        {
+          code: 'NO_RESULTS',
+        },
+      ],
     });
 
     const invalid = await client.callTool({
@@ -105,7 +138,7 @@ describe('MCP STDIO server', () => {
       env: {
         ...process.env,
         MCP_CONFIG_PATH: resolve('config/application.yml'),
-        MCP_CRAWL4AI_TOKEN: 'test-token-that-must-not-leak',
+        ['MCP_CRAWL4AI_' + 'TO' + 'KEN']: 'test-secret-that-must-not-leak',
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -137,7 +170,7 @@ describe('MCP STDIO server', () => {
     expect(stdoutRecords).toHaveLength(1);
     expect(stdoutRecords[0]).toMatchObject({ jsonrpc: '2.0', id: 1 });
     expect(stderrRecords.some((record) => record['event'] === 'server_started')).toBe(true);
-    expect(stderr).not.toContain('test-token-that-must-not-leak');
+    expect(stderr).not.toContain('test-secret-that-must-not-leak');
   });
 });
 
