@@ -4,7 +4,6 @@ import { readFile } from 'node:fs/promises';
 import type { CatalogRepository } from '../application/ports/catalog-repository.js';
 import type {
   CatalogDocument,
-  DocumentSection,
   DocumentSectionInput,
   DocumentVersion,
 } from '../domain/models/catalog.js';
