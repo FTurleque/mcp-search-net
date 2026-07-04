@@ -14,6 +14,8 @@ const expectedResourceUris = [
 ];
 const expectedResourceTemplateUris = [
   'mcp-search-net://documents/{documentId}',
+  'mcp-search-net://documents/{documentId}/versions',
+  'mcp-search-net://documents/{documentId}/versions/{versionId}',
   'mcp-search-net://sections/{sectionId}',
   'mcp-search-net://sources/{sourceId}',
 ];
@@ -25,7 +27,7 @@ describe('MCP catalog resources', () => {
     await client?.close();
   });
 
-  it('lists and reads read-only catalog resources', async () => {
+  it('lists and reads read-only catalog resources and templates', async () => {
     client = new Client({ name: 'mcp-search-net-resource-test', version: '1.0.0' });
     const transport = new StdioClientTransport({
       command: process.execPath,
@@ -82,6 +84,20 @@ describe('MCP catalog resources', () => {
       sourceId: 999999,
       found: false,
       source: null,
+    });
+
+    const missingVersions = await readJsonResource<{
+      documentId: number;
+      available: boolean;
+      count: number;
+      versions: unknown[];
+    }>(client, 'mcp-search-net://documents/999999/versions');
+    expect(missingVersions).toEqual({
+      schemaVersion: '1.0',
+      documentId: 999999,
+      available: true,
+      count: 0,
+      versions: [],
     });
   });
 });
