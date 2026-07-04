@@ -5,6 +5,8 @@ import type { Clock } from '../../application/ports/clock.js';
 import type {
   CatalogDocument,
   CatalogDocumentInput,
+  CatalogDocumentSearchQuery,
+  CatalogDocumentSearchResult,
   CatalogFreshnessPolicy,
   CatalogSource,
   CatalogSourceType,
@@ -35,6 +37,7 @@ import {
   DELETE_DOCUMENT_SECTIONS_SQL,
   INSERT_CATALOG_SOURCE_SQL,
   INSERT_DOCUMENT_SECTION_SQL,
+  SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
   SELECT_CATALOG_SOURCE_BY_KEY_SQL,
   SELECT_CATALOG_SOURCES_SQL,
   SELECT_DOCUMENTS_SQL,
@@ -46,6 +49,10 @@ import {
   UPSERT_DOCUMENT_SQL,
   UPSERT_DOCUMENT_VERSION_SQL,
 } from './catalog-sql.js';
+
+const DEFAULT_SEARCH_LIMIT = 10;
+const MAX_SEARCH_LIMIT = 50;
+const SEARCH_SNIPPET_RADIUS = 80;
 
 type InsertCatalogSourceParams = [
   string,
@@ -101,6 +108,64 @@ type InsertDocumentSectionParams = [
   number,
   number | null,
 ];
+
+type SearchCurrentDocumentSectionsParams = [
+  string,
+  string,
+  string,
+  string | null,
+  string | null,
+  string | null,
+  string | null,
+  string,
+  string,
+  string,
+  string,
+  number,
+];
+
+interface CatalogDocumentSearchRow {
+  readonly source_id: number;
+  readonly source_source_key: string;
+  readonly source_display_name: string;
+  readonly source_base_url: string;
+  readonly source_source_type: CatalogSourceType;
+  readonly source_language: string;
+  readonly source_freshness_policy: CatalogFreshnessPolicy;
+  readonly source_sync_strategy: CatalogSyncStrategy;
+  readonly source_enabled: number;
+  readonly source_created_at: number;
+  readonly source_updated_at: number;
+
+  readonly document_id: number;
+  readonly document_public_id: string;
+  readonly document_source_id: number;
+  readonly document_canonical_url: string;
+  readonly document_stable_key: string;
+  readonly document_title: string;
+  readonly document_mime_type: string;
+  readonly document_language: string;
+  readonly document_status: DocumentStatus;
+  readonly document_current_version_id: number | null;
+  readonly document_first_seen_at: number;
+  readonly document_last_seen_at: number;
+  readonly document_created_at: number;
+  readonly document_updated_at: number;
+
+  readonly section_id: number;
+  readonly section_document_version_id: number;
+  readonly section_ordinal: number;
+  readonly section_heading: string | null;
+  readonly section_heading_path: string | null;
+  readonly section_heading_level: number | null;
+  readonly section_anchor: string | null;
+  readonly section_content: string;
+  readonly section_content_hash: string;
+  readonly section_character_count: number;
+  readonly section_token_count: number | null;
+
+  readonly score: number;
+}
 
 export class SqliteCatalogRepository implements CatalogRepository {
   private readonly database: Database.Database;
@@ -273,6 +338,40 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
+  public searchDocuments(
+    query: CatalogDocumentSearchQuery,
+  ): Promise<readonly CatalogDocumentSearchResult[]> {
+    return this.asPromise(() => {
+      const term = query.query.trim().toLocaleLowerCase();
+      if (term.length === 0) return [];
+
+      const pattern = `%${escapeLikePattern(term)}%`;
+      const sourceKey = query.sourceKey ?? null;
+      const language = query.language ?? null;
+      const limit = normalizeSearchLimit(query.limit);
+      const rows = this.database
+        .prepare<SearchCurrentDocumentSectionsParams, CatalogDocumentSearchRow>(
+          SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
+        )
+        .all(
+          pattern,
+          pattern,
+          pattern,
+          sourceKey,
+          sourceKey,
+          language,
+          language,
+          pattern,
+          pattern,
+          pattern,
+          pattern,
+          limit,
+        );
+
+      return rows.map((row) => toCatalogDocumentSearchResult(row, term));
+    });
+  }
+
   public close(): void {
     if (this.database.open) this.database.close();
   }
@@ -302,4 +401,84 @@ export class SqliteCatalogRepository implements CatalogRepository {
       .prepare<[number], DocumentSectionRow>(SELECT_DOCUMENT_SECTIONS_SQL)
       .all(documentVersionId);
   }
+}
+
+function normalizeSearchLimit(limit: number | undefined): number {
+  if (limit === undefined) return DEFAULT_SEARCH_LIMIT;
+  if (!Number.isFinite(limit)) return DEFAULT_SEARCH_LIMIT;
+  return Math.min(Math.max(Math.trunc(limit), 1), MAX_SEARCH_LIMIT);
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+function toCatalogDocumentSearchResult(
+  row: CatalogDocumentSearchRow,
+  term: string,
+): CatalogDocumentSearchResult {
+  const source = toCatalogSource({
+    id: row.source_id,
+    source_key: row.source_source_key,
+    display_name: row.source_display_name,
+    base_url: row.source_base_url,
+    source_type: row.source_source_type,
+    language: row.source_language,
+    freshness_policy: row.source_freshness_policy,
+    sync_strategy: row.source_sync_strategy,
+    enabled: row.source_enabled,
+    created_at: row.source_created_at,
+    updated_at: row.source_updated_at,
+  });
+
+  const document = toCatalogDocument({
+    id: row.document_id,
+    public_id: row.document_public_id,
+    source_id: row.document_source_id,
+    canonical_url: row.document_canonical_url,
+    stable_key: row.document_stable_key,
+    title: row.document_title,
+    mime_type: row.document_mime_type,
+    language: row.document_language,
+    status: row.document_status,
+    current_version_id: row.document_current_version_id,
+    first_seen_at: row.document_first_seen_at,
+    last_seen_at: row.document_last_seen_at,
+    created_at: row.document_created_at,
+    updated_at: row.document_updated_at,
+  });
+
+  const section = toDocumentSection({
+    id: row.section_id,
+    document_version_id: row.section_document_version_id,
+    ordinal: row.section_ordinal,
+    heading: row.section_heading,
+    heading_path: row.section_heading_path,
+    heading_level: row.section_heading_level,
+    anchor: row.section_anchor,
+    content: row.section_content,
+    content_hash: row.section_content_hash,
+    character_count: row.section_character_count,
+    token_count: row.section_token_count,
+  });
+
+  return {
+    source,
+    document,
+    section,
+    snippet: createSnippet(row.section_content, term),
+    score: row.score,
+  };
+}
+
+function createSnippet(content: string, term: string): string {
+  const normalizedContent = content.toLocaleLowerCase();
+  const index = normalizedContent.indexOf(term);
+  if (index < 0) return content.slice(0, SEARCH_SNIPPET_RADIUS * 2).trim();
+
+  const start = Math.max(0, index - SEARCH_SNIPPET_RADIUS);
+  const end = Math.min(content.length, index + term.length + SEARCH_SNIPPET_RADIUS);
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < content.length ? '…' : '';
+  return `${prefix}${content.slice(start, end).trim()}${suffix}`;
 }
