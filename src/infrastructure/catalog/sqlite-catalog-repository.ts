@@ -402,9 +402,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
           ? []
           : this.searchDocumentsWithFts(ftsQuery, pattern, sourceKey, language, limit);
       const rows =
-        ftsRows.length > 0
-          ? ftsRows
-          : this.searchDocumentsWithLike(pattern, sourceKey, language, limit);
+        ftsRows.length > 0 ? ftsRows : this.searchDocumentsWithLike(pattern, sourceKey, language, limit);
 
       return rows.map((row) => toCatalogDocumentSearchResult(row, term));
     });
