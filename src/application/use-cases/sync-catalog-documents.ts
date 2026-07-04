@@ -169,8 +169,9 @@ export class SyncCatalogDocuments {
     const skippedCount = entries.filter((entry) => entry.status === 'skipped').length;
     const checkedCount = addedCount + updatedCount + unchangedCount + failedCount;
     const now = this.clock.now();
+    const scopedSource = options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
     const syncRun = await this.repository.addCatalogSyncRun({
-      ...(options.sourceKey === undefined ? {} : { sourceId: sourceByKey.get(options.sourceKey)?.id }),
+      ...(scopedSource === undefined ? {} : { sourceId: scopedSource.id }),
       startedAt: now,
       completedAt: now,
       status: failedCount === 0 ? 'SUCCESS' : checkedCount === failedCount ? 'FAILED' : 'PARTIAL',
