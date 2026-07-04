@@ -411,7 +411,7 @@ function normalizeSearchLimit(limit: number | undefined): number {
 }
 
 function escapeLikePattern(value: string): string {
-  return value.replace(/[\%_]/g, (character) => `\${character}`);
+  return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
 }
 
 function toCatalogDocumentSearchResult(
