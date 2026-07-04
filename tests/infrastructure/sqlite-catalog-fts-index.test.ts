@@ -19,7 +19,9 @@ describe('SqliteCatalogRepository FTS index', () => {
 
   afterEach(() => {
     repository?.close();
-    if (directory !== undefined) rmSync(directory, { recursive: true, force: true });
+    if (directory !== undefined) {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('rebuilds the FTS index from current active document sections', async () => {
