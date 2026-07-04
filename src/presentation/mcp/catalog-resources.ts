@@ -253,7 +253,10 @@ function toResourceSection(section: DocumentSection) {
   };
 }
 
-function parseNumericResourceId(uri: URL, collection: 'sources' | 'documents' | 'sections'): number {
+function parseNumericResourceId(
+  uri: URL,
+  collection: 'sources' | 'documents' | 'sections',
+): number {
   const prefix = `mcp-search-net://${collection}/`;
   if (!uri.href.startsWith(prefix)) return Number.NaN;
   return Number.parseInt(uri.href.slice(prefix.length), 10);
