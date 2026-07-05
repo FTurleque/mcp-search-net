@@ -1,4 +1,13 @@
-import { closeSync, existsSync, mkdirSync, openSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import type Database from 'better-sqlite3';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname } from 'node:path';
 
 import type { Clock } from '../../application/ports/clock.js';
@@ -120,14 +129,11 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
     unlinkSync(lockPath);
   }
 
-  private countSyncRuns(database: import('better-sqlite3').Database): number {
+  private countSyncRuns(database: Database.Database): number {
     return database.prepare<[], CountRow>('SELECT COUNT(*) AS count FROM sync_runs').get()?.count ?? 0;
   }
 
-  private deleteExpiredSyncRuns(
-    database: import('better-sqlite3').Database,
-    input: CatalogMaintenanceInput,
-  ): number {
+  private deleteExpiredSyncRuns(database: Database.Database, input: CatalogMaintenanceInput): number {
     const maxAgeMs = input.maxSyncRunAgeDays * 24 * 60 * 60 * 1_000;
     const threshold = this.clock.now().getTime() - maxAgeMs;
     const result = database
