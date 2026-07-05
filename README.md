@@ -157,7 +157,8 @@ Exécution Docker :
 En V1, Copilot doit afficher `search_web` et `fetch_url`. En V2 documentaire, le
 serveur expose aussi `search_docs` et des resources read-only de catalogue ; le
 spike final IntelliJ/Copilot reste à exécuter avant gel définitif de l'ergonomie
-V2. Voir le [guide IntelliJ détaillé](docs/getting-started/intellij-copilot.md).
+V2. Voir le [guide IntelliJ détaillé](docs/getting-started/intellij-copilot.md)
+et la [recette de spike MCP V2](docs/planning/spike-intellij-copilot-mcp-v2.md).
 
 ## Configuration
 
@@ -218,18 +219,3 @@ Fonctionnalités en cours de stabilisation dans la PR #8 :
 | SearXNG répond 403         | vérifier que `json` est activé dans `config/searxng/settings.yml`          |
 | Crawl4AI répond 401/403    | aligner `MCP_CRAWL4AI_TOKEN` et `CRAWL4AI_API_TOKEN`                       |
 | healthcheck en échec       | `docker compose ps` puis `docker compose logs <service>`                   |
-| erreur better-sqlite3      | vérifier Node 24, l’installation npm et les droits sur `.data`             |
-| timeout                    | vérifier DNS, accès Internet et limites de configuration                   |
-| URL bloquée                | confirmer qu’elle ne résout vers aucune adresse privée ou réservée         |
-| Crawl4AI manque de mémoire | augmenter la mémoire Docker Desktop ; `shm_size` vaut 1 Go                 |
-
-La documentation complète est indexée dans [docs/README.md](docs/README.md), avec
-les contrats, l’installation Windows, la sécurité, les tests et le dépannage.
-
-## Limites actuelles
-
-Pas d’OCR, base vectorielle, embeddings actifs, crawl de domaine, suivi autonome
-des liens, authentification Web, formulaires, CAPTCHA, captures d’écran, scripts
-utilisateur ou LLM interne. Un PDF sans couche textuelle retourne
-`OCR_REQUIRED_NOT_SUPPORTED`. La synchronisation exhaustive, le rate limiting, la
-reprise après interruption et le spike IntelliJ/Copilot V2 restent à finaliser.
