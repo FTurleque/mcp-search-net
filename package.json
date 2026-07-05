@@ -19,6 +19,7 @@
     "catalog": "npm run build && node build/cli/catalog.js",
     "catalog:init": "npm run build && node build/cli/catalog.js init",
     "catalog:status": "npm run build && node build/cli/catalog.js status",
+    "catalog:maintain": "npm run build && node build/cli/catalog-maintain.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
