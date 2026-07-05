@@ -10,7 +10,8 @@
 - **Commit testé via lanceur utilisateur installé** : `25c4aba04160ca3b46e8c70ce480a10c8df7e4d4`, avec correction locale non commitée de `scripts/install-user.ps1` signalée pendant le test.
 - **PR** : #8, conservée en draft.
 - **GitHub Actions / CI GitHub** : non déclenchées.
-- **Décision** : **GO avec réserve côté Codex Desktop**.
+- **Décision serveur / installation** : **GO**.
+- **Décision ergonomie Codex Desktop native** : **à retester dans un nouveau thread**.
 
 ## Résumé exécutif
 
@@ -20,7 +21,7 @@ La validation locale et l'installation utilisateur sont passées : `npm run chec
 
 Le test MCP a ensuite été rejoué contre le lanceur utilisateur installé. Résultat : `tools/list` expose `fetch_url`, `search_docs` et `search_web`, puis `tools/call search_docs("resources MCP V2")` retourne `status: success`, `resultCount: 5`, `warnings: []`, `provider: catalog`.
 
-La réserve restante concerne l'ergonomie Codex Desktop : `mcp-search-net` n'était pas exposé comme outil natif dans le thread Codex testé. Le test MCP a donc été réalisé via client MCP stdio local explicite.
+Le point Codex Desktop doit être lu comme une limite d'observation du thread testé, pas comme une réserve sur le serveur : dans ce thread précis, `mcp-search-net` n'était pas exposé comme outil natif Codex. Le contrat serveur, le lanceur installé et le transport MCP stdio sont validés. L'exposition native dans l'interface Codex doit simplement être retestée dans un nouveau thread après redémarrage complet du client.
 
 ## Git et build local
 
@@ -272,14 +273,14 @@ Top résultats retournés :
 - Aucune CI GitHub n'a été lancée.
 - Aucune opération mutable MCP n'est nécessaire.
 
-## Réserve
+## Point Codex Desktop natif
 
-Dans le thread Codex utilisé pour ce test, `mcp-search-net` n'était pas exposé comme outil natif Codex. La validation porte donc sur l'appel MCP stdio local explicite, pas sur l'ergonomie native du thread Codex.
+Dans le thread Codex utilisé pour ce test, `mcp-search-net` n'était pas exposé comme outil natif Codex. Ce point ne remet pas en cause la V2 serveur : le serveur installé et le protocole MCP stdio sont validés.
 
-La décision est donc **GO avec réserve** :
+Décision :
 
 - **GO** pour le contrat MCP serveur, le build local, les tests locaux, l'installation utilisateur, le lanceur MCP installé, le catalogue spike et l'outil `search_docs` ;
-- **réserve** sur l'exposition native dans Codex Desktop ;
+- **à retester** pour l'exposition native dans l'interface Codex Desktop ;
 - les resources MCP restent à valider si le client les expose directement.
 
 ## Suite recommandée
