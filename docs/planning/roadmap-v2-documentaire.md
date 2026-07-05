@@ -22,7 +22,7 @@ Avancement :
 - V2.3 recherche lexicale : implémentée sur sections courantes.
 - V2.4 exposition MCP : implémentée avec `search_docs`, resources read-only, versions documentaires et recette de spike IntelliJ/Copilot préparée.
 - V2.5 synchronisation incrémentale : implémentée avec sync contrôlé, sync exhaustive, rate limiting applicatif, reprise par curseur, validateurs, staleness et redirections permanentes.
-- V2.6 automatisation contrôlée : non démarrée.
+- V2.6 automatisation contrôlée : implémentée et validée localement sur la tranche maintenance contrôlée.
 - V2.7 embeddings : non démarrée, optionnelle.
 
 Le travail postérieur au dernier head vert est bien récupéré dans la PR #8, mais il doit être revalidé localement ou par CI manuelle lorsque les minutes Actions seront de nouveau disponibles.
@@ -159,11 +159,20 @@ La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intell
 
 ### V2.6 — Automatisation contrôlée
 
-- [ ] Worker/scheduler externe.
-- [ ] Lock inter-processus robuste.
-- [ ] Observabilité structurée par événement.
-- [ ] Politique de rétention opérationnelle.
-- [ ] Maintenance SQLite.
+- [x] Worker/scheduler externe.
+- [x] Lock inter-processus robuste.
+- [x] Observabilité structurée par événement.
+- [x] Politique de rétention opérationnelle.
+- [x] Maintenance SQLite.
+
+Validation locale V2.6 :
+
+- `npm run lint` : OK.
+- `npm run typecheck` : OK.
+- `npm run build` : OK.
+- `npm run test` : OK, 35 fichiers de tests passés, 180 tests passés.
+- `npm run catalog:maintain -- --path .data/catalog-spike.db` : OK sur le catalogue de spike.
+- Statut archivé dans [`status-v2-6.md`](status-v2-6.md).
 
 ### V2.7 — Recherche sémantique optionnelle
 
@@ -279,3 +288,4 @@ La V2 sera considérée opérationnelle lorsque :
 - [Synchronisation catalogue V2](../reference/catalog-sync-v2.md)
 - [Spike IntelliJ/Copilot — MCP V2 documentaire](spike-intellij-copilot-mcp-v2.md)
 - [Benchmark V2](benchmark-v2.md)
+- [Statut V2.6](status-v2-6.md)

@@ -38,6 +38,7 @@
 - [Validation Codex Desktop — MCP V2 documentaire](planning/validation-codex-desktop-mcp-v2-2026-07-05.md)
 - [Lancement V2.6 — Automatisation contrôlée](planning/validation-v2-6-launch-2026-07-05.md)
 - [Validation locale V2.6](planning/validation-v2-6-local-success-2026-07-05.md)
+- [Statut V2.6](planning/status-v2-6.md)
 - [Validation finale V1 — Recette complète 27 juin 2026](planning/validation-v1-recette-finale-2026-06-27.md)
 - [Décision V1/V2 go/no-go du 22 juin 2026](planning/validation-v1-v2-go-no-go-2026-06-22.md)
 - [Matrice de traçabilité V1](planning/traceabilite-v1.md)
