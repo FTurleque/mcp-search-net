@@ -7,6 +7,7 @@
 - **Branche** : `feat/v2-catalog-storage`.
 - **Commit testé initialement** : `e5c6c68e4aa2f317bf84c85c607abe01302ed625`.
 - **Head validé localement pour installation utilisateur** : `25c4aba04160ca3b46e8c70ce480a10c8df7e4d4` puis `a508a8679b13f987cb98d797cf0be71cf33695b6`.
+- **Commit testé via lanceur utilisateur installé** : `25c4aba04160ca3b46e8c70ce480a10c8df7e4d4`, avec correction locale non commitée de `scripts/install-user.ps1` signalée pendant le test.
 - **PR** : #8, conservée en draft.
 - **GitHub Actions / CI GitHub** : non déclenchées.
 - **Décision** : **GO avec réserve côté Codex Desktop**.
@@ -15,7 +16,9 @@
 
 Le test documentaire V2 fonctionne via un client MCP stdio local explicite. Le serveur expose bien `search_docs`, l'appel `tools/call` répond correctement avec le provider `catalog`, et le catalogue de spike contient les dix documents attendus.
 
-La validation locale et l'installation utilisateur sont maintenant passées : `npm run check` passe entièrement, les dépendances de production sont installées, l'ancienne installation utilisateur est renommée, le lanceur MCP est généré, et les services locaux SearXNG/Crawl4AI démarrent avec un état healthy.
+La validation locale et l'installation utilisateur sont passées : `npm run check` passe entièrement, les dépendances de production sont installées, l'ancienne installation utilisateur est renommée, le lanceur MCP est généré, et les services locaux SearXNG/Crawl4AI démarrent avec un état healthy.
+
+Le test MCP a ensuite été rejoué contre le lanceur utilisateur installé. Résultat : `tools/list` expose `fetch_url`, `search_docs` et `search_web`, puis `tools/call search_docs("resources MCP V2")` retourne `status: success`, `resultCount: 5`, `warnings: []`, `provider: catalog`.
 
 La réserve restante concerne l'ergonomie Codex Desktop : `mcp-search-net` n'était pas exposé comme outil natif dans le thread Codex testé. Le test MCP a donc été réalisé via client MCP stdio local explicite.
 
@@ -30,6 +33,17 @@ commit: e5c6c68e4aa2f317bf84c85c607abe01302ed625
 remote alignment: 0 ahead / 0 behind with origin/feat/v2-catalog-storage
 final worktree: clean
 ```
+
+État du test final via lanceur installé :
+
+```text
+branch: feat/v2-catalog-storage
+commit: 25c4aba04160ca3b46e8c70ce480a10c8df7e4d4
+remote alignment: 0 ahead / 0 behind
+local worktree: modified scripts/install-user.ps1
+```
+
+Note : le testeur a signalé une correction locale non commitée dans `scripts/install-user.ps1` pour copier `catalog-migrations` dans l'application installée. La branche distante contient désormais une copie explicite de `catalog-migrations` dans le staging installé.
 
 Commandes de préparation initiales :
 
@@ -149,9 +163,11 @@ Contrôles réalisés :
 
 ## Test MCP
 
+### Test MCP initial
+
 Méthode utilisée : client MCP stdio local explicite.
 
-### `tools/list`
+#### `tools/list`
 
 Statut : OK.
 
@@ -161,7 +177,46 @@ Outils exposés :
 - `fetch_url` ;
 - `search_docs`.
 
-### `tools/call` — `search_docs`
+#### `tools/call` — `search_docs`
+
+Requête fonctionnelle :
+
+```text
+search_docs("resources MCP V2")
+```
+
+Résultat observé :
+
+```text
+status: success
+resultCount: 5
+warnings: []
+provider: catalog
+```
+
+Top résultats retournés :
+
+1. `ADR-016 MCP V2 : Resources implémentées ou en cours de stabilisation`
+2. `ADR-016 MCP V2 : Critères d'acceptation avant gel définitif`
+3. `ADR-016 MCP V2 : ADR-016 — Exposer la V2 avec un outil de recherche et des resources MCP`
+4. `ADR-016 MCP V2 : Positives`
+5. `ADR-016 MCP V2 : Contexte`
+
+### Test MCP contre le lanceur utilisateur installé
+
+Méthode utilisée : installed local MCP stdio launcher.
+
+#### `tools/list`
+
+Statut : OK.
+
+Outils exposés :
+
+- `fetch_url` ;
+- `search_docs` ;
+- `search_web`.
+
+#### `tools/call` — `search_docs`
 
 Requête fonctionnelle :
 
@@ -200,6 +255,9 @@ Top résultats retournés :
 - Le lanceur `%LOCALAPPDATA%\mcp-search-net\bin\mcp-search-net.cmd` est généré.
 - Le fichier d'exemple `%LOCALAPPDATA%\mcp-search-net\mcp.json.example` est généré.
 - SearXNG et Crawl4AI démarrent et passent healthy.
+- Le lanceur utilisateur installé peut servir `tools/list` en MCP stdio.
+- Le lanceur utilisateur installé expose `fetch_url`, `search_docs` et `search_web`.
+- Le lanceur utilisateur installé répond à `tools/call search_docs` sur le catalogue de spike.
 - Le catalogue de spike contient dix documents.
 - L'index documentaire contient 133 sections.
 - `catalog verify` retourne `OK` sans issue.
@@ -220,7 +278,7 @@ Dans le thread Codex utilisé pour ce test, `mcp-search-net` n'était pas expos�
 
 La décision est donc **GO avec réserve** :
 
-- **GO** pour le contrat MCP serveur, le build local, les tests locaux, l'installation utilisateur, le catalogue spike et l'outil `search_docs` ;
+- **GO** pour le contrat MCP serveur, le build local, les tests locaux, l'installation utilisateur, le lanceur MCP installé, le catalogue spike et l'outil `search_docs` ;
 - **réserve** sur l'exposition native dans Codex Desktop ;
 - les resources MCP restent à valider si le client les expose directement.
 
