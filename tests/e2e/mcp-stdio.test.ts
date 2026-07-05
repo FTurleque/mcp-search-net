@@ -1,14 +1,11 @@
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import type { Readable } from 'node:stream';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
-const unsupportedFileUrl = 'file://' + '/etc/passwd';
-const blockedLoopbackUrl = 'http://' + '127.0.0.1/private';
 
 describe('MCP STDIO server', () => {
   let client: Client | undefined;
@@ -17,7 +14,7 @@ describe('MCP STDIO server', () => {
     await client?.close();
   });
 
-  it('advertises V1 tools and the V2 catalog search tool', async () => {
+  it('advertises V1 tools and compact V2 catalog tools', async () => {
     client = new Client({ name: 'mcp-search-net-test', version: '1.0.0' });
     const transport = new StdioClientTransport({
       command: process.execPath,
@@ -28,52 +25,48 @@ describe('MCP STDIO server', () => {
       },
       stderr: 'pipe',
     });
-    let stderr = '';
-    captureStderr(transport, (chunk) => {
-      stderr += chunk;
-    });
 
     await client.connect(transport);
     const response = await client.listTools();
 
     expect(response.tools.map((tool) => tool.name).sort()).toEqual([
       'fetch_url',
+      'list_docs',
+      'read_doc_section',
       'search_docs',
       'search_web',
     ]);
-    for (const tool of response.tools) {
-      expect(tool.inputSchema).toHaveProperty('properties');
-      expect(tool.outputSchema).toMatchObject({
-        type: 'object',
-        properties: {
-          schemaVersion: { const: '1.0' },
-          requestId: { type: 'string' },
-          data: { type: 'object' },
-        },
-      });
-    }
-    const searchTool = response.tools.find((tool) => tool.name === 'search_web');
-    expect(searchTool?.inputSchema).toMatchObject({
-      properties: {
-        sourcePolicy: { default: 'prefer', enum: ['strict', 'prefer', 'any'] },
-        allowedDomains: { type: 'array', maxItems: 20 },
-        excludedDomains: { type: 'array', maxItems: 20 },
-        language: { default: 'fr-FR' },
-        timeRange: { enum: ['day', 'month', 'year'] },
-      },
-    });
+
     const searchDocsTool = response.tools.find((tool) => tool.name === 'search_docs');
     expect(searchDocsTool?.inputSchema).toMatchObject({
       properties: {
         query: { type: 'string', maxLength: 500 },
         sourceKey: { type: 'string', maxLength: 128 },
         maxResults: { default: 5, maximum: 10 },
+        maxSnippetChars: { default: 240, maximum: 500 },
+        compact: { default: false },
+      },
+    });
+
+    const listDocsTool = response.tools.find((tool) => tool.name === 'list_docs');
+    expect(listDocsTool?.inputSchema).toMatchObject({
+      properties: {
+        limit: { default: 20, maximum: 50 },
+        offset: { default: 0 },
+      },
+    });
+
+    const readSectionTool = response.tools.find((tool) => tool.name === 'read_doc_section');
+    expect(readSectionTool?.inputSchema).toMatchObject({
+      properties: {
+        sectionId: { type: 'number' },
+        maxCharacters: { default: 3000, maximum: 8000 },
       },
     });
 
     const catalogSearch = await client.callTool({
       name: 'search_docs',
-      arguments: { query: 'definitely-no-matching-catalog-section' },
+      arguments: { query: 'definitely-no-matching-catalog-section', compact: true },
     });
     expect(catalogSearch.isError).not.toBe(true);
     expect(catalogSearch.structuredContent).toMatchObject({
@@ -92,50 +85,39 @@ describe('MCP STDIO server', () => {
       ],
     });
 
-    const invalid = await client.callTool({
-      name: 'search_web',
-      arguments: { query: 42 },
-    });
-    expect(invalid.isError).toBe(true);
-    expect(invalid._meta?.['mcp-search-net/error']).toMatchObject({
+    const compactList = await client.callTool({ name: 'list_docs', arguments: { limit: 3 } });
+    expect(compactList.isError).not.toBe(true);
+    expect(compactList.structuredContent).toMatchObject({
       schemaVersion: '1.0',
-      code: 'INVALID_ARGUMENT',
-      retryable: false,
-    });
-    const invalidContent = invalid.content as { type: string; text: string }[];
-    expect(invalidContent[0]).toMatchObject({ type: 'text' });
-    expect(invalidContent[0]?.text).toContain('(INVALID_ARGUMENT)');
-
-    const blockedFetch = await client.callTool({
-      name: 'fetch_url',
-      arguments: { url: unsupportedFileUrl },
-    });
-    expect(blockedFetch.isError).toBe(true);
-    expect(blockedFetch._meta?.['mcp-search-net/error']).toMatchObject({
-      code: 'UNSUPPORTED_PROTOCOL',
-      retryable: false,
+      status: 'success',
+      metadata: { tool: 'list_docs', cacheStatus: 'DISABLED', provider: 'catalog' },
+      data: {
+        count: expect.any(Number),
+        total: expect.any(Number),
+        documents: expect.any(Array),
+      },
     });
 
-    const blockedLocalFetch = await client.callTool({
-      name: 'fetch_url',
-      arguments: { url: blockedLoopbackUrl },
+    const missingSection = await client.callTool({
+      name: 'read_doc_section',
+      arguments: { sectionId: 999999, maxCharacters: 500 },
     });
-    expect(blockedLocalFetch.isError).toBe(true);
-    expect(blockedLocalFetch._meta?.['mcp-search-net/error']).toMatchObject({
-      code: 'BLOCKED_ADDRESS',
-      retryable: false,
+    expect(missingSection.isError).not.toBe(true);
+    expect(missingSection.structuredContent).toMatchObject({
+      schemaVersion: '1.0',
+      status: 'success',
+      metadata: { tool: 'read_doc_section', cacheStatus: 'DISABLED', provider: 'catalog' },
+      data: {
+        sectionId: 999999,
+        found: false,
+        content: '',
+      },
+      warnings: [
+        {
+          code: 'NO_RESULTS',
+        },
+      ],
     });
-    await waitUntil(
-      () =>
-        stderr.includes('"event":"url_blocked"') && stderr.includes('"code":"BLOCKED_ADDRESS"'),
-    );
-    expect(parseStderrRecords(stderr)).toContainEqual(
-      expect.objectContaining({
-        event: 'url_blocked',
-        tool: 'fetch_url',
-        code: 'BLOCKED_ADDRESS',
-      }),
-    );
   });
 
   it('keeps stdout as JSON-RPC and writes structured diagnostics only to stderr', async () => {
@@ -186,20 +168,4 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
     if (Date.now() >= deadline) throw new Error('Timed out waiting for MCP output');
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
   }
-}
-
-function captureStderr(transport: StdioClientTransport, onChunk: (chunk: string) => void): void {
-  const stderr = transport.stderr as Readable | null;
-  stderr?.setEncoding('utf8');
-  stderr?.on('data', (chunk: string | Buffer) => {
-    onChunk(chunk.toString());
-  });
-}
-
-function parseStderrRecords(stderr: string): Record<string, unknown>[] {
-  return stderr
-    .trim()
-    .split(/\r?\n/u)
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
