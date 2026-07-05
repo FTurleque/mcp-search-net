@@ -6,22 +6,18 @@
 - **Repo local** : `N:\workspace-dev\mcp-search-net`.
 - **Branche** : `feat/v2-catalog-storage`.
 - **Commit testé initialement** : `e5c6c68e4aa2f317bf84c85c607abe01302ed625`.
-- **Head validé localement pour installation utilisateur** : `25c4aba04160ca3b46e8c70ce480a10c8df7e4d4`.
+- **Head validé localement pour installation utilisateur** : `25c4aba04160ca3b46e8c70ce480a10c8df7e4d4` puis `a508a8679b13f987cb98d797cf0be71cf33695b6`.
 - **PR** : #8, conservée en draft.
 - **GitHub Actions / CI GitHub** : non déclenchées.
-- **Docker / services externes** : non utilisés pour cette validation `search_docs`.
 - **Décision** : **GO avec réserve côté Codex Desktop**.
 
 ## Résumé exécutif
 
 Le test documentaire V2 fonctionne via un client MCP stdio local explicite. Le serveur expose bien `search_docs`, l'appel `tools/call` répond correctement avec le provider `catalog`, et le catalogue de spike contient les dix documents attendus.
 
-La validation locale du script d'installation utilisateur progresse également : `npm run check` passe entièrement sur le head courant après correction des exclusions Prettier temporaires. Le blocage restant ne vient plus de la qualité du projet, mais d'une instance utilisateur déjà active qui verrouille le dossier installé dans `%LOCALAPPDATA%`.
+La validation locale et l'installation utilisateur sont maintenant passées : `npm run check` passe entièrement, les dépendances de production sont installées, l'ancienne installation utilisateur est renommée, le lanceur MCP est généré, et les services locaux SearXNG/Crawl4AI démarrent avec un état healthy.
 
-La réserve reste double :
-
-1. `mcp-search-net` n'est pas exposé comme outil natif dans le thread Codex testé ;
-2. la réinstallation utilisateur finale est bloquée par une instance active du serveur MCP déjà lancé.
+La réserve restante concerne l'ergonomie Codex Desktop : `mcp-search-net` n'était pas exposé comme outil natif dans le thread Codex testé. Le test MCP a donc été réalisé via client MCP stdio local explicite.
 
 ## Git et build local
 
@@ -51,10 +47,10 @@ Les deux variables existent, ont la même valeur, et leur valeur n'a pas été a
 
 ## Validation locale installation utilisateur
 
-Après fermeture partielle des blocages et mise à jour de la branche, la commande suivante a été relancée depuis PowerShell :
+Après nettoyage du staging et fermeture des processus bloquants, la commande suivante a été relancée depuis PowerShell :
 
 ```powershell
-cmd.exe /d /s /c N:/workspace-dev/mcp-search-net\\scripts\\intellij\\install-user.cmd
+cmd.exe /d /s /c N:/workspace-dev/mcp-search-net/scripts/intellij/install-user.cmd
 ```
 
 Résultat de la phase de validation projet :
@@ -70,15 +66,15 @@ build: OK
 test: OK, 34 test files passed, 178 tests passed
 ```
 
-Détail Vitest :
+Détail Vitest final :
 
 ```text
 Test Files  34 passed (34)
 Tests       178 passed (178)
-Duration    2.30s
+Duration    1.95s
 ```
 
-La phase de préparation du package utilisateur a également avancé :
+La phase de préparation du package utilisateur est validée :
 
 ```text
 production dependencies install: OK
@@ -86,37 +82,29 @@ added 132 packages
 found 0 vulnerabilities
 ```
 
-## Réinstallation locale utilisateur
+## Installation utilisateur
 
-La commande d'installation utilisateur n'a pas encore abouti jusqu'au remplacement final du dossier installé.
+Installation terminée avec succès.
 
-Cause restante observée : une ancienne instance de `mcp-search-net` est encore active et peut verrouiller le dossier :
-
-```text
-PID: 23732
-Nom: cmd.exe
-CommandLine: cmd.exe /d /s /c C:\Users\fturl\AppData\Local\mcp-search-net\bin\mcp-search-net.cmd
-
-PID: 11516
-Nom: node.exe
-CommandLine: "C:\Users\fturl\AppData\Local\mcp-search-net\runtime\node-v24.17.0-win-x64\node.exe" "C:\Users\fturl\AppData\Local\mcp-search-net\app\build\bootstrap\main.js"
-```
-
-Le dossier de staging reste présent :
+Résultat observé :
 
 ```text
-C:\Users\fturl\AppData\Local\mcp-search-net\.install-staging
+Renommage de l'ancienne installation : C:\Users\fturl\AppData\Local\mcp-search-net\app.previous-20260705-144721
+Installation terminée. Lanceur MCP : C:\Users\fturl\AppData\Local\mcp-search-net\bin\mcp-search-net.cmd
+Exemple Copilot : C:\Users\fturl\AppData\Local\mcp-search-net\mcp.json.example
 ```
 
-Commande de nettoyage recommandée après fermeture des processus suspects :
+Services locaux démarrés par le script :
 
-```powershell
-Remove-Item -LiteralPath 'C:\Users\fturl\AppData\Local\mcp-search-net\.install-staging' -Recurse -Force
+```text
+Arrêt éventuel de l'ancien projet Compose mcp-search-net-user...
+Démarrage de SearXNG et Crawl4AI...
+[+] up 4/4
+Network mcp-search-net_backend Created
+Network mcp-search-net_egress Created
+Container mcp-search-net-crawl4ai-1 Healthy
+Container mcp-search-net-searxng-1 Healthy
 ```
-
-Aucun processus n'a été tué pendant le test.
-
-Action nécessaire avant une nouvelle tentative de réinstallation : fermer le serveur MCP actif dans Codex/IntelliJ, supprimer le staging restant, puis relancer l'installation utilisateur.
 
 ## Catalogue spike
 
@@ -206,7 +194,12 @@ Top résultats retournés :
 - Prettier, ESLint, TypeScript, build et Vitest passent localement.
 - Les 34 fichiers de test passent.
 - Les 178 tests passent.
-- Le build local passe sur le commit testé.
+- Les dépendances de production s'installent correctement.
+- L'installation utilisateur aboutit.
+- L'ancienne installation utilisateur est conservée via `app.previous-*`.
+- Le lanceur `%LOCALAPPDATA%\mcp-search-net\bin\mcp-search-net.cmd` est généré.
+- Le fichier d'exemple `%LOCALAPPDATA%\mcp-search-net\mcp.json.example` est généré.
+- SearXNG et Crawl4AI démarrent et passent healthy.
 - Le catalogue de spike contient dix documents.
 - L'index documentaire contient 133 sections.
 - `catalog verify` retourne `OK` sans issue.
@@ -216,33 +209,25 @@ Top résultats retournés :
 - Le provider retourné est `catalog`.
 - Le catalogue de spike `.data/catalog-spike.db` est exploité.
 - Aucun merge n'a été effectué.
-- Aucun push local volontaire n'a été effectué depuis le poste de test.
 - La PR n'a pas été passée en Ready for Review.
 - Aucun workflow GitHub Actions n'a été déclenché.
 - Aucune CI GitHub n'a été lancée.
-- Aucun service Docker n'est nécessaire pour tester la recherche documentaire locale.
 - Aucune opération mutable MCP n'est nécessaire.
 
 ## Réserve
 
 Dans le thread Codex utilisé pour ce test, `mcp-search-net` n'était pas exposé comme outil natif Codex. La validation porte donc sur l'appel MCP stdio local explicite, pas sur l'ergonomie native du thread Codex.
 
-Une réserve supplémentaire concerne la réinstallation utilisateur : le serveur installé dans `%LOCALAPPDATA%` n'a pas été remplacé parce qu'une instance active était déjà lancée.
-
 La décision est donc **GO avec réserve** :
 
-- **GO** pour le contrat MCP serveur, le build local, les tests locaux, le catalogue spike et l'outil `search_docs` ;
+- **GO** pour le contrat MCP serveur, le build local, les tests locaux, l'installation utilisateur, le catalogue spike et l'outil `search_docs` ;
 - **réserve** sur l'exposition native dans Codex Desktop ;
-- **réserve** sur la réinstallation utilisateur tant que le serveur actif n'est pas fermé ;
 - les resources MCP restent à valider si le client les expose directement.
 
 ## Suite recommandée
 
-1. Fermer le serveur MCP actif dans Codex/IntelliJ.
-2. Supprimer le staging restant avec `Remove-Item -LiteralPath 'C:\Users\fturl\AppData\Local\mcp-search-net\.install-staging' -Recurse -Force`.
-3. Relancer `npm run install:user` depuis la branche `feat/v2-catalog-storage`.
-4. Redémarrer Codex Desktop complètement.
-5. Créer un nouveau thread Codex et retester l'exposition native de `mcp-search-net`.
-6. Conserver `search_docs` comme surface principale si les resources MCP ne sont pas affichées directement par le client.
-7. Exécuter la revalidation locale complète du head courant avant toute CI manuelle.
-8. Ne pas déclencher GitHub Actions tant que le quota Actions minutes est épuisé.
+1. Redémarrer Codex Desktop complètement.
+2. Créer un nouveau thread Codex et retester l'exposition native de `mcp-search-net`.
+3. Conserver `search_docs` comme surface principale si les resources MCP ne sont pas affichées directement par le client.
+4. Exécuter une revalidation via CI manuelle après reset du quota Actions.
+5. Ne pas déclencher GitHub Actions tant que le quota Actions minutes est épuisé.
