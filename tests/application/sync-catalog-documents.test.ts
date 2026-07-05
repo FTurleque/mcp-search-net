@@ -107,8 +107,11 @@ class CatalogSyncRepositoryStub {
 class ContentFetcherStub implements ContentFetcher {
   public readonly requests: ContentFetchRequest[] = [];
   public readonly contexts: Array<ContentFetchContext | undefined> = [];
+  private readonly results: Array<ContentFetchResult | Error>;
 
-  public constructor(private readonly result: ContentFetchResult | Error = fetchedContent()) {}
+  public constructor(result: ContentFetchResult | Error | readonly (ContentFetchResult | Error)[] = fetchedContent()) {
+    this.results = Array.isArray(result) ? [...result] : [result];
+  }
 
   public async fetch(
     request: ContentFetchRequest,
@@ -116,8 +119,10 @@ class ContentFetcherStub implements ContentFetcher {
   ): Promise<ContentFetchResult> {
     this.requests.push(request);
     this.contexts.push(context);
-    if (this.result instanceof Error) throw this.result;
-    return this.result;
+    const result = this.results.length > 1 ? this.results.shift() : this.results[0];
+    if (result === undefined) throw new Error('FETCH_RESULT_NOT_CONFIGURED');
+    if (result instanceof Error) throw result;
+    return result;
   }
 }
 
@@ -146,6 +151,8 @@ describe('SyncCatalogDocuments', () => {
       unchangedCount: 0,
       failedCount: 0,
       skippedCount: 0,
+      rateLimitMs: 0,
+      limited: false,
       syncRun: {
         id: 1,
         sourceId: enabledSource.id,
@@ -187,6 +194,86 @@ describe('SyncCatalogDocuments', () => {
       headingPath: 'Usage',
       anchor: 'usage',
       content: '## Usage\n\nRun it.',
+    });
+  });
+
+  it('syncs all enabled configured documents when no limit is provided', async () => {
+    const repository = new CatalogSyncRepositoryStub([enabledSource]);
+    const fetcher = new ContentFetcherStub([
+      fetchedContent({ contentHash: 'guide-hash' }),
+      fetchedContent({
+        requestedUrl: 'https://docs.example/api.html',
+        finalUrl: 'https://docs.example/api.html',
+        canonicalUrl: 'https://docs.example/api.html',
+        title: 'Fetched API',
+        contentHash: 'api-hash',
+      }),
+    ]);
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument, secondDeclaredDocument],
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(fetcher.requests).toHaveLength(2);
+    expect(result).toMatchObject({
+      checkedCount: 2,
+      addedCount: 2,
+      failedCount: 0,
+      limited: false,
+      documents: [
+        { stableKey: 'guide', status: 'added' },
+        { stableKey: 'api', status: 'added' },
+      ],
+    });
+  });
+
+  it('applies an application rate limit between document fetches', async () => {
+    const repository = new CatalogSyncRepositoryStub([enabledSource]);
+    const fetcher = new ContentFetcherStub([
+      fetchedContent({ contentHash: 'guide-hash' }),
+      fetchedContent({ contentHash: 'api-hash' }),
+    ]);
+    const delays: number[] = [];
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock, (milliseconds) => {
+      delays.push(milliseconds);
+      return Promise.resolve();
+    }).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument, secondDeclaredDocument],
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+      rateLimitMs: 250,
+    });
+
+    expect(fetcher.requests).toHaveLength(2);
+    expect(delays).toEqual([250]);
+    expect(result.rateLimitMs).toBe(250);
+  });
+
+  it('resumes after a previously processed document cursor', async () => {
+    const repository = new CatalogSyncRepositoryStub([enabledSource]);
+    const fetcher = new ContentFetcherStub(fetchedContent({ contentHash: 'api-hash' }));
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument, secondDeclaredDocument],
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+      resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+    });
+
+    expect(fetcher.requests).toHaveLength(1);
+    expect(result).toMatchObject({
+      checkedCount: 1,
+      resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+      documents: [{ stableKey: 'api', status: 'added' }],
     });
   });
 
@@ -433,6 +520,16 @@ const declaredDocument = {
   stableKey: 'guide',
   title: 'Guide',
   url: 'https://docs.example/guide.html',
+  language: 'en-US',
+  mimeType: 'text/html',
+  enabled: true,
+};
+
+const secondDeclaredDocument = {
+  sourceKey: 'enabled-docs',
+  stableKey: 'api',
+  title: 'API',
+  url: 'https://docs.example/api.html',
   language: 'en-US',
   mimeType: 'text/html',
   enabled: true,
