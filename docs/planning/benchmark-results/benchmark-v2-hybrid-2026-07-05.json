@@ -1,20 +1,20 @@
 {
   "schemaVersion": "1.0",
-  "startedAt": "2026-07-05T15:15:29.788Z",
-  "finishedAt": "2026-07-05T15:15:31.352Z",
+  "startedAt": "2026-07-05T15:22:37.636Z",
+  "finishedAt": "2026-07-05T15:22:39.124Z",
   "catalogPath": "N:\\workspace-dev\\mcp-search-net\\.data\\catalog-spike.db",
   "limit": 10,
   "summary": {
     "queryCount": 5,
-    "lexicalAverageMs": 228.39,
-    "hybridAverageMs": 84.18,
+    "lexicalAverageMs": 217.48,
+    "hybridAverageMs": 79.86,
     "averageTop5Overlap": 0.64
   },
   "cases": [
     {
       "query": "resources MCP V2",
       "lexical": {
-        "durationMs": 218.2,
+        "durationMs": 218.1,
         "resultCount": 10,
         "top": [
           {
@@ -38,7 +38,7 @@
         ]
       },
       "hybrid": {
-        "durationMs": 88.3,
+        "durationMs": 82.86,
         "resultCount": 10,
         "top": [
           {
@@ -69,7 +69,7 @@
     {
       "query": "catalog sync rate limit",
       "lexical": {
-        "durationMs": 217.77,
+        "durationMs": 212.58,
         "resultCount": 3,
         "top": [
           {
@@ -93,7 +93,7 @@
         ]
       },
       "hybrid": {
-        "durationMs": 80.98,
+        "durationMs": 78.81,
         "resultCount": 3,
         "top": [
           {
@@ -124,12 +124,12 @@
     {
       "query": "maintenance SQLite catalog",
       "lexical": {
-        "durationMs": 229.61,
+        "durationMs": 221.83,
         "resultCount": 0,
         "top": []
       },
       "hybrid": {
-        "durationMs": 82.69,
+        "durationMs": 76.31,
         "resultCount": 0,
         "top": []
       },
@@ -141,7 +141,7 @@
     {
       "query": "IntelliJ Copilot MCP configuration",
       "lexical": {
-        "durationMs": 254.79,
+        "durationMs": 211.15,
         "resultCount": 5,
         "top": [
           {
@@ -165,7 +165,7 @@
         ]
       },
       "hybrid": {
-        "durationMs": 87.13,
+        "durationMs": 80.39,
         "resultCount": 5,
         "top": [
           {
@@ -196,7 +196,7 @@
     {
       "query": "document versions current version",
       "lexical": {
-        "durationMs": 221.59,
+        "durationMs": 223.73,
         "resultCount": 3,
         "top": [
           {
@@ -220,7 +220,7 @@
         ]
       },
       "hybrid": {
-        "durationMs": 81.82,
+        "durationMs": 80.91,
         "resultCount": 3,
         "top": [
           {
