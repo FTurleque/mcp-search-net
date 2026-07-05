@@ -1,6 +1,6 @@
 # Documentation mcp-search-net
 
-`mcp-search-net` est un serveur MCP Web local pour GitHub Copilot dans IntelliJ IDEA. La V1 expose uniquement `search_web` et `fetch_url`, sans LLM interne ni API commerciale obligatoire.
+`mcp-search-net` est un serveur MCP Web local pour GitHub Copilot dans IntelliJ IDEA. La V1 expose `search_web` et `fetch_url`. La V2 documentaire est en cours de stabilisation dans la PR #8 avec catalogue local, recherche documentaire, synchronisation contrôlée, outil `search_docs` et resources MCP read-only.
 
 ## Démarrage
 
@@ -16,6 +16,8 @@
 - [Configuration](reference/configuration.md)
 - [Contrats des outils](reference/tools.md)
 - [Sécurité](reference/security.md)
+- [Schéma catalogue V2](reference/catalog-schema-v2.md)
+- [Synchronisation catalogue V2](reference/catalog-sync-v2.md)
 
 ## Exploitation
 
@@ -32,6 +34,7 @@
 
 - [Feuille de route vers une V1 pleinement opérationnelle](planning/roadmap-v1-operationnelle.md)
 - [Feuille de route V2 — Catalogue documentaire](planning/roadmap-v2-documentaire.md)
+- [Benchmark V2](planning/benchmark-v2.md)
 - [Rapport de validation des phases 0 et 1](planning/validation-phase-0-1.md)
 - [Rapport de validation de la phase 2](planning/validation-phase-2.md)
 - [Rapport de validation des phases 3 et 4](planning/validation-phase-3-4.md)
@@ -49,5 +52,15 @@
 ## Décisions d’architecture
 
 - [Index ADR-001 à ADR-011](adr/README.md)
+- [ADR-012 — Migration SDK MCP v2](adr/ADR-012-migration-sdk-mcp-v2.md)
+- [ADR-013 — SDK MCP V1 au démarrage V2](adr/ADR-013-sdk-mcp-v2-start-decision.md)
+- [ADR-014 — Isolation catalog.db](adr/ADR-014-catalog-db-isolation.md)
+- [ADR-015 — FTS5 contentless-delete](adr/ADR-015-fts5-contentless-delete.md)
+- [ADR-016 — Outil et resources MCP V2](adr/ADR-016-mcp-v2-tools-resources.md)
 
-La documentation décrit la V1. L’indexation d’un catalogue documentaire, FTS/BM25, les embeddings et la synchronisation restent hors périmètre ; `fetch_url` utilise seulement un sélecteur lexical déterministe sur la page courante.
+## État courant V2
+
+- Dernier head validé CI complète : `4bfb191da05768759b6a9d8531aa3fd5762612c1`.
+- Head PR #8 courant : `e237b6f3152a8ffb7ec37eb675b517d2bf38d9a3` au moment de la mise à jour roadmap.
+- GitHub Actions est temporairement en déclenchement manuel uniquement via `workflow_dispatch` pour éviter toute consommation automatique d'Actions minutes.
+- À finaliser : validation du head courant, sync exhaustive, rate limiting, reprise après interruption et spike IntelliJ/Copilot sur les resources MCP V2.
