@@ -33,7 +33,7 @@ function parseArguments(argv: readonly string[]): CatalogHybridSearchOptions {
   const candidateLimit = parsePositiveInteger(getOption(argv, '--candidate-limit'), '--candidate-limit');
   return {
     path: resolve(getOption(argv, '--path') ?? process.env['MCP_CATALOG_PATH'] ?? '.data/catalog.db'),
-    query: normalizeCliText(requireOption(argv, '--query')),
+    query: normalizeRequiredCliText(requireOption(argv, '--query')),
     ...(sourceKey === undefined ? {} : { sourceKey }),
     ...(language === undefined ? {} : { language }),
     ...(limit === undefined ? {} : { limit }),
@@ -64,7 +64,11 @@ function parsePositiveInteger(value: string | undefined, optionName: string): nu
 
 function normalizeCliText(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  return value.replace(/\^/gu, '').trim();
+  return normalizeRequiredCliText(value);
+}
+
+function normalizeRequiredCliText(value: string): string {
+  return value.replaceAll('^', '').trim();
 }
 
 function usage(): string {
