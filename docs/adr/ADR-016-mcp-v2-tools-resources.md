@@ -1,7 +1,8 @@
 # ADR-016 — Exposer la V2 avec un outil de recherche et des resources MCP
 
-- **Statut** : Accepté pour V2.0, à confirmer par spike IntelliJ/Copilot
+- **Statut** : Accepté, implémentation initiale en cours dans la PR #8
 - **Date** : 2026-07-03
+- **Dernière mise à jour** : 2026-07-05
 - **Décision liée** : ADR-002, ADR-011, ADR-013
 
 ## Contexte
@@ -19,49 +20,33 @@ La V2 doit privilégier une exposition mixte :
 1. un outil MCP de recherche documentaire ;
 2. des resources MCP pour exposer les sources, documents, versions et sections.
 
-Nom provisoire de l'outil :
+Nom retenu pour l'implémentation initiale :
 
 ```text
 search_docs
 ```
 
-`search_catalog` reste un alias candidat. Le nom final sera gelé après spike IntelliJ/Copilot.
+`search_catalog` reste un alias possible plus tard, mais n'est pas nécessaire pour la première exposition V2.
 
-## Outil proposé
+## Outil implémenté
 
-```typescript
-interface SearchDocsInput {
-  query: string;
-  sourceIds?: string[];
-  documentIds?: string[];
-  versionPolicy?: 'current' | 'all' | 'specific';
-  version?: string;
-  languages?: string[];
-  publishedAfter?: string;
-  maxResults?: number;
-  maxCharacters?: number;
-}
+```text
+search_docs
 ```
 
-Sortie attendue :
+L'outil est read-only et recherche dans le catalogue documentaire local. Il ne déclenche aucune synchronisation, purge ou reconstruction d'index.
 
-- enveloppe commune versionnée ;
-- `requestId` ;
-- statut de cache/index ;
-- résultats classés ;
-- extraits courts ;
-- liens vers resources documentaires ;
-- warnings séparés.
-
-## Resources proposées
+## Resources implémentées ou en cours de stabilisation
 
 ```text
 mcp-search-net://catalog
 mcp-search-net://sources
 mcp-search-net://sources/{sourceId}
+mcp-search-net://documents
 mcp-search-net://documents/{documentId}
 mcp-search-net://documents/{documentId}/versions
 mcp-search-net://documents/{documentId}/versions/{versionId}
+mcp-search-net://sections
 mcp-search-net://sections/{sectionId}
 ```
 
@@ -80,6 +65,16 @@ catalog purge-versions
 ```
 
 La commande `catalog status` peut être exposée indirectement via resource read-only si elle ne déclenche aucune mutation.
+
+## État d'implémentation PR #8
+
+- `search_docs` est implémenté.
+- Les resources statiques catalogue/sources/documents/sections sont implémentées.
+- Les templates dynamiques sources/documents/sections sont implémentés.
+- Les templates dynamiques de versions documentaires sont récupérés dans la PR #8.
+- Les opérations mutables restent hors MCP.
+- Le workflow GitHub Actions est temporairement manuel uniquement à cause du quota Actions minutes.
+- Le head courant de la PR #8 doit être revalidé localement ou via CI manuelle après reset du quota.
 
 ## Spike obligatoire
 
@@ -112,7 +107,7 @@ Ces outils de secours ne doivent pas déclencher de synchronisation.
 
 ### Positives
 
-- Un seul outil principal pour la recherche.
+- Un seul outil principal pour la recherche documentaire.
 - Resources adaptées aux documents stables.
 - Moins de surface d'action mutable exposée au LLM.
 - Bon alignement avec le caractère read-only du catalogue.
@@ -120,13 +115,13 @@ Ces outils de secours ne doivent pas déclencher de synchronisation.
 ### Négatives
 
 - Compatibilité IntelliJ/Copilot à vérifier.
-- Documentation plus riche à produire.
+- Documentation plus riche à maintenir.
 - Tests E2E MCP plus complets.
+- Validation complète du head courant différée tant que le quota Actions est épuisé.
 
-## Critères d'acceptation avant implémentation
+## Critères d'acceptation avant gel définitif
 
-- Nom final `search_docs` ou `search_catalog` choisi.
-- Spike resources documenté.
-- Schémas d'entrée/sortie proposés.
-- Budget de contexte défini.
-- Tests E2E prévus pour tools et resources.
+- Spike resources IntelliJ/Copilot exécuté.
+- Budget de contexte confirmé.
+- Tests E2E tools/resources verts sur le head final.
+- Contrats V1 `search_web` et `fetch_url` non régressés.
