@@ -1,0 +1,252 @@
+{
+  "schemaVersion": "1.0",
+  "startedAt": "2026-07-05T15:15:29.788Z",
+  "finishedAt": "2026-07-05T15:15:31.352Z",
+  "catalogPath": "N:\\workspace-dev\\mcp-search-net\\.data\\catalog-spike.db",
+  "limit": 10,
+  "summary": {
+    "queryCount": 5,
+    "lexicalAverageMs": 228.39,
+    "hybridAverageMs": 84.18,
+    "averageTop5Overlap": 0.64
+  },
+  "cases": [
+    {
+      "query": "resources MCP V2",
+      "lexical": {
+        "durationMs": 218.2,
+        "resultCount": 10,
+        "top": [
+          {
+            "title": "ADR-016 MCP V2",
+            "documentPublicId": "doc_62d3aff893e874932dabfb53",
+            "heading": "Resources implémentées ou en cours de stabilisation",
+            "score": 1
+          },
+          {
+            "title": "ADR-016 MCP V2",
+            "documentPublicId": "doc_62d3aff893e874932dabfb53",
+            "heading": "Critères d'acceptation avant gel définitif",
+            "score": 1
+          },
+          {
+            "title": "ADR-016 MCP V2",
+            "documentPublicId": "doc_62d3aff893e874932dabfb53",
+            "heading": "ADR-016 — Exposer la V2 avec un outil de recherche et des resources MCP",
+            "score": 1
+          }
+        ]
+      },
+      "hybrid": {
+        "durationMs": 88.3,
+        "resultCount": 10,
+        "top": [
+          {
+            "title": "ADR-016 MCP V2",
+            "documentPublicId": "doc_62d3aff893e874932dabfb53",
+            "heading": "Décision",
+            "score": 0.8843496517101879
+          },
+          {
+            "title": "Roadmap V2",
+            "documentPublicId": "doc_8ae0f07c180d3b7e93339b83",
+            "heading": "V2.4 — Exposition MCP V2",
+            "score": 0.8626971475293127
+          },
+          {
+            "title": "ADR-016 MCP V2",
+            "documentPublicId": "doc_62d3aff893e874932dabfb53",
+            "heading": "Conséquences",
+            "score": 0.8483817755944858
+          }
+        ]
+      },
+      "overlap": {
+        "top5Common": 1,
+        "top5Ratio": 0.2
+      }
+    },
+    {
+      "query": "catalog sync rate limit",
+      "lexical": {
+        "durationMs": 217.77,
+        "resultCount": 3,
+        "top": [
+          {
+            "title": "Synchronisation V2",
+            "documentPublicId": "doc_7e94204c6aa1a25f8f61a3fc",
+            "heading": "Sync réel",
+            "score": 1
+          },
+          {
+            "title": "Roadmap V2",
+            "documentPublicId": "doc_8ae0f07c180d3b7e93339b83",
+            "heading": "V2.5 — Synchronisation incrémentale",
+            "score": 1
+          },
+          {
+            "title": "Roadmap V2",
+            "documentPublicId": "doc_8ae0f07c180d3b7e93339b83",
+            "heading": "AC-V2-03 : Synchronisation manuelle validée",
+            "score": 1
+          }
+        ]
+      },
+      "hybrid": {
+        "durationMs": 80.98,
+        "resultCount": 3,
+        "top": [
+          {
+            "title": "Synchronisation V2",
+            "documentPublicId": "doc_7e94204c6aa1a25f8f61a3fc",
+            "heading": "Sync réel",
+            "score": 0.8636054536204347
+          },
+          {
+            "title": "Roadmap V2",
+            "documentPublicId": "doc_8ae0f07c180d3b7e93339b83",
+            "heading": "V2.5 — Synchronisation incrémentale",
+            "score": 0.8386162392624146
+          },
+          {
+            "title": "Roadmap V2",
+            "documentPublicId": "doc_8ae0f07c180d3b7e93339b83",
+            "heading": "AC-V2-03 : Synchronisation manuelle validée",
+            "score": 0.7808703549083663
+          }
+        ]
+      },
+      "overlap": {
+        "top5Common": 3,
+        "top5Ratio": 1
+      }
+    },
+    {
+      "query": "maintenance SQLite catalog",
+      "lexical": {
+        "durationMs": 229.61,
+        "resultCount": 0,
+        "top": []
+      },
+      "hybrid": {
+        "durationMs": 82.69,
+        "resultCount": 0,
+        "top": []
+      },
+      "overlap": {
+        "top5Common": 0,
+        "top5Ratio": 0
+      }
+    },
+    {
+      "query": "IntelliJ Copilot MCP configuration",
+      "lexical": {
+        "durationMs": 254.79,
+        "resultCount": 5,
+        "top": [
+          {
+            "title": "README",
+            "documentPublicId": "doc_593f2ebc7538099691d6b4c0",
+            "heading": "IntelliJ IDEA / GitHub Copilot",
+            "score": 1
+          },
+          {
+            "title": "IntelliJ Copilot",
+            "documentPublicId": "doc_c1ea985a0a256b7986ad8fc6",
+            "heading": "Déclarer le serveur dans Copilot",
+            "score": 1
+          },
+          {
+            "title": "IntelliJ Copilot",
+            "documentPublicId": "doc_c1ea985a0a256b7986ad8fc6",
+            "heading": "Configurations de lancement partagées",
+            "score": 1
+          }
+        ]
+      },
+      "hybrid": {
+        "durationMs": 87.13,
+        "resultCount": 5,
+        "top": [
+          {
+            "title": "README",
+            "documentPublicId": "doc_593f2ebc7538099691d6b4c0",
+            "heading": "IntelliJ IDEA / GitHub Copilot",
+            "score": 0.8479625951630694
+          },
+          {
+            "title": "IntelliJ Copilot",
+            "documentPublicId": "doc_c1ea985a0a256b7986ad8fc6",
+            "heading": "Déclarer le serveur dans Copilot",
+            "score": 0.8280270821874427
+          },
+          {
+            "title": "IntelliJ Copilot",
+            "documentPublicId": "doc_c1ea985a0a256b7986ad8fc6",
+            "heading": "Configurations de lancement partagées",
+            "score": 0.8060001956676273
+          }
+        ]
+      },
+      "overlap": {
+        "top5Common": 5,
+        "top5Ratio": 1
+      }
+    },
+    {
+      "query": "document versions current version",
+      "lexical": {
+        "durationMs": 221.59,
+        "resultCount": 3,
+        "top": [
+          {
+            "title": "Schéma catalogue V2",
+            "documentPublicId": "doc_bc943aac8303fa8b53fc9fb5",
+            "heading": "Ajout d'un document",
+            "score": 1
+          },
+          {
+            "title": "Schéma catalogue V2",
+            "documentPublicId": "doc_bc943aac8303fa8b53fc9fb5",
+            "heading": "`document_versions`",
+            "score": 1
+          },
+          {
+            "title": "Schéma catalogue V2",
+            "documentPublicId": "doc_bc943aac8303fa8b53fc9fb5",
+            "heading": "`documents`",
+            "score": 1
+          }
+        ]
+      },
+      "hybrid": {
+        "durationMs": 81.82,
+        "resultCount": 3,
+        "top": [
+          {
+            "title": "Schéma catalogue V2",
+            "documentPublicId": "doc_bc943aac8303fa8b53fc9fb5",
+            "heading": "Ajout d'un document",
+            "score": 0.8427017957340662
+          },
+          {
+            "title": "Schéma catalogue V2",
+            "documentPublicId": "doc_bc943aac8303fa8b53fc9fb5",
+            "heading": "`document_versions`",
+            "score": 0.7940683387206742
+          },
+          {
+            "title": "Schéma catalogue V2",
+            "documentPublicId": "doc_bc943aac8303fa8b53fc9fb5",
+            "heading": "`documents`",
+            "score": 0.7266845679741897
+          }
+        ]
+      },
+      "overlap": {
+        "top5Common": 3,
+        "top5Ratio": 1
+      }
+    }
+  ]
+}
