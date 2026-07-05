@@ -27,13 +27,13 @@ async function main(argv: readonly string[]): Promise<void> {
 
 function parseArguments(argv: readonly string[]): CatalogHybridSearchOptions {
   if (argv.includes('--help') || argv.includes('-h')) throw new Error(usage());
-  const sourceKey = getOption(argv, '--source-key');
-  const language = getOption(argv, '--language');
+  const sourceKey = normalizeCliText(getOption(argv, '--source-key'));
+  const language = normalizeCliText(getOption(argv, '--language'));
   const limit = parsePositiveInteger(getOption(argv, '--limit'), '--limit');
   const candidateLimit = parsePositiveInteger(getOption(argv, '--candidate-limit'), '--candidate-limit');
   return {
     path: resolve(getOption(argv, '--path') ?? process.env['MCP_CATALOG_PATH'] ?? '.data/catalog.db'),
-    query: requireOption(argv, '--query'),
+    query: normalizeCliText(requireOption(argv, '--query')),
     ...(sourceKey === undefined ? {} : { sourceKey }),
     ...(language === undefined ? {} : { language }),
     ...(limit === undefined ? {} : { limit }),
@@ -60,6 +60,11 @@ function parsePositiveInteger(value: string | undefined, optionName: string): nu
   const parsed = Number.parseInt(value, 10);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`Invalid ${optionName} ${value}`);
   return parsed;
+}
+
+function normalizeCliText(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value.replace(/\^/gu, '').trim();
 }
 
 function usage(): string {
