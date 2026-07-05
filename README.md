@@ -1,16 +1,23 @@
 # mcp-search-net
 
 Serveur MCP Web local, en lecture seule, destiné à GitHub Copilot dans IntelliJ
-IDEA. La V1 expose exactement deux outils :
+IDEA. La V1 expose deux outils stables :
 
 - `search_web` découvre des pages avec SearXNG et privilégie les domaines du
   registre officiel ;
 - `fetch_url` récupère une URL publique connue, applique la protection SSRF,
   extrait du Markdown et limite les sections retournées.
 
-Le serveur utilise un cache SQLite local, n’embarque aucun LLM et ne requiert
-aucune API commerciale. La V2 documentaire (catalogue, synchronisation, FTS,
-embeddings et recherche multi-document) n’est pas implémentée.
+La V2 documentaire est en cours de construction dans la PR #8. Elle ajoute un
+catalogue local séparé dans `catalog.db`, l'ingestion texte/Markdown, la
+synchronisation contrôlée, la recherche documentaire locale et une première
+exposition MCP read-only via `search_docs` et des resources catalogue. Le serveur
+n'embarque aucun LLM et ne requiert aucune API commerciale.
+
+> Note budget CI : le workflow GitHub Actions est temporairement déclenchable
+> uniquement manuellement via `workflow_dispatch`, afin d'éviter toute
+> consommation automatique d'Actions minutes pendant l'épuisement du quota
+> mensuel.
 
 ## Architecture
 
@@ -25,7 +32,8 @@ src/bootstrap       assemblage et cycle de vie STDIO
 ```
 
 Le domaine ne dépend ni du SDK MCP, ni de Zod, YAML, SQLite, SearXNG ou
-Crawl4AI. SQLite reste uniquement un cache V1.
+Crawl4AI. Le cache V1 et le catalogue V2 sont séparés : `.data/cache.db` reste
+supprimable, `.data/catalog.db` porte le catalogue durable.
 
 ## Prérequis
 
@@ -66,13 +74,15 @@ Le build nettoie `build/` et l'ancien dossier `dist/` avant compilation. TypeScr
 
 ## Validation
 
+Validation locale recommandée pendant la suspension des Actions automatiques :
+
 ```bash
 npm run format:check
 npm run lint
 npm run build
 npm run test:unit
 npm run test:integration
-npm test
+npm run test:e2e:deterministic
 ```
 
 La suite d’intégration est déterministe et n’exige ni Internet ni Docker. Avec
@@ -93,7 +103,6 @@ Construire les images et démarrer les fournisseurs :
 docker compose config
 docker compose build
 docker compose up -d searxng crawl4ai
-docker compose ps
 ```
 
 Exécuter le serveur MCP conteneurisé en STDIO :
@@ -109,8 +118,8 @@ docker compose down
 ```
 
 Le conteneur MCP s’exécute sans root, avec filesystem en lecture seule,
-capabilities supprimées et volume d’écriture limité au cache. Aucun socket Docker,
-mode privilégié ou réseau hôte n’est utilisé.
+capabilities supprimées et volume d’écriture limité au cache et au catalogue.
+Aucun socket Docker, mode privilégié ou réseau hôte n’est utilisé.
 
 ## IntelliJ IDEA / GitHub Copilot
 
@@ -145,9 +154,10 @@ Exécution Docker :
 }
 ```
 
-Redémarrez la fenêtre IntelliJ après une modification et vérifiez que Copilot
-affiche uniquement `search_web` et `fetch_url`. Voir le
-[guide IntelliJ détaillé](docs/getting-started/intellij-copilot.md).
+En V1, Copilot doit afficher `search_web` et `fetch_url`. En V2 documentaire, le
+serveur expose aussi `search_docs` et des resources read-only de catalogue ; le
+spike final IntelliJ/Copilot reste à exécuter avant gel définitif de l'ergonomie
+V2. Voir le [guide IntelliJ détaillé](docs/getting-started/intellij-copilot.md).
 
 ## Configuration
 
@@ -157,6 +167,8 @@ Les variables principales sont :
 MCP_CONFIG_PATH
 MCP_LOG_LEVEL
 MCP_CACHE_PATH
+MCP_CATALOG_PATH
+MCP_CATALOG_SOURCES_PATH
 MCP_OFFICIAL_SOURCES_PATH
 MCP_SEARXNG_URL
 MCP_CRAWL4AI_URL
@@ -168,6 +180,22 @@ La priorité est : valeurs internes sûres, YAML, environnement, puis paramètre
 d’outil dans les maxima absolus. Une configuration obligatoire invalide arrête le
 démarrage avec un diagnostic sur `stderr`.
 
+## Catalogue documentaire V2
+
+Fonctionnalités en cours de stabilisation dans la PR #8 :
+
+- catalogue durable séparé de `cache.db` ;
+- migrations catalogue `C001` à `C005` ;
+- CLI `catalog init`, `status`, `verify`, `add-source`, `list-sources`,
+  `load-sources`, `ingest-text`, `sync`, `search`, `rebuild-index`,
+  `purge-versions` ;
+- ingestion texte/Markdown avec versioning et sections ;
+- recherche documentaire locale ;
+- synchronisation contrôlée avec ETag, Last-Modified, hash, staleness et
+  redirections permanentes ;
+- resources MCP read-only pour catalogue, sources, documents, versions et
+  sections.
+
 ## Sécurité
 
 - seuls HTTP et HTTPS sont acceptés ;
@@ -178,7 +206,8 @@ démarrage avec un diagnostic sur `stderr`.
 - aucun JavaScript, hook, cookie, proxy, fichier ou identifiant fourni par
   l’appelant n’est accepté ;
 - Crawl4AI reçoit le HTML contrôlé via `raw://`, jamais l’URL publique ;
-- le contenu Web reste une donnée non fiable et n’est jamais exécuté ;
+- le contenu Web et documentaire reste une donnée non fiable et n’est jamais
+  exécuté ;
 - secrets, chemins internes et stacks ne sont pas renvoyés.
 
 ## Diagnostic rapide
@@ -197,9 +226,10 @@ démarrage avec un diagnostic sur `stderr`.
 La documentation complète est indexée dans [docs/README.md](docs/README.md), avec
 les contrats, l’installation Windows, la sécurité, les tests et le dépannage.
 
-## Limites V1
+## Limites actuelles
 
-Pas d’OCR, embeddings, base vectorielle, indexation persistante, catalogue,
-synchronisation, crawl de domaine, suivi autonome des liens, authentification Web,
-formulaires, CAPTCHA, captures d’écran, scripts utilisateur ou LLM interne. Un PDF
-sans couche textuelle retourne `OCR_REQUIRED_NOT_SUPPORTED`.
+Pas d’OCR, base vectorielle, embeddings actifs, crawl de domaine, suivi autonome
+des liens, authentification Web, formulaires, CAPTCHA, captures d’écran, scripts
+utilisateur ou LLM interne. Un PDF sans couche textuelle retourne
+`OCR_REQUIRED_NOT_SUPPORTED`. La synchronisation exhaustive, le rate limiting, la
+reprise après interruption et le spike IntelliJ/Copilot V2 restent à finaliser.
