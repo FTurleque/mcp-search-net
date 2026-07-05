@@ -270,6 +270,8 @@ function parseLoadSources(argv: readonly string[], path: string): CatalogCommand
 function parseSync(argv: readonly string[], path: string): CatalogCommandOptions {
   const sourceKey = getOption(argv, '--source-key') ?? getOption(argv, '--source');
   const filePath = getOption(argv, '--file');
+  const limit = parseLimit(getOption(argv, '--limit'));
+  const rateLimitMs = parseNonNegativeInteger(getOption(argv, '--rate-limit-ms'), '--rate-limit-ms');
   const resumeAfter = parseResumeAfter(getOption(argv, '--resume-after'), sourceKey);
   return {
     command: 'sync',
@@ -277,12 +279,8 @@ function parseSync(argv: readonly string[], path: string): CatalogCommandOptions
     sync: {
       dryRun: argv.includes('--dry-run'),
       configPath: resolve(getOption(argv, '--config') ?? 'config/application.yml'),
-      ...(parseLimit(getOption(argv, '--limit')) === undefined
-        ? {}
-        : { limit: parseLimit(getOption(argv, '--limit')) }),
-      ...(parseNonNegativeInteger(getOption(argv, '--rate-limit-ms'), '--rate-limit-ms') === undefined
-        ? {}
-        : { rateLimitMs: parseNonNegativeInteger(getOption(argv, '--rate-limit-ms'), '--rate-limit-ms') }),
+      ...(limit === undefined ? {} : { limit }),
+      ...(rateLimitMs === undefined ? {} : { rateLimitMs }),
       ...(sourceKey === undefined ? {} : { sourceKey }),
       ...(filePath === undefined ? {} : { filePath: resolve(filePath) }),
       ...(resumeAfter === undefined ? {} : { resumeAfter }),
