@@ -32,6 +32,7 @@
 
 - [Feuille de route vers une V1 pleinement opérationnelle](planning/roadmap-v1-operationnelle.md)
 - [Feuille de route V2 — Catalogue documentaire](planning/roadmap-v2-documentaire.md)
+- [Spike IntelliJ/Copilot — MCP V2 documentaire](planning/spike-intellij-copilot-mcp-v2.md)
 - [Benchmark V2](planning/benchmark-v2.md)
 - [Validation finale V1 — Recette complète 27 juin 2026](planning/validation-v1-recette-finale-2026-06-27.md)
 - [Décision V1/V2 go/no-go du 22 juin 2026](planning/validation-v1-v2-go-no-go-2026-06-22.md)
@@ -52,4 +53,5 @@
 - PR active : #8 — `feat/v2-catalog-storage`, conservée en draft.
 - Dernier head validé CI complète : `4bfb191da05768759b6a9d8531aa3fd5762612c1`.
 - GitHub Actions est temporairement en déclenchement manuel uniquement via `workflow_dispatch`.
-- À finaliser : validation du head courant de PR, sync exhaustive, rate limiting, reprise après interruption et spike IntelliJ/Copilot sur les resources MCP V2.
+- V2.5 est finalisée côté code : sync exhaustive, rate limiting, reprise après interruption, validateurs HTTP/hash, staleness non destructif et redirections permanentes.
+- À finaliser : validation du head courant de PR et exécution du spike IntelliJ/Copilot sur `search_docs` et les resources MCP V2.
