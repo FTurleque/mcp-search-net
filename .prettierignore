@@ -17,7 +17,6 @@ src/cli/catalog.ts
 src/cli/catalog-maintain.ts
 src/cli/catalog-hybrid-search.ts
 src/domain/models/content.ts
-src/domain/models/tool-response.ts
 src/domain/search/local-semantic-vectorizer.ts
 src/infrastructure/catalog/sqlite-catalog-repository.ts
 src/infrastructure/catalog/sqlite-catalog-version-purger.ts
@@ -31,7 +30,6 @@ tests/application/plan-catalog-sync.test.ts
 tests/application/sync-catalog-documents.test.ts
 tests/application/maintain-catalog.test.ts
 tests/application/hybrid-search-catalog-documents.test.ts
-tests/e2e/mcp-stdio.test.ts
 tests/infrastructure/crawl4ai-content-fetcher.test.ts
 tests/infrastructure/secure-http-gateway.test.ts
 tests/infrastructure/sqlite-catalog-fts-index.test.ts
