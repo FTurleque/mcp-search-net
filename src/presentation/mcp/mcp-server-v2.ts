@@ -7,7 +7,7 @@ import type {
   SearchCatalogDocumentsOutput,
 } from '../../application/use-cases/search-catalog-documents.js';
 import { InvalidArgumentError } from '../../domain/errors/domain-errors.js';
-import type { CatalogCurrentDocumentSection, CatalogDocument } from '../../domain/models/catalog.js';
+import type { CatalogDocument } from '../../domain/models/catalog.js';
 import type { ToolResponse, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import type { ApplicationConfig } from '../../infrastructure/config/application-config.js';
 import type { Logger } from '../../application/ports/logger.js';
