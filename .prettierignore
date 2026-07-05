@@ -10,6 +10,7 @@ src/application/use-cases/load-catalog-sources.ts
 src/application/use-cases/plan-catalog-sync.ts
 src/application/use-cases/sync-catalog-documents.ts
 src/cli/catalog-source-config.ts
+src/cli/catalog.ts
 src/domain/models/content.ts
 src/infrastructure/catalog/sqlite-catalog-repository.ts
 src/infrastructure/catalog/sqlite-catalog-version-purger.ts
