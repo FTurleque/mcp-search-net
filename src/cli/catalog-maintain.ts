@@ -29,7 +29,9 @@ async function main(argv: readonly string[]): Promise<void> {
 function parseArguments(argv: readonly string[]): CatalogMaintainOptions {
   if (argv.includes('--help') || argv.includes('-h')) throw new Error(usage());
   return {
-    path: resolve(getOption(argv, '--path') ?? process.env['MCP_CATALOG_PATH'] ?? '.data/catalog.db'),
+    path: resolve(
+      getOption(argv, '--path') ?? process.env['MCP_CATALOG_PATH'] ?? '.data/catalog.db',
+    ),
     keepSyncRuns:
       parseNonNegativeInteger(getOption(argv, '--keep-sync-runs'), '--keep-sync-runs') ??
       DEFAULT_KEEP_SYNC_RUNS,
@@ -51,29 +53,39 @@ function getOption(argv: readonly string[], name: string): string | undefined {
   return value;
 }
 
-function parseNonNegativeInteger(value: string | undefined, optionName: string): number | undefined {
+function parseNonNegativeInteger(
+  value: string | undefined,
+  optionName: string,
+): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`Invalid ${optionName} ${value}`);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    throw new Error(`Invalid ${optionName} ${value}`);
+  }
   return parsed;
 }
 
 function parsePositiveInteger(value: string | undefined, optionName: string): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`Invalid ${optionName} ${value}`);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`Invalid ${optionName} ${value}`);
+  }
   return parsed;
 }
 
 function parseLogLevel(value: string | undefined): LogLevel {
-  if (value === 'debug' || value === 'info' || value === 'warning' || value === 'error') return value;
+  if (value === 'debug' || value === 'info' || value === 'warning' || value === 'error') {
+    return value;
+  }
   return 'info';
 }
 
 function usage(): string {
   return [
     'Usage:',
-    '  catalog-maintain [--path <catalog.db>] [--keep-sync-runs <n>] [--max-sync-run-age-days <days>] [--stale-lock-ms <ms>] [--vacuum]',
+    '  catalog-maintain [--path <catalog.db>] [--keep-sync-runs <n>]',
+    '  [--max-sync-run-age-days <days>] [--stale-lock-ms <ms>] [--vacuum]',
   ].join('\n');
 }
 
