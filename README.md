@@ -70,7 +70,10 @@ npm run build
 npm start
 ```
 
-Le build nettoie `build/` et l'ancien dossier `dist/` avant compilation. TypeScript utilise `noEmitOnError`, puis `npm start` exécute `build/bootstrap/main.js`. Le processus utilise le transport MCP STDIO ; il n’ouvre aucun port applicatif.
+Le build nettoie `build/` et l'ancien dossier `dist/` avant compilation.
+TypeScript utilise `noEmitOnError`, puis `npm start` exécute
+`build/bootstrap/main.js`. Le processus utilise le transport MCP STDIO ; il
+n’ouvre aucun port applicatif.
 
 ## Validation
 
