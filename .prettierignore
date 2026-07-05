@@ -10,11 +10,14 @@ catalog-migrations/*.sql
 src/application/use-cases/load-catalog-sources.ts
 src/application/use-cases/plan-catalog-sync.ts
 src/application/use-cases/sync-catalog-documents.ts
+src/application/use-cases/maintain-catalog.ts
 src/cli/catalog-source-config.ts
 src/cli/catalog.ts
+src/cli/catalog-maintain.ts
 src/domain/models/content.ts
 src/infrastructure/catalog/sqlite-catalog-repository.ts
 src/infrastructure/catalog/sqlite-catalog-version-purger.ts
+src/infrastructure/catalog/sqlite-catalog-maintenance.ts
 src/infrastructure/fetch/crawl4ai-content-fetcher.ts
 src/infrastructure/fetch/secure-http-gateway.ts
 src/presentation/mcp/mcp-server-v2.ts
@@ -22,6 +25,7 @@ tests/application/catalog-source-config.test.ts
 tests/application/load-catalog-sources.test.ts
 tests/application/plan-catalog-sync.test.ts
 tests/application/sync-catalog-documents.test.ts
+tests/application/maintain-catalog.test.ts
 tests/e2e/mcp-stdio.test.ts
 tests/infrastructure/crawl4ai-content-fetcher.test.ts
 tests/infrastructure/secure-http-gateway.test.ts
@@ -37,3 +41,4 @@ docs/planning/roadmap-v2-documentaire.md
 docs/planning/validation-v1-recette-finale-2026-06-27.md
 docs/reference/catalog-schema-v2.md
 docs/reference/catalog-sync-v2.md
+docs/reference/catalog-operations-v2.md
