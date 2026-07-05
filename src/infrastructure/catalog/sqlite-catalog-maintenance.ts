@@ -38,65 +38,67 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
     private readonly logger?: Logger,
   ) {}
 
-  public async run(input: CatalogMaintenanceInput): Promise<CatalogMaintenanceOutput> {
+  public run(input: CatalogMaintenanceInput): Promise<CatalogMaintenanceOutput> {
     const startedAt = this.clock.now().getTime();
     const lockPath = `${this.catalogPath}.maintenance.lock`;
 
-    return this.withExclusiveLock(lockPath, input.staleLockMs, () => {
-      this.logger?.info('catalog_maintenance_started', {
-        catalogPath: this.catalogPath,
-        keepSyncRuns: input.keepSyncRuns,
-        maxSyncRunAgeDays: input.maxSyncRunAgeDays,
-        vacuum: input.vacuum,
-      });
-
-      const database = openCatalogDatabase(this.catalogPath);
-      try {
-        new CatalogMigrationRunner(database, this.clock).apply();
-
-        const syncRunsBefore = this.countSyncRuns(database);
-        const syncRunsDeleted = this.deleteExpiredSyncRuns(database, input);
-        const syncRunsAfter = this.countSyncRuns(database);
-
-        database.pragma('analysis_limit = 400');
-        database.pragma('optimize');
-        database.pragma('wal_checkpoint(TRUNCATE)');
-        if (input.vacuum) database.exec('VACUUM');
-
-        const result: CatalogMaintenanceOutput = {
-          schemaVersion: '1.0',
-          status: 'maintained',
-          lock: { acquired: true, path: lockPath },
-          retention: {
-            keepSyncRuns: input.keepSyncRuns,
-            maxSyncRunAgeDays: input.maxSyncRunAgeDays,
-            syncRunsBefore,
-            syncRunsDeleted,
-            syncRunsAfter,
-          },
-          sqlite: {
-            analyzed: true,
-            optimized: true,
-            walCheckpointed: true,
-            vacuumed: input.vacuum,
-          },
-          durationMs: this.clock.now().getTime() - startedAt,
-        };
-
-        this.logger?.info('catalog_maintenance_completed', {
-          status: result.status,
-          syncRunsDeleted: result.retention.syncRunsDeleted,
-          durationMs: result.durationMs,
+    return Promise.resolve(
+      this.withExclusiveLock(lockPath, input.staleLockMs, () => {
+        this.logger?.info('catalog_maintenance_started', {
+          catalogPath: this.catalogPath,
+          keepSyncRuns: input.keepSyncRuns,
+          maxSyncRunAgeDays: input.maxSyncRunAgeDays,
+          vacuum: input.vacuum,
         });
 
-        return result;
-      } catch (error) {
-        this.logger?.error('catalog_maintenance_failed', { error });
-        throw error;
-      } finally {
-        database.close();
-      }
-    });
+        const database = openCatalogDatabase(this.catalogPath);
+        try {
+          new CatalogMigrationRunner(database, this.clock).apply();
+
+          const syncRunsBefore = this.countSyncRuns(database);
+          const syncRunsDeleted = this.deleteExpiredSyncRuns(database, input);
+          const syncRunsAfter = this.countSyncRuns(database);
+
+          database.pragma('analysis_limit = 400');
+          database.pragma('optimize');
+          database.pragma('wal_checkpoint(TRUNCATE)');
+          if (input.vacuum) database.exec('VACUUM');
+
+          const result: CatalogMaintenanceOutput = {
+            schemaVersion: '1.0',
+            status: 'maintained',
+            lock: { acquired: true, path: lockPath },
+            retention: {
+              keepSyncRuns: input.keepSyncRuns,
+              maxSyncRunAgeDays: input.maxSyncRunAgeDays,
+              syncRunsBefore,
+              syncRunsDeleted,
+              syncRunsAfter,
+            },
+            sqlite: {
+              analyzed: true,
+              optimized: true,
+              walCheckpointed: true,
+              vacuumed: input.vacuum,
+            },
+            durationMs: this.clock.now().getTime() - startedAt,
+          };
+
+          this.logger?.info('catalog_maintenance_completed', {
+            status: result.status,
+            syncRunsDeleted: result.retention.syncRunsDeleted,
+            durationMs: result.durationMs,
+          });
+
+          return result;
+        } catch (error) {
+          this.logger?.error('catalog_maintenance_failed', { error });
+          throw error;
+        } finally {
+          database.close();
+        }
+      }),
+    );
   }
 
   private withExclusiveLock<T>(lockPath: string, staleLockMs: number, action: () => T): T {
