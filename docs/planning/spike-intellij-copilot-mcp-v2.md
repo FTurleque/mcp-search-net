@@ -5,7 +5,7 @@
 - **Phase** : V2.4 / V2.5 — validation utilisateur de l'exposition MCP documentaire.
 - **PR active** : #8 — `feat/v2-catalog-storage`, conservée en draft.
 - **Date de préparation** : 2026-07-05.
-- **État** : recette préparée, exécution manuelle à réaliser sur un poste IntelliJ IDEA + GitHub Copilot.
+- **État** : recette préparée, exécution manuelle à réaliser sur un poste IntelliJ IDEA + GitHub Copilot ou dans l'application Codex Desktop.
 - **GitHub Actions** : ne pas déclencher. Le workflow `CI` reste volontairement manuel via `workflow_dispatch`.
 
 ## Objectif
@@ -17,6 +17,8 @@ Le spike doit répondre à trois questions :
 1. Copilot détecte-t-il `search_docs` en plus des outils V1 `search_web` et `fetch_url` ?
 2. Copilot expose-t-il ou exploite-t-il les resources read-only du catalogue V2 ?
 3. Le fallback par outil `search_docs` suffit-il si l'interface Copilot ne permet pas encore de lire directement les resources MCP ?
+
+Codex Desktop peut aussi être utilisé comme client de validation complémentaire : il permet de préparer le catalogue local, d'exécuter les commandes de contrôle et de tester le serveur MCP via `search_docs`.
 
 ## Périmètre validé côté serveur
 
@@ -130,6 +132,70 @@ Dans l'entrée MCP utilisée par Copilot, ajouter ou remplacer la variable :
 
 Adapter le chemin Windows au poste local. Redémarrer le serveur MCP depuis l'interface Copilot après modification.
 
+## Variante Codex Desktop
+
+Codex Desktop peut être utilisé pour lancer la préparation locale et tester le serveur MCP V2 hors GitHub Actions.
+
+### Préparation depuis Codex
+
+Ouvrir le dossier local du repo dans Codex Desktop, puis demander à Codex :
+
+```text
+Prépare le spike MCP V2 sans lancer GitHub Actions : place-toi sur la branche feat/v2-catalog-storage, exécute npm install, npm run build, puis suis la section "Préparation locale hors Actions" de docs/planning/spike-intellij-copilot-mcp-v2.md pour créer .data/catalog-spike.db et indexer les 10 documents locaux. Ne merge pas, ne passe pas la PR en Ready for Review et ne déclenche aucun workflow GitHub Actions.
+```
+
+Sous Windows, Codex doit utiliser PowerShell ou l'environnement terminal configuré dans l'application. Si PowerShell bloque `npm.ps1`, corriger la politique d'exécution localement ou lancer les commandes via `cmd.exe`.
+
+### Déclaration MCP dans Codex
+
+Codex lit les serveurs MCP depuis `~/.codex/config.toml` ou depuis `.codex/config.toml` pour un projet de confiance. Pour tester `mcp-search-net` depuis Codex Desktop, ajouter une configuration de ce type en adaptant les chemins :
+
+```toml
+[mcp_servers.mcp-search-net]
+command = "cmd.exe"
+args = [
+  "/d",
+  "/s",
+  "/c",
+  "N:\\chemin\\vers\\mcp-search-net\\scripts\\intellij\\run-local-mcp.cmd"
+]
+cwd = "N:\\chemin\\vers\\mcp-search-net"
+startup_timeout_sec = 20
+tool_timeout_sec = 60
+default_tools_approval_mode = "prompt"
+enabled = true
+
+[mcp_servers.mcp-search-net.env]
+MCP_CONFIG_PATH = "N:\\chemin\\vers\\mcp-search-net\\config\\application.yml"
+MCP_CATALOG_PATH = "N:\\chemin\\vers\\mcp-search-net\\.data\\catalog-spike.db"
+MCP_CRAWL4AI_TOKEN = "votre-jeton-local"
+```
+
+Si le serveur installé dans `%LOCALAPPDATA%` est préféré, remplacer `args` par le chemin vers `%LOCALAPPDATA%\\mcp-search-net\\bin\\mcp-search-net.cmd`.
+
+### Scénarios Codex
+
+Dans un thread Codex ouvert sur le repo, demander :
+
+```text
+Liste les serveurs MCP disponibles et vérifie que mcp-search-net expose search_docs, search_web et fetch_url.
+```
+
+Puis :
+
+```text
+Utilise le MCP mcp-search-net et son outil search_docs pour chercher "resources MCP V2" dans le catalogue local. Donne les documents trouvés, les sections pertinentes et indique si le catalogue semble contenir au moins 10 documents.
+```
+
+Résultat attendu :
+
+- Codex voit le serveur `mcp-search-net` ;
+- `search_docs` est utilisable ;
+- les résultats proviennent de `.data/catalog-spike.db` ;
+- aucune commande mutable MCP n'est nécessaire.
+
+Les resources MCP peuvent ne pas être exposées comme surface utilisateur directe selon le client Codex. Dans ce cas, le résultat reste acceptable si `search_docs` couvre le besoin documentaire.
+
 ## Scénarios de recette Copilot
 
 ### S1 — Compatibilité V1
@@ -233,6 +299,8 @@ Le spike est **NO-GO** si :
 - le catalogue V2 est vide ou illisible ;
 - l'usage depuis Copilot nécessite une opération mutable MCP.
 
+Pour Codex Desktop, appliquer la même décision, mais considérer `search_docs` comme surface principale si les resources MCP ne sont pas affichées directement par le client.
+
 ## Preuves à archiver après exécution
 
 Créer un document de validation daté, par exemple :
@@ -243,16 +311,16 @@ docs/planning/validation-intellij-copilot-mcp-v2-YYYY-MM-DD.md
 
 Contenu minimal :
 
-- version IntelliJ IDEA ;
-- version du plugin GitHub Copilot ;
+- client utilisé : IntelliJ/Copilot ou Codex Desktop ;
+- version IntelliJ IDEA, version du plugin GitHub Copilot ou version Codex Desktop ;
 - version Node.js ;
 - commit testé ;
 - chemin de catalogue utilisé ;
 - résultat de `catalog status` ;
 - résultat de `catalog verify` ;
-- transcript ou capture des scénarios S1 à S5 ;
+- transcript ou capture des scénarios S1 à S5 ou des scénarios Codex ;
 - décision GO / GO avec réserve / NO-GO ;
-- limites observées côté Copilot.
+- limites observées côté client MCP.
 
 ## Impacts selon résultat
 
