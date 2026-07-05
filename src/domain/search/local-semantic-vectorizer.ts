@@ -55,7 +55,11 @@ export class LocalSemanticVectorizer {
     }
 
     for (let index = 0; index < tokens.length - 1; index += 1) {
-      addFeature(values, this.dimensions, `${tokens[index]} ${tokens[index + 1]}`, 0.75);
+      const left = tokens[index];
+      const right = tokens[index + 1];
+      if (left !== undefined && right !== undefined) {
+        addFeature(values, this.dimensions, `${left} ${right}`, 0.75);
+      }
     }
 
     return { dimensions: this.dimensions, values: normalize(values) };
@@ -70,14 +74,14 @@ export class LocalSemanticVectorizer {
 }
 
 function tokenize(text: string): readonly string[] {
-  return text
+  const normalized = text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/gu, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/gu, ' ')
-    .trim()
-    .split(/\s+/u)
-    .filter((token) => token.length > 1 && !STOP_WORDS.has(token));
+    .trim();
+  if (normalized.length === 0) return [];
+  return normalized.split(/\s+/u).filter((token) => token.length > 1 && !STOP_WORDS.has(token));
 }
 
 function stem(token: string): string {
@@ -95,7 +99,7 @@ function addFeature(values: number[], dimensions: number, feature: string, weigh
   const hash = hashFeature(feature);
   const index = hash % dimensions;
   const sign = hash % 2 === 0 ? 1 : -1;
-  values[index] += sign * weight;
+  values[index] = (values[index] ?? 0) + sign * weight;
 }
 
 function hashFeature(value: string): number {
