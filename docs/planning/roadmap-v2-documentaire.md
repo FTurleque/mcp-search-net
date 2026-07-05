@@ -8,11 +8,13 @@
 >
 > **Dernier head validé CI complète** : `4bfb191da05768759b6a9d8531aa3fd5762612c1`, run 462.
 >
+> **Dernier head validé localement V2.7** : `8f0e5541773df285b6ae65dd7f4e532bfc7514c5`.
+>
 > **GitHub Actions** : workflow `CI` temporairement déclenchable uniquement manuellement via `workflow_dispatch`, car le quota mensuel d'Actions minutes est épuisé.
 
 ## État synthétique
 
-La V2 n'est plus seulement en cadrage. La PR #8 contient déjà une première implémentation documentaire locale : stockage catalogue, ingestion, recherche, synchronisation contrôlée, purge et exposition MCP read-only.
+La V2 documentaire est avancée. La PR #8 contient déjà une implémentation locale couvrant stockage catalogue, ingestion, recherche, synchronisation contrôlée, purge, maintenance opérationnelle, recherche hybride optionnelle et exposition MCP read-only.
 
 Avancement :
 
@@ -23,9 +25,9 @@ Avancement :
 - V2.4 exposition MCP : implémentée avec `search_docs`, resources read-only, versions documentaires et recette de spike IntelliJ/Copilot préparée.
 - V2.5 synchronisation incrémentale : implémentée avec sync contrôlé, sync exhaustive, rate limiting applicatif, reprise par curseur, validateurs, staleness et redirections permanentes.
 - V2.6 automatisation contrôlée : implémentée et validée localement sur la tranche maintenance contrôlée.
-- V2.7 embeddings : non démarrée, optionnelle.
+- V2.7 recherche hybride locale : implémentée et validée localement comme prototype optionnel sans API payante, modèle téléchargé ni service externe.
 
-Le travail postérieur au dernier head vert est bien récupéré dans la PR #8, mais il doit être revalidé localement ou par CI manuelle lorsque les minutes Actions seront de nouveau disponibles.
+Le travail postérieur au dernier head vert est bien récupéré dans la PR #8. La validation locale couvre désormais V2.6 et V2.7, mais la CI complète reste à rejouer manuellement lorsque les minutes Actions seront de nouveau disponibles.
 
 ## Pré-requis V2
 
@@ -66,6 +68,8 @@ La V2 reste local-first : SQLite, FTS, BM25, CLI/worker et MCP STDIO. Aucun LLM 
 - Tables principales : `catalog_sources`, `documents`, `document_versions`, `document_sections`, `sync_runs`, `document_section_fts`.
 - Recherche : FTS/BM25 avec fallback LIKE et snippets.
 - Synchronisation : CLI contrôlée, ETag, Last-Modified, hash, staleness non destructif, sync exhaustive, rate limiting et reprise par curseur.
+- Maintenance contrôlée locale : cycle `catalog:maintain`, verrou inter-processus, rétention opérationnelle, analyse/optimisation SQLite, checkpoint WAL et vacuum optionnel.
+- Recherche hybride locale optionnelle : reranking lexical/sémantique déterministe côté CLI, sans API payante, sans modèle téléchargé et sans service externe.
 - MCP : outils V1 conservés, outil V2 `search_docs`, resources read-only.
 
 ## Exposition MCP V2
@@ -170,16 +174,36 @@ Validation locale V2.6 :
 - `npm run lint` : OK.
 - `npm run typecheck` : OK.
 - `npm run build` : OK.
-- `npm run test` : OK, 35 fichiers de tests passés, 180 tests passés.
+- `npm run test` : OK.
+- 35 fichiers de tests passés.
+- 180 tests passés.
 - `npm run catalog:maintain -- --path .data/catalog-spike.db` : OK sur le catalogue de spike.
 - Statut archivé dans [`status-v2-6.md`](status-v2-6.md).
+- Validation archivée dans [`validation-v2-6-local-success-2026-07-05.md`](validation-v2-6-local-success-2026-07-05.md).
 
-### V2.7 — Recherche sémantique optionnelle
+### V2.7 — Recherche hybride locale optionnelle
 
-- [ ] Benchmark lexical insuffisant documenté.
-- [ ] Prototype local sans API payante.
-- [ ] Gain mesuré suffisant.
-- [ ] Latence acceptable.
+- [x] Prototype local sans API payante.
+- [x] Vectorisation locale déterministe.
+- [x] Use-case `HybridSearchCatalogDocuments`.
+- [x] CLI `catalog-hybrid-search`.
+- [x] Script npm `catalog:hybrid-search`.
+- [x] Test applicatif du reranking hybride.
+- [x] Documentation `catalog-semantic-search-v2.md`.
+- [x] Validation locale typecheck/build/tests/recherche hybride.
+- [ ] Benchmark comparatif lexical/hybride sur corpus représentatif.
+- [ ] Décision de généralisation après mesure du gain et de la latence.
+
+Validation locale V2.7 :
+
+- `npm run typecheck` : OK.
+- `npm run build` : OK.
+- `npm run test` : OK, 36 fichiers de tests passés, 182 tests passés.
+- Recherche hybride : OK sur le catalogue de spike.
+- Résultats retournés : 10.
+- Stratégie : `lexical-semantic-hybrid`.
+- Statut archivé dans [`status-v2-7.md`](status-v2-7.md).
+- Validation archivée dans [`validation-v2-7-local-success-2026-07-05.md`](validation-v2-7-local-success-2026-07-05.md).
 
 ## Critères d'acceptation V2
 
@@ -195,6 +219,7 @@ Validation locale V2.6 :
 - [x] Recherche multi-document sur sections courantes.
 - [x] Résultats filtrables.
 - [x] Snippets disponibles.
+- [x] Recherche hybride locale disponible en CLI optionnelle.
 - [ ] Benchmark final à exécuter sur corpus représentatif.
 
 ### AC-V2-03 : Synchronisation manuelle validée
@@ -222,17 +247,32 @@ Validation locale V2.6 :
 - [x] `search_web` et `fetch_url` conservés.
 - [x] Cache V1 non réutilisé comme catalogue.
 - [x] Catalogue séparé dans `catalog.db`.
-- [ ] Suites V1 à revalider sur le head courant de la PR #8.
+- [x] Suites V1/V2 revalidées localement sur le head courant de la PR #8.
+
+### AC-V2-06 : Exploitation contrôlée V2.6 validée
+
+- [x] Cycle `catalog:maintain` disponible hors MCP.
+- [x] Verrou inter-processus robuste.
+- [x] Observabilité structurée par événement.
+- [x] Rétention opérationnelle des runs de synchronisation.
+- [x] Maintenance SQLite locale documentée et testée.
+- [x] Validation locale sur `.data/catalog-spike.db`.
+
+### AC-V2-07 : Recherche hybride optionnelle V2.7 validée
+
+- [x] Prototype local sans dépendance payante.
+- [x] CLI `catalog-hybrid-search` disponible.
+- [x] Scores lexical, sémantique local et hybride retournés.
+- [x] Validation locale sur catalogue de spike.
+- [ ] Benchmark final lexical/hybride restant à faire avant généralisation.
 
 ## Ordre de réalisation recommandé
 
 1. Ne plus consommer GitHub Actions tant que le quota mensuel est épuisé.
 2. Continuer les changements avec validation locale uniquement.
-3. Revalider localement le head courant de la PR #8.
-4. Exécuter le spike IntelliJ/Copilot sur `search_docs` et les resources MCP V2.
+3. Exécuter le spike IntelliJ/Copilot final sur `search_docs` et les resources MCP V2.
+4. Réaliser le benchmark comparatif lexical/hybride avant toute généralisation de V2.7.
 5. Après reset du quota, lancer manuellement `CI` via `workflow_dispatch`.
-6. Ajouter l'automatisation contrôlée V2.6 si nécessaire.
-7. Évaluer les embeddings seulement si le benchmark lexical le justifie.
 
 ## Validation locale recommandée
 
@@ -268,11 +308,13 @@ docker compose down
 
 La V2 sera considérée opérationnelle lorsque :
 
-- les critères AC-V2-01 à AC-V2-05 seront validés avec preuves sur un head courant ;
+- les critères AC-V2-01 à AC-V2-07 seront validés avec preuves sur un head courant ;
 - le catalogue contiendra au moins 10 documents de test indexés ;
 - la recherche retournera des résultats pertinents classés ;
 - IntelliJ/Copilot détectera et exploitera `search_docs` ou les resources validées ;
 - la synchronisation manuelle via CLI sera documentée et testée ;
+- la maintenance contrôlée sera documentée et testée ;
+- la recherche hybride restera optionnelle tant que le benchmark final ne justifie pas sa généralisation ;
 - aucune régression V1 ne sera introduite.
 
 ## Références
@@ -286,6 +328,11 @@ La V2 sera considérée opérationnelle lorsque :
 - [ADR-016 — Exposer la V2 avec outil et resources MCP](../adr/ADR-016-mcp-v2-tools-resources.md)
 - [Schéma catalogue V2](../reference/catalog-schema-v2.md)
 - [Synchronisation catalogue V2](../reference/catalog-sync-v2.md)
+- [Exploitation catalogue V2.6](../reference/catalog-operations-v2.md)
+- [Recherche sémantique V2.7](../reference/catalog-semantic-search-v2.md)
 - [Spike IntelliJ/Copilot — MCP V2 documentaire](spike-intellij-copilot-mcp-v2.md)
 - [Benchmark V2](benchmark-v2.md)
 - [Statut V2.6](status-v2-6.md)
+- [Validation locale V2.6](validation-v2-6-local-success-2026-07-05.md)
+- [Statut V2.7](status-v2-7.md)
+- [Validation locale V2.7](validation-v2-7-local-success-2026-07-05.md)
