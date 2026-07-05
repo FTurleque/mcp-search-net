@@ -1,4 +1,5 @@
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { log } from 'node:console';
 import process from 'node:process';
 import { resolve } from 'node:path';
 
@@ -74,7 +75,7 @@ try {
   };
 
   await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
-  console.log(JSON.stringify({ outputPath, cases }, null, 2));
+  log(JSON.stringify({ outputPath, cases }, null, 2));
 } finally {
   await client.close();
 }
