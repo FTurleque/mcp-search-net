@@ -3,6 +3,7 @@ dist
 coverage
 .data
 package-lock.json
+README.md
 
 catalog-migrations/*.sql
 
