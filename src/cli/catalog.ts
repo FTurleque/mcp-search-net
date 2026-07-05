@@ -6,7 +6,10 @@ import { PlanCatalogSync } from '../application/use-cases/plan-catalog-sync.js';
 import { PurgeCatalogVersions } from '../application/use-cases/purge-catalog-versions.js';
 import { RebuildCatalogIndex } from '../application/use-cases/rebuild-catalog-index.js';
 import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
-import { SyncCatalogDocuments } from '../application/use-cases/sync-catalog-documents.js';
+import {
+  SyncCatalogDocuments,
+  type SyncCatalogResumeCursor,
+} from '../application/use-cases/sync-catalog-documents.js';
 import { VerifyCatalog } from '../application/use-cases/verify-catalog.js';
 import type {
   CatalogFreshnessPolicy,
@@ -56,7 +59,9 @@ interface CatalogCommandOptions {
     readonly sourceKey?: string;
     readonly filePath?: string;
     readonly configPath: string;
-    readonly limit: number;
+    readonly limit?: number;
+    readonly rateLimitMs?: number;
+    readonly resumeAfter?: SyncCatalogResumeCursor;
   };
   readonly text?: {
     readonly sourceKey: string;
@@ -151,10 +156,12 @@ async function main(argv: readonly string[]): Promise<void> {
       const result = await new SyncCatalogDocuments(repository, fetcher, clock).execute({
         ...(options.sync.sourceKey === undefined ? {} : { sourceKey: options.sync.sourceKey }),
         documents: catalogConfig.documents,
-        limit: options.sync.limit,
+        ...(options.sync.limit === undefined ? {} : { limit: options.sync.limit }),
         timeoutMs: appConfig.crawl4ai.timeoutMs,
         maxResponseBytes: appConfig.security.maxDownloadBytes,
         maxRedirects: appConfig.security.maxRedirects,
+        rateLimitMs: options.sync.rateLimitMs ?? appConfig.security.minimumDelayMs,
+        ...(options.sync.resumeAfter === undefined ? {} : { resumeAfter: options.sync.resumeAfter }),
       });
       const index = await repository.rebuildSearchIndex();
       process.stdout.write(`${JSON.stringify({ ...result, index }, null, 2)}\n`);
@@ -263,15 +270,22 @@ function parseLoadSources(argv: readonly string[], path: string): CatalogCommand
 function parseSync(argv: readonly string[], path: string): CatalogCommandOptions {
   const sourceKey = getOption(argv, '--source-key') ?? getOption(argv, '--source');
   const filePath = getOption(argv, '--file');
+  const resumeAfter = parseResumeAfter(getOption(argv, '--resume-after'), sourceKey);
   return {
     command: 'sync',
     path: resolve(path),
     sync: {
       dryRun: argv.includes('--dry-run'),
       configPath: resolve(getOption(argv, '--config') ?? 'config/application.yml'),
-      limit: parseLimit(getOption(argv, '--limit')) ?? 1,
+      ...(parseLimit(getOption(argv, '--limit')) === undefined
+        ? {}
+        : { limit: parseLimit(getOption(argv, '--limit')) }),
+      ...(parseNonNegativeInteger(getOption(argv, '--rate-limit-ms'), '--rate-limit-ms') === undefined
+        ? {}
+        : { rateLimitMs: parseNonNegativeInteger(getOption(argv, '--rate-limit-ms'), '--rate-limit-ms') }),
       ...(sourceKey === undefined ? {} : { sourceKey }),
       ...(filePath === undefined ? {} : { filePath: resolve(filePath) }),
+      ...(resumeAfter === undefined ? {} : { resumeAfter }),
     },
   };
 }
@@ -374,6 +388,34 @@ function parseKeepPreviousVersions(value: string | undefined): number | undefine
   return keepPreviousVersions;
 }
 
+function parseNonNegativeInteger(value: string | undefined, optionName: string): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`Invalid ${optionName} ${value}`);
+  return parsed;
+}
+
+function parseResumeAfter(
+  value: string | undefined,
+  scopedSourceKey: string | undefined,
+): SyncCatalogResumeCursor | undefined {
+  if (value === undefined) return undefined;
+  const separatorIndex = value.indexOf(':');
+  if (separatorIndex === -1) {
+    if (scopedSourceKey === undefined) {
+      throw new Error('--resume-after without --source-key must use <sourceKey>:<stableKey>');
+    }
+    return { sourceKey: scopedSourceKey, stableKey: value };
+  }
+
+  const sourceKey = value.slice(0, separatorIndex);
+  const stableKey = value.slice(separatorIndex + 1);
+  if (sourceKey.length === 0 || stableKey.length === 0) {
+    throw new Error('--resume-after must use <sourceKey>:<stableKey>');
+  }
+  return { sourceKey, stableKey };
+}
+
 function parseSourceType(value: string): CatalogSourceType {
   if (SOURCE_TYPES.includes(value as CatalogSourceType)) return value as CatalogSourceType;
   throw new Error(`Invalid source type ${value}`);
@@ -406,7 +448,7 @@ function usage(): string {
     '  catalog list-sources [--path <catalog.db>]',
     '  catalog load-sources [--path <catalog.db>] [--file <catalog-sources.yml>]',
     '  catalog sync --dry-run [--path <catalog.db>] --file <catalog-sources.yml> [--source-key <key>]',
-    '  catalog sync [--path <catalog.db>] --file <catalog-sources.yml> [--config <application.yml>] [--source-key <key>] [--limit <n>]',
+    '  catalog sync [--path <catalog.db>] --file <catalog-sources.yml> [--config <application.yml>] [--source-key <key>] [--limit <n>] [--rate-limit-ms <ms>] [--resume-after <sourceKey:stableKey|stableKey>]',
     '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
     '  catalog ingest-text --source-key <key> --file <file> --url <url> --title <title> [--path <catalog.db>] [--language <language>] [--mime-type <mime>] [--stable-key <key>] [--version-label <label>]',
     '  catalog search --query <text> [--path <catalog.db>] [--source-key <key>] [--language <language>] [--limit <n>]',
