@@ -32,6 +32,8 @@ export function createSearchDocsSchemas(defaultResults: number, maximumResults: 
           .optional()
           .describe('Optional BCP-47-like language filter, for example fr or en-US'),
         maxResults: z.number().int().min(1).max(maximumResults).default(defaultResults),
+        maxSnippetChars: z.number().int().min(80).max(500).default(240),
+        compact: z.boolean().default(false),
       })
       .strict(),
   );
