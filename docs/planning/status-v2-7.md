@@ -12,11 +12,27 @@ Périmètre livré :
 - CLI `catalog-hybrid-search` ;
 - test applicatif du reranking hybride.
 
-Décision : V2.7 est prête pour validation locale.
+Validation locale communiquée avant correctif CLI :
 
-Validation recommandée :
+- format OK ;
+- lint OK ;
+- typecheck OK ;
+- build OK ;
+- tests OK ;
+- 36 fichiers de tests passés ;
+- 182 tests passés ;
+- recherche hybride OK sur le catalogue de spike ;
+- 10 résultats retournés ;
+- stratégie `lexical-semantic-hybrid`.
 
-- format ;
+Correctif appliqué après cette validation :
+
+- normalisation des `^` parasites observés dans la valeur `query` sous Windows/npm.
+
+Décision : V2.7 est validée localement avant correctif CLI mineur. Une revalidation courte est nécessaire sur le head courant.
+
+Validation courte à relancer :
+
 - lint ;
 - typecheck ;
 - build ;
