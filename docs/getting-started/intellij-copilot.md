@@ -118,11 +118,29 @@ Forme attendue :
 
 Utiliser de préférence le fichier généré : il évite les erreurs d’échappement JSON et de nom d’utilisateur. Redémarrer le serveur MCP depuis l’interface Copilot après chaque réinstallation.
 
-## Vérification
+## Vérification V1
+
+La vérification V1 sert à confirmer que la compatibilité historique n'a pas régressé.
 
 1. Exécuter `mcp-search-net-services.cmd ps` et vérifier que les deux services sont sains.
 2. Ouvrir Copilot Chat et afficher les outils MCP.
-3. Vérifier la présence de `search_web` et `fetch_url` uniquement.
+3. Vérifier la présence de `search_web` et `fetch_url`.
 4. Demander une recherche simple, puis la récupération d’une URL publique HTTPS.
 
 Les logs du serveur apparaissent sur `stderr`. Aucune sortie libre ne doit apparaître sur `stdout`, réservé au protocole MCP.
+
+## Vérification V2 documentaire
+
+La branche V2 expose aussi `search_docs` et des resources read-only de catalogue.
+La recette V2 ne remplace pas la vérification V1 : elle la complète avec un corpus
+local, un catalogue dédié et des scénarios Copilot orientés documentation.
+
+Suivre la recette dédiée : [Spike IntelliJ/Copilot — MCP V2 documentaire](../planning/spike-intellij-copilot-mcp-v2.md).
+
+La validation V2 attend au minimum :
+
+- `search_docs` visible ou utilisable depuis Copilot ;
+- recherche locale effective dans `catalog.db` ;
+- lecture des resources MCP si l'interface Copilot les expose ;
+- fallback clair par `search_docs` si la lecture directe de resources n'est pas disponible côté client ;
+- aucune opération mutable exposée par MCP.
