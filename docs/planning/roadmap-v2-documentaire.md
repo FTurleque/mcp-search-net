@@ -21,7 +21,7 @@ Avancement :
 - V2.2 ingestion CLI : implémenté pour texte/Markdown et configuration YAML.
 - V2.3 recherche lexicale : implémentée sur sections courantes.
 - V2.4 exposition MCP : implémentée partiellement avec `search_docs` et resources read-only, y compris versions documentaires.
-- V2.5 synchronisation incrémentale : implémentée partiellement, avec sync contrôlé, validateurs, staleness et redirections permanentes.
+- V2.5 synchronisation incrémentale : implémentée avec sync contrôlé, sync exhaustive, rate limiting applicatif, reprise par curseur, validateurs, staleness et redirections permanentes.
 - V2.6 automatisation contrôlée : non démarrée.
 - V2.7 embeddings : non démarrée, optionnelle.
 
@@ -65,7 +65,7 @@ La V2 reste local-first : SQLite, FTS, BM25, CLI/worker et MCP STDIO. Aucun LLM 
 - Migrations catalogue : `catalog-migrations/Cxxx__...`.
 - Tables principales : `catalog_sources`, `documents`, `document_versions`, `document_sections`, `sync_runs`, `document_section_fts`.
 - Recherche : FTS/BM25 avec fallback LIKE et snippets.
-- Synchronisation : CLI contrôlée, ETag, Last-Modified, hash, staleness non destructif.
+- Synchronisation : CLI contrôlée, ETag, Last-Modified, hash, staleness non destructif, sync exhaustive, rate limiting et reprise par curseur.
 - MCP : outils V1 conservés, outil V2 `search_docs`, resources read-only.
 
 ## Exposition MCP V2
@@ -143,6 +143,9 @@ Le spike IntelliJ/Copilot reste obligatoire avant gel définitif du contrat util
 
 - [x] `catalog sync --dry-run`.
 - [x] `catalog sync` contrôlé par `--config`, `--file`, `--source-key`, `--limit`.
+- [x] Sync exhaustive quand `--limit` est absent.
+- [x] Option `--rate-limit-ms` et délai applicatif entre documents.
+- [x] Option `--resume-after` pour reprendre après un document déjà traité.
 - [x] Sync réseau via `Crawl4aiContentFetcher`.
 - [x] `CatalogSyncRun`.
 - [x] Reconstruction de l'index après sync réel.
@@ -151,15 +154,13 @@ Le spike IntelliJ/Copilot reste obligatoire avant gel définitif du contrat util
 - [x] `404` traité en `STALE` non destructif.
 - [x] `410` traité en `REMOVED` non destructif.
 - [x] Redirection permanente traitée en `REDIRECTED`.
-- [ ] Sync exhaustive multi-sources/multi-documents.
-- [ ] Rate limiting applicatif.
-- [ ] Reprise après interruption.
+- [ ] Revalidation locale ou CI manuelle du head courant de PR.
 
 ### V2.6 — Automatisation contrôlée
 
 - [ ] Worker/scheduler externe.
-- [ ] Lock exclusif de synchronisation.
-- [ ] Observabilité des runs.
+- [ ] Lock inter-processus robuste.
+- [ ] Observabilité structurée par événement.
 - [ ] Politique de rétention opérationnelle.
 - [ ] Maintenance SQLite.
 
@@ -189,9 +190,12 @@ Le spike IntelliJ/Copilot reste obligatoire avant gel définitif du contrat util
 ### AC-V2-03 : Synchronisation manuelle validée
 
 - [x] CLI `catalog sync` fonctionnelle en mode contrôlé.
+- [x] Sync exhaustive sans `--limit`.
+- [x] Rate limiting applicatif.
+- [x] Reprise après interruption via `--resume-after`.
 - [x] Détection changements via ETag, Last-Modified et hash.
 - [x] Échecs 404/410 non destructifs.
-- [ ] Sync exhaustive, rate limiting et reprise à finaliser.
+- [ ] Validation locale ou CI manuelle sur le head courant de la PR #8.
 
 ### AC-V2-04 : Exposition MCP validée
 
@@ -215,10 +219,9 @@ Le spike IntelliJ/Copilot reste obligatoire avant gel définitif du contrat util
 2. Continuer les changements avec validation locale uniquement.
 3. Revalider localement le head courant de la PR #8.
 4. Après reset du quota, lancer manuellement `CI` via `workflow_dispatch`.
-5. Finaliser sync exhaustive multi-sources/multi-documents.
-6. Ajouter rate limiting et reprise après interruption.
-7. Exécuter le spike IntelliJ/Copilot sur resources MCP.
-8. Évaluer les embeddings seulement si le benchmark lexical le justifie.
+5. Exécuter le spike IntelliJ/Copilot sur resources MCP.
+6. Ajouter l'automatisation contrôlée V2.6 si nécessaire.
+7. Évaluer les embeddings seulement si le benchmark lexical le justifie.
 
 ## Validation locale recommandée
 
@@ -259,7 +262,6 @@ La V2 sera considérée opérationnelle lorsque :
 - la recherche retournera des résultats pertinents classés ;
 - IntelliJ/Copilot détectera et exploitera `search_docs` ou les resources validées ;
 - la synchronisation manuelle via CLI sera documentée et testée ;
-- sync exhaustive, rate limiting et reprise seront stabilisés ;
 - aucune régression V1 ne sera introduite.
 
 ## Références
