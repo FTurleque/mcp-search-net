@@ -59,7 +59,7 @@ describe('MCP STDIO server', () => {
     const readSectionTool = response.tools.find((tool) => tool.name === 'read_doc_section');
     expect(readSectionTool?.inputSchema).toMatchObject({
       properties: {
-        sectionId: { type: 'number' },
+        sectionId: { type: 'integer' },
         maxCharacters: { default: 3000, maximum: 8000 },
       },
     });
