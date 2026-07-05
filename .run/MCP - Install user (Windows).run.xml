@@ -3,7 +3,7 @@
     <option name="SCRIPT_TEXT" value="" />
     <option name="INDEPENDENT_SCRIPT_PATH" value="true" />
     <option name="SCRIPT_PATH" value="$PROJECT_DIR$\scripts\intellij\install-user.cmd" />
-    <option name="SCRIPT_OPTIONS" value="-StartServices" />
+    <option name="SCRIPT_OPTIONS" value="" />
     <option name="INDEPENDENT_INTERPRETER_PATH" value="true" />
     <option name="INTERPRETER_PATH" value="cmd.exe" />
     <option name="INTERPRETER_OPTIONS" value="/d /s /c" />

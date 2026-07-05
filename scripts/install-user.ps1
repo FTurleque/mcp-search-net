@@ -67,17 +67,17 @@ function Get-McpSearchNetProcesses {
         [int[]]$ExcludeProcessIds = (Get-CurrentProcessLineage)
     )
 
-    $installRootFull = [System.IO.Path]::GetFullPath($InstallRootPath)
-    $installRootSlash = $installRootFull.Replace('\', '/')
+    $installRootFull = [System.IO.Path]::GetFullPath($InstallRootPath).TrimEnd(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $installedLauncher = Join-Path $installRootFull 'bin\mcp-search-net.cmd'
+    $installedMain = Join-Path $installRootFull 'app\build\bootstrap\main.js'
     $needles = @(
-        'mcp-search-net',
-        'build/bootstrap/main.js',
-        'build\bootstrap\main.js',
-        'scripts/intellij',
-        'scripts\intellij',
-        $installRootFull,
-        $installRootSlash,
-        'better_sqlite3'
+        $installedLauncher,
+        $installedLauncher.Replace('\', '/'),
+        $installedMain,
+        $installedMain.Replace('\', '/')
     )
     $excluded = @{}
     foreach ($excludedProcessId in $ExcludeProcessIds) {
