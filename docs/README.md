@@ -16,6 +16,7 @@
 - [Sécurité](reference/security.md)
 - [Schéma catalogue V2](reference/catalog-schema-v2.md)
 - [Synchronisation catalogue V2](reference/catalog-sync-v2.md)
+- [Exploitation catalogue V2.6](reference/catalog-operations-v2.md)
 
 ## Exploitation
 
@@ -34,6 +35,9 @@
 - [Feuille de route V2 — Catalogue documentaire](planning/roadmap-v2-documentaire.md)
 - [Spike IntelliJ/Copilot — MCP V2 documentaire](planning/spike-intellij-copilot-mcp-v2.md)
 - [Benchmark V2](planning/benchmark-v2.md)
+- [Validation Codex Desktop — MCP V2 documentaire](planning/validation-codex-desktop-mcp-v2-2026-07-05.md)
+- [Lancement V2.6 — Automatisation contrôlée](planning/validation-v2-6-launch-2026-07-05.md)
+- [Validation locale V2.6](planning/validation-v2-6-local-success-2026-07-05.md)
 - [Validation finale V1 — Recette complète 27 juin 2026](planning/validation-v1-recette-finale-2026-06-27.md)
 - [Décision V1/V2 go/no-go du 22 juin 2026](planning/validation-v1-v2-go-no-go-2026-06-22.md)
 - [Matrice de traçabilité V1](planning/traceabilite-v1.md)
@@ -54,4 +58,5 @@
 - Dernier head validé CI complète : `4bfb191da05768759b6a9d8531aa3fd5762612c1`.
 - GitHub Actions est temporairement en déclenchement manuel uniquement via `workflow_dispatch`.
 - V2.5 est finalisée côté code : sync exhaustive, rate limiting, reprise après interruption, validateurs HTTP/hash, staleness non destructif et redirections permanentes.
-- À finaliser : validation du head courant de PR et exécution du spike IntelliJ/Copilot sur `search_docs` et les resources MCP V2.
+- V2.6 est validée localement sur la tranche maintenance contrôlée : scheduler externe, lock, observabilité, rétention opérationnelle et maintenance SQLite.
+- À finaliser : revalidation CI manuelle après reset quota Actions et spike IntelliJ/Copilot final sur `search_docs` et les resources MCP V2.
