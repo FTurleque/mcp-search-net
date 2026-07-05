@@ -22,6 +22,7 @@
     "catalog:maintain": "npm run build && node build/cli/catalog-maintain.js",
     "catalog:hybrid-search": "npm run build && node build/cli/catalog-hybrid-search.js",
     "benchmark:v2:hybrid": "npm run build && node scripts/benchmark-v2-hybrid.mjs",
+    "benchmark:mcp:size": "npm run build && node scripts/benchmark-mcp-response-size.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
