@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import type { CacheValidators } from '../ports/cache-repository.js';
-import type { ContentFetchContext, ContentFetcher } from '../ports/content-fetcher.js';
 import type { CatalogRepository } from '../ports/catalog-repository.js';
+import type { CacheValidators } from '../ports/cache-repository.js';
 import type { Clock } from '../ports/clock.js';
+import type { ContentFetchContext, ContentFetcher } from '../ports/content-fetcher.js';
 import type { CatalogSyncDocumentInput } from './plan-catalog-sync.js';
+import { HttpError } from '../../domain/errors/domain-errors.js';
 import type {
   CatalogDocument,
   CatalogSyncRun,
@@ -13,16 +14,22 @@ import type {
   DocumentVersion,
 } from '../../domain/models/catalog.js';
 import type { FetchedContent } from '../../domain/models/content.js';
-import { HttpError } from '../../domain/errors/domain-errors.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
+
+export interface SyncCatalogResumeCursor {
+  readonly sourceKey: string;
+  readonly stableKey: string;
+}
 
 export interface SyncCatalogDocumentsOptions {
   readonly sourceKey?: string;
   readonly documents: readonly CatalogSyncDocumentInput[];
-  readonly limit: number;
+  readonly limit?: number;
   readonly timeoutMs: number;
   readonly maxResponseBytes: number;
   readonly maxRedirects: number;
+  readonly rateLimitMs?: number;
+  readonly resumeAfter?: SyncCatalogResumeCursor;
 }
 
 export type SyncedCatalogDocumentStatus = 'added' | 'updated' | 'unchanged' | 'failed' | 'skipped';
@@ -49,6 +56,9 @@ export interface SyncCatalogDocumentsOutput {
   readonly failedCount: number;
   readonly skippedCount: number;
   readonly documents: readonly SyncedCatalogDocumentEntry[];
+  readonly resumeAfter?: SyncCatalogResumeCursor;
+  readonly rateLimitMs: number;
+  readonly limited: boolean;
 }
 
 type SyncCatalogRepository = Pick<
@@ -62,27 +72,35 @@ type SyncCatalogRepository = Pick<
   | 'addCatalogSyncRun'
 >;
 
+type Delay = (milliseconds: number) => Promise<void>;
+
 export class SyncCatalogDocuments {
   public constructor(
     private readonly repository: SyncCatalogRepository,
     private readonly fetcher: ContentFetcher,
     private readonly clock: Clock,
+    private readonly delay: Delay = defaultDelay,
   ) {}
 
   public async execute(options: SyncCatalogDocumentsOptions): Promise<SyncCatalogDocumentsOutput> {
     const sources = await this.repository.listSources();
     const sourceByKey = new Map(sources.map((source) => [source.sourceKey, source]));
-    const selectedDocuments = options.documents
-      .filter((document) => options.sourceKey === undefined || document.sourceKey === options.sourceKey)
-      .filter((document) => document.enabled)
-      .slice(0, options.limit);
 
     if (options.sourceKey !== undefined && !sourceByKey.has(options.sourceKey)) {
       throw new Error(`Catalog source ${options.sourceKey} was not found`);
     }
 
+    const configuredDocuments = options.documents
+      .filter((document) => options.sourceKey === undefined || document.sourceKey === options.sourceKey)
+      .filter((document) => document.enabled);
+    const resumedDocuments = applyResumeCursor(configuredDocuments, options.resumeAfter);
+    const selectedDocuments = applyLimit(resumedDocuments, options.limit);
+    const rateLimitMs = normalizeRateLimit(options.rateLimitMs);
+
     const entries: SyncedCatalogDocumentEntry[] = [];
     for (const document of selectedDocuments) {
+      if (entries.length > 0 && rateLimitMs > 0) await this.delay(rateLimitMs);
+
       const source = sourceByKey.get(document.sourceKey);
       if (source === undefined || !source.enabled) {
         entries.push({
@@ -245,6 +263,9 @@ export class SyncCatalogDocuments {
       failedCount,
       skippedCount,
       documents: entries,
+      ...(options.resumeAfter === undefined ? {} : { resumeAfter: options.resumeAfter }),
+      rateLimitMs,
+      limited: options.limit !== undefined && resumedDocuments.length > selectedDocuments.length,
     };
   }
 
@@ -255,6 +276,33 @@ export class SyncCatalogDocuments {
     if (this.repository.getCurrentDocumentVersion === undefined) return undefined;
     return this.repository.getCurrentDocumentVersion(document.id);
   }
+}
+
+function applyResumeCursor(
+  documents: readonly CatalogSyncDocumentInput[],
+  cursor: SyncCatalogResumeCursor | undefined,
+): readonly CatalogSyncDocumentInput[] {
+  if (cursor === undefined) return documents;
+  const index = documents.findIndex(
+    (document) => document.sourceKey === cursor.sourceKey && document.stableKey === cursor.stableKey,
+  );
+  if (index === -1) {
+    throw new Error(`Resume cursor ${cursor.sourceKey}:${cursor.stableKey} was not found`);
+  }
+  return documents.slice(index + 1);
+}
+
+function applyLimit(
+  documents: readonly CatalogSyncDocumentInput[],
+  limit: number | undefined,
+): readonly CatalogSyncDocumentInput[] {
+  return limit === undefined ? documents : documents.slice(0, limit);
+}
+
+function normalizeRateLimit(value: number | undefined): number {
+  if (value === undefined) return 0;
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value));
 }
 
 function createFetchContext(version: DocumentVersion | undefined): ContentFetchContext | undefined {
@@ -346,4 +394,8 @@ function estimateTokenCount(content: string): number {
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function defaultDelay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
