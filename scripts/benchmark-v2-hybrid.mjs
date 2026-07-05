@@ -3,18 +3,24 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import process from 'node:process';
 
 const args = parseArgs(process.argv.slice(2));
 const catalogPath = resolve(args.path ?? process.env.MCP_CATALOG_PATH ?? '.data/catalog-spike.db');
-const outputPath = resolve(args.output ?? `docs/planning/benchmark-results/benchmark-v2-hybrid-${today()}.json`);
+const outputPath = resolve(
+  args.output ?? `docs/planning/benchmark-results/benchmark-v2-hybrid-${today()}.json`,
+);
 const limit = parseIntOption(args.limit, 10);
-const queries = args.query.length > 0 ? args.query : [
-  'resources MCP V2',
-  'catalog sync rate limit',
-  'maintenance SQLite catalog',
-  'IntelliJ Copilot MCP configuration',
-  'document versions current version',
-];
+const queries =
+  args.query.length > 0
+    ? args.query
+    : [
+        'resources MCP V2',
+        'catalog sync rate limit',
+        'maintenance SQLite catalog',
+        'IntelliJ Copilot MCP configuration',
+        'document versions current version',
+      ];
 
 if (!existsSync(catalogPath)) {
   throw new Error(`Catalog not found: ${catalogPath}`);
@@ -90,12 +96,14 @@ function toComparableResult(run) {
   return {
     durationMs: run.durationMs,
     resultCount: run.json.resultCount ?? 0,
-    top: getResults(run.json).slice(0, 3).map((result) => ({
-      title: result.title,
-      documentPublicId: result.documentPublicId,
-      heading: result.heading ?? result.headingPath ?? null,
-      score: result.score ?? result.hybridScore ?? null,
-    })),
+    top: getResults(run.json)
+      .slice(0, 3)
+      .map((result) => ({
+        title: result.title,
+        documentPublicId: result.documentPublicId,
+        heading: result.heading ?? result.headingPath ?? null,
+        score: result.score ?? result.hybridScore ?? null,
+      })),
   };
 }
 
