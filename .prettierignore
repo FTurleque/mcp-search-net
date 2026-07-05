@@ -17,6 +17,7 @@ src/cli/catalog.ts
 src/cli/catalog-maintain.ts
 src/cli/catalog-hybrid-search.ts
 src/domain/models/content.ts
+src/domain/models/tool-response.ts
 src/domain/search/local-semantic-vectorizer.ts
 src/infrastructure/catalog/sqlite-catalog-repository.ts
 src/infrastructure/catalog/sqlite-catalog-version-purger.ts
