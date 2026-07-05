@@ -256,6 +256,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Destination $StageApp
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package-lock.json') -Destination $StageApp
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'migrations') -Destination $StageApp -Recurse
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'catalog-migrations') -Destination $StageApp -Recurse
 
     Push-Location $StageApp
     try {
