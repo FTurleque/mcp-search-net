@@ -20,7 +20,7 @@ Avancement :
 - V2.1 stockage catalogue : implémenté.
 - V2.2 ingestion CLI : implémenté pour texte/Markdown et configuration YAML.
 - V2.3 recherche lexicale : implémentée sur sections courantes.
-- V2.4 exposition MCP : implémentée partiellement avec `search_docs` et resources read-only, y compris versions documentaires.
+- V2.4 exposition MCP : implémentée avec `search_docs`, resources read-only, versions documentaires et recette de spike IntelliJ/Copilot préparée.
 - V2.5 synchronisation incrémentale : implémentée avec sync contrôlé, sync exhaustive, rate limiting applicatif, reprise par curseur, validateurs, staleness et redirections permanentes.
 - V2.6 automatisation contrôlée : non démarrée.
 - V2.7 embeddings : non démarrée, optionnelle.
@@ -85,7 +85,7 @@ La V2 reste local-first : SQLite, FTS, BM25, CLI/worker et MCP STDIO. Aucun LLM 
   - `mcp-search-net://documents/{documentId}/versions/{versionId}` ;
   - `mcp-search-net://sections/{sectionId}`.
 
-Le spike IntelliJ/Copilot reste obligatoire avant gel définitif du contrat utilisateur.
+La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intellij-copilot-mcp-v2.md`. Son exécution manuelle reste obligatoire avant gel définitif du contrat utilisateur.
 
 ## Phases
 
@@ -136,8 +136,9 @@ Le spike IntelliJ/Copilot reste obligatoire avant gel définitif du contrat util
 - [x] Templates read-only versions documentaires.
 - [x] Lookup SQLite des versions documentaires par document et par id.
 - [x] E2E MCP partiel sur resources et templates.
+- [x] Recette de spike IntelliJ/Copilot V2 préparée.
 - [ ] Revalidation locale ou CI manuelle du head courant de PR.
-- [ ] Spike IntelliJ/Copilot sur resources MCP.
+- [ ] Spike IntelliJ/Copilot sur resources MCP à exécuter.
 
 ### V2.5 — Synchronisation incrémentale
 
@@ -203,6 +204,7 @@ Le spike IntelliJ/Copilot reste obligatoire avant gel définitif du contrat util
 - [x] Resources read-only implémentées côté serveur.
 - [x] Templates dynamiques sources, documents, versions et sections implémentés côté serveur.
 - [x] E2E MCP partiel ajouté.
+- [x] Recette de spike IntelliJ/Copilot préparée.
 - [ ] Validation locale ou CI manuelle sur le head courant de la PR #8.
 - [ ] Spike IntelliJ/Copilot à exécuter.
 
@@ -218,8 +220,8 @@ Le spike IntelliJ/Copilot reste obligatoire avant gel définitif du contrat util
 1. Ne plus consommer GitHub Actions tant que le quota mensuel est épuisé.
 2. Continuer les changements avec validation locale uniquement.
 3. Revalider localement le head courant de la PR #8.
-4. Après reset du quota, lancer manuellement `CI` via `workflow_dispatch`.
-5. Exécuter le spike IntelliJ/Copilot sur resources MCP.
+4. Exécuter le spike IntelliJ/Copilot sur `search_docs` et les resources MCP V2.
+5. Après reset du quota, lancer manuellement `CI` via `workflow_dispatch`.
 6. Ajouter l'automatisation contrôlée V2.6 si nécessaire.
 7. Évaluer les embeddings seulement si le benchmark lexical le justifie.
 
@@ -248,7 +250,7 @@ docker compose down
 - **Corruption cache/catalogue** : bases distinctes, runners distincts, tests de séparation.
 - **Performance recherche insuffisante** : benchmark, corpus borné, pondérations mesurées.
 - **Synchronisation trop agressive** : seeds explicites, rate limiting, profondeur zéro, CLI contrôlée.
-- **Incompatibilité resources IntelliJ/Copilot** : spike avant gel du contrat, outils read-only de secours si nécessaire.
+- **Incompatibilité resources IntelliJ/Copilot** : spike avant gel du contrat, outil `search_docs` comme fallback read-only si nécessaire.
 - **Régression V1** : validation locale puis CI manuelle dès reset du quota Actions.
 - **Explosion du nombre de versions** : rétention configurable et purge explicite.
 - **Consommation GitHub Actions** : workflow `CI` manuel uniquement tant que le quota est épuisé.
@@ -275,4 +277,5 @@ La V2 sera considérée opérationnelle lorsque :
 - [ADR-016 — Exposer la V2 avec outil et resources MCP](../adr/ADR-016-mcp-v2-tools-resources.md)
 - [Schéma catalogue V2](../reference/catalog-schema-v2.md)
 - [Synchronisation catalogue V2](../reference/catalog-sync-v2.md)
+- [Spike IntelliJ/Copilot — MCP V2 documentaire](spike-intellij-copilot-mcp-v2.md)
 - [Benchmark V2](benchmark-v2.md)
