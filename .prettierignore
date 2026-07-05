@@ -11,10 +11,13 @@ src/application/use-cases/load-catalog-sources.ts
 src/application/use-cases/plan-catalog-sync.ts
 src/application/use-cases/sync-catalog-documents.ts
 src/application/use-cases/maintain-catalog.ts
+src/application/use-cases/hybrid-search-catalog-documents.ts
 src/cli/catalog-source-config.ts
 src/cli/catalog.ts
 src/cli/catalog-maintain.ts
+src/cli/catalog-hybrid-search.ts
 src/domain/models/content.ts
+src/domain/search/local-semantic-vectorizer.ts
 src/infrastructure/catalog/sqlite-catalog-repository.ts
 src/infrastructure/catalog/sqlite-catalog-version-purger.ts
 src/infrastructure/catalog/sqlite-catalog-maintenance.ts
@@ -26,6 +29,7 @@ tests/application/load-catalog-sources.test.ts
 tests/application/plan-catalog-sync.test.ts
 tests/application/sync-catalog-documents.test.ts
 tests/application/maintain-catalog.test.ts
+tests/application/hybrid-search-catalog-documents.test.ts
 tests/e2e/mcp-stdio.test.ts
 tests/infrastructure/crawl4ai-content-fetcher.test.ts
 tests/infrastructure/secure-http-gateway.test.ts
