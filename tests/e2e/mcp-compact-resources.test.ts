@@ -34,7 +34,7 @@ describe('MCP compact catalog resources', () => {
 
     const parsed = JSON.parse(content.text) as {
       compact: boolean;
-      sections: Array<{ section: Record<string, unknown> }>;
+      sections: { section: Record<string, unknown> }[];
     };
     expect(parsed.compact).toBe(true);
     const firstSection = parsed.sections[0]?.section;
