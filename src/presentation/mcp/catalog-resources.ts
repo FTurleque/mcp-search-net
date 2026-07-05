@@ -114,7 +114,7 @@ export function registerCatalogResources(server: McpServer, repository: CatalogR
     CATALOG_RESOURCE_URIS.sections,
     {
       title: 'Catalog sections',
-      description: 'Read-only list of current catalog document sections.',
+      description: 'Read-only compact list of current catalog document sections.',
       mimeType: RESOURCE_MIME_TYPE,
     },
     async (uri) => jsonResource(uri, await createSectionsResource(repository)),
@@ -244,8 +244,9 @@ async function createSectionsResource(repository: CatalogRepository) {
   const sections = await repository.listCurrentDocumentSections();
   return {
     schemaVersion: '1.0',
+    compact: true,
     count: sections.length,
-    sections: sections.map(toResourceSectionEntry),
+    sections: sections.map(toCompactSectionEntry),
   };
 }
 
@@ -329,6 +330,23 @@ function toResourceDocumentVersion(version: DocumentVersion) {
   };
 }
 
+function toCompactSectionEntry(entry: CatalogCurrentDocumentSection) {
+  return {
+    source: {
+      id: entry.source.id,
+      sourceKey: entry.source.sourceKey,
+      displayName: entry.source.displayName,
+    },
+    document: {
+      id: entry.document.id,
+      publicId: entry.document.publicId,
+      title: entry.document.title,
+      url: entry.document.canonicalUrl,
+    },
+    section: toResourceSectionSummary(entry.section),
+  };
+}
+
 function toResourceSectionEntry(entry: CatalogCurrentDocumentSection) {
   return {
     source: toResourceSource(entry.source),
@@ -337,7 +355,7 @@ function toResourceSectionEntry(entry: CatalogCurrentDocumentSection) {
   };
 }
 
-function toResourceSection(section: DocumentSection) {
+function toResourceSectionSummary(section: DocumentSection) {
   return {
     id: section.id,
     documentVersionId: section.documentVersionId,
@@ -346,10 +364,16 @@ function toResourceSection(section: DocumentSection) {
     headingPath: section.headingPath ?? null,
     headingLevel: section.headingLevel ?? null,
     anchor: section.anchor ?? null,
-    content: section.content,
     contentHash: section.contentHash,
     characterCount: section.characterCount,
     tokenCount: section.tokenCount ?? null,
+  };
+}
+
+function toResourceSection(section: DocumentSection) {
+  return {
+    ...toResourceSectionSummary(section),
+    content: section.content,
   };
 }
 
