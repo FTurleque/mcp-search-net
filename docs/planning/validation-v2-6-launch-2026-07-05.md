@@ -7,7 +7,7 @@
 - **GitHub Actions** : non déclenchées.
 - **Merge** : non effectué.
 - **Ready for Review** : non effectué.
-- **Décision** : V2.6 lancée côté code, validation locale à exécuter.
+- **Décision** : V2.6 lancée côté code, validation locale partielle effectuée.
 
 ## Objectif
 
@@ -28,14 +28,50 @@ Le modèle retenu est un cycle court, idempotent et planifiable par un ordonnanc
 - Test applicatif du use-case.
 - Documentation de référence `docs/reference/catalog-operations-v2.md`.
 
-## Validation à faire
+## Validation locale exécutée
 
-- Vérifier le formatage.
-- Vérifier le lint.
-- Vérifier le typecheck.
-- Vérifier le build.
-- Exécuter les tests.
-- Exécuter un cycle de maintenance sur le catalogue de spike.
+Résultat avant correction du lint :
+
+```text
+git pull: Already up to date
+format:check: OK
+lint: KO, @typescript-eslint/require-await sur SqliteCatalogMaintenance.run
+typecheck: OK
+build: OK
+test: OK, 35 fichiers de tests passés, 180 tests passés
+catalog:maintain: OK sur .data/catalog-spike.db
+```
+
+Résultat du cycle de maintenance :
+
+```text
+catalog_maintenance_started: émis sur stderr
+catalog_maintenance_completed: émis sur stderr
+status: maintained
+lock.acquired: true
+retention.syncRunsBefore: 0
+retention.syncRunsDeleted: 0
+retention.syncRunsAfter: 0
+sqlite.analyzed: true
+sqlite.optimized: true
+sqlite.walCheckpointed: true
+sqlite.vacuumed: false
+durationMs: 11
+```
+
+Correctif appliqué après validation locale :
+
+- `SqliteCatalogMaintenance.run` ne déclare plus `async`.
+- La méthode retourne explicitement une `Promise`.
+- Objectif : satisfaire `@typescript-eslint/require-await` sans changer le contrat `CatalogMaintenanceRunner`.
+
+## Validation à refaire après correctif lint
+
+- Relancer `npm run lint`.
+- Relancer `npm run typecheck`.
+- Relancer `npm run build`.
+- Relancer `npm run test`.
+- Relancer `npm run catalog:maintain -- --path .data/catalog-spike.db`.
 
 ## Réserves
 
@@ -46,3 +82,5 @@ Le modèle retenu est un cycle court, idempotent et planifiable par un ordonnanc
 ## Conclusion
 
 La V2.6 est lancée côté code sur les axes prévus : ordonnanceur externe, verrouillage inter-processus, observabilité structurée, rétention opérationnelle et maintenance SQLite.
+
+La validation locale confirme déjà format, typecheck, build, tests et exécution du cycle de maintenance. Le seul échec constaté était un lint `require-await`, corrigé côté branche.
