@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 import process from 'node:process';
 
 const root = resolve(import.meta.dirname, '..');
+const nodeModulesRoot = resolve(root, 'node_modules');
 const packageJson = readJson('package.json');
 const packageLock = readJson('package-lock.json');
 const dockerfile = readText('Dockerfile');
@@ -72,6 +73,7 @@ let installedProductionPackages = 0;
 for (const [packagePath, lockEntry] of Object.entries(packageLock.packages ?? {})) {
   if (packagePath.length === 0 || lockEntry.dev === true) continue;
   const manifestPath = resolve(root, packagePath, 'package.json');
+  assertPathInsideNodeModules(manifestPath, packagePath);
   let manifest;
   try {
     manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -102,6 +104,17 @@ process.stdout.write(
     2,
   )}\n`,
 );
+
+function assertPathInsideNodeModules(path, packagePath) {
+  const relativePath = relative(nodeModulesRoot, path);
+  assert(
+    relativePath.length > 0 &&
+      !isAbsolute(relativePath) &&
+      relativePath !== '..' &&
+      !relativePath.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`),
+    `PACKAGE_PATH_OUTSIDE_NODE_MODULES:${packagePath}`,
+  );
+}
 
 function readJson(path) {
   return JSON.parse(readText(path));
