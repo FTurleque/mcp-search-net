@@ -73,7 +73,7 @@ describe('CatalogMigrationRunner', () => {
     const ftsDefinition = database
       .prepare("SELECT sql FROM sqlite_master WHERE name = 'document_section_fts'")
       .get() as { sql: string };
-    expect(applied.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(applied.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(applied.every(({ checksum }) => checksum.length === 64)).toBe(true);
     expect(ftsDefinition.sql).toContain('contentless_delete = 1');
     database.close();

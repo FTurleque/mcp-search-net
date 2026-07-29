@@ -1,10 +1,20 @@
 import type Database from 'better-sqlite3';
 
-import type { CatalogRepository } from '../../application/ports/catalog-repository.js';
+import {
+  MAX_CATALOG_PAGE_SIZE,
+  type CatalogDocumentFilters,
+  type CatalogDocumentPageQuery,
+  type CatalogPage,
+  type CatalogPageQuery,
+  type CatalogRepository,
+  type CatalogSectionPageQuery,
+  type CatalogSourcePageQuery,
+} from '../../application/ports/catalog-repository.js';
 import type { Clock } from '../../application/ports/clock.js';
 import type {
   CatalogCurrentDocumentSection,
   CatalogDocument,
+  CatalogDocumentEntry,
   CatalogDocumentInput,
   CatalogDocumentRevision,
   CatalogDocumentRevisionInput,
@@ -45,6 +55,13 @@ import {
 import {
   CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL,
   COUNT_DOCUMENT_SECTION_FTS_SQL,
+  COUNT_DOCUMENT_VERSIONS_SQL,
+  createCatalogSourcesPageSql,
+  createCountCatalogSourcesSql,
+  createCountCurrentDocumentSectionsSql,
+  createCountDocumentsSql,
+  createCurrentDocumentSectionsPageSql,
+  createDocumentEntriesPageSql,
   DELETE_DOCUMENT_SECTIONS_SQL,
   DELETE_DOCUMENT_SECTION_FTS_SQL,
   DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL,
@@ -55,13 +72,17 @@ import {
   SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
   SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
   SELECT_CATALOG_SOURCE_BY_KEY_SQL,
+  SELECT_CATALOG_SOURCE_BY_ID_SQL,
   SELECT_CATALOG_SOURCES_SQL,
+  SELECT_CURRENT_DOCUMENT_SECTION_BY_ID_SQL,
   SELECT_CURRENT_DOCUMENT_SECTIONS_SQL,
+  SELECT_DOCUMENT_BY_ID_SQL,
   SELECT_DOCUMENTS_SQL,
   SELECT_DOCUMENT_BY_PUBLIC_ID_SQL,
   SELECT_DOCUMENT_BY_SOURCE_AND_STABLE_KEY_SQL,
   SELECT_DOCUMENT_SECTIONS_SQL,
   SELECT_DOCUMENT_VERSIONS_SQL,
+  SELECT_DOCUMENT_VERSIONS_PAGE_SQL,
   SELECT_DOCUMENT_VERSION_BY_HASH_SQL,
   SELECT_DOCUMENT_VERSION_BY_ID_SQL,
   SET_DOCUMENT_CURRENT_VERSION_SQL,
@@ -192,7 +213,7 @@ interface CountRow {
   readonly count: number;
 }
 
-interface CatalogCurrentDocumentSectionRow {
+interface CatalogJoinedSourceRow {
   readonly source_id: number;
   readonly source_source_key: string;
   readonly source_display_name: string;
@@ -204,7 +225,9 @@ interface CatalogCurrentDocumentSectionRow {
   readonly source_enabled: number;
   readonly source_created_at: number;
   readonly source_updated_at: number;
+}
 
+interface CatalogJoinedDocumentRow {
   readonly document_id: number;
   readonly document_public_id: string;
   readonly document_source_id: number;
@@ -219,7 +242,13 @@ interface CatalogCurrentDocumentSectionRow {
   readonly document_last_seen_at: number;
   readonly document_created_at: number;
   readonly document_updated_at: number;
+}
 
+interface CatalogDocumentEntryRow extends CatalogJoinedSourceRow, CatalogJoinedDocumentRow {}
+
+interface CatalogCurrentDocumentSectionRow
+  extends CatalogJoinedSourceRow,
+    CatalogJoinedDocumentRow {
   readonly section_id: number;
   readonly section_document_version_id: number;
   readonly section_ordinal: number;
@@ -279,11 +308,40 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
+  public getSourceById(sourceId: number): Promise<CatalogSource | undefined> {
+    return this.asPromise(() => {
+      const row = this.database
+        .prepare<[number], CatalogSourceRow>(SELECT_CATALOG_SOURCE_BY_ID_SQL)
+        .get(sourceId);
+      return row === undefined ? undefined : toCatalogSource(row);
+    });
+  }
+
   public listSources(): Promise<readonly CatalogSource[]> {
     return this.asPromise(() => {
       const rows = this.database.prepare<[], CatalogSourceRow>(SELECT_CATALOG_SOURCES_SQL).all();
       return rows.map(toCatalogSource);
     });
+  }
+
+  public listSourcesPage(query: CatalogSourcePageQuery): Promise<CatalogPage<CatalogSource>> {
+    return this.asPromise(() => {
+      assertCatalogPageQuery(query);
+      const statement = createCatalogSourcesPageSql(query.offset, query.limit, query.enabled);
+      const rows = this.database
+        .prepare<(string | number)[], CatalogSourceRow>(statement.sql)
+        .all(...statement.parameters);
+      return {
+        offset: query.offset,
+        limit: query.limit,
+        total: this.countSourceRows(query.enabled),
+        items: rows.map(toCatalogSource),
+      };
+    });
+  }
+
+  public countSources(enabled?: boolean): Promise<number> {
+    return this.asPromise(() => this.countSourceRows(enabled));
   }
 
   public commitDocumentRevision(
@@ -392,6 +450,15 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
+  public getDocumentById(documentId: number): Promise<CatalogDocument | undefined> {
+    return this.asPromise(() => {
+      const row = this.database
+        .prepare<[number], CatalogDocumentRow>(SELECT_DOCUMENT_BY_ID_SQL)
+        .get(documentId);
+      return row === undefined ? undefined : toCatalogDocument(row);
+    });
+  }
+
   public getCurrentDocumentVersion(documentId: number): Promise<DocumentVersion | undefined> {
     return this.asPromise(() => {
       const row = this.database
@@ -422,11 +489,54 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
+  public listDocumentVersionsPage(
+    documentId: number,
+    query: CatalogPageQuery,
+  ): Promise<CatalogPage<DocumentVersion>> {
+    return this.asPromise(() => {
+      assertCatalogPageQuery(query);
+      const rows = this.database
+        .prepare<[number, number, number], DocumentVersionRow>(SELECT_DOCUMENT_VERSIONS_PAGE_SQL)
+        .all(documentId, query.limit, query.offset);
+      const count = this.database
+        .prepare<[number], CountRow>(COUNT_DOCUMENT_VERSIONS_SQL)
+        .get(documentId);
+      return {
+        offset: query.offset,
+        limit: query.limit,
+        total: count?.count ?? 0,
+        items: rows.map(toDocumentVersion),
+      };
+    });
+  }
+
   public listDocuments(): Promise<readonly CatalogDocument[]> {
     return this.asPromise(() => {
       const rows = this.database.prepare<[], CatalogDocumentRow>(SELECT_DOCUMENTS_SQL).all();
       return rows.map(toCatalogDocument);
     });
+  }
+
+  public listDocumentsPage(
+    query: CatalogDocumentPageQuery,
+  ): Promise<CatalogPage<CatalogDocumentEntry>> {
+    return this.asPromise(() => {
+      assertCatalogPageQuery(query);
+      const statement = createDocumentEntriesPageSql(query);
+      const rows = this.database
+        .prepare<(string | number)[], CatalogDocumentEntryRow>(statement.sql)
+        .all(...statement.parameters);
+      return {
+        offset: query.offset,
+        limit: query.limit,
+        total: this.countDocumentRows(query),
+        items: rows.map(toCatalogDocumentEntry),
+      };
+    });
+  }
+
+  public countDocuments(filters: CatalogDocumentFilters = {}): Promise<number> {
+    return this.asPromise(() => this.countDocumentRows(filters));
   }
 
   public listCurrentDocumentSections(): Promise<readonly CatalogCurrentDocumentSection[]> {
@@ -436,6 +546,42 @@ export class SqliteCatalogRepository implements CatalogRepository {
         .all();
       return rows.map(toCatalogCurrentDocumentSection);
     });
+  }
+
+  public getCurrentDocumentSectionById(
+    sectionId: number,
+  ): Promise<CatalogCurrentDocumentSection | undefined> {
+    return this.asPromise(() => {
+      const row = this.database
+        .prepare<
+          [number],
+          CatalogCurrentDocumentSectionRow
+        >(SELECT_CURRENT_DOCUMENT_SECTION_BY_ID_SQL)
+        .get(sectionId);
+      return row === undefined ? undefined : toCatalogCurrentDocumentSection(row);
+    });
+  }
+
+  public listCurrentDocumentSectionsPage(
+    query: CatalogSectionPageQuery,
+  ): Promise<CatalogPage<CatalogCurrentDocumentSection>> {
+    return this.asPromise(() => {
+      assertCatalogPageQuery(query);
+      const statement = createCurrentDocumentSectionsPageSql(query);
+      const rows = this.database
+        .prepare<(string | number)[], CatalogCurrentDocumentSectionRow>(statement.sql)
+        .all(...statement.parameters);
+      return {
+        offset: query.offset,
+        limit: query.limit,
+        total: this.countCurrentDocumentSectionRows(query),
+        items: rows.map(toCatalogCurrentDocumentSection),
+      };
+    });
+  }
+
+  public countCurrentDocumentSections(filters: CatalogDocumentFilters = {}): Promise<number> {
+    return this.asPromise(() => this.countCurrentDocumentSectionRows(filters));
   }
 
   public verifyIntegrity() {
@@ -506,6 +652,30 @@ export class SqliteCatalogRepository implements CatalogRepository {
 
   public close(): void {
     if (this.database.open) this.database.close();
+  }
+
+  private countSourceRows(enabled?: boolean): number {
+    const statement = createCountCatalogSourcesSql(enabled);
+    const row = this.database
+      .prepare<(string | number)[], CountRow>(statement.sql)
+      .get(...statement.parameters);
+    return row?.count ?? 0;
+  }
+
+  private countDocumentRows(filters: CatalogDocumentFilters): number {
+    const statement = createCountDocumentsSql(filters);
+    const row = this.database
+      .prepare<(string | number)[], CountRow>(statement.sql)
+      .get(...statement.parameters);
+    return row?.count ?? 0;
+  }
+
+  private countCurrentDocumentSectionRows(filters: CatalogDocumentFilters): number {
+    const statement = createCountCurrentDocumentSectionsSql(filters);
+    const row = this.database
+      .prepare<(string | number)[], CountRow>(statement.sql)
+      .get(...statement.parameters);
+    return row?.count ?? 0;
   }
 
   private asPromise<T>(operation: () => T): Promise<T> {
@@ -661,6 +831,19 @@ function normalizeSearchLimit(limit: number | undefined): number {
   return Math.min(Math.max(Math.trunc(limit), 1), MAX_SEARCH_LIMIT);
 }
 
+function assertCatalogPageQuery(query: CatalogPageQuery): void {
+  if (!Number.isSafeInteger(query.offset) || query.offset < 0) {
+    throw new Error('CATALOG_PAGE_OFFSET_INVALID');
+  }
+  if (
+    !Number.isSafeInteger(query.limit) ||
+    query.limit < 1 ||
+    query.limit > MAX_CATALOG_PAGE_SIZE
+  ) {
+    throw new Error('CATALOG_PAGE_LIMIT_INVALID');
+  }
+}
+
 function escapeLikePattern(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
 }
@@ -684,6 +867,13 @@ function toCatalogCurrentDocumentSection(
   };
 }
 
+function toCatalogDocumentEntry(row: CatalogDocumentEntryRow): CatalogDocumentEntry {
+  return {
+    source: toCatalogSourceFromJoinedRow(row),
+    document: toCatalogDocumentFromJoinedRow(row),
+  };
+}
+
 function toCatalogDocumentSearchResult(
   row: CatalogDocumentSearchRow,
   term: string,
@@ -695,7 +885,7 @@ function toCatalogDocumentSearchResult(
   };
 }
 
-function toCatalogSourceFromJoinedRow(row: CatalogCurrentDocumentSectionRow): CatalogSource {
+function toCatalogSourceFromJoinedRow(row: CatalogJoinedSourceRow): CatalogSource {
   return toCatalogSource({
     id: row.source_id,
     source_key: row.source_source_key,
@@ -711,7 +901,7 @@ function toCatalogSourceFromJoinedRow(row: CatalogCurrentDocumentSectionRow): Ca
   });
 }
 
-function toCatalogDocumentFromJoinedRow(row: CatalogCurrentDocumentSectionRow): CatalogDocument {
+function toCatalogDocumentFromJoinedRow(row: CatalogJoinedDocumentRow): CatalogDocument {
   return toCatalogDocument({
     id: row.document_id,
     public_id: row.document_public_id,

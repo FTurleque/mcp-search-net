@@ -40,9 +40,16 @@ describe('MCP compact catalog resources', () => {
 
     const parsed = JSON.parse(content.text) as {
       compact: boolean;
+      bounded: boolean;
+      count: number;
+      limit: number;
       sections: { section: Record<string, unknown> }[];
     };
     expect(parsed.compact).toBe(true);
+    expect(parsed.bounded).toBe(true);
+    expect(parsed.count).toBeLessThanOrEqual(20);
+    expect(parsed.limit).toBe(20);
+    expect(content.text.length).toBeLessThanOrEqual(24_000);
     const firstSection = parsed.sections[0]?.section;
     if (firstSection !== undefined) {
       expect(firstSection).not.toHaveProperty('content');

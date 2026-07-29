@@ -57,6 +57,10 @@ describe('MCP STDIO server', () => {
     const listDocsTool = response.tools.find((tool) => tool.name === 'list_docs');
     expect(listDocsTool?.inputSchema).toMatchObject({
       properties: {
+        language: { type: 'string', maxLength: 32 },
+        status: {
+          enum: ['ACTIVE', 'STALE', 'REDIRECTED', 'REMOVED', 'UNAVAILABLE'],
+        },
         limit: { default: 20, maximum: 50 },
         offset: { default: 0 },
       },
@@ -100,6 +104,8 @@ describe('MCP STDIO server', () => {
       data: {
         count: expect.any(Number),
         total: expect.any(Number),
+        nextOffset: null,
+        truncated: false,
         documents: expect.any(Array),
       },
     });

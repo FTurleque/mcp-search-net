@@ -8,7 +8,12 @@ export const INSERT_CATALOG_SOURCE_SQL = `
 export const SELECT_CATALOG_SOURCE_BY_KEY_SQL =
   'SELECT * FROM catalog_sources WHERE source_key = ?';
 
+export const SELECT_CATALOG_SOURCE_BY_ID_SQL = 'SELECT * FROM catalog_sources WHERE id = ?';
+
 export const SELECT_CATALOG_SOURCES_SQL = 'SELECT * FROM catalog_sources ORDER BY source_key';
+
+const SELECT_CATALOG_SOURCES_PAGE_BASE_SQL = 'SELECT * FROM catalog_sources';
+const COUNT_CATALOG_SOURCES_BASE_SQL = 'SELECT count(*) AS count FROM catalog_sources';
 
 export const UPSERT_DOCUMENT_SQL = `
   INSERT INTO documents (
@@ -27,10 +32,52 @@ export const UPSERT_DOCUMENT_SQL = `
 
 export const SELECT_DOCUMENT_BY_PUBLIC_ID_SQL = 'SELECT * FROM documents WHERE public_id = ?';
 
+export const SELECT_DOCUMENT_BY_ID_SQL = 'SELECT * FROM documents WHERE id = ?';
+
 export const SELECT_DOCUMENT_BY_SOURCE_AND_STABLE_KEY_SQL =
   'SELECT * FROM documents WHERE source_id = ? AND stable_key = ?';
 
 export const SELECT_DOCUMENTS_SQL = 'SELECT * FROM documents ORDER BY source_id, stable_key';
+
+const SELECT_DOCUMENT_ENTRIES_PAGE_BASE_SQL = `
+  SELECT
+    catalog_sources.id AS source_id,
+    catalog_sources.source_key AS source_source_key,
+    catalog_sources.display_name AS source_display_name,
+    catalog_sources.base_url AS source_base_url,
+    catalog_sources.source_type AS source_source_type,
+    catalog_sources.language AS source_language,
+    catalog_sources.freshness_policy AS source_freshness_policy,
+    catalog_sources.sync_strategy AS source_sync_strategy,
+    catalog_sources.enabled AS source_enabled,
+    catalog_sources.created_at AS source_created_at,
+    catalog_sources.updated_at AS source_updated_at,
+
+    documents.id AS document_id,
+    documents.public_id AS document_public_id,
+    documents.source_id AS document_source_id,
+    documents.canonical_url AS document_canonical_url,
+    documents.stable_key AS document_stable_key,
+    documents.title AS document_title,
+    documents.mime_type AS document_mime_type,
+    documents.language AS document_language,
+    documents.status AS document_status,
+    documents.current_version_id AS document_current_version_id,
+    documents.first_seen_at AS document_first_seen_at,
+    documents.last_seen_at AS document_last_seen_at,
+    documents.created_at AS document_created_at,
+    documents.updated_at AS document_updated_at
+  FROM documents
+  INNER JOIN catalog_sources
+    ON catalog_sources.id = documents.source_id
+`;
+
+const COUNT_DOCUMENTS_BASE_SQL = `
+  SELECT count(*) AS count
+  FROM documents
+  INNER JOIN catalog_sources
+    ON catalog_sources.id = documents.source_id
+`;
 
 export const CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL =
   'UPDATE document_versions SET is_current = 0 WHERE document_id = ?';
@@ -61,6 +108,17 @@ export const SELECT_DOCUMENT_VERSIONS_SQL = `
   ORDER BY fetched_at DESC, id DESC
 `;
 
+export const SELECT_DOCUMENT_VERSIONS_PAGE_SQL = `
+  SELECT * FROM document_versions
+  WHERE document_id = ?
+  ORDER BY fetched_at DESC, id DESC
+  LIMIT ? OFFSET ?
+`;
+
+export const COUNT_DOCUMENT_VERSIONS_SQL = `
+  SELECT count(*) AS count FROM document_versions WHERE document_id = ?
+`;
+
 export const SELECT_DOCUMENT_VERSION_BY_ID_SQL = `
   SELECT * FROM document_versions
   WHERE document_id = ? AND id = ?
@@ -82,7 +140,7 @@ export const INSERT_DOCUMENT_SECTION_SQL = `
 export const SELECT_DOCUMENT_SECTIONS_SQL =
   'SELECT * FROM document_sections WHERE document_version_id = ? ORDER BY ordinal';
 
-export const SELECT_CURRENT_DOCUMENT_SECTIONS_SQL = `
+const SELECT_CURRENT_DOCUMENT_SECTIONS_BASE_SQL = `
   SELECT
     catalog_sources.id AS source_id,
     catalog_sources.source_key AS source_source_key,
@@ -131,8 +189,136 @@ export const SELECT_CURRENT_DOCUMENT_SECTIONS_SQL = `
    AND documents.current_version_id = document_versions.id
   INNER JOIN catalog_sources
     ON catalog_sources.id = documents.source_id
+`;
+
+export const SELECT_CURRENT_DOCUMENT_SECTIONS_SQL = `
+  ${SELECT_CURRENT_DOCUMENT_SECTIONS_BASE_SQL}
   ORDER BY catalog_sources.source_key, documents.title COLLATE NOCASE, document_sections.ordinal
 `;
+
+export const SELECT_CURRENT_DOCUMENT_SECTION_BY_ID_SQL = `
+  ${SELECT_CURRENT_DOCUMENT_SECTIONS_BASE_SQL}
+  WHERE document_sections.id = ?
+`;
+
+const COUNT_CURRENT_DOCUMENT_SECTIONS_BASE_SQL = `
+  SELECT count(*) AS count
+  FROM document_sections
+  INNER JOIN document_versions
+    ON document_versions.id = document_sections.document_version_id
+   AND document_versions.is_current = 1
+  INNER JOIN documents
+    ON documents.id = document_versions.document_id
+   AND documents.current_version_id = document_versions.id
+  INNER JOIN catalog_sources
+    ON catalog_sources.id = documents.source_id
+`;
+
+export interface CatalogSqlFilters {
+  readonly sourceKey?: string;
+  readonly language?: string;
+  readonly status?: string;
+}
+
+export interface CatalogSqlPageQuery extends CatalogSqlFilters {
+  readonly offset: number;
+  readonly limit: number;
+}
+
+export interface CatalogSqlStatement {
+  readonly sql: string;
+  readonly parameters: readonly (string | number)[];
+}
+
+export function createCatalogSourcesPageSql(
+  offset: number,
+  limit: number,
+  enabled?: boolean,
+): CatalogSqlStatement {
+  const filter =
+    enabled === undefined ? emptyFilter() : sqlFilter('enabled = ?', [enabled ? 1 : 0]);
+  return {
+    sql: `${SELECT_CATALOG_SOURCES_PAGE_BASE_SQL}${filter.where} ORDER BY id LIMIT ? OFFSET ?`,
+    parameters: [...filter.parameters, limit, offset],
+  };
+}
+
+export function createCountCatalogSourcesSql(enabled?: boolean): CatalogSqlStatement {
+  const filter =
+    enabled === undefined ? emptyFilter() : sqlFilter('enabled = ?', [enabled ? 1 : 0]);
+  return {
+    sql: `${COUNT_CATALOG_SOURCES_BASE_SQL}${filter.where}`,
+    parameters: filter.parameters,
+  };
+}
+
+export function createDocumentEntriesPageSql(query: CatalogSqlPageQuery): CatalogSqlStatement {
+  const filter = createCatalogDocumentFilter(query);
+  return {
+    sql: `${SELECT_DOCUMENT_ENTRIES_PAGE_BASE_SQL}${filter.where} ORDER BY documents.id LIMIT ? OFFSET ?`,
+    parameters: [...filter.parameters, query.limit, query.offset],
+  };
+}
+
+export function createCountDocumentsSql(filters: CatalogSqlFilters): CatalogSqlStatement {
+  const filter = createCatalogDocumentFilter(filters);
+  return {
+    sql: `${COUNT_DOCUMENTS_BASE_SQL}${filter.where}`,
+    parameters: filter.parameters,
+  };
+}
+
+export function createCurrentDocumentSectionsPageSql(
+  query: CatalogSqlPageQuery,
+): CatalogSqlStatement {
+  const filter = createCatalogDocumentFilter(query);
+  return {
+    sql: `${SELECT_CURRENT_DOCUMENT_SECTIONS_BASE_SQL}${filter.where} ORDER BY document_sections.id LIMIT ? OFFSET ?`,
+    parameters: [...filter.parameters, query.limit, query.offset],
+  };
+}
+
+export function createCountCurrentDocumentSectionsSql(
+  filters: CatalogSqlFilters,
+): CatalogSqlStatement {
+  const filter = createCatalogDocumentFilter(filters);
+  return {
+    sql: `${COUNT_CURRENT_DOCUMENT_SECTIONS_BASE_SQL}${filter.where}`,
+    parameters: filter.parameters,
+  };
+}
+
+function createCatalogDocumentFilter(filters: CatalogSqlFilters): SqlFilter {
+  const clauses: string[] = [];
+  const parameters: (string | number)[] = [];
+  if (filters.sourceKey !== undefined) {
+    clauses.push('catalog_sources.source_key = ?');
+    parameters.push(filters.sourceKey);
+  }
+  if (filters.language !== undefined) {
+    clauses.push('documents.language = ?');
+    parameters.push(filters.language);
+  }
+  if (filters.status !== undefined) {
+    clauses.push('documents.status = ?');
+    parameters.push(filters.status);
+  }
+  if (clauses.length === 0) return emptyFilter();
+  return sqlFilter(clauses.join(' AND '), parameters);
+}
+
+interface SqlFilter {
+  readonly where: string;
+  readonly parameters: readonly (string | number)[];
+}
+
+function emptyFilter(): SqlFilter {
+  return { where: '', parameters: [] };
+}
+
+function sqlFilter(clause: string, parameters: readonly (string | number)[]): SqlFilter {
+  return { where: ` WHERE ${clause}`, parameters };
+}
 
 export const DELETE_DOCUMENT_SECTION_FTS_SQL = 'DELETE FROM document_section_fts';
 

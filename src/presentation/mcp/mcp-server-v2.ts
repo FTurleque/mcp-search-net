@@ -6,7 +6,7 @@ import type {
   SearchCatalogDocuments,
   SearchCatalogDocumentsOutput,
 } from '../../application/use-cases/search-catalog-documents.js';
-import { InvalidArgumentError } from '../../domain/errors/domain-errors.js';
+import { InvalidArgumentError, ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
 import type { CatalogDocument } from '../../domain/models/catalog.js';
 import type { ToolResponse, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import type { ApplicationConfig } from '../../infrastructure/config/application-config.js';
@@ -28,6 +28,8 @@ export interface McpServerV2Dependencies extends V1McpServerDependencies {
 
 type SearchDocsData = Omit<SearchCatalogDocumentsOutput, 'schemaVersion'>;
 
+const MAX_LIST_DOCS_DATA_CHARACTERS = 20_000;
+
 const compactDocumentSchema = z
   .object({
     id: z.number().int().positive(),
@@ -44,6 +46,8 @@ const compactDocumentSchema = z
 const listDocsInputSchema = z
   .object({
     sourceKey: z.string().trim().min(1).max(128).optional(),
+    language: z.string().trim().min(1).max(32).optional(),
+    status: z.enum(['ACTIVE', 'STALE', 'REDIRECTED', 'REMOVED', 'UNAVAILABLE']).optional(),
     limit: z.number().int().min(1).max(50).default(20),
     offset: z.number().int().min(0).default(0),
   })
@@ -55,6 +59,8 @@ const listDocsDataSchema = z
     total: z.number().int().nonnegative(),
     offset: z.number().int().nonnegative(),
     limit: z.number().int().positive(),
+    nextOffset: z.number().int().nonnegative().nullable(),
+    truncated: z.boolean(),
     documents: z.array(compactDocumentSchema),
   })
   .strict();
@@ -254,7 +260,7 @@ function formatSearchDocsText(response: ToolResponse<SearchDocsData>): string {
 function formatListDocsText(response: ToolResponse<ListDocsData>): string {
   const lines = [
     `list_docs ${response.status}: ${response.data.count}/${response.data.total} document(s)`,
-    `offset=${response.data.offset} limit=${response.data.limit}`,
+    `offset=${response.data.offset} limit=${response.data.limit} nextOffset=${response.data.nextOffset ?? 'none'} truncated=${response.data.truncated}`,
   ];
   response.data.documents.forEach((document, index) => {
     lines.push(
@@ -297,24 +303,27 @@ async function listDocs(
   repository: CatalogRepository,
   input: z.infer<typeof listDocsInputSchema>,
 ): Promise<ListDocsData> {
-  const [sources, documents] = await Promise.all([
-    repository.listSources(),
-    repository.listDocuments(),
-  ]);
-  const sourceKeys = new Map(sources.map((source) => [source.id, source.sourceKey] as const));
-  const filtered = documents.filter((document) => {
-    if (input.sourceKey === undefined) return true;
-    return sourceKeys.get(document.sourceId) === input.sourceKey;
-  });
-  const page = filtered.slice(input.offset, input.offset + input.limit);
-  return {
-    count: page.length,
-    total: filtered.length,
+  const page = await repository.listDocumentsPage({
     offset: input.offset,
     limit: input.limit,
-    documents: page.map((document) =>
-      toCompactDocument(document, sourceKeys.get(document.sourceId) ?? 'unknown'),
-    ),
+    ...(input.sourceKey === undefined ? {} : { sourceKey: input.sourceKey }),
+    ...(input.language === undefined ? {} : { language: input.language }),
+    ...(input.status === undefined ? {} : { status: input.status }),
+  });
+  const budgeted = applyListDocsBudget(
+    page.items.map(({ source, document }) => toCompactDocument(document, source.sourceKey)),
+    page.offset,
+    page.limit,
+    page.total,
+  );
+  return {
+    count: budgeted.documents.length,
+    total: page.total,
+    offset: page.offset,
+    limit: page.limit,
+    nextOffset: budgeted.nextOffset,
+    truncated: budgeted.truncated,
+    documents: budgeted.documents,
   };
 }
 
@@ -322,8 +331,7 @@ async function readDocSection(
   repository: CatalogRepository,
   input: z.infer<typeof readDocSectionInputSchema>,
 ): Promise<ReadDocSectionData> {
-  const sections = await repository.listCurrentDocumentSections();
-  const entry = sections.find((candidate) => candidate.section.id === input.sectionId);
+  const entry = await repository.getCurrentDocumentSectionById(input.sectionId);
   if (entry === undefined) {
     return {
       sectionId: input.sectionId,
@@ -365,6 +373,48 @@ function toCompactDocument(document: CatalogDocument, sourceKey: string) {
     language: document.language,
     status: document.status,
     currentVersionId: document.currentVersionId ?? null,
+  };
+}
+
+function applyListDocsBudget(
+  documents: readonly ReturnType<typeof toCompactDocument>[],
+  offset: number,
+  limit: number,
+  total: number,
+): {
+  readonly documents: ReturnType<typeof toCompactDocument>[];
+  readonly nextOffset: number | null;
+  readonly truncated: boolean;
+} {
+  const accepted: ReturnType<typeof toCompactDocument>[] = [];
+  for (const document of documents) {
+    const candidate = [...accepted, document];
+    const candidateNextOffset =
+      offset + candidate.length < total ? offset + candidate.length : null;
+    const candidateLength = JSON.stringify({
+      count: candidate.length,
+      total,
+      offset,
+      limit,
+      nextOffset: candidateNextOffset,
+      truncated: candidate.length < documents.length,
+      documents: candidate,
+    }).length;
+    if (candidateLength > MAX_LIST_DOCS_DATA_CHARACTERS) {
+      if (accepted.length === 0) {
+        throw new ResponseTooLargeError(
+          'One catalog document exceeds the list_docs response budget',
+        );
+      }
+      break;
+    }
+    accepted.push(document);
+  }
+  const nextOffset = offset + accepted.length < total ? offset + accepted.length : null;
+  return {
+    documents: accepted,
+    nextOffset,
+    truncated: accepted.length < documents.length,
   };
 }
 

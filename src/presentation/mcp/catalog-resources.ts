@@ -1,33 +1,35 @@
 import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import type { CatalogRepository } from '../../application/ports/catalog-repository.js';
+import type { CatalogPage, CatalogRepository } from '../../application/ports/catalog-repository.js';
+import { ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
 import type {
   CatalogCurrentDocumentSection,
   CatalogDocument,
+  CatalogDocumentEntry,
   CatalogSource,
   DocumentSection,
   DocumentVersion,
 } from '../../domain/models/catalog.js';
 
 const RESOURCE_MIME_TYPE = 'application/json';
-
-type ListDocumentVersions = NonNullable<CatalogRepository['listDocumentVersions']>;
-type GetDocumentVersion = NonNullable<CatalogRepository['getDocumentVersion']>;
-
-interface DocumentVersionRepositoryPorts {
-  readonly listDocumentVersions?: ListDocumentVersions;
-  readonly getDocumentVersion?: GetDocumentVersion;
-}
+const CATALOG_RESOURCE_PAGE_LIMIT = 20;
+const MAX_CATALOG_RESOURCE_CHARACTERS = 24_000;
+const MAX_RESOURCE_SECTION_CONTENT_CHARACTERS = 8_000;
+const MAX_RESOURCE_METADATA_CHARACTERS = 2_000;
 
 const CATALOG_RESOURCE_URIS = {
   catalog: 'mcp-search-net://catalog',
   sources: 'mcp-search-net://sources',
+  sourcesPage: 'mcp-search-net://sources/page/{offset}',
   source: 'mcp-search-net://sources/{sourceId}',
   documents: 'mcp-search-net://documents',
+  documentsPage: 'mcp-search-net://documents/page/{offset}',
   document: 'mcp-search-net://documents/{documentId}',
   documentVersions: 'mcp-search-net://documents/{documentId}/versions',
+  documentVersionsPage: 'mcp-search-net://documents/{documentId}/versions/page/{offset}',
   documentVersion: 'mcp-search-net://documents/{documentId}/versions/{versionId}',
   sections: 'mcp-search-net://sections',
+  sectionsPage: 'mcp-search-net://sections/page/{offset}',
   section: 'mcp-search-net://sections/{sectionId}',
 } as const;
 
@@ -48,10 +50,22 @@ export function registerCatalogResources(server: McpServer, repository: CatalogR
     CATALOG_RESOURCE_URIS.sources,
     {
       title: 'Catalog sources',
-      description: 'Read-only list of configured catalog sources.',
+      description: 'Read-only first page of configured catalog sources.',
       mimeType: RESOURCE_MIME_TYPE,
     },
     async (uri) => jsonResource(uri, await createSourcesResource(repository)),
+  );
+
+  server.registerResource(
+    'catalog-sources-page',
+    new ResourceTemplate(CATALOG_RESOURCE_URIS.sourcesPage, { list: undefined }),
+    {
+      title: 'Catalog sources page',
+      description: 'Read-only bounded page of catalog sources by stable offset.',
+      mimeType: RESOURCE_MIME_TYPE,
+    },
+    async (uri) =>
+      jsonResource(uri, await createSourcesResource(repository, parsePageOffset(uri, 'sources'))),
   );
 
   server.registerResource(
@@ -70,10 +84,25 @@ export function registerCatalogResources(server: McpServer, repository: CatalogR
     CATALOG_RESOURCE_URIS.documents,
     {
       title: 'Catalog documents',
-      description: 'Read-only list of catalog documents.',
+      description: 'Read-only first page of catalog documents.',
       mimeType: RESOURCE_MIME_TYPE,
     },
     async (uri) => jsonResource(uri, await createDocumentsResource(repository)),
+  );
+
+  server.registerResource(
+    'catalog-documents-page',
+    new ResourceTemplate(CATALOG_RESOURCE_URIS.documentsPage, { list: undefined }),
+    {
+      title: 'Catalog documents page',
+      description: 'Read-only bounded page of catalog documents by stable offset.',
+      mimeType: RESOURCE_MIME_TYPE,
+    },
+    async (uri) =>
+      jsonResource(
+        uri,
+        await createDocumentsResource(repository, parsePageOffset(uri, 'documents')),
+      ),
   );
 
   server.registerResource(
@@ -110,14 +139,41 @@ export function registerCatalogResources(server: McpServer, repository: CatalogR
   );
 
   server.registerResource(
+    'catalog-document-versions-page',
+    new ResourceTemplate(CATALOG_RESOURCE_URIS.documentVersionsPage, { list: undefined }),
+    {
+      title: 'Catalog document versions page',
+      description: 'Read-only bounded version history page for one catalog document.',
+      mimeType: RESOURCE_MIME_TYPE,
+    },
+    async (uri) =>
+      jsonResource(
+        uri,
+        await createDocumentVersionsResource(repository, uri, parsePageOffset(uri, 'versions')),
+      ),
+  );
+
+  server.registerResource(
     'catalog-sections',
     CATALOG_RESOURCE_URIS.sections,
     {
       title: 'Catalog sections',
-      description: 'Read-only compact list of current catalog document sections.',
+      description: 'Read-only first compact page of current catalog document sections.',
       mimeType: RESOURCE_MIME_TYPE,
     },
     async (uri) => jsonResource(uri, await createSectionsResource(repository)),
+  );
+
+  server.registerResource(
+    'catalog-sections-page',
+    new ResourceTemplate(CATALOG_RESOURCE_URIS.sectionsPage, { list: undefined }),
+    {
+      title: 'Catalog sections page',
+      description: 'Read-only bounded compact page of current catalog sections.',
+      mimeType: RESOURCE_MIME_TYPE,
+    },
+    async (uri) =>
+      jsonResource(uri, await createSectionsResource(repository, parsePageOffset(uri, 'sections'))),
   );
 
   server.registerResource(
@@ -133,38 +189,44 @@ export function registerCatalogResources(server: McpServer, repository: CatalogR
 }
 
 async function createCatalogSummary(repository: CatalogRepository) {
-  const [sources, documents, sections] = await Promise.all([
-    repository.listSources(),
-    repository.listDocuments(),
-    repository.listCurrentDocumentSections(),
+  const [sources, enabledSources, documents, activeDocuments, currentSections] = await Promise.all([
+    repository.countSources(),
+    repository.countSources(true),
+    repository.countDocuments(),
+    repository.countDocuments({ status: 'ACTIVE' }),
+    repository.countCurrentDocumentSections(),
   ]);
 
   return {
     schemaVersion: '1.0',
     resources: Object.values(CATALOG_RESOURCE_URIS),
+    budgets: {
+      pageLimit: CATALOG_RESOURCE_PAGE_LIMIT,
+      maxResourceCharacters: MAX_CATALOG_RESOURCE_CHARACTERS,
+      maxDetailedSectionCharacters: MAX_RESOURCE_SECTION_CONTENT_CHARACTERS,
+    },
     counts: {
-      sources: sources.length,
-      enabledSources: sources.filter((source) => source.enabled).length,
-      documents: documents.length,
-      activeDocuments: documents.filter((document) => document.status === 'ACTIVE').length,
-      currentSections: sections.length,
+      sources,
+      enabledSources,
+      documents,
+      activeDocuments,
+      currentSections,
     },
   };
 }
 
-async function createSourcesResource(repository: CatalogRepository) {
-  const sources = await repository.listSources();
+async function createSourcesResource(repository: CatalogRepository, offset = 0) {
+  const page = await repository.listSourcesPage({ offset, limit: CATALOG_RESOURCE_PAGE_LIMIT });
   return {
     schemaVersion: '1.0',
-    count: sources.length,
-    sources: sources.map(toResourceSource),
+    ...paginationData(page, CATALOG_RESOURCE_URIS.sources),
+    sources: page.items.map(toResourceSource),
   };
 }
 
 async function createSourceResource(repository: CatalogRepository, uri: URL) {
   const sourceId = parseNumericResourceId(uri, 'sources');
-  const sources = await repository.listSources();
-  const source = sources.find((candidate) => candidate.id === sourceId);
+  const source = await repository.getSourceById(sourceId);
   return {
     schemaVersion: '1.0',
     sourceId,
@@ -173,19 +235,18 @@ async function createSourceResource(repository: CatalogRepository, uri: URL) {
   };
 }
 
-async function createDocumentsResource(repository: CatalogRepository) {
-  const documents = await repository.listDocuments();
+async function createDocumentsResource(repository: CatalogRepository, offset = 0) {
+  const page = await repository.listDocumentsPage({ offset, limit: CATALOG_RESOURCE_PAGE_LIMIT });
   return {
     schemaVersion: '1.0',
-    count: documents.length,
-    documents: documents.map(toResourceDocument),
+    ...paginationData(page, CATALOG_RESOURCE_URIS.documents),
+    documents: page.items.map(toResourceDocumentEntry),
   };
 }
 
 async function createDocumentResource(repository: CatalogRepository, uri: URL) {
   const documentId = parseNumericResourceId(uri, 'documents');
-  const documents = await repository.listDocuments();
-  const document = documents.find((candidate) => candidate.id === documentId);
+  const document = await repository.getDocumentById(documentId);
   return {
     schemaVersion: '1.0',
     documentId,
@@ -194,31 +255,24 @@ async function createDocumentResource(repository: CatalogRepository, uri: URL) {
   };
 }
 
-async function createDocumentVersionsResource(repository: CatalogRepository, uri: URL) {
+async function createDocumentVersionsResource(repository: CatalogRepository, uri: URL, offset = 0) {
   const documentId = parseNumericResourceId(uri, 'documents');
-  const listDocumentVersions = documentVersionPorts(repository).listDocumentVersions;
-  if (listDocumentVersions === undefined) {
-    return {
-      schemaVersion: '1.0',
-      documentId,
-      available: false,
-      count: 0,
-      versions: [],
-    };
-  }
-  const versions = await listDocumentVersions.call(repository, documentId);
+  const page = await repository.listDocumentVersionsPage(documentId, {
+    offset,
+    limit: CATALOG_RESOURCE_PAGE_LIMIT,
+  });
   return {
     schemaVersion: '1.0',
     documentId,
     available: true,
-    count: versions.length,
-    versions: versions.map(toResourceDocumentVersion),
+    ...paginationData(page, `mcp-search-net://documents/${documentId}/versions`),
+    versions: page.items.map(toResourceDocumentVersion),
   };
 }
 
 async function createDocumentVersionResource(repository: CatalogRepository, uri: URL) {
   const { documentId, versionId } = parseDocumentVersionResourceIds(uri);
-  const getDocumentVersion = documentVersionPorts(repository).getDocumentVersion;
+  const getDocumentVersion = repository.getDocumentVersion;
   if (getDocumentVersion === undefined) {
     return {
       schemaVersion: '1.0',
@@ -240,20 +294,22 @@ async function createDocumentVersionResource(repository: CatalogRepository, uri:
   };
 }
 
-async function createSectionsResource(repository: CatalogRepository) {
-  const sections = await repository.listCurrentDocumentSections();
+async function createSectionsResource(repository: CatalogRepository, offset = 0) {
+  const page = await repository.listCurrentDocumentSectionsPage({
+    offset,
+    limit: CATALOG_RESOURCE_PAGE_LIMIT,
+  });
   return {
     schemaVersion: '1.0',
     compact: true,
-    count: sections.length,
-    sections: sections.map(toCompactSectionEntry),
+    ...paginationData(page, CATALOG_RESOURCE_URIS.sections),
+    sections: page.items.map(toCompactSectionEntry),
   };
 }
 
 async function createSectionResource(repository: CatalogRepository, uri: URL) {
   const sectionId = parseNumericResourceId(uri, 'sections');
-  const sections = await repository.listCurrentDocumentSections();
-  const section = sections.find((candidate) => candidate.section.id === sectionId);
+  const section = await repository.getCurrentDocumentSectionById(sectionId);
   return {
     schemaVersion: '1.0',
     sectionId,
@@ -263,19 +319,33 @@ async function createSectionResource(repository: CatalogRepository, uri: URL) {
 }
 
 function jsonResource(uri: URL, value: unknown) {
+  const text = JSON.stringify(value, null, 2);
+  if (text.length > MAX_CATALOG_RESOURCE_CHARACTERS) {
+    throw new ResponseTooLargeError('The catalog resource exceeds its response budget');
+  }
   return {
     contents: [
       {
         uri: uri.href,
         mimeType: RESOURCE_MIME_TYPE,
-        text: JSON.stringify(value, null, 2),
+        text,
       },
     ],
   };
 }
 
-function documentVersionPorts(repository: CatalogRepository): DocumentVersionRepositoryPorts {
-  return repository;
+function paginationData<T>(page: CatalogPage<T>, collectionUri: string) {
+  const nextOffset =
+    page.offset + page.items.length < page.total ? page.offset + page.items.length : null;
+  return {
+    bounded: true,
+    count: page.items.length,
+    total: page.total,
+    offset: page.offset,
+    limit: page.limit,
+    nextOffset,
+    nextUri: nextOffset === null ? null : `${collectionUri}/page/${nextOffset}`,
+  };
 }
 
 function toResourceSource(source: CatalogSource) {
@@ -313,7 +383,15 @@ function toResourceDocument(document: CatalogDocument) {
   };
 }
 
+function toResourceDocumentEntry(entry: CatalogDocumentEntry) {
+  return {
+    ...toResourceDocument(entry.document),
+    sourceKey: entry.source.sourceKey,
+  };
+}
+
 function toResourceDocumentVersion(version: DocumentVersion) {
+  const metadataTruncated = version.metadataJson.length > MAX_RESOURCE_METADATA_CHARACTERS;
   return {
     id: version.id,
     documentId: version.documentId,
@@ -326,7 +404,8 @@ function toResourceDocumentVersion(version: DocumentVersion) {
     isCurrent: version.isCurrent,
     extractionMode: version.extractionMode,
     contentType: version.contentType,
-    metadataJson: version.metadataJson,
+    metadataJson: metadataTruncated ? null : version.metadataJson,
+    metadataTruncated,
   };
 }
 
@@ -371,10 +450,17 @@ function toResourceSectionSummary(section: DocumentSection) {
 }
 
 function toResourceSection(section: DocumentSection) {
+  const content = truncateResourceText(section.content, MAX_RESOURCE_SECTION_CONTENT_CHARACTERS);
   return {
     ...toResourceSectionSummary(section),
-    content: section.content,
+    content,
+    contentTruncated: content.length < section.content.length,
   };
+}
+
+function truncateResourceText(value: string, maxCharacters: number): string {
+  if (value.length <= maxCharacters) return value;
+  return `${value.slice(0, maxCharacters - 1)}…`;
 }
 
 function parseNumericResourceId(
@@ -384,6 +470,13 @@ function parseNumericResourceId(
   const prefix = `mcp-search-net://${collection}/`;
   if (!uri.href.startsWith(prefix)) return Number.NaN;
   return Number.parseInt(uri.href.slice(prefix.length), 10);
+}
+
+function parsePageOffset(uri: URL, collection: 'sources' | 'documents' | 'versions' | 'sections') {
+  const marker = collection === 'versions' ? '/versions/page/' : `//${collection}/page/`;
+  const markerIndex = uri.href.lastIndexOf(marker);
+  if (markerIndex === -1) return Number.NaN;
+  return Number.parseInt(uri.href.slice(markerIndex + marker.length), 10);
 }
 
 function parseDocumentVersionResourceIds(uri: URL): {
