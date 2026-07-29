@@ -2,11 +2,10 @@
 
 > **Statut** : implémentation V2 documentaire en cours dans la PR #8.
 >
-> **Dernière mise à jour** : 2026-07-29 — V2.12 corrigée post-audit dans la PR #23 ; Quality Gate
-> SonarQube Cloud vert ; requalification locale exact-head encore requise avant clôture de #15.
+> **Dernière mise à jour** : 2026-07-29 — V2.12 qualifiée exact-head, mergée dans
+> `feat/v2-catalog-storage` via PR #23 et réconciliée post-merge ; prochain jalon : V2.13 / #16.
 >
-> **PR active** : #8 — `feat/v2-catalog-storage`, conservée en draft ; PR focalisée #23 —
-> `fix/v2-12-security-operations`, également conservée en draft jusqu'à requalification exact-head.
+> **PR active** : #8 — `feat/v2-catalog-storage`, conservée en draft jusqu'au gate final #18.
 >
 > **Roadmap opérationnelle actuelle** : issue #19, séquence #12 à #18. Les validations datées
 > antérieures restent des preuves historiques attachées à leurs propres SHA.
@@ -29,10 +28,12 @@ Avancement :
   benchmark jusqu'à 10 000 sections qualifiés localement sans skip.
 - V2.6 automatisation contrôlée : implémentée et validée localement sur la tranche maintenance contrôlée.
 - V2.7 recherche hybride locale : implémentée et validée localement comme prototype optionnel sans API payante, modèle téléchargé ni service externe.
-- V2.12 sécurité/exploitation : implémentation corrigée après audit dans #23 ; Quality Gate SonarQube
-  Cloud vert, mais les gates locaux doivent être rejoués sur le SHA exact final avant merge et clôture.
+- V2.12 sécurité/exploitation : corrections post-audit qualifiées sous Windows sur le head exact
+  `4651ccae3315e4b64e1bd42e1274fa9eed34a83f`, SonarQube Cloud vert avec 0 Security Hotspots,
+  puis merge tree-equivalent `64622e6e40f3ad18bc5c2a867a5600f19bf2d25c` dans la branche d'agrégation.
 
-Le travail postérieur au dernier head vert est bien récupéré dans la PR #8. Les validations historiques restent attachées à leurs SHA respectifs ; aucune validation antérieure n'est réutilisée pour qualifier automatiquement les corrections post-audit de V2.12.
+Les validations historiques restent attachées à leurs SHA respectifs. La preuve V2.12 finale archive
+la qualification exact-head et la vérification que le merge n'a introduit aucun changement de contenu.
 
 Le hardening post-audit suit désormais V2.9 à V2.15. V2.9 remplace les écritures fractionnées par
 une primitive de révision atomique, réconcilie ADR-015 via C007, protège les migrations par checksum
@@ -227,9 +228,9 @@ Validation locale V2.7 :
       dédupliqué, rapports publiables et gates locaux qualifiés sans skip.
 - [x] V2.11 : scalabilité, pagination et budget contexte (#14, #9, #11) — implémentation,
       benchmark et qualification locale terminés sans skip.
-- [ ] V2.12 : sécurité, installation et exploitation (#15) — implémentation et corrections d'audit
-      présentes dans #23, Quality Gate SonarQube Cloud vert et 0 Security Hotspots ; requalification
-      locale exact-head Windows/déterministe requise avant merge et clôture de #15.
+- [x] V2.12 : sécurité, installation et exploitation (#15) — corrections post-audit qualifiées sur
+      head exact Windows/déterministe, runtime et rollback validés, audits npm à zéro, SonarQube
+      Cloud vert, merge #23 tree-equivalent intégré dans `feat/v2-catalog-storage`.
 - [ ] V2.13 : qualité de recherche et benchmark représentatif (#16).
 - [ ] V2.14 : clients MCP et gel des contrats (#17).
 - [ ] V2.15 : qualification finale et réconciliation documentaire exhaustive (#18).
@@ -281,8 +282,9 @@ Validation locale V2.7 :
 - [x] `search_web` et `fetch_url` conservés.
 - [x] Cache V1 non réutilisé comme catalogue.
 - [x] Catalogue séparé dans `catalog.db`.
-- [x] Suites V1/V2 revalidées localement sur le dernier head qualifié de la PR #8.
-- [ ] Revalidation exact-head après intégration de V2.12 et des tranches suivantes.
+- [x] Suites V1/V2 revalidées localement sur le head exact V2.12.
+- [x] Merge V2.12 vérifié tree-equivalent au head qualifié.
+- [ ] Revalidation exact-head après intégration des tranches V2.13 à V2.15.
 
 ### AC-V2-06 : Exploitation contrôlée V2.6 validée
 
@@ -301,28 +303,29 @@ Validation locale V2.7 :
 - [x] Validation locale sur catalogue de spike.
 - [ ] Benchmark final lexical/hybride restant à faire avant généralisation.
 
-### AC-V2-08 : Sécurité et exploitation V2.12
+### AC-V2-08 : Sécurité et exploitation V2.12 validées
 
 - [x] Réponses et resources marquées `EXTERNAL_UNTRUSTED_CONTENT`.
 - [x] Provenance publique explicite et dates réelles uniquement.
 - [x] Archive Node vérifiée par SHA-256 avant extraction et signature OpenJS vérifiée avant
       exécution du runtime.
 - [x] Secrets locaux générés, profils non développement durcis et logs expurgés.
-- [x] Lease PID/hostname/token/heartbeat implémenté avec tests de régression multi-processus.
-- [x] Santé bornée, backup WAL cohérent et confiné, checkpoint concurrent et restauration couverts
-      par des tests de régression dans la branche.
+- [x] Lease PID/hostname/token/heartbeat validé avec tests multi-processus.
+- [x] Santé bornée, backup WAL cohérent et confiné, checkpoint concurrent et restauration couverts.
 - [x] Supply chain durcie : licences, versions/digests et chemins de manifests contrôlés.
 - [x] Quality Gate SonarQube Cloud vert avec 0 Security Hotspots sur la PR #23.
-- [ ] Rejouer les gates locaux exact-head après les corrections post-audit : suites npm, intégrité
-      runtime Windows, cycle d'installation/rollback et audits npm.
-- [x] Preuve historique et supersession archivées dans
+- [x] Gates locaux exact-head PASS : 216 required, 95 unit, 6 contract, 68 security, 25 resilience,
+      2 performance, 35 integration et 2 E2E déterministes, tous sans skip dans les suites contrôlées.
+- [x] Runtime Windows `NODE_RUNTIME_INTEGRITY_VALID`.
+- [x] Installation/upgrade/rollback/désinstallation `INSTALLATION_LIFECYCLE_VALID`.
+- [x] Audits npm complet et production : 0 vulnérabilité.
+- [x] Preuve finale archivée dans
       [`validation-v2-12-security-operations-2026-07-29.md`](validation-v2-12-security-operations-2026-07-29.md).
 
 ## Ordre de réalisation recommandé
 
-1. V2.9 à V2.11 sont intégrées et qualifiées localement ; V2.12 reste à requalifier exact-head dans
-   #23 avant merge dans `feat/v2-catalog-storage` et clôture de #15.
-2. Après PASS de #15, exécuter dans l'ordre #16, #17 puis #18.
+1. V2.9 à V2.12 (#12 à #15) sont intégrées et qualifiées localement.
+2. Exécuter maintenant #16 / V2.13, puis #17 / V2.14 et #18 / V2.15.
 3. Conserver #8 en draft et ne pas déclencher GitHub Actions pendant la restriction de quota.
 4. Qualifier exact-head localement, Docker/Linux et clients selon #18.
 5. Merger #8 sous garde expected-head uniquement après tous les gates, puis revalider `master`.
