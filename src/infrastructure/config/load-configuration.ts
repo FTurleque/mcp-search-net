@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 
 import type { OfficialSourceRegistry } from '../../application/ports/official-source-registry.js';
@@ -11,10 +12,10 @@ import { loadYaml } from './yaml-loader.js';
 import { OfficialSourceYamlRegistry } from './official-source-yaml-registry.js';
 import { ConfigurationError } from '../../domain/errors/domain-errors.js';
 
-const KNOWN_DEVELOPMENT_TOKENS = new Set([
-  'mcp-search-local-development-token',
-  'replace-with-a-random-local-token',
-  'replace-with-the-same-random-local-token',
+const KNOWN_DEVELOPMENT_TOKEN_HASHES = new Set([
+  '2c996270398ba9479c876ad40555684a7638564acc76103d2b1322e40103ea23',
+  '28e149e2458d26cc3ac7bd52bf257b26107df159cfe3cca78d14d2e0917079d4',
+  '13403f17ba8f70ff7ec2e214abb8c948e9d9a69dac59b218fb60be6c5304effb',
 ]);
 
 export interface LoadedConfiguration {
@@ -110,11 +111,15 @@ function assertSafeSecretProfile(
   token: string | undefined,
 ): void {
   if (profile === 'development' || token === undefined) return;
-  if (KNOWN_DEVELOPMENT_TOKENS.has(token)) {
+  if (KNOWN_DEVELOPMENT_TOKEN_HASHES.has(hashSecret(token))) {
     throw new ConfigurationError(
       `A known development Crawl4AI token is forbidden in the ${profile} profile`,
     );
   }
+}
+
+function hashSecret(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
 function firstEnvironment(...names: readonly string[]): string | undefined {
