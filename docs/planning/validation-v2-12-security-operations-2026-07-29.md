@@ -85,3 +85,69 @@ sans autorisation distincte.
   finale #18.
 - La validation exact-head de la branche et du merge d'agrégation doit être
   enregistrée dans le PR focalisé et l'issue avant clôture.
+
+## Erratum et supersession — audit du 29 juillet 2026
+
+Les résultats ci-dessus constituent une **preuve historique** du candidat
+`131d12fb4d2cf03937c24a7106bfcd758cd0c368`. Ils ne qualifient pas les commits
+postérieurs ajoutés pendant l'audit de reprise.
+
+L'audit a identifié puis corrigé les écarts suivants :
+
+- PR #23 retargetée de `master` vers `feat/v2-catalog-storage` afin de conserver
+  une tranche V2.12 focalisée ;
+- signature Authenticode OpenJS de `node.exe` vérifiée avant toute exécution du
+  runtime déjà présent ou fraîchement extrait ;
+- recette Windows enrichie d'un échec d'activation volontaire démontrant la
+  restauration réelle de l'installation précédente ;
+- résultat `busy` de `PRAGMA wal_checkpoint(TRUNCATE)` désormais contrôlé, avec
+  échec explicite au lieu de déclarer `walCheckpointed: true` à tort ;
+- test SQLite avec lecteur concurrent couvrant ce checkpoint bloqué ;
+- `catalog health` et `catalog status` utilisent les compteurs SQL plutôt que de
+  charger toutes les sources et tous les documents ;
+- `catalog backup` confine les snapshots dans `backups/` adjacent au catalogue
+  et valide strictement le nom publié ;
+- les chemins de manifests du contrôle supply-chain sont bornés sous
+  `node_modules` ;
+- un `ownerToken` relu depuis les métadonnées de lock ne participe plus au nom du
+  fichier de quarantaine ;
+- le fixture multi-processus ne reçoit plus de chemins filesystem via
+  `process.argv` ;
+- les secrets éphémères du workflow manuel sont générés avec une source
+  cryptographiquement aléatoire sans sink filesystem JavaScript piloté par une
+  variable d'environnement ;
+- les tokens de développement connus ne sont plus stockés en clair dans le code
+  runtime chargé de les refuser hors profil `development`.
+
+Après ces corrections, SonarQube Cloud a annoncé **Quality Gate passed**, avec
+**0 Security Hotspots**, sur le candidat runtime/documentation antérieur à cette
+réconciliation documentaire (`4a36fe97925d8e6d13486434a3feb2d31a186513`).
+Cette preuve Sonar ne remplace pas les gates locaux.
+
+### Qualification encore requise
+
+Le connecteur GitHub ne fournit pas de runner Windows local. Aucune commande
+locale n'a donc été rejouée sur le head issu de ces corrections et aucun workflow
+GitHub Actions n'a été déclenché.
+
+Avant merge de #23, exécuter sur le **SHA exact final** de la branche :
+
+```text
+npm run check
+npm run test:required
+npm run test:unit
+npm run test:contract
+npm run test:security
+npm run test:resilience
+npm run test:performance
+npm run test:integration
+npm run test:e2e:deterministic
+scripts/test-node-runtime-integrity.ps1
+scripts/test-installation.ps1 -NodeRuntimeSource <Node-24-root>
+npm audit --audit-level=moderate
+npm audit --omit=dev --audit-level=moderate
+```
+
+Puis enregistrer les sorties exactes, le SHA qualifié et le verdict dans cette
+preuve, dans la PR #23 et dans l'issue #15. Tant que cette étape n'est pas faite,
+#23 reste en **draft** et #15 reste **ouverte**.
