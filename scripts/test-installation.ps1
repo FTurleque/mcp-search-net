@@ -33,6 +33,26 @@ try {
         throw "L'installation propre a conservé un secret de développement connu."
     }
 
+    $RollbackMarker = Join-Path $InstallRoot 'app\rollback.marker'
+    Set-Content -LiteralPath $RollbackMarker -Value 'previous-installation'
+    $RollbackFailureObserved = $false
+    try {
+        & (Join-Path $SourceRoot 'scripts\install-user.ps1') -InstallRoot $InstallRoot -SkipChecks -TestFailActivation
+    }
+    catch {
+        $RollbackFailureObserved = $true
+    }
+    if (-not $RollbackFailureObserved) {
+        throw "La recette de rollback n'a pas provoqué l'échec d'activation attendu."
+    }
+    if (-not (Test-Path -LiteralPath $RollbackMarker -PathType Leaf)) {
+        throw "Le rollback d'activation n'a pas restauré l'ancienne application."
+    }
+    $PreviousApplications = @(Get-ChildItem -LiteralPath $InstallRoot -Directory -Filter 'app.previous-*' -ErrorAction SilentlyContinue)
+    if ($PreviousApplications.Count -ne 0) {
+        throw "Le rollback d'activation a laissé une ancienne application détachée."
+    }
+
     $ConfigPath = Join-Path $InstallRoot 'config\application.yml'
     $DataMarker = Join-Path $InstallRoot 'data\preserve.marker'
     Add-Content -LiteralPath $ConfigPath -Value "`n# preserved-user-configuration"
