@@ -2,7 +2,7 @@
   "schemaVersion": "1.0",
   "description": "Deterministic benchmark corpus modeled on official documentation domains. Content is generated locally from this versioned manifest; no large downloaded artifacts are committed.",
   "documentsPerSource": 10,
-  "defaultSectionsPerDocument": 10,
+  "defaultSectionsPerDocument": 100,
   "sources": [
     {
       "sourceKey": "nodejs",
