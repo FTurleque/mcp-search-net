@@ -6,6 +6,8 @@ import type {
   CatalogCurrentDocumentSection,
   CatalogDocument,
   CatalogDocumentInput,
+  CatalogDocumentRevision,
+  CatalogDocumentRevisionInput,
   CatalogDocumentSearchQuery,
   CatalogDocumentSearchResult,
   CatalogFreshnessPolicy,
@@ -25,6 +27,7 @@ import type {
 } from '../../domain/models/catalog.js';
 import { openCatalogDatabase } from './catalog-database.js';
 import { CatalogMigrationRunner } from './catalog-migration-runner.js';
+import { verifyCatalogIntegrity } from './catalog-integrity.js';
 import type {
   CatalogDocumentRow,
   CatalogSourceRow,
@@ -44,8 +47,10 @@ import {
   COUNT_DOCUMENT_SECTION_FTS_SQL,
   DELETE_DOCUMENT_SECTIONS_SQL,
   DELETE_DOCUMENT_SECTION_FTS_SQL,
+  DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL,
   INSERT_CATALOG_SOURCE_SQL,
   INSERT_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
+  INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL,
   INSERT_DOCUMENT_SECTION_SQL,
   SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
   SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
@@ -281,34 +286,66 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
+  public commitDocumentRevision(
+    revision: CatalogDocumentRevisionInput,
+  ): Promise<CatalogDocumentRevision> {
+    return this.asPromise(() => {
+      const transaction = this.database.transaction((): CatalogDocumentRevision => {
+        if (revision.sections.length === 0) {
+          throw new Error('CATALOG_DOCUMENT_REVISION_REQUIRES_SECTIONS');
+        }
+        const documentRow = this.upsertDocumentRow(revision.document);
+        this.database
+          .prepare<[number]>(DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL)
+          .run(documentRow.id);
+        this.database
+          .prepare<[number]>(CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL)
+          .run(documentRow.id);
+
+        const versionRow = this.upsertDocumentVersionRow({
+          ...revision.version,
+          documentId: documentRow.id,
+          isCurrent: true,
+        });
+        const sectionRows = this.replaceDocumentSectionRows(versionRow.id, revision.sections);
+
+        this.database
+          .prepare<[number]>(INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL)
+          .run(versionRow.id);
+        const now = this.now();
+        this.database
+          .prepare<[number, number, number]>(SET_DOCUMENT_CURRENT_VERSION_SQL)
+          .run(versionRow.id, now, documentRow.id);
+
+        const currentDocumentRow = this.selectDocumentByPublicId(revision.document.publicId);
+        if (currentDocumentRow === undefined) throw new Error('CATALOG_DOCUMENT_COMMIT_FAILED');
+
+        return {
+          document: toCatalogDocument(currentDocumentRow),
+          version: toDocumentVersion(versionRow),
+          sections: sectionRows.map(toDocumentSection),
+        };
+      });
+
+      return transaction();
+    });
+  }
+
   public upsertDocument(document: CatalogDocumentInput): Promise<CatalogDocument> {
     return this.asPromise(() => {
-      const now = this.now();
-      this.database
-        .prepare<UpsertDocumentParams>(UPSERT_DOCUMENT_SQL)
-        .run(
-          document.publicId,
-          document.sourceId,
-          document.canonicalUrl,
-          document.stableKey,
-          document.title,
-          document.mimeType,
-          document.language,
-          document.status,
-          now,
-          now,
-          now,
-          now,
-        );
-
-      const row = this.selectDocumentByPublicId(document.publicId);
-      if (row !== undefined) return toCatalogDocument(row);
-
-      const stableRow = this.database
-        .prepare<[number, string], CatalogDocumentRow>(SELECT_DOCUMENT_BY_SOURCE_AND_STABLE_KEY_SQL)
-        .get(document.sourceId, document.stableKey);
-      if (stableRow === undefined) throw new Error('CATALOG_DOCUMENT_UPSERT_FAILED');
-      return toCatalogDocument(stableRow);
+      const transaction = this.database.transaction((): CatalogDocumentRow => {
+        const documentRow = this.upsertDocumentRow(document);
+        this.database
+          .prepare<[number]>(DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL)
+          .run(documentRow.id);
+        if (documentRow.current_version_id !== null) {
+          this.database
+            .prepare<[number]>(INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL)
+            .run(documentRow.current_version_id);
+        }
+        return documentRow;
+      });
+      return toCatalogDocument(transaction());
     });
   }
 
@@ -322,26 +359,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
             .run(version.documentId);
         }
 
-        this.database
-          .prepare<UpsertDocumentVersionParams>(UPSERT_DOCUMENT_VERSION_SQL)
-          .run(
-            version.documentId,
-            version.versionLabel ?? null,
-            version.contentHash,
-            version.etag ?? null,
-            version.lastModified ?? null,
-            version.publishedAt?.getTime() ?? null,
-            now,
-            version.isCurrent ? 1 : 0,
-            version.extractionMode,
-            version.contentType,
-            version.metadataJson,
-          );
-
-        const row = this.database
-          .prepare<[number, string], DocumentVersionRow>(SELECT_DOCUMENT_VERSION_BY_HASH_SQL)
-          .get(version.documentId, version.contentHash);
-        if (row === undefined) throw new Error('DOCUMENT_VERSION_INSERT_FAILED');
+        const row = this.upsertDocumentVersionRow(version);
 
         if (version.isCurrent) {
           this.database
@@ -361,29 +379,9 @@ export class SqliteCatalogRepository implements CatalogRepository {
     sections: readonly DocumentSectionInput[],
   ): Promise<readonly DocumentSection[]> {
     return this.asPromise(() => {
-      const transaction = this.database.transaction((): readonly DocumentSectionRow[] => {
-        this.database.prepare<[number]>(DELETE_DOCUMENT_SECTIONS_SQL).run(documentVersionId);
-
-        const insert = this.database.prepare<InsertDocumentSectionParams>(
-          INSERT_DOCUMENT_SECTION_SQL,
-        );
-        for (const section of sections) {
-          insert.run(
-            documentVersionId,
-            section.ordinal,
-            section.heading ?? null,
-            section.headingPath ?? null,
-            section.headingLevel ?? null,
-            section.anchor ?? null,
-            section.content,
-            section.contentHash,
-            section.characterCount,
-            section.tokenCount ?? null,
-          );
-        }
-
-        return this.selectSectionsByVersionId(documentVersionId);
-      });
+      const transaction = this.database.transaction(() =>
+        this.replaceDocumentSectionRows(documentVersionId, sections),
+      );
 
       return transaction().map(toDocumentSection);
     });
@@ -440,6 +438,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
         .all();
       return rows.map(toCatalogCurrentDocumentSection);
     });
+  }
+
+  public verifyIntegrity() {
+    return this.asPromise(() => verifyCatalogIntegrity(this.database));
   }
 
   public rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult> {
@@ -520,6 +522,84 @@ export class SqliteCatalogRepository implements CatalogRepository {
     return this.database
       .prepare<[string], CatalogSourceRow>(SELECT_CATALOG_SOURCE_BY_KEY_SQL)
       .get(sourceKey);
+  }
+
+  private upsertDocumentRow(document: CatalogDocumentInput): CatalogDocumentRow {
+    const now = this.now();
+    this.database
+      .prepare<UpsertDocumentParams>(UPSERT_DOCUMENT_SQL)
+      .run(
+        document.publicId,
+        document.sourceId,
+        document.canonicalUrl,
+        document.stableKey,
+        document.title,
+        document.mimeType,
+        document.language,
+        document.status,
+        now,
+        now,
+        now,
+        now,
+      );
+
+    const row = this.selectDocumentByPublicId(document.publicId);
+    if (row !== undefined) return row;
+
+    const stableRow = this.database
+      .prepare<[number, string], CatalogDocumentRow>(SELECT_DOCUMENT_BY_SOURCE_AND_STABLE_KEY_SQL)
+      .get(document.sourceId, document.stableKey);
+    if (stableRow === undefined) throw new Error('CATALOG_DOCUMENT_UPSERT_FAILED');
+    return stableRow;
+  }
+
+  private upsertDocumentVersionRow(version: DocumentVersionInput): DocumentVersionRow {
+    this.database
+      .prepare<UpsertDocumentVersionParams>(UPSERT_DOCUMENT_VERSION_SQL)
+      .run(
+        version.documentId,
+        version.versionLabel ?? null,
+        version.contentHash,
+        version.etag ?? null,
+        version.lastModified ?? null,
+        version.publishedAt?.getTime() ?? null,
+        this.now(),
+        version.isCurrent ? 1 : 0,
+        version.extractionMode,
+        version.contentType,
+        version.metadataJson,
+      );
+
+    const row = this.database
+      .prepare<[number, string], DocumentVersionRow>(SELECT_DOCUMENT_VERSION_BY_HASH_SQL)
+      .get(version.documentId, version.contentHash);
+    if (row === undefined) throw new Error('DOCUMENT_VERSION_INSERT_FAILED');
+    return row;
+  }
+
+  private replaceDocumentSectionRows(
+    documentVersionId: number,
+    sections: readonly DocumentSectionInput[],
+  ): readonly DocumentSectionRow[] {
+    this.database.prepare<[number]>(DELETE_DOCUMENT_SECTIONS_SQL).run(documentVersionId);
+
+    const insert = this.database.prepare<InsertDocumentSectionParams>(INSERT_DOCUMENT_SECTION_SQL);
+    for (const section of sections) {
+      insert.run(
+        documentVersionId,
+        section.ordinal,
+        section.heading ?? null,
+        section.headingPath ?? null,
+        section.headingLevel ?? null,
+        section.anchor ?? null,
+        section.content,
+        section.contentHash,
+        section.characterCount,
+        section.tokenCount ?? null,
+      );
+    }
+
+    return this.selectSectionsByVersionId(documentVersionId);
   }
 
   private selectDocumentByPublicId(publicId: string): CatalogDocumentRow | undefined {

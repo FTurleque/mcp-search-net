@@ -13,6 +13,25 @@ La V2.6 ajoute un point d'entrée opérationnel sûr pour maintenir le catalogue
 
 Le modèle retenu n'est pas un daemon interne permanent. La maintenance est un cycle court, idempotent et compatible avec un scheduler externe : Windows Task Scheduler, cron, tâche IDE, script utilisateur ou orchestration locale.
 
+## Vérification d'intégrité V2.9
+
+```bash
+npm run catalog -- verify --path .data/catalog.db
+```
+
+`catalog verify` exécute `PRAGMA integrity_check` et `PRAGMA foreign_key_check`, puis contrôle les
+pointeurs de version courante, les versions courantes sans section, les sections courantes absentes
+du FTS et les lignes FTS orphelines ou devenues non recherchables. Le JSON expose séparément
+`currentSections`, `indexedSections`, les codes stables et le contexte source/document/section. La
+commande retourne un code non nul lorsque le statut est `FAILED`.
+
+`catalog rebuild-index` reste une opération explicite de récupération. Une ingestion ou une sync
+réussie n'en dépend pas : l'index est mis à jour dans la transaction de révision.
+
+Le registre `catalog_schema_migrations` protège les migrations appliquées par SHA-256. Une erreur
+`CATALOG_MIGRATION_CHECKSUM_MISMATCH` doit être traitée comme une dérive du logiciel ou du package,
+pas contournée en modifiant le registre.
+
 ## Commande
 
 ```bash

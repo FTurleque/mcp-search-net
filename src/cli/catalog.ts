@@ -163,7 +163,11 @@ async function main(argv: readonly string[]): Promise<void> {
         rateLimitMs: options.sync.rateLimitMs ?? appConfig.security.minimumDelayMs,
         ...(options.sync.resumeAfter === undefined ? {} : { resumeAfter: options.sync.resumeAfter }),
       });
-      const index = await repository.rebuildSearchIndex();
+      const verification = await new VerifyCatalog(repository).execute();
+      if (verification.status === 'FAILED') {
+        throw new Error('CATALOG_VERIFY_FAILED_AFTER_SYNC');
+      }
+      const index = { indexedSections: verification.counts.indexedSections };
       process.stdout.write(`${JSON.stringify({ ...result, index }, null, 2)}\n`);
       return;
     }

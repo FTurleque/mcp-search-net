@@ -10,6 +10,8 @@ import { HttpError } from '../../src/domain/errors/domain-errors.js';
 import type {
   CatalogDocument,
   CatalogDocumentInput,
+  CatalogDocumentRevision,
+  CatalogDocumentRevisionInput,
   CatalogSource,
   CatalogSyncRun,
   CatalogSyncRunInput,
@@ -45,6 +47,23 @@ class CatalogSyncRepositoryStub {
 
   public async getCurrentDocumentVersion(documentId: number): Promise<DocumentVersion | undefined> {
     return this.currentVersion?.documentId === documentId ? this.currentVersion : undefined;
+  }
+
+  public async commitDocumentRevision(
+    input: CatalogDocumentRevisionInput,
+  ): Promise<CatalogDocumentRevision> {
+    const document = await this.upsertDocument(input.document);
+    const version = await this.addDocumentVersion({
+      ...input.version,
+      documentId: document.id,
+      isCurrent: true,
+    });
+    const sections = await this.replaceDocumentSections(version.id, input.sections);
+    return {
+      document: { ...document, currentVersionId: version.id },
+      version,
+      sections,
+    };
   }
 
   public async upsertDocument(input: CatalogDocumentInput): Promise<CatalogDocument> {

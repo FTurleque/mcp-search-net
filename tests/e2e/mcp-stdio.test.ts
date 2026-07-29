@@ -1,4 +1,6 @@
-import { resolve } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -9,19 +11,23 @@ const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
 
 describe('MCP STDIO server', () => {
   let client: Client | undefined;
+  let cacheRoot: string | undefined;
 
   afterEach(async () => {
     await client?.close();
+    if (cacheRoot !== undefined) rmSync(cacheRoot, { recursive: true, force: true });
   });
 
   it('advertises V1 tools and compact V2 catalog tools', async () => {
     client = new Client({ name: 'mcp-search-net-test', version: '1.0.0' });
+    cacheRoot = mkdtempSync(join(tmpdir(), 'mcp-search-stdio-'));
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [resolve('build/bootstrap/main.js')],
       env: {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
         [crawl4aiEnvironmentName]: 'mcp-search-local-development-value',
+        MCP_CACHE_PATH: join(cacheRoot, 'cache.sqlite'),
       },
       stderr: 'pipe',
     });
@@ -122,11 +128,13 @@ describe('MCP STDIO server', () => {
 
   it('keeps stdout as JSON-RPC and writes structured diagnostics only to stderr', async () => {
     const privateValue = 'test-value-that-must-not-leak';
+    cacheRoot = mkdtempSync(join(tmpdir(), 'mcp-search-stdio-output-'));
     const child = spawn(process.execPath, [resolve('build/bootstrap/main.js')], {
       env: {
         ...process.env,
         MCP_CONFIG_PATH: resolve('config/application.yml'),
         [crawl4aiEnvironmentName]: privateValue,
+        MCP_CACHE_PATH: join(cacheRoot, 'cache.sqlite'),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });

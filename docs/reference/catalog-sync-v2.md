@@ -23,6 +23,7 @@ Elle est déclenchée par CLI ou worker dédié, jamais par un outil MCP libreme
 6. Le catalogue est la source de vérité V2.
 7. Les opérations mutables restent hors MCP.
 8. Le traitement est séquentiel en V2 initiale pour faciliter le rate limiting et la reprise.
+9. Une révision documentaire est atomique : document, version, sections, FTS et pointeur courant.
 
 ## Pipeline implémenté
 
@@ -35,11 +36,9 @@ PublicUrlSecurityPolicy + SecureHttpGateway
    ↓
 Crawl4aiContentFetcher
    ↓
-CatalogRepository
+CatalogRepository.commitDocumentRevision
    ↓
-document_versions + document_sections
-   ↓
-rebuildSearchIndex
+document + version + sections + FTS + current_version_id (transaction unique)
    ↓
 SyncReport JSON
 ```
@@ -122,7 +121,7 @@ Décisions :
 
 - réponse `notModified` => document `unchanged`, aucune nouvelle version ;
 - hash identique au contenu courant => document `unchanged`, aucune nouvelle version ;
-- hash différent => nouvelle `document_version` et remplacement des sections courantes ;
+- hash différent => révision atomique, immédiatement recherchable sans rebuild manuel ;
 - redirection permanente => document `REDIRECTED`, `stableKey` conservé, chaîne de redirection stockée en métadonnées ;
 - 404 sur document existant => document `STALE`, version courante conservée ;
 - 410 sur document existant => document `REMOVED`, version courante conservée ;
@@ -149,7 +148,9 @@ resumeAfter
 index
 ```
 
-`limited` vaut `true` quand `--limit` a empêché de traiter tous les documents restants.
+`limited` vaut `true` quand `--limit` a empêché de traiter tous les documents restants. Le champ
+`index.indexedSections` provient de la vérification post-sync ; le CLI ne masque plus une
+incohérence en reconstruisant automatiquement tout l'index.
 
 ## Reprise après interruption
 
@@ -193,7 +194,9 @@ Chaque run écrit un `sync_run` avec :
 - redirection permanente ;
 - 404 non destructif ;
 - 410 non destructif ;
-- reconstruction d'index après sync réel côté CLI.
+- index FTS mis à jour dans la transaction de chaque révision ;
+- rollback des écritures si sections ou indexation échouent ;
+- vérification post-sync sans rebuild correctif implicite.
 
 ## Reste hors périmètre V2.5
 

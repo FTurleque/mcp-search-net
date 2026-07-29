@@ -2,8 +2,8 @@
 
 ## Statut
 
-- **Phase** : V2.0 — étude et cadrage
-- **Portée** : conception, aucune migration exécutable dans cette phase
+- **Phase** : V2.9 — intégrité transactionnelle et migrations immuables
+- **Portée** : schéma implémenté par `C001` à `C007`
 - **Base cible** : `.data/catalog.db`
 - **Décision liée** : ADR-014, ADR-015
 
@@ -23,7 +23,7 @@ catalog_sources
   └── documents
         ├── document_versions
         │     └── document_sections
-        │            └── document_sections_fts (index dérivé)
+        │            └── document_section_fts (index dérivé)
         ├── document_aliases
         └── staleness_events
 sync_runs
@@ -69,7 +69,7 @@ Représente un document logique, indépendamment de ses versions.
 | `mime_type` | TEXT | NOT NULL | Type de contenu courant |
 | `language` | TEXT | NOT NULL | Langue détectée ou source |
 | `status` | TEXT | NOT NULL | `ACTIVE`, `STALE`, `REDIRECTED`, `REMOVED`, `UNAVAILABLE` |
-| `current_version_id` | INTEGER | FK NULL | Version courante |
+| `current_version_id` | INTEGER | NULL, invariant protégé par triggers C007 | Version courante |
 | `first_seen_at` | INTEGER | NOT NULL | Première observation |
 | `last_seen_at` | INTEGER | NOT NULL | Dernière observation |
 | `created_at` | INTEGER | NOT NULL | Création locale |
@@ -107,7 +107,8 @@ Contraintes :
 UNIQUE(document_id, content_hash)
 ```
 
-Règle : une seule version courante par document. À implémenter par transaction applicative et index partiel si supporté.
+Règle : `commitDocumentRevision` désactive les versions précédentes et marque une seule version
+courante dans la même transaction que les sections, l'index et le pointeur du document.
 
 ## `document_sections`
 
@@ -196,34 +197,49 @@ SOURCE_UNAVAILABLE
 CONTENT_HASH_CHANGED
 ```
 
-## `document_sections_fts`
+## `document_section_fts`
 
 Index FTS5 dérivé.
 
 ```sql
-CREATE VIRTUAL TABLE document_sections_fts USING fts5(
+CREATE VIRTUAL TABLE document_section_fts USING fts5(
+  section_id UNINDEXED,
+  document_id UNINDEXED,
+  source_key UNINDEXED,
+  language UNINDEXED,
   title,
   heading,
-  body,
-  code,
+  heading_path,
+  content,
   content = '',
   contentless_delete = 1,
-  tokenize = 'unicode61'
+  tokenize = 'unicode61 remove_diacritics 2'
 );
 ```
 
 Règle de correspondance :
 
 ```text
-document_sections_fts.rowid = document_sections.id
+document_section_fts.rowid = document_sections.id
 ```
 
 Colonnes :
 
 - `title` : titre document ;
-- `heading` : titre de section et chemin ;
-- `body` : texte principal ;
-- `code` : blocs de code extraits séparément si possible.
+- `heading` : titre de section ;
+- `heading_path` : chemin hiérarchique ;
+- `content` : texte Markdown de la section.
+
+Les colonnes `UNINDEXED` servent à alimenter l'index mais ne sont pas relues depuis la table
+contentless. Les jointures applicatives utilisent toujours `rowid`.
+
+## Registre des migrations
+
+`catalog_schema_migrations` stocke `version`, `name`, `applied_at` et `checksum`. Le checksum est un
+SHA-256 du SQL avec fins de ligne normalisées. Pour un registre C001-C006 antérieur à V2.9, le
+runner ajoute la colonne et établit une seule fois la baseline depuis les migrations embarquées,
+puis applique C007. Toute différence ultérieure de nom ou de checksum fait échouer l'ouverture du
+catalogue ; une migration appliquée ne doit jamais être modifiée rétroactivement.
 
 ## Transactions
 
@@ -231,13 +247,14 @@ Colonnes :
 
 Une transaction doit :
 
-1. insérer ou retrouver `documents` ;
-2. insérer `document_versions` si le hash est nouveau ;
+1. insérer ou mettre à jour `documents` sans changer le pointeur courant ;
+2. retirer de l'index les lignes antérieures du document ;
 3. désactiver l'ancienne version courante ;
-4. marquer la nouvelle version courante ;
-5. insérer `document_sections` ;
-6. alimenter `document_sections_fts` ;
-7. mettre à jour `documents.current_version_id`.
+4. insérer ou réutiliser `document_versions` ;
+5. remplacer `document_sections` ;
+6. alimenter `document_section_fts` pour la nouvelle version ;
+7. mettre à jour `documents.current_version_id` en dernier ;
+8. committer l'ensemble, ou tout annuler à la première erreur.
 
 ### Synchronisation sans changement
 
@@ -245,7 +262,7 @@ Une transaction doit :
 
 1. mettre à jour `last_seen_at` ;
 2. conserver la version courante ;
-3. ne pas réindexer inutilement.
+3. réindexer la version courante seulement si les métadonnées ou le statut du document sont mis à jour.
 
 ### Échec réseau
 
@@ -258,11 +275,14 @@ Une transaction doit :
 ## Tests à prévoir
 
 - migration sur base vide ;
-- migration répétée idempotente ;
+- migration répétée idempotente et détection d'une dérive de checksum ;
 - ajout document + version + sections ;
 - ajout d'un contenu identique sans doublon ;
 - nouvelle version sur hash différent ;
 - reconstruction FTS complète ;
+- rollback sur échec d'écriture des sections ou du FTS ;
+- ingestion immédiatement recherchable sans rebuild ;
+- détection des sections FTS manquantes et des entrées orphelines ;
 - suppression de `cache.db` sans impact `catalog.db` ;
 - absence de tables V2 dans `cache.db` ;
 - absence de dépendance au cache V1.
