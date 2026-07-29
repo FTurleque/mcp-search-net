@@ -56,9 +56,9 @@ try {
     rerankedSearch,
     repetitions,
   );
-  const incrementalSyncMs = await measureIncrementalSync(repository, manifest, clock);
   const storage = measureStorage(catalogPath);
-  const decision = decideStrategy(quality, performanceResult);
+  const incrementalSyncMs = await measureIncrementalSync(repository, manifest, clock);
+  const decision = decideStrategy(quality, performanceResult, seeded.sections);
 
   const report = {
     schemaVersion: '2.0',
@@ -75,6 +75,8 @@ try {
       languages: [...new Set(manifest.sources.map((source) => source.language))].sort(),
       sectionsPerDocument,
       seedDurationMs: roundMetric(seedDurationMs, 2),
+      synthetic: true,
+      sourceModel: 'versioned official-documentation domain manifest',
     },
     protocol: {
       queryCount: queries.length,
@@ -163,7 +165,8 @@ async function seedCorpus(repositoryValue, manifestValue, sectionCount) {
 
 function createSection(source, topic, zeroBasedIndex) {
   const ordinal = zeroBasedIndex + 1;
-  const versionHint = source.sourceKey === 'nodejs' || source.sourceKey === 'openjdk' ? '24' : 'current';
+  const versionHint =
+    source.sourceKey === 'nodejs' || source.sourceKey === 'openjdk' ? '24' : 'current';
   const content = [
     `${topic.title}.`,
     `Official-source benchmark surrogate for ${source.displayName}.`,
@@ -234,15 +237,15 @@ async function measureQuality(queries, repositoryValue, reranked) {
     lexical: roundedSummary(summarizeSearchQuality(lexicalCases)),
     reranked: roundedSummary(summarizeSearchQuality(rerankedCases)),
     byCategory: Object.fromEntries(
-      [...categories.entries()].sort(([left], [right]) => left.localeCompare(right)).map(
-        ([category, value]) => [
+      [...categories.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([category, value]) => [
           category,
           {
             lexical: roundedSummary(summarizeSearchQuality(value.lexical)),
             reranked: roundedSummary(summarizeSearchQuality(value.reranked)),
           },
-        ],
-      ),
+        ]),
     ),
     failures,
   };
@@ -270,39 +273,39 @@ async function measurePerformance(queries, repositoryValue, reranked, repeatCoun
 }
 
 async function measureIncrementalSync(repositoryValue, manifestValue, clockValue) {
-  const firstSource = manifestValue.sources[0];
-  const firstTopic = parseTopic(firstSource.topics[0]);
-  const markdown = `${firstTopic.title}\n\nIncremental benchmark update at ${clockValue.now().toISOString()}.`;
+  const source = manifestValue.sources[0];
+  const stableKey = 'benchmark-incremental-sync';
+  let revision = 1;
   const fetcher = {
     async fetch() {
+      const markdown = `Incremental benchmark document revision ${revision}.`;
       return {
-        requestedUrl: `${firstSource.baseUrl}/${firstTopic.id}`,
-        finalUrl: `${firstSource.baseUrl}/${firstTopic.id}`,
-        canonicalUrl: `${firstSource.baseUrl}/${firstTopic.id}`,
-        title: firstTopic.title,
+        requestedUrl: `${source.baseUrl}/${stableKey}`,
+        finalUrl: `${source.baseUrl}/${stableKey}`,
+        canonicalUrl: `${source.baseUrl}/${stableKey}`,
+        title: 'Incremental benchmark document',
         markdown,
-        documentSections: [{ heading: firstTopic.shortTitle, markdown }],
+        documentSections: [{ heading: 'Incremental sync', markdown }],
         contentType: 'text/markdown',
         fetchedAt: clockValue.now().toISOString(),
         extractionMode: 'static',
         statusCode: 200,
-        contentHash: sha256(`${markdown}-updated`),
+        contentHash: sha256(markdown),
         metadata: { benchmark: 'v2.13' },
         links: [],
       };
     },
   };
   const sync = new SyncCatalogDocuments(repositoryValue, fetcher, clockValue, async () => undefined);
-  const started = performance.now();
-  const result = await sync.execute({
-    sourceKey: firstSource.sourceKey,
+  const options = {
+    sourceKey: source.sourceKey,
     documents: [
       {
-        sourceKey: firstSource.sourceKey,
-        stableKey: firstTopic.id,
-        title: firstTopic.title,
-        url: `${firstSource.baseUrl}/${firstTopic.id}`,
-        language: firstSource.language,
+        sourceKey: source.sourceKey,
+        stableKey,
+        title: 'Incremental benchmark document',
+        url: `${source.baseUrl}/${stableKey}`,
+        language: source.language,
         mimeType: 'text/markdown',
         enabled: true,
       },
@@ -311,11 +314,20 @@ async function measureIncrementalSync(repositoryValue, manifestValue, clockValue
     maxResponseBytes: 1_000_000,
     maxRedirects: 2,
     rateLimitMs: 0,
-  });
-  if (result.updatedCount !== 1) {
-    throw new Error(`Expected one incremental update, got ${result.updatedCount}`);
+  };
+
+  const initial = await sync.execute(options);
+  if (initial.addedCount !== 1) {
+    throw new Error(`Expected one initial sync insert, got ${initial.addedCount}`);
   }
-  return performance.now() - started;
+  revision = 2;
+  const started = performance.now();
+  const updated = await sync.execute(options);
+  const duration = performance.now() - started;
+  if (updated.updatedCount !== 1) {
+    throw new Error(`Expected one incremental update, got ${updated.updatedCount}`);
+  }
+  return duration;
 }
 
 function measureStorage(path) {
@@ -324,7 +336,9 @@ function measureStorage(path) {
   try {
     try {
       const row = database
-        .prepare("SELECT coalesce(sum(pgsize), 0) AS bytes FROM dbstat WHERE name LIKE 'document_section_fts%'")
+        .prepare(
+          "SELECT coalesce(sum(pgsize), 0) AS bytes FROM dbstat WHERE name LIKE 'document_section_fts%'",
+        )
         .get();
       ftsBytes = Number(row?.bytes ?? 0);
     } catch {
@@ -341,11 +355,12 @@ function measureStorage(path) {
   }
 }
 
-function decideStrategy(quality, performanceResult) {
+function decideStrategy(quality, performanceResult, sectionCount) {
   const lexical = quality.lexical;
   const reranked = quality.reranked;
   const lexicalPass =
     lexical.recallAt10 >= 0.85 && lexical.mrrAt10 >= 0.7 && lexical.ndcgAt10 >= 0.75;
+  const performancePass = sectionCount < 10_000 || performanceResult.lexical.p95Ms <= 150;
   const qualityGain = Math.max(
     reranked.recallAt10 - lexical.recallAt10,
     reranked.ndcgAt10 - lexical.ndcgAt10,
@@ -357,34 +372,40 @@ function decideStrategy(quality, performanceResult) {
   const rerankerEarnsKeep =
     qualityGain >= 0.02 && performanceResult.reranked.p95Ms <= 150 && p95Ratio <= 2.5;
 
-  if (lexicalPass && !rerankerEarnsKeep) {
+  if (lexicalPass && performancePass && !rerankerEarnsKeep) {
     return {
       recommendation: 'fts5-bm25',
       lexicalThresholdsMet: true,
+      performanceThresholdMet: true,
       keepHashedLexicalReranker: false,
       evaluateLocalEmbeddings: false,
-      reason: 'FTS5/BM25 meets quality thresholds and the hashed lexical reranker does not earn its complexity.',
+      reason:
+        'FTS5/BM25 meets quality and latency thresholds and the hashed lexical reranker does not earn its complexity.',
       qualityGain: roundMetric(qualityGain),
       rerankerP95Ratio: roundMetric(p95Ratio),
     };
   }
-  if (rerankerEarnsKeep) {
+  if (rerankerEarnsKeep && performancePass) {
     return {
-      recommendation: 'fts5-bm25-plus-hashed-lexical-reranker',
+      recommendation: 'fts5-plus-hashed-lexical-reranker',
       lexicalThresholdsMet: lexicalPass,
+      performanceThresholdMet: true,
       keepHashedLexicalReranker: true,
       evaluateLocalEmbeddings: false,
-      reason: 'The local hashed lexical reranker provides a measurable quality gain within the latency budget.',
+      reason:
+        'The local hashed lexical reranker provides a measurable quality gain within the latency budget.',
       qualityGain: roundMetric(qualityGain),
       rerankerP95Ratio: roundMetric(p95Ratio),
     };
   }
   return {
     recommendation: 'evaluate-local-embeddings',
-    lexicalThresholdsMet: false,
+    lexicalThresholdsMet: lexicalPass,
+    performanceThresholdMet: performancePass,
     keepHashedLexicalReranker: false,
     evaluateLocalEmbeddings: true,
-    reason: 'FTS5/BM25 misses at least one quality threshold and lexical reranking does not close the gap.',
+    reason:
+      'FTS5/BM25 misses at least one quality or latency threshold and lexical reranking does not close the gap.',
     qualityGain: roundMetric(qualityGain),
     rerankerP95Ratio: roundMetric(p95Ratio),
   };
