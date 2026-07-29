@@ -14,6 +14,12 @@ import {
 const roots: string[] = [];
 const children: ChildProcess[] = [];
 
+interface ChildReadyMessage {
+  readonly type: 'ready';
+  readonly root: string;
+  readonly lockPath: string;
+}
+
 afterEach(async () => {
   for (const child of children.splice(0)) {
     if (child.exitCode === null) child.kill();
@@ -119,22 +125,17 @@ describe('FileLeaseLock', () => {
   });
 
   it('blocks a real concurrent process even when a contender sees an expired lease', async () => {
-    const fixture = createFixture();
-    const readyPath = join(fixture.root, 'ready');
-    const child = fork(
-      resolve('tests/fixtures/hold-file-lease-lock.ts'),
-      [fixture.lockPath, readyPath],
-      {
-        execArgv: ['--import', 'tsx'],
-        silent: true,
-      },
-    );
+    const child = fork(resolve('tests/fixtures/hold-file-lease-lock.ts'), [], {
+      execArgv: ['--import', 'tsx'],
+      silent: true,
+    });
     children.push(child);
-    await waitForFile(readyPath);
+    const ready = await waitForReady(child);
+    roots.push(ready.root);
 
     const futureClock: Clock = { now: () => new Date('2099-01-01T00:00:00.000Z') };
     expect(() =>
-      new FileLeaseLock(fixture.lockPath, {
+      new FileLeaseLock(ready.lockPath, {
         staleAfterMs: 1,
         clock: futureClock,
       }).acquire(),
@@ -142,7 +143,7 @@ describe('FileLeaseLock', () => {
 
     child.send('release');
     await waitForExit(child);
-    expect(existsSync(fixture.lockPath)).toBe(false);
+    expect(existsSync(ready.lockPath)).toBe(false);
   });
 });
 
@@ -160,12 +161,36 @@ function createFixture() {
   };
 }
 
-async function waitForFile(path: string): Promise<void> {
-  const deadline = Date.now() + 5_000;
-  while (!existsSync(path)) {
-    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`);
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
-  }
+async function waitForReady(child: ChildProcess): Promise<ChildReadyMessage> {
+  return new Promise<ChildReadyMessage>((resolveReady, rejectReady) => {
+    const timeout = setTimeout(
+      () => rejectReady(new Error('Timed out waiting for child lock readiness')),
+      5_000,
+    );
+    const onError = (error: Error) => {
+      clearTimeout(timeout);
+      rejectReady(error);
+    };
+    child.once('error', onError);
+    child.on('message', (message: unknown) => {
+      if (!isChildReadyMessage(message)) return;
+      clearTimeout(timeout);
+      child.off('error', onError);
+      resolveReady(message);
+    });
+  });
+}
+
+function isChildReadyMessage(value: unknown): value is ChildReadyMessage {
+  if (value === null || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record['type'] === 'ready' &&
+    typeof record['root'] === 'string' &&
+    record['root'].length > 0 &&
+    typeof record['lockPath'] === 'string' &&
+    record['lockPath'].length > 0
+  );
 }
 
 async function waitForExit(child: ChildProcess): Promise<void> {
