@@ -19,10 +19,13 @@
     "catalog": "npm run build && node build/cli/catalog.js",
     "catalog:init": "npm run build && node build/cli/catalog.js init",
     "catalog:status": "npm run build && node build/cli/catalog.js status",
+    "catalog:health": "npm run build && node build/cli/catalog.js health",
     "catalog:maintain": "npm run build && node build/cli/catalog-maintain.js",
     "catalog:hybrid-search": "npm run build && node build/cli/catalog-hybrid-search.js",
     "benchmark:v2:hybrid": "npm run build && node scripts/benchmark-v2-hybrid.mjs",
     "benchmark:mcp:size": "npm run build && node scripts/benchmark-mcp-response-scale.mjs",
+    "check:supply-chain": "node scripts/check-supply-chain.mjs",
+    "audit:prod": "npm audit --omit=dev --audit-level=moderate",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
@@ -45,26 +48,32 @@
     "benchmark:v1": "node scripts/benchmark-v1.mjs",
     "install:user": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1",
     "install:user:run": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1 -StartServices -RunAfterInstall",
-    "check": "npm run check:runtime && npm run check:copilot && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test:coverage"
+    "check": "npm run check:runtime && npm run check:copilot && npm run check:supply-chain && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test:coverage"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/sdk": "1.30.0",
     "better-sqlite3": "^12.0.0",
     "pdfjs-dist": "6.0.227",
     "yaml": "^2.8.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@eslint/js": "9.39.1",
+    "@eslint/js": "10.0.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "24.13.2",
     "@vitest/coverage-v8": "4.1.9",
-    "eslint": "9.39.1",
+    "eslint": "10.8.0",
     "prettier": "3.6.2",
     "rimraf": "6.1.3",
     "tsx": "^4.16.5",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.48.1",
+    "typescript-eslint": "8.65.0",
     "vitest": "4.1.9"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.12",
+    "fast-uri": "3.1.4",
+    "hono": "4.12.32",
+    "postcss": "8.5.25"
   }
 }

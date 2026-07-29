@@ -12,7 +12,11 @@ import type {
   ToolName,
   ToolResponse,
 } from '../../domain/models/tool-response.js';
-import { isToolErrorCode } from '../../domain/models/tool-response.js';
+import {
+  EXTERNAL_CONTENT_SAFETY_NOTICE,
+  EXTERNAL_CONTENT_TRUST,
+  isToolErrorCode,
+} from '../../domain/models/tool-response.js';
 import type { Logger } from '../../application/ports/logger.js';
 
 export interface ToolCallOptions<T> {
@@ -44,6 +48,8 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
         durationMs,
         cacheStatus: execution.cacheStatus,
         provider: execution.provider,
+        contentTrust: EXTERNAL_CONTENT_TRUST,
+        contentSafetyNotice: EXTERNAL_CONTENT_SAFETY_NOTICE,
       },
       data: execution.data,
     };

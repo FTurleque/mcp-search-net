@@ -138,6 +138,8 @@ describe('MCP V2 in-memory contracts', () => {
         }
         expect(JSON.parse(content.text)).toMatchObject({
           schemaVersion: '1.0',
+          contentTrust: 'EXTERNAL_UNTRUSTED_CONTENT',
+          contentSafetyNotice: expect.stringContaining('untrusted data'),
         });
       }
 

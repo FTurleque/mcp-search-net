@@ -104,7 +104,12 @@ describe('SearchWeb', () => {
       'NON_OFFICIAL_RESULTS_INCLUDED',
     );
     expect(first.cacheStatus).toBe('MISS');
+    expect(first.data.metadata).toMatchObject({
+      sourceProvider: 'searxng',
+      retrievedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/u),
+    });
     expect(second.cacheStatus).toBe('HIT');
+    expect(second.data.metadata.retrievedAt).toBe(first.data.metadata.retrievedAt);
     expect(calls).toBe(1);
   });
 

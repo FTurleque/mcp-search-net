@@ -27,3 +27,28 @@ Crawl4AI ne télécharge plus directement la cible publique. En mode `auto`, il 
 ## Contenu malveillant
 
 Scripts, styles, iframes, formulaires, navigation, publicités et contenu masqué sont retirés avant conversion. Le Markdown restant peut toujours contenir des instructions hostiles ou trompeuses : il doit rester traité comme une source, jamais comme une instruction prioritaire. Les métadonnées brutes du fournisseur et les secrets ne sont jamais renvoyés.
+
+Toute réponse d'outil réussie et toute resource JSON expose
+`contentTrust: EXTERNAL_UNTRUSTED_CONTENT` avec une notice stable. Les contenus
+comme « ignore les instructions précédentes » sont conservés comme texte pour
+ne pas falsifier la source, mais n'influencent jamais le contrôle. La provenance
+publique distingue provider, URL demandée/finale/canonique, instant réel de
+récupération et statut de source selon l'outil ; aucune date absente n'est
+inventée.
+
+## Secrets et profils
+
+`application.profile` ou `MCP_PROFILE` vaut `development`, `test` ou
+`production`. Les jetons d'exemple connus sont acceptés uniquement en
+développement et refusés avant démarrage dans les autres profils, sans être
+recopiés dans le diagnostic. Compose exige explicitement `SEARXNG_SECRET` et
+`CRAWL4AI_API_TOKEN`. L'installateur Windows génère des valeurs aléatoires
+propres au profil utilisateur et les conserve lors des mises à jour.
+
+## Supply chain
+
+Le SDK MCP est fixé exactement, les transitives corrigées sont verrouillées et
+les images OCI sont référencées par digest. `npm run check:supply-chain` contrôle
+hors ligne versions, digests, absence de secrets Compose par défaut et licences
+de production. La qualification réseau complète ce gate par `npm audit` et
+`npm audit --omit=dev`; aucun `npm audit fix` aveugle n'est utilisé.

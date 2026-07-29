@@ -1,14 +1,4 @@
 import type Database from 'better-sqlite3';
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
-import { dirname } from 'node:path';
 
 import type { Clock } from '../../application/ports/clock.js';
 import type { Logger } from '../../application/ports/logger.js';
@@ -19,6 +9,8 @@ import type {
 } from '../../application/use-cases/maintain-catalog.js';
 import { openCatalogDatabase } from './catalog-database.js';
 import { CatalogMigrationRunner } from './catalog-migration-runner.js';
+import { FileLeaseLock, FileLeaseLockError } from '../locking/file-lease-lock.js';
+import type { FileLease } from '../locking/file-lease-lock.js';
 
 interface CountRow {
   readonly count: number;
@@ -42,8 +34,8 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
     const startedAt = this.clock.now().getTime();
     const lockPath = `${this.catalogPath}.maintenance.lock`;
 
-    return Promise.resolve(
-      this.withExclusiveLock(lockPath, input.staleLockMs, () => {
+    return Promise.resolve().then(() =>
+      this.withExclusiveLock(lockPath, input.staleLockMs, (renewLock) => {
         this.logger?.info('catalog_maintenance_started', {
           catalogPath: this.catalogPath,
           keepSyncRuns: input.keepSyncRuns,
@@ -53,16 +45,23 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
 
         const database = openCatalogDatabase(this.catalogPath);
         try {
+          renewLock();
           new CatalogMigrationRunner(database, this.clock).apply();
 
           const syncRunsBefore = this.countSyncRuns(database);
           const syncRunsDeleted = this.deleteExpiredSyncRuns(database, input);
           const syncRunsAfter = this.countSyncRuns(database);
 
+          renewLock();
           database.pragma('analysis_limit = 400');
           database.pragma('optimize');
+          renewLock();
           database.pragma('wal_checkpoint(TRUNCATE)');
-          if (input.vacuum) database.exec('VACUUM');
+          if (input.vacuum) {
+            renewLock();
+            database.exec('VACUUM');
+          }
+          renewLock();
 
           const result: CatalogMaintenanceOutput = {
             schemaVersion: '1.0',
@@ -101,36 +100,31 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
     );
   }
 
-  private withExclusiveLock<T>(lockPath: string, staleLockMs: number, action: () => T): T {
-    mkdirSync(dirname(lockPath), { recursive: true });
-    this.removeStaleLock(lockPath, staleLockMs);
-
-    let descriptor: number | undefined;
+  private withExclusiveLock<T>(
+    lockPath: string,
+    staleLockMs: number,
+    action: (renewLock: () => void) => T,
+  ): T {
+    const lock = new FileLeaseLock(lockPath, {
+      staleAfterMs: staleLockMs,
+      clock: this.clock,
+      ...(this.logger === undefined ? {} : { logger: this.logger }),
+    });
+    let lease: FileLease;
     try {
-      descriptor = openSync(lockPath, 'wx');
-      writeFileSync(descriptor, JSON.stringify({ createdAt: this.clock.now().toISOString() }));
-      return action();
+      lease = lock.acquire();
     } catch (error) {
-      if (descriptor === undefined && isExistingFileError(error)) {
-        throw new CatalogMaintenanceLockError(
-          `Catalog maintenance lock already exists: ${lockPath}`,
-        );
+      if (error instanceof FileLeaseLockError) {
+        throw new CatalogMaintenanceLockError(error.message);
       }
       throw error;
-    } finally {
-      if (descriptor !== undefined) {
-        closeSync(descriptor);
-        if (existsSync(lockPath)) unlinkSync(lockPath);
-      }
     }
-  }
 
-  private removeStaleLock(lockPath: string, staleLockMs: number): void {
-    if (!existsSync(lockPath)) return;
-    const ageMs = this.clock.now().getTime() - statSync(lockPath).mtimeMs;
-    if (ageMs <= staleLockMs) return;
-    this.logger?.warning('catalog_maintenance_stale_lock_removed', { lockPath, ageMs });
-    unlinkSync(lockPath);
+    try {
+      return action(() => lease.renew());
+    } finally {
+      lease.release();
+    }
   }
 
   private countSyncRuns(database: Database.Database): number {
@@ -161,13 +155,4 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
       .run(threshold, input.keepSyncRuns);
     return result.changes;
   }
-}
-
-function isExistingFileError(error: unknown): boolean {
-  return (
-    error !== null &&
-    typeof error === 'object' &&
-    'code' in error &&
-    (error as { readonly code?: unknown }).code === 'EEXIST'
-  );
 }

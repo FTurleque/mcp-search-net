@@ -24,7 +24,16 @@ Depuis la racine du dépôt :
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-user.ps1 -StartServices
 ```
 
-Le script télécharge Node.js 24.17.0 LTS depuis `nodejs.org`, valide et compile le projet, installe uniquement les dépendances de production, puis démarre SearXNG et Crawl4AI. Il ne modifie ni le `PATH` système, ni le registre Windows.
+Le script télécharge Node.js 24.17.0 LTS depuis `nodejs.org`, vérifie le
+SHA-256 officiel avant extraction, exige une signature Authenticode OpenJS
+valide, puis écrit `runtime\node-runtime-proof.json`. Il valide et compile le
+projet, installe uniquement les dépendances de production, puis démarre SearXNG
+et Crawl4AI. Un runtime téléchargé invérifiable est supprimé et jamais activé.
+Le script ne modifie ni le `PATH` système, ni le registre Windows.
+
+À la première installation, deux secrets aléatoires sont générés dans `.env`
+pour SearXNG et Crawl4AI. Ce fichier n'est pas remplacé lors d'une mise à jour et
+ne doit pas être commité.
 
 Une installation existante conserve `config\application.yml`, `config\official-sources.yml`, `config\searxng\settings.yml` et `data`. Les nouvelles valeurs de référence sont placées à côté avec le suffixe `.default`.
 
@@ -38,6 +47,8 @@ Une installation existante conserve `config\application.yml`, `config\official-s
 ├── data\                cache SQLite
 ├── docs\                copie de cette documentation
 ├── runtime\              Node.js portable
+│   └── node-runtime-proof.json
+├── .env                  secrets fournisseurs générés localement
 ├── compose.yaml         mode complet, services internes
 ├── compose.hybrid.yaml  compatibilité des installations antérieures
 ├── mcp.json.example
@@ -78,7 +89,18 @@ Le mode hybride reste le défaut de `mcp-search-net-services.cmd` : la façade M
 
 ## Mise à jour et désinstallation
 
-Relancer l’installateur effectue une mise à jour en conservant les données utilisateur.
+Relancer l’installateur construit d'abord `.install-staging`, vérifie le package,
+renomme l'application précédente puis active la nouvelle. Si l'activation
+échoue, l'ancienne application est restaurée. La configuration, les données et
+`.env` restent conservés.
+
+La recette automatisée propre/mise à jour/désinstallation s'exécute sous
+PowerShell 5.1 avec :
+
+```powershell
+$nodeRoot = Split-Path -Parent (Get-Command node).Source
+.\scripts\test-installation.ps1 -NodeRuntimeSource $nodeRoot
+```
 
 ```powershell
 .\scripts\uninstall-user.ps1

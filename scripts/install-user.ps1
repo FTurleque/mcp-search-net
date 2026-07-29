@@ -14,6 +14,7 @@ $NodeVersion = '24.17.0'
 $NodeFolderName = "node-v$NodeVersion-win-x64"
 $NodeArchiveName = "$NodeFolderName.zip"
 $NodeDownloadUrl = "https://nodejs.org/dist/v$NodeVersion/$NodeArchiveName"
+$NodeArchiveSha256 = 'f2aa33b35b75aca5f3f7b85675a6f6423201053e9381911e64961f3bda2528ab'
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
 $ComposeProject = if ([string]::IsNullOrWhiteSpace($env:MCP_SEARCH_COMPOSE_PROJECT)) {
@@ -205,19 +206,81 @@ $RuntimeRoot = Join-Path $InstallRoot 'runtime'
 $NodeRoot = Join-Path $RuntimeRoot $NodeFolderName
 $NodeExe = Join-Path $NodeRoot 'node.exe'
 $NpmCmd = Join-Path $NodeRoot 'npm.cmd'
+$RuntimeProofPath = Join-Path $RuntimeRoot 'node-runtime-proof.json'
+$ArchiveVerifiedAtInstall = $false
+
+if (Test-Path -LiteralPath $RuntimeProofPath -PathType Leaf) {
+    try {
+        $PreviousRuntimeProof = Get-Content -LiteralPath $RuntimeProofPath -Raw | ConvertFrom-Json
+        $ArchiveVerifiedAtInstall =
+            $PreviousRuntimeProof.nodeVersion -eq $NodeVersion -and
+            $PreviousRuntimeProof.archiveSha256 -eq $NodeArchiveSha256 -and
+            $PreviousRuntimeProof.archiveVerifiedAtInstall -eq $true
+    }
+    catch {
+        Write-Warning "Preuve runtime existante illisible ; la signature du binaire sera revérifiée : $RuntimeProofPath"
+    }
+}
+
+function New-LocalSecret {
+    $bytes = New-Object byte[] 32
+    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $generator.GetBytes($bytes)
+    }
+    finally {
+        $generator.Dispose()
+    }
+    return ([System.BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
+}
 
 if (-not (Test-Path -LiteralPath $NodeExe -PathType Leaf)) {
     New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
     $archivePath = Join-Path $RuntimeRoot $NodeArchiveName
     Write-Host "Téléchargement de Node.js $NodeVersion LTS depuis nodejs.org..."
-    Invoke-WebRequest -Uri $NodeDownloadUrl -OutFile $archivePath -UseBasicParsing
-    Expand-Archive -LiteralPath $archivePath -DestinationPath $RuntimeRoot -Force
-    Remove-Item -LiteralPath $archivePath -Force
+    try {
+        Invoke-WebRequest -Uri $NodeDownloadUrl -OutFile $archivePath -UseBasicParsing
+        $Verifier = Join-Path $RepositoryRoot 'scripts\windows\verify-file-sha256.ps1'
+        & $Verifier -FilePath $archivePath -ExpectedSha256 $NodeArchiveSha256 | Out-Null
+        $ArchiveVerifiedAtInstall = $true
+        Expand-Archive -LiteralPath $archivePath -DestinationPath $RuntimeRoot -Force
+    }
+    finally {
+        if (Test-Path -LiteralPath $archivePath) {
+            Remove-Item -LiteralPath $archivePath -Force
+        }
+    }
 }
 
 if (-not (Test-Path -LiteralPath $NpmCmd -PathType Leaf)) {
     throw "Runtime Node.js incomplet : $NpmCmd est absent."
 }
+
+$InstalledNodeVersion = (& $NodeExe '--version').TrimStart('v')
+if ($LASTEXITCODE -ne 0 -or $InstalledNodeVersion -ne $NodeVersion) {
+    throw "Version Node.js installée invalide : attendu $NodeVersion, obtenu $InstalledNodeVersion."
+}
+$NodeSignature = Get-AuthenticodeSignature -LiteralPath $NodeExe
+if ($NodeSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+    $null -eq $NodeSignature.SignerCertificate -or
+    $NodeSignature.SignerCertificate.Subject -notmatch 'OpenJS Foundation') {
+    throw "Signature Authenticode Node.js invalide ou signataire inattendu : $($NodeSignature.Status)."
+}
+$NodeExeSha256 = (Get-FileHash -LiteralPath $NodeExe -Algorithm SHA256).Hash.ToLowerInvariant()
+$RuntimeProof = [ordered]@{
+    schemaVersion = '1.0'
+    nodeVersion = $NodeVersion
+    archiveName = $NodeArchiveName
+    downloadUrl = $NodeDownloadUrl
+    archiveSha256 = $NodeArchiveSha256
+    archiveVerifiedAtInstall = $ArchiveVerifiedAtInstall
+    nodeExeSha256 = $NodeExeSha256
+    signatureStatus = [string]$NodeSignature.Status
+    signerSubject = $NodeSignature.SignerCertificate.Subject
+    verifiedAt = (Get-Date).ToUniversalTime().ToString('o')
+}
+$RuntimeProof | ConvertTo-Json | Set-Content -LiteralPath $RuntimeProofPath -Encoding UTF8
+Write-Host "Runtime Node.js vérifié ; preuve : $RuntimeProofPath"
 
 $env:PATH = "$NodeRoot;$env:PATH"
 
@@ -342,6 +405,23 @@ $DataRoot = Join-Path $InstallRoot 'data'
 $BinRoot = Join-Path $InstallRoot 'bin'
 New-Item -ItemType Directory -Force -Path $ConfigRoot, $SearxConfigRoot, $DataRoot, $BinRoot | Out-Null
 
+$EnvironmentPath = Join-Path $InstallRoot '.env'
+if (-not (Test-Path -LiteralPath $EnvironmentPath -PathType Leaf)) {
+    $Crawl4aiLocalToken = New-LocalSecret
+    $SearxngLocalSecret = New-LocalSecret
+    $EnvironmentContent = @(
+        '# Secrets générés localement par install-user.ps1. Ne pas commiter ce fichier.'
+        "CRAWL4AI_API_TOKEN=$Crawl4aiLocalToken"
+        "SEARXNG_SECRET=$SearxngLocalSecret"
+    ) -join "`r`n"
+    [System.IO.File]::WriteAllText(
+        $EnvironmentPath,
+        ($EnvironmentContent + "`r`n"),
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+    Write-Host "Secrets fournisseurs locaux générés dans : $EnvironmentPath"
+}
+
 function Copy-UserConfig {
     param(
         [Parameter(Mandatory)] [string]$Source,
@@ -431,13 +511,13 @@ if ($StartServices) {
     }
     if ($ComposeProject -ne 'mcp-search-net-user') {
         Write-Host "Arrêt éventuel de l'ancien projet Compose mcp-search-net-user..."
-        & $Docker.Source 'compose' '-p' 'mcp-search-net-user' '-f' (Join-Path $InstallRoot 'compose.yaml') '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') 'down'
+        & $Docker.Source 'compose' '--env-file' $EnvironmentPath '-p' 'mcp-search-net-user' '-f' (Join-Path $InstallRoot 'compose.yaml') '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') 'down'
         if ($LASTEXITCODE -ne 0) {
             throw "La commande '$($Docker.Source)' a échoué avec le code $LASTEXITCODE."
         }
     }
     Write-Host 'Démarrage de SearXNG et Crawl4AI...'
-    Invoke-NativeCommand $Docker.Source 'compose' '-p' $ComposeProject '-f' (Join-Path $InstallRoot 'compose.yaml') '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') 'up' '-d' '--wait' 'searxng' 'crawl4ai'
+    Invoke-NativeCommand $Docker.Source 'compose' '--env-file' $EnvironmentPath '-p' $ComposeProject '-f' (Join-Path $InstallRoot 'compose.yaml') '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') 'up' '-d' '--wait' 'searxng' 'crawl4ai'
 }
 
 if ($RunAfterInstall) {

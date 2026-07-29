@@ -224,7 +224,10 @@ Validation locale V2.7 :
       dédupliqué, rapports publiables et gates locaux qualifiés sans skip.
 - [x] V2.11 : scalabilité, pagination et budget contexte (#14, #9, #11) — implémentation,
       benchmark et qualification locale terminés sans skip.
-- [ ] V2.12 : sécurité, installation et exploitation (#15).
+- [x] V2.12 : sécurité, installation et exploitation (#15) — contenu externe
+      explicitement non fiable, provenance, installateur vérifié, secrets par
+      profil, lease interprocessus, santé/snapshot/restauration et supply chain
+      qualifiés localement sans skip.
 - [ ] V2.13 : qualité de recherche et benchmark représentatif (#16).
 - [ ] V2.14 : clients MCP et gel des contrats (#17).
 - [ ] V2.15 : qualification finale et réconciliation documentaire exhaustive (#18).
@@ -295,10 +298,23 @@ Validation locale V2.7 :
 - [x] Validation locale sur catalogue de spike.
 - [ ] Benchmark final lexical/hybride restant à faire avant généralisation.
 
+### AC-V2-08 : Sécurité et exploitation V2.12 validées
+
+- [x] Réponses et resources marquées `EXTERNAL_UNTRUSTED_CONTENT`.
+- [x] Provenance publique explicite et dates réelles uniquement.
+- [x] Archive Node vérifiée par SHA-256 avant extraction, signature OpenJS et
+      manifeste de preuve.
+- [x] Secrets locaux générés, profils non développement durcis et logs expurgés.
+- [x] Lease PID/hostname/token/heartbeat testé avec deux processus.
+- [x] Santé, backup WAL cohérent, corruption et restauration testés.
+- [x] Audits npm complet/production à zéro, licences contrôlées et images par digest.
+- [x] Preuve archivée dans
+      [`validation-v2-12-security-operations-2026-07-29.md`](validation-v2-12-security-operations-2026-07-29.md).
+
 ## Ordre de réalisation recommandé
 
-1. Terminer et qualifier #12.
-2. Exécuter dans l'ordre #13, #14, #15, #16, #17 puis #18.
+1. V2.9 à V2.12 (#12 à #15) sont intégrées et qualifiées localement.
+2. Exécuter dans l'ordre #16, #17 puis #18.
 3. Conserver #8 en draft et ne pas déclencher GitHub Actions pendant la restriction de quota.
 4. Qualifier exact-head localement, Docker/Linux et clients selon #18.
 5. Merger #8 sous garde expected-head uniquement après tous les gates, puis revalider `master`.

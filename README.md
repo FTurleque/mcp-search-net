@@ -49,8 +49,9 @@ cp .env.example .env
 ```
 
 Sous Windows, copiez manuellement `.env.example` vers `.env`. Remplacez les
-jetons d’exemple par des valeurs aléatoires locales avant d’utiliser un poste
-partagé.
+deux valeurs `CRAWL4AI_API_TOKEN` et `SEARXNG_SECRET` par des valeurs aléatoires
+locales : Compose refuse désormais de démarrer si elles sont absentes. Un profil
+autre que `development` refuse aussi les jetons d'exemple connus.
 
 ## Développement
 
@@ -98,7 +99,7 @@ les fournisseurs démarrés :
 npm run test:e2e
 ```
 
-`npm run check` inclut typecheck, lint, contrôle Prettier, build, tests
+`npm run check` inclut le contrôle supply chain hors ligne, typecheck, lint, contrôle Prettier, build, tests
 déterministes et seuils de couverture V8. Les rapports JSON sont écrits dans
 `.data/test-reports`, et les rapports de couverture dans `coverage/`. Les
 lanceurs de release échouent si un test requis est ignoré.
@@ -127,7 +128,8 @@ docker compose down
 
 Le conteneur MCP s’exécute sans root, avec filesystem en lecture seule,
 capabilities supprimées et volume d’écriture limité au cache et au catalogue.
-Aucun socket Docker, mode privilégié ou réseau hôte n’est utilisé.
+Aucun socket Docker, mode privilégié ou réseau hôte n’est utilisé. Les deux
+stages Node.js et les deux fournisseurs sont figés par digest SHA-256.
 
 ## IntelliJ IDEA / GitHub Copilot
 
@@ -174,6 +176,7 @@ Les variables principales sont :
 
 ```text
 MCP_CONFIG_PATH
+MCP_PROFILE
 MCP_LOG_LEVEL
 MCP_CACHE_PATH
 MCP_CATALOG_PATH
@@ -197,7 +200,7 @@ Fonctionnalités en cours de stabilisation dans la PR #8 :
 - migrations catalogue `C001` à `C008` avec checksums SHA-256 ;
 - CLI `catalog init`, `status`, `verify`, `add-source`, `list-sources`,
   `load-sources`, `ingest-text`, `sync`, `search`, `rebuild-index`,
-  `purge-versions` ;
+  `purge-versions`, ainsi que `health` et `backup` pour l'exploitation locale ;
 - ingestion texte/Markdown avec versioning et sections ;
 - recherche documentaire locale ;
 - synchronisation contrôlée avec ETag, Last-Modified, hash, staleness et
@@ -217,7 +220,10 @@ Fonctionnalités en cours de stabilisation dans la PR #8 :
   l’appelant n’est accepté ;
 - Crawl4AI reçoit le HTML contrôlé via `raw://`, jamais l’URL publique ;
 - le contenu Web et documentaire reste une donnée non fiable et n’est jamais
-  exécuté ;
+  exécuté ; toutes les réponses réussies et resources JSON le marquent
+  explicitement `EXTERNAL_UNTRUSTED_CONTENT` ;
+- l'installateur Windows vérifie le SHA-256 officiel et la signature OpenJS du
+  runtime Node avant de l'activer, puis écrit un manifeste de preuve local ;
 - secrets, chemins internes et stacks ne sont pas renvoyés.
 
 ## Diagnostic rapide

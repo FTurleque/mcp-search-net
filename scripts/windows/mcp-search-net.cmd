@@ -14,7 +14,11 @@ if not exist "%SERVER_JS%" (
 )
 
 if not defined MCP_CONFIG_PATH set "MCP_CONFIG_PATH=%MCP_SEARCH_HOME%\config\application.yml"
-if not defined MCP_CRAWL4AI_TOKEN set "MCP_CRAWL4AI_TOKEN=mcp-search-local-development-token"
+if not defined MCP_CRAWL4AI_TOKEN if exist "%MCP_SEARCH_HOME%\.env" for /f "tokens=1,* delims==" %%A in ('findstr /b /l "CRAWL4AI_API_TOKEN=" "%MCP_SEARCH_HOME%\.env"') do set "MCP_CRAWL4AI_TOKEN=%%B"
+if not defined MCP_CRAWL4AI_TOKEN (
+  1>&2 echo mcp-search-net: jeton Crawl4AI absent. Relancez install-user.ps1 ou définissez MCP_CRAWL4AI_TOKEN.
+  exit /b 4
+)
 
 "%NODE_EXE%" "%SERVER_JS%"
 exit /b %ERRORLEVEL%

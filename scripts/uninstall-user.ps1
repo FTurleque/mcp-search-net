@@ -21,6 +21,8 @@ if (-not (Test-Path -LiteralPath $InstallRoot)) {
 
 $Docker = Get-Command docker -ErrorAction SilentlyContinue
 $ComposeFile = Join-Path $InstallRoot 'compose.yaml'
+$EnvironmentFile = Join-Path $InstallRoot '.env'
+$EnvironmentExampleFile = Join-Path $InstallRoot '.env.example'
 if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $ComposeFile)) {
     $ComposeProject = if ([string]::IsNullOrWhiteSpace($env:MCP_SEARCH_COMPOSE_PROJECT)) {
         'mcp-search-net'
@@ -29,7 +31,15 @@ if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $
         $env:MCP_SEARCH_COMPOSE_PROJECT
     }
     foreach ($project in @($ComposeProject, 'mcp-search-net-user') | Select-Object -Unique) {
-        & $Docker.Source compose -p $project -f $ComposeFile down
+        if (Test-Path -LiteralPath $EnvironmentFile -PathType Leaf) {
+            & $Docker.Source compose --env-file $EnvironmentFile -p $project -f $ComposeFile down
+        }
+        elseif (Test-Path -LiteralPath $EnvironmentExampleFile -PathType Leaf) {
+            & $Docker.Source compose --env-file $EnvironmentExampleFile -p $project -f $ComposeFile down
+        }
+        else {
+            & $Docker.Source compose -p $project -f $ComposeFile down
+        }
         if ($LASTEXITCODE -ne 0) {
             throw "La commande '$($Docker.Source)' a échoué avec le code $LASTEXITCODE."
         }

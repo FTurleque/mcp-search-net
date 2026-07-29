@@ -8,23 +8,40 @@ $ErrorActionPreference = 'Stop'
 
 $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $TestRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("mcp-search-net-install-" + [guid]::NewGuid().ToString('N'))
+$SourceRoot = Join-Path $TestRoot 'source'
 $OriginalLocalAppData = $env:LOCALAPPDATA
 $env:LOCALAPPDATA = Join-Path $TestRoot 'LocalAppData'
 $InstallRoot = Join-Path $env:LOCALAPPDATA 'mcp-search-net'
 $RuntimeRoot = Join-Path $InstallRoot 'runtime\node-v24.17.0-win-x64'
 
 try {
+    New-Item -ItemType Directory -Force -Path $SourceRoot | Out-Null
+    $ExcludedSourceEntries = @('.git', 'node_modules', 'build', 'coverage', '.data')
+    foreach ($entry in Get-ChildItem -LiteralPath $RepositoryRoot -Force) {
+        if ($ExcludedSourceEntries -notcontains $entry.Name) {
+            Copy-Item -LiteralPath $entry.FullName -Destination $SourceRoot -Recurse -Force
+        }
+    }
     New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
     Copy-Item -Path (Join-Path $NodeRuntimeSource '*') -Destination $RuntimeRoot -Recurse -Force
 
-    & (Join-Path $RepositoryRoot 'scripts\install-user.ps1') -InstallRoot $InstallRoot -SkipChecks
+    & (Join-Path $SourceRoot 'scripts\install-user.ps1') -InstallRoot $InstallRoot -SkipChecks
+
+    $EnvironmentPath = Join-Path $InstallRoot '.env'
+    $EnvironmentBeforeUpgrade = Get-Content -LiteralPath $EnvironmentPath -Raw
+    if ($EnvironmentBeforeUpgrade -match 'replace-with|local-development-secret|mcp-search-local-development-token') {
+        throw "L'installation propre a conservé un secret de développement connu."
+    }
 
     $ConfigPath = Join-Path $InstallRoot 'config\application.yml'
     $DataMarker = Join-Path $InstallRoot 'data\preserve.marker'
     Add-Content -LiteralPath $ConfigPath -Value "`n# preserved-user-configuration"
     Set-Content -LiteralPath $DataMarker -Value 'preserved-user-data'
 
-    & (Join-Path $RepositoryRoot 'scripts\install-user.ps1') -InstallRoot $InstallRoot -SkipChecks
+    & (Join-Path $SourceRoot 'scripts\install-user.ps1') -InstallRoot $InstallRoot -SkipChecks
+    if ((Get-Content -LiteralPath $EnvironmentPath -Raw) -cne $EnvironmentBeforeUpgrade) {
+        throw 'La réinstallation a remplacé les secrets locaux générés.'
+    }
     if (-not (Select-String -LiteralPath $ConfigPath -SimpleMatch 'preserved-user-configuration')) {
         throw 'La réinstallation a remplacé la configuration utilisateur.'
     }
@@ -32,7 +49,7 @@ try {
         throw 'La réinstallation a supprimé les données utilisateur.'
     }
 
-    & (Join-Path $RepositoryRoot 'scripts\uninstall-user.ps1') -InstallRoot $InstallRoot -KeepData -SkipServices -Confirm:$false
+    & (Join-Path $SourceRoot 'scripts\uninstall-user.ps1') -InstallRoot $InstallRoot -KeepData -SkipServices -Confirm:$false
     if (-not (Test-Path -LiteralPath (Join-Path $InstallRoot 'config')) -or -not (Test-Path -LiteralPath $DataMarker)) {
         throw 'La désinstallation -KeepData n’a pas conservé configuration et données.'
     }
@@ -42,8 +59,8 @@ try {
 
     New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
     Copy-Item -Path (Join-Path $NodeRuntimeSource '*') -Destination $RuntimeRoot -Recurse -Force
-    & (Join-Path $RepositoryRoot 'scripts\install-user.ps1') -InstallRoot $InstallRoot -SkipChecks
-    & (Join-Path $RepositoryRoot 'scripts\uninstall-user.ps1') -InstallRoot $InstallRoot -SkipServices -Confirm:$false
+    & (Join-Path $SourceRoot 'scripts\install-user.ps1') -InstallRoot $InstallRoot -SkipChecks
+    & (Join-Path $SourceRoot 'scripts\uninstall-user.ps1') -InstallRoot $InstallRoot -SkipServices -Confirm:$false
     if (Test-Path -LiteralPath $InstallRoot) {
         throw 'La désinstallation complète a laissé le dossier utilisateur.'
     }

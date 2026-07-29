@@ -6,6 +6,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import {
+  EXTERNAL_CONTENT_SAFETY_NOTICE,
+  EXTERNAL_CONTENT_TRUST,
+} from '../../src/domain/models/tool-response.js';
+
 const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
 const catalogResourceUri = 'mcp-search-net://catalog';
 const expectedResourceUris = [
@@ -86,11 +91,15 @@ describe('MCP catalog resources', () => {
     });
 
     const missingSource = await readJsonResource<{
+      contentTrust: string;
+      contentSafetyNotice: string;
       found: boolean;
       source: { id: number } | null;
     }>(client, 'mcp-search-net://sources/999999');
     expect(missingSource).toEqual({
       schemaVersion: '1.0',
+      contentTrust: EXTERNAL_CONTENT_TRUST,
+      contentSafetyNotice: EXTERNAL_CONTENT_SAFETY_NOTICE,
       sourceId: 999999,
       found: false,
       source: null,

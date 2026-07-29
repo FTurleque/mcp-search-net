@@ -9,6 +9,13 @@ import {
 import type { ApplicationConfig, ApplicationEnvironment } from './application-config.js';
 import { loadYaml } from './yaml-loader.js';
 import { OfficialSourceYamlRegistry } from './official-source-yaml-registry.js';
+import { ConfigurationError } from '../../domain/errors/domain-errors.js';
+
+const KNOWN_DEVELOPMENT_TOKENS = new Set([
+  'mcp-search-local-development-token',
+  'replace-with-a-random-local-token',
+  'replace-with-the-same-random-local-token',
+]);
 
 export interface LoadedConfiguration {
   readonly application: ApplicationConfig;
@@ -39,6 +46,7 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
     firstEnvironment('CRAWL4AI_API_TOKEN') ??
     tokenFromEnvironment ??
     application.crawl4ai.apiToken;
+  assertSafeSecretProfile(application.application.profile, crawl4aiApiToken);
 
   return {
     application: {
@@ -66,6 +74,10 @@ function applyEnvironmentOverrides(
   const continueOnError = environmentBoolean('MCP_SEARCH_CACHE_CONTINUE_ON_ERROR');
   return {
     ...application,
+    application: {
+      ...application.application,
+      ...(environment.MCP_PROFILE === undefined ? {} : { profile: environment.MCP_PROFILE }),
+    },
     searxng: {
       ...application.searxng,
       ...(searxngUrl === undefined ? {} : { baseUrl: searxngUrl }),
@@ -91,6 +103,18 @@ function applyEnvironmentOverrides(
         : { allowedPorts: environment.MCP_ALLOWED_PUBLIC_PORTS }),
     },
   };
+}
+
+function assertSafeSecretProfile(
+  profile: ApplicationConfig['application']['profile'],
+  token: string | undefined,
+): void {
+  if (profile === 'development' || token === undefined) return;
+  if (KNOWN_DEVELOPMENT_TOKENS.has(token)) {
+    throw new ConfigurationError(
+      `A known development Crawl4AI token is forbidden in the ${profile} profile`,
+    );
+  }
 }
 
 function firstEnvironment(...names: readonly string[]): string | undefined {
