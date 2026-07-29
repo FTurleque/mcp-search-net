@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -85,7 +85,7 @@ describe('SqliteCatalogBackup', () => {
   it('confines an arbitrary requested path to the catalog backup directory', async () => {
     const fixture = createCatalogFixture();
     const requestedOutsidePath = `${fixture.root}-escaped.db`;
-    const expectedPath = join(fixture.root, 'backups', `${fixture.root.split(/[/\\]/u).at(-1)}-escaped.db`);
+    const expectedPath = join(fixture.root, 'backups', basename(requestedOutsidePath));
 
     const result = await new SqliteCatalogBackup(fixture.path, fixture.clock).run(
       requestedOutsidePath,
