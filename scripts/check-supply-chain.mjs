@@ -55,8 +55,8 @@ const providerImageLines = compose
     ),
   );
 assert(providerImageLines.length === 2, 'PROVIDER_IMAGE_DIGEST_NOT_PINNED');
-assert(!compose.includes(':-local-development-secret-change-me'), 'COMPOSE_DEFAULT_SECRET_PRESENT');
-assert(!compose.includes(':-mcp-search-local-development-token'), 'COMPOSE_DEFAULT_TOKEN_PRESENT');
+assert(!/\$\{SEARXNG_SECRET:-/u.test(compose), 'COMPOSE_DEFAULT_SECRET_PRESENT');
+assert(!/\$\{CRAWL4AI_API_TOKEN:-/u.test(compose), 'COMPOSE_DEFAULT_TOKEN_PRESENT');
 
 const allowedLicenses = new Set([
   '(BSD-2-Clause OR MIT OR Apache-2.0)',
