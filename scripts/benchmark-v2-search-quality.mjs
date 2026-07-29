@@ -340,7 +340,7 @@ async function measureIncrementalSync(repositoryValue, manifestValue, clockValue
 }
 
 function measureStorage(path) {
-  let ftsBytes = null;
+  let ftsBytes;
   const database = new Database(path, { readonly: true });
   try {
     try {
