@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
-const [suite, config] = process.argv.slice(2);
+const [suite, config, ...vitestArguments] = process.argv.slice(2);
 if (!suite || !config) throw new Error('Usage: run-test-suite.mjs <suite> <vitest-config>');
 
 const reportDirectory = resolve('.data/test-reports');
@@ -17,6 +17,7 @@ const result = spawnSync(
     'run',
     '--config',
     config,
+    ...vitestArguments,
     '--reporter=json',
     `--outputFile=${reportPath}`,
   ],

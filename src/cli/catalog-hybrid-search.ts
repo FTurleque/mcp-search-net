@@ -30,9 +30,14 @@ function parseArguments(argv: readonly string[]): CatalogHybridSearchOptions {
   const sourceKey = normalizeCliText(getOption(argv, '--source-key'));
   const language = normalizeCliText(getOption(argv, '--language'));
   const limit = parsePositiveInteger(getOption(argv, '--limit'), '--limit');
-  const candidateLimit = parsePositiveInteger(getOption(argv, '--candidate-limit'), '--candidate-limit');
+  const candidateLimit = parsePositiveInteger(
+    getOption(argv, '--candidate-limit'),
+    '--candidate-limit',
+  );
   return {
-    path: resolve(getOption(argv, '--path') ?? process.env['MCP_CATALOG_PATH'] ?? '.data/catalog.db'),
+    path: resolve(
+      getOption(argv, '--path') ?? process.env['MCP_CATALOG_PATH'] ?? '.data/catalog.db',
+    ),
     query: normalizeRequiredCliText(requireOption(argv, '--query')),
     ...(sourceKey === undefined ? {} : { sourceKey }),
     ...(language === undefined ? {} : { language }),
@@ -58,7 +63,8 @@ function requireOption(argv: readonly string[], name: string): string {
 function parsePositiveInteger(value: string | undefined, optionName: string): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`Invalid ${optionName} ${value}`);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0)
+    throw new Error(`Invalid ${optionName} ${value}`);
   return parsed;
 }
 

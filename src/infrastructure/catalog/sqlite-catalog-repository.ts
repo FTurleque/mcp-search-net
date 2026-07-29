@@ -298,9 +298,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
         this.database
           .prepare<[number]>(DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL)
           .run(documentRow.id);
-        this.database
-          .prepare<[number]>(CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL)
-          .run(documentRow.id);
+        this.database.prepare<[number]>(CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL).run(documentRow.id);
 
         const versionRow = this.upsertDocumentVersionRow({
           ...revision.version,
@@ -622,9 +620,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
     limit: number,
   ): readonly CatalogDocumentSearchRow[] {
     return this.database
-      .prepare<SearchCurrentDocumentSectionsFtsParams, CatalogDocumentSearchRow>(
-        SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
-      )
+      .prepare<
+        SearchCurrentDocumentSectionsFtsParams,
+        CatalogDocumentSearchRow
+      >(SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL)
       .all(pattern, pattern, pattern, ftsQuery, sourceKey, sourceKey, language, language, limit);
   }
 
@@ -635,9 +634,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
     limit: number,
   ): readonly CatalogDocumentSearchRow[] {
     return this.database
-      .prepare<SearchCurrentDocumentSectionsParams, CatalogDocumentSearchRow>(
-        SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
-      )
+      .prepare<
+        SearchCurrentDocumentSectionsParams,
+        CatalogDocumentSearchRow
+      >(SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL)
       .all(
         pattern,
         pattern,

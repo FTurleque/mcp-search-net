@@ -21,7 +21,9 @@ export interface LoadCatalogSourcesOutput {
 }
 
 export class LoadCatalogSources {
-  public constructor(private readonly repository: Pick<CatalogRepository, 'addSource' | 'getSourceByKey'>) {}
+  public constructor(
+    private readonly repository: Pick<CatalogRepository, 'addSource' | 'getSourceByKey'>,
+  ) {}
 
   public async execute(input: LoadCatalogSourcesInput): Promise<LoadCatalogSourcesOutput> {
     const entries: CatalogSourceLoadEntry[] = [];

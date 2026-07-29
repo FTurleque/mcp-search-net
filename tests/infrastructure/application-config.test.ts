@@ -70,4 +70,12 @@ describe('application configuration precedence and limits', () => {
     expect(loaded.crawl4aiApiToken).toBe('test-token-from-environment');
     expect(loaded.application.security.allowedPorts).toEqual([80, 443, 8443]);
   });
+
+  it('rejects an invalid legacy boolean override instead of casting a string to boolean', async () => {
+    process.env['MCP_SEARCH_CACHE_ENABLED'] = 'sometimes';
+
+    await expect(loadConfiguration(resolve('config/application.yml'))).rejects.toThrow(
+      'Environment variable MCP_SEARCH_CACHE_ENABLED must be a boolean',
+    );
+  });
 });

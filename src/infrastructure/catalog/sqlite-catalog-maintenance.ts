@@ -112,7 +112,9 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
       return action();
     } catch (error) {
       if (descriptor === undefined && isExistingFileError(error)) {
-        throw new CatalogMaintenanceLockError(`Catalog maintenance lock already exists: ${lockPath}`);
+        throw new CatalogMaintenanceLockError(
+          `Catalog maintenance lock already exists: ${lockPath}`,
+        );
       }
       throw error;
     } finally {
@@ -132,10 +134,15 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
   }
 
   private countSyncRuns(database: Database.Database): number {
-    return database.prepare<[], CountRow>('SELECT COUNT(*) AS count FROM sync_runs').get()?.count ?? 0;
+    return (
+      database.prepare<[], CountRow>('SELECT COUNT(*) AS count FROM sync_runs').get()?.count ?? 0
+    );
   }
 
-  private deleteExpiredSyncRuns(database: Database.Database, input: CatalogMaintenanceInput): number {
+  private deleteExpiredSyncRuns(
+    database: Database.Database,
+    input: CatalogMaintenanceInput,
+  ): number {
     const maxAgeMs = input.maxSyncRunAgeDays * 24 * 60 * 60 * 1_000;
     const threshold = this.clock.now().getTime() - maxAgeMs;
     const result = database

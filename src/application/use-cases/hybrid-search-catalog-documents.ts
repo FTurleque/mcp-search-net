@@ -102,7 +102,9 @@ export class HybridSearchCatalogDocuments {
           documentPublicId: candidate.document.publicId,
           title: candidate.document.title,
           url: candidate.document.canonicalUrl,
-          ...(candidate.section.heading === undefined ? {} : { heading: candidate.section.heading }),
+          ...(candidate.section.heading === undefined
+            ? {}
+            : { heading: candidate.section.heading }),
           snippet: candidate.snippet,
           lexicalScore,
           semanticScore,

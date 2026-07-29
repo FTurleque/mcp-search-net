@@ -106,5 +106,5 @@ function environmentBoolean(name: string): boolean | undefined {
   if (value === undefined) return undefined;
   if (value === '1' || value.toLowerCase() === 'true') return true;
   if (value === '0' || value.toLowerCase() === 'false') return false;
-  return value as unknown as boolean;
+  throw new Error(`Environment variable ${name} must be a boolean`);
 }
