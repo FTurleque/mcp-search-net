@@ -1,9 +1,10 @@
 # ADR-016 — Exposer la V2 avec des outils ciblés et des resources MCP bornées
 
-- **Statut** : Accepté, implémentation V2.11 en qualification dans la PR #8
+- **Statut** : Accepté — gel V2.14 en qualification dans la PR #25
 - **Date** : 2026-07-03
 - **Dernière mise à jour** : 2026-07-29
 - **Décision liée** : ADR-002, ADR-011, ADR-013
+- **Issue de gel client** : #17
 
 ## Contexte
 
@@ -41,20 +42,61 @@ Les trois outils sont read-only. `search_docs` recherche dans le catalogue docum
 `list_docs` filtre et pagine en SQL, et `read_doc_section` lit directement une section par
 identifiant. Aucun ne déclenche de synchronisation, purge ou reconstruction d'index.
 
-## Resources implémentées ou en cours de stabilisation
+Le workflow agent recommandé et désormais couvert comme contrat ergonomique est :
+
+```text
+search_docs -> sélectionner 1 à 3 résultats -> read_doc_section
+```
+
+`fetch_url` est réservé au contenu Web frais ou non catalogué. `list_docs` sert au browsing de
+métadonnées et ne doit pas remplacer `search_docs` pour une question de contenu.
+
+## Annotations MCP gelées
+
+Tous les outils sont :
+
+```text
+readOnlyHint = true
+destructiveHint = false
+idempotentHint = true
+```
+
+Les outils Web V1 sont open-world :
+
+```text
+search_web  openWorldHint = true
+fetch_url   openWorldHint = true
+```
+
+Les outils catalogue V2 sont closed-world vis-à-vis du catalogue local :
+
+```text
+search_docs       openWorldHint = false
+list_docs         openWorldHint = false
+read_doc_section  openWorldHint = false
+```
+
+## Resources implémentées
+
+Resources statiques :
 
 ```text
 mcp-search-net://catalog
 mcp-search-net://sources
+mcp-search-net://documents
+mcp-search-net://sections
+```
+
+Templates :
+
+```text
 mcp-search-net://sources/page/{offset}
 mcp-search-net://sources/{sourceId}
-mcp-search-net://documents
 mcp-search-net://documents/page/{offset}
 mcp-search-net://documents/{documentId}
 mcp-search-net://documents/{documentId}/versions
 mcp-search-net://documents/{documentId}/versions/page/{offset}
 mcp-search-net://documents/{documentId}/versions/{versionId}
-mcp-search-net://sections
 mcp-search-net://sections/page/{offset}
 mcp-search-net://sections/{sectionId}
 ```
@@ -62,6 +104,26 @@ mcp-search-net://sections/{sectionId}
 Les resources sont read-only. Les collections retournent 20 éléments, une resource sérialisée est
 limitée à 24 000 caractères et une section détaillée à 8 000. Les lectures par identifiant et les
 pages utilisent des opérations repository dédiées ; elles ne chargent pas le catalogue complet.
+
+## Politique `schemaVersion`
+
+Les succès outils et les resources JSON V2 exposent actuellement :
+
+```text
+schemaVersion = "1.0"
+```
+
+Tant que cette version reste `1.0` :
+
+- les consommateurs V1/V2 existants doivent continuer à fonctionner ;
+- des champs peuvent être ajoutés de manière additive seulement si leur absence reste supportée par les consommateurs existants ;
+- un champ existant ne doit pas être renommé ou supprimé ;
+- le type ou la sémantique d'un champ existant ne doit pas être changé de manière incompatible ;
+- une opération read-only ne doit pas devenir mutable ;
+- les budgets documentés ne doivent pas être élargis silencieusement au point de casser les hypothèses de contexte.
+
+Toute rupture nécessite une nouvelle version de schéma explicitement documentée et des tests de
+compatibilité dédiés.
 
 ## Ce qui reste hors MCP
 
@@ -77,7 +139,7 @@ catalog purge-versions
 
 La commande `catalog status` peut être exposée indirectement via resource read-only si elle ne déclenche aucune mutation.
 
-## État d'implémentation PR #8
+## État d'implémentation PR #8 / V2.14
 
 - `search_docs` est implémenté.
 - `list_docs` et `read_doc_section` sont implémentés avec budgets de réponse fixes.
@@ -86,33 +148,54 @@ La commande `catalog status` peut être exposée indirectement via resource read
 - Le benchmark de budget contexte couvre 100, 1 000 et 10 000 sections ; à 10 000 sections, la
   réduction de caractères est de 99,67 % face à la simulation globale historique.
 - Les opérations mutables restent hors MCP.
-- Le workflow GitHub Actions est temporairement manuel uniquement à cause du quota Actions minutes.
-- Le head courant de la PR #8 doit être revalidé localement ou via CI manuelle après reset du quota.
+- V2.14 ajoute un E2E STDIO de gel observant outils, annotations, resources, templates,
+  `structuredContent`, `schemaVersion` et compatibilité V1.
+- Le workflow GitHub Actions reste manuel uniquement pendant la restriction de quota de juillet.
 
-## Spike obligatoire
+## Qualification client obligatoire V2.14
 
-Avant de figer le contrat MCP V2, exécuter un spike IntelliJ/Copilot :
+Le gel définitif ne repose pas uniquement sur les tests serveur.
 
-1. vérifier que l'IDE liste les resources ;
-2. vérifier que l'IDE peut lire une resource ;
-3. vérifier que le modèle peut exploiter un URI de resource dans une réponse ;
-4. vérifier l'ergonomie par rapport à un outil read-only ;
-5. documenter les limites.
+### Client STDIO de référence
 
-Les outils read-only `list_docs` et `read_doc_section` fournissent déjà le chemin de secours compact
-si les resources sont mal exploitées dans IntelliJ/Copilot. Aucun outil mutable ne doit être ajouté.
+Doit prouver automatiquement :
+
+1. `tools/list` avec les cinq outils ;
+2. annotations et schémas ;
+3. `resources/list` avec les quatre resources statiques ;
+4. les neuf templates ;
+5. lecture de `mcp-search-net://catalog` ;
+6. `schemaVersion = "1.0"` et `EXTERNAL_UNTRUSTED_CONTENT` ;
+7. compatibilité V1 ;
+8. stdout réservé au JSON-RPC.
+
+### IntelliJ IDEA + GitHub Copilot
+
+La preuve doit relever la version du client/plugin et les capacités réellement observées. Un verdict
+`PASS AVEC RÉSERVE` est acceptable si `search_docs` et `read_doc_section` fonctionnent mais que le
+client n'expose pas directement resources/templates, à condition que le fallback soit documenté.
+
+### Codex Desktop
+
+Une preuve d'intégration native doit être distinguée d'un test effectué via un client STDIO explicite.
+Un fallback STDIO ne peut pas être présenté comme preuve que Codex Desktop expose nativement le
+serveur MCP. Si la capacité native n'est pas disponible dans la version testée, le verdict doit le dire
+explicitement.
+
+Le protocole de preuve est versionné dans :
 
 ```text
-list_docs
-read_doc_section
+docs/planning/validation-v2-14-client-contracts.md
 ```
 
 ## Règles de compatibilité V1
 
-- `search_web` reste inchangé.
-- `fetch_url` reste inchangé.
+- `search_web` reste exposé avec son nom et son contrat V1.
+- `fetch_url` reste exposé avec son nom et son contrat V1.
 - Les codes d'erreur V1 restent stables.
-- Le serveur peut exposer plus de deux capacités en V2, mais les tests V1 doivent continuer à passer dans un mode de compatibilité V1 ou être adaptés explicitement pour la V2.
+- Les annotations V1 restent read-only/idempotent/open-world.
+- Le serveur peut exposer les capacités V2 sans retirer les capacités V1.
+- Les tests V1 et V2 doivent passer sur le même SHA exact avant gel.
 
 ## Conséquences
 
@@ -122,18 +205,22 @@ read_doc_section
 - Resources adaptées aux documents stables.
 - Taille de réponse indépendante de la taille totale du catalogue pour les parcours paginés.
 - Moins de surface d'action mutable exposée au LLM.
-- Bon alignement avec le caractère read-only du catalogue.
+- Contrat agent explicite et mesurable.
+- Politique de version de schéma documentée.
 
 ### Négatives
 
-- Compatibilité IntelliJ/Copilot à vérifier.
-- Documentation plus riche à maintenir.
-- Tests E2E MCP plus complets.
-- Validation complète du head courant différée tant que le quota Actions est épuisé.
+- Les clients MCP peuvent exposer des sous-ensembles différents des capabilities serveur.
+- Documentation client plus riche à maintenir.
+- Les recettes IntelliJ/Copilot et Codex Desktop restent manuelles.
+- Toute évolution incompatible nécessite une nouvelle version de contrat.
 
 ## Critères d'acceptation avant gel définitif
 
-- Spike resources IntelliJ/Copilot exécuté.
+- E2E STDIO tools/resources/templates vert sur le head exact final.
+- `schemaVersion = "1.0"` et annotations observés par le client de référence.
 - Budget de contexte confirmé sur 10 000 sections.
-- Tests E2E tools/resources verts sur le head final.
 - Contrats V1 `search_web` et `fetch_url` non régressés.
+- Recette IntelliJ/Copilot exécutée et archivée.
+- Recette Codex Desktop exécutée ou capacité native honnêtement déclarée non disponible.
+- Documentation utilisateur alignée sur les capacités réellement observées.
