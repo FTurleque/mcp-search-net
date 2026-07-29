@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -55,7 +55,7 @@ describe('SqliteCatalogBackup', () => {
         1,
       );
 
-    const destination = `${fixture.path}.snapshot`;
+    const destination = join(fixture.root, 'backups', 'catalog.snapshot.db');
     try {
       const result = await new SqliteCatalogBackup(fixture.path, {
         now: () => new Date('2026-07-29T12:00:00.000Z'),
@@ -82,9 +82,28 @@ describe('SqliteCatalogBackup', () => {
     }
   });
 
-  it('never overwrites an existing destination', async () => {
+  it('confines an arbitrary requested path to the catalog backup directory', async () => {
     const fixture = createCatalogFixture();
-    const destination = `${fixture.path}.existing`;
+    const requestedOutsidePath = join(dirname(fixture.root), 'escaped.db');
+    const expectedPath = join(fixture.root, 'backups', 'escaped.db');
+
+    const result = await new SqliteCatalogBackup(fixture.path, fixture.clock).run(
+      requestedOutsidePath,
+    );
+
+    expect(result.destinationPath).toBe(expectedPath);
+    expect(existsSync(expectedPath)).toBe(true);
+    expect(existsSync(requestedOutsidePath)).toBe(false);
+  });
+
+  it('rejects unsafe backup file names and never overwrites an existing destination', async () => {
+    const fixture = createCatalogFixture();
+    await expect(
+      new SqliteCatalogBackup(fixture.path, fixture.clock).run('invalid name.db'),
+    ).rejects.toThrow('CATALOG_BACKUP_INVALID_FILE_NAME');
+
+    const destination = join(fixture.root, 'backups', 'existing.db');
+    mkdirSync(dirname(destination), { recursive: true });
     writeFileSync(destination, 'keep-me');
 
     await expect(
@@ -101,5 +120,5 @@ function createCatalogFixture() {
   const clock = { now: () => new Date('2026-07-29T12:00:00.000Z') };
   const catalog = new SqliteCatalogRepository(path, clock);
   catalogs.push(catalog);
-  return { catalog, clock, path };
+  return { catalog, clock, path, root };
 }
