@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "1.0",
+  "description": "Fifty annotated queries across ten categories. Relevance grades use 0..3; only positive judgments are stored.",
+  "queries": [
+    {"id":"api-01","category":"exact-api","query":"fs readFile options","judgments":[{"documentPublicId":"nodejs--fs-readfile","grade":3}]},
+    {"id":"api-02","category":"exact-api","query":"URLSearchParams pathname","judgments":[{"documentPublicId":"mdn-en--url-api","grade":3}]},
+    {"id":"api-03","category":"exact-api","query":"CompletableFuture concurrent collections","judgments":[{"documentPublicId":"openjdk--concurrency","grade":3}]},
+    {"id":"api-04","category":"exact-api","query":"json_extract json_each","judgments":[{"documentPublicId":"sqlite--json","grade":3}]},
+    {"id":"api-05","category":"exact-api","query":"Partial Pick Omit Record","judgments":[{"documentPublicId":"typescript--utility-types","grade":3}]},
+
+    {"id":"concept-01","category":"concept","query":"type narrowing discriminated unions","judgments":[{"documentPublicId":"typescript--narrowing","grade":3}]},
+    {"id":"concept-02","category":"concept","query":"stream backpressure pipeline","judgments":[{"documentPublicId":"nodejs--streams-pipeline","grade":3}]},
+    {"id":"concept-03","category":"concept","query":"container rootless user namespaces","judgments":[{"documentPublicId":"docker--rootless","grade":3}]},
+    {"id":"concept-04","category":"concept","query":"sealed classes permits hierarchy","judgments":[{"documentPublicId":"openjdk--sealed-classes","grade":3}]},
+    {"id":"concept-05","category":"concept","query":"FTS5 contentless delete tokenizer","judgments":[{"documentPublicId":"sqlite--fts5","grade":3}]},
+
+    {"id":"config-01","category":"configuration","query":"github actions cache npm restore keys","judgments":[{"documentPublicId":"github--actions-cache","grade":3}]},
+    {"id":"config-02","category":"configuration","query":"tsconfig strict noUncheckedIndexedAccess","judgments":[{"documentPublicId":"typescript--tsconfig","grade":3}]},
+    {"id":"config-03","category":"configuration","query":"maven settings mirrors proxies servers","judgments":[{"documentPublicId":"maven--settings","grade":3}]},
+    {"id":"config-04","category":"configuration","query":"run configuration environment variables working directory","judgments":[{"documentPublicId":"jetbrains--run-configurations","grade":3}]},
+    {"id":"config-05","category":"configuration","query":"compose secrets environment variables","judgments":[{"documentPublicId":"docker--compose-secrets","grade":3}]},
+
+    {"id":"error-01","category":"errors","query":"compose service healthy healthcheck","judgments":[{"documentPublicId":"docker--compose-healthcheck","grade":3}]},
+    {"id":"error-02","category":"errors","query":"sqlite busy timeout locking","judgments":[{"documentPublicId":"sqlite--locking","grade":3}]},
+    {"id":"error-03","category":"errors","query":"promise rejection async await","judgments":[{"documentPublicId":"mdn-en--promises","grade":3}]},
+    {"id":"error-04","category":"errors","query":"process uncaught exception SIGTERM exit code","judgments":[{"documentPublicId":"nodejs--process-signals","grade":3}]},
+    {"id":"error-05","category":"errors","query":"dependency convergence enforcer","judgments":[{"documentPublicId":"maven--enforcer","grade":3}]},
+
+    {"id":"version-01","category":"versions","query":"Java 24 module system requires exports opens","judgments":[{"documentPublicId":"openjdk--modules","grade":3}]},
+    {"id":"version-02","category":"versions","query":"Node 24 permission model fs read","judgments":[{"documentPublicId":"nodejs--permissions","grade":3}]},
+    {"id":"version-03","category":"versions","query":"ECMAScript modules package type node","judgments":[{"documentPublicId":"nodejs--esm","grade":3}]},
+    {"id":"version-04","category":"versions","query":"standard decorators TypeScript","judgments":[{"documentPublicId":"typescript--decorators","grade":3}]},
+    {"id":"version-05","category":"versions","query":"Compose healthcheck depends on service healthy","judgments":[{"documentPublicId":"docker--compose-healthcheck","grade":3}]},
+
+    {"id":"multi-01","category":"multi-document","query":"local search bm25 fts5 rank","judgments":[{"documentPublicId":"sqlite--fts5","grade":3},{"documentPublicId":"sqlite--query-planner","grade":2}]},
+    {"id":"multi-02","category":"multi-document","query":"dependency build tests verify","judgments":[{"documentPublicId":"maven--lifecycle","grade":3},{"documentPublicId":"maven--failsafe","grade":2},{"documentPublicId":"maven--surefire","grade":2}]},
+    {"id":"multi-03","category":"multi-document","query":"web security origin policy credentials","judgments":[{"documentPublicId":"mdn-en--cors","grade":3},{"documentPublicId":"mdn-en--content-security-policy","grade":2}]},
+    {"id":"multi-04","category":"multi-document","query":"github security dependency scanning","judgments":[{"documentPublicId":"github--dependabot","grade":3},{"documentPublicId":"github--codeql","grade":3}]},
+    {"id":"multi-05","category":"multi-document","query":"docker security filesystem capabilities rootless","judgments":[{"documentPublicId":"docker--read-only","grade":3},{"documentPublicId":"docker--rootless","grade":3}]},
+
+    {"id":"para-01","category":"paraphrase","query":"keep a container immutable except temporary files","judgments":[{"documentPublicId":"docker--read-only","grade":3}]},
+    {"id":"para-02","category":"paraphrase","query":"avoid loading everything when streaming data","judgments":[{"documentPublicId":"nodejs--streams-pipeline","grade":3}]},
+    {"id":"para-03","category":"paraphrase","query":"find why a sqlite writer cannot finish checkpointing","judgments":[{"documentPublicId":"sqlite--wal","grade":3},{"documentPublicId":"sqlite--locking","grade":2}]},
+    {"id":"para-04","category":"paraphrase","query":"share reusable type behavior with constraints","judgments":[{"documentPublicId":"typescript--generics","grade":3}]},
+    {"id":"para-05","category":"paraphrase","query":"authenticate deployment without storing a cloud secret","judgments":[{"documentPublicId":"github--oidc","grade":3}]},
+
+    {"id":"filter-01","category":"filters","query":"cache npm","sourceKey":"github","judgments":[{"documentPublicId":"github--actions-cache","grade":3}]},
+    {"id":"filter-02","category":"filters","query":"modules import export","sourceKey":"typescript","judgments":[{"documentPublicId":"typescript--modules","grade":3}]},
+    {"id":"filter-03","category":"filters","query":"promesses async await","sourceKey":"mdn-fr","language":"fr","judgments":[{"documentPublicId":"mdn-fr--promesses","grade":3}]},
+    {"id":"filter-04","category":"filters","query":"Maven profiles activation","sourceKey":"maven","language":"en","judgments":[{"documentPublicId":"maven--profiles","grade":3}]},
+    {"id":"filter-05","category":"filters","query":"backup snapshot consistency","sourceKey":"sqlite","language":"en","judgments":[{"documentPublicId":"sqlite--backup","grade":3}]},
+
+    {"id":"accent-01","category":"accents","query":"paramètres régionaux formatage nombre","language":"fr","judgments":[{"documentPublicId":"mdn-fr--intl","grade":3}]},
+    {"id":"accent-02","category":"accents","query":"contrôle accès origine prérequête","language":"fr","judgments":[{"documentPublicId":"mdn-fr--cors","grade":3}]},
+    {"id":"accent-03","category":"accents","query":"requête réponse annulation","language":"fr","judgments":[{"documentPublicId":"mdn-fr--fetch-api","grade":3}]},
+    {"id":"accent-04","category":"accents","query":"grille CSS colonnes lignes","language":"fr","judgments":[{"documentPublicId":"mdn-fr--css-grid","grade":3}]},
+    {"id":"accent-05","category":"accents","query":"sécurité contenu nonce source","language":"fr","judgments":[{"documentPublicId":"mdn-fr--csp","grade":3}]},
+
+    {"id":"id-01","category":"identifiers","query":"fs.readFile","judgments":[{"documentPublicId":"nodejs--fs-readfile","grade":3}]},
+    {"id":"id-02","category":"identifiers","query":"URLSearchParams","judgments":[{"documentPublicId":"mdn-en--url-api","grade":3}]},
+    {"id":"id-03","category":"identifiers","query":"noUncheckedIndexedAccess","judgments":[{"documentPublicId":"typescript--tsconfig","grade":3}]},
+    {"id":"id-04","category":"identifiers","query":"json_extract","judgments":[{"documentPublicId":"sqlite--json","grade":3}]},
+    {"id":"id-05","category":"identifiers","query":"CompletableFuture","judgments":[{"documentPublicId":"openjdk--concurrency","grade":3}]}
+  ]
+}
