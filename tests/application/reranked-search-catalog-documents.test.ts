@@ -20,14 +20,14 @@ class SearchOnlyCatalogRepository {
 }
 
 describe('RerankedSearchCatalogDocuments', () => {
-  it('expands BM25 candidates and returns honestly named lexical reranking scores', async () => {
+  it('expands FTS candidates and returns honestly named lexical reranking scores', async () => {
     const repository = new SearchOnlyCatalogRepository([catalogSearchResult]);
     const useCase = new RerankedSearchCatalogDocuments(repository);
 
     const response = await useCase.execute({ query: 'sqlite maintenance', limit: 1 });
 
     expect(repository.lastQuery).toEqual({ query: 'sqlite maintenance', limit: 4 });
-    expect(response.strategy).toBe('bm25-hashed-lexical-rerank');
+    expect(response.strategy).toBe('fts5-hashed-lexical-rerank');
     expect(response.schemaVersion).toBe('2.0');
     expect(response.resultCount).toBe(1);
     expect(response.results[0]?.sourceKey).toBe('local-docs');
