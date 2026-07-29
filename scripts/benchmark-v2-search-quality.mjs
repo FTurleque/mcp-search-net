@@ -300,7 +300,12 @@ async function measureIncrementalSync(repositoryValue, manifestValue, clockValue
       };
     },
   };
-  const sync = new SyncCatalogDocuments(repositoryValue, fetcher, clockValue, async () => undefined);
+  const sync = new SyncCatalogDocuments(
+    repositoryValue,
+    fetcher,
+    clockValue,
+    async () => undefined,
+  );
   const options = {
     sourceKey: source.sourceKey,
     documents: [
@@ -499,10 +504,7 @@ function parseManifest(value) {
   if (!isRecord(value) || !Array.isArray(value.sources) || value.sources.length < 10) {
     throw new Error('Benchmark requires at least 10 sources');
   }
-  const defaultSectionsPerDocument = positiveInteger(
-    value.defaultSectionsPerDocument,
-    100,
-  );
+  const defaultSectionsPerDocument = positiveInteger(value.defaultSectionsPerDocument, 100);
   const sources = value.sources.map((source, index) => parseSource(source, index));
   const documentCount = sources.reduce((sum, source) => sum + source.topics.length, 0);
   if (documentCount < 100) throw new Error('Benchmark requires at least 100 documents');
@@ -597,9 +599,7 @@ function parseArgs(argv) {
       token === '--warmup-rounds'
     ) {
       if (next === undefined) throw new Error(`Missing value for ${token}`);
-      const key = token
-        .slice(2)
-        .replace(/-([a-z])/gu, (_, character) => character.toUpperCase());
+      const key = token.slice(2).replace(/-([a-z])/gu, (_, character) => character.toUpperCase());
       result[key] = next;
       index += 1;
     } else {

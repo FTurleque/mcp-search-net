@@ -26,9 +26,10 @@ describe('search quality metrics', () => {
 
   it('summarizes query metrics and reports zero results explicitly', () => {
     const empty = measureSearchQueryQuality([], [{ documentPublicId: 'expected', grade: 3 }]);
-    const hit = measureSearchQueryQuality(['expected'], [
-      { documentPublicId: 'expected', grade: 3 },
-    ]);
+    const hit = measureSearchQueryQuality(
+      ['expected'],
+      [{ documentPublicId: 'expected', grade: 3 }],
+    );
     const summary = summarizeSearchQuality([empty, hit]);
 
     expect(summary.queryCount).toBe(2);

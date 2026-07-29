@@ -26,12 +26,16 @@ interface BenchmarkQuerySet {
 
 describe('V2.13 search quality benchmark fixtures', () => {
   it('contains at least ten sources, one hundred documents and two languages', () => {
-    const manifest = readJson<BenchmarkManifest>('benchmarks/v2-search-quality/corpus-manifest.json');
+    const manifest = readJson<BenchmarkManifest>(
+      'benchmarks/v2-search-quality/corpus-manifest.json',
+    );
     const documentCount = manifest.sources.reduce((sum, source) => sum + source.topics.length, 0);
 
     expect(manifest.sources.length).toBeGreaterThanOrEqual(10);
     expect(documentCount).toBeGreaterThanOrEqual(100);
-    expect(new Set(manifest.sources.map((source) => source.language)).size).toBeGreaterThanOrEqual(2);
+    expect(new Set(manifest.sources.map((source) => source.language)).size).toBeGreaterThanOrEqual(
+      2,
+    );
     expect(new Set(manifest.sources.map((source) => source.sourceKey)).size).toBe(
       manifest.sources.length,
     );

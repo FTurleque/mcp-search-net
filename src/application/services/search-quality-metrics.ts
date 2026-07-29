@@ -25,7 +25,9 @@ export function measureSearchQueryQuality(
   judgments: readonly SearchRelevanceJudgment[],
 ): SearchQueryQualityMetrics {
   const grades = new Map(
-    judgments.filter((judgment) => judgment.grade > 0).map((judgment) => [judgment.documentPublicId, judgment.grade]),
+    judgments
+      .filter((judgment) => judgment.grade > 0)
+      .map((judgment) => [judgment.documentPublicId, judgment.grade]),
   );
   const top10 = unique(rankedDocumentPublicIds).slice(0, 10);
   const top5 = top10.slice(0, 5);
@@ -52,7 +54,8 @@ export function summarizeSearchQuality(
     ndcgAt10: average(cases.map((entry) => entry.ndcgAt10)),
     recallAt10: average(cases.map((entry) => entry.recallAt10)),
     precisionAt5: average(cases.map((entry) => entry.precisionAt5)),
-    zeroResultRate: cases.length === 0 ? 0 : cases.filter((entry) => entry.zeroResult).length / cases.length,
+    zeroResultRate:
+      cases.length === 0 ? 0 : cases.filter((entry) => entry.zeroResult).length / cases.length,
   };
 }
 
@@ -83,10 +86,7 @@ function ndcg(
 }
 
 function dcg(grades: readonly number[]): number {
-  return grades.reduce(
-    (sum, grade, index) => sum + (2 ** grade - 1) / Math.log2(index + 2),
-    0,
-  );
+  return grades.reduce((sum, grade, index) => sum + (2 ** grade - 1) / Math.log2(index + 2), 0);
 }
 
 function average(values: readonly number[]): number {

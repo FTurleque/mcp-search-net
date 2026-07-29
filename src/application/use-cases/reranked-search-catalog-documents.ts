@@ -106,8 +106,7 @@ export class RerankedSearchCatalogDocuments {
             : { heading: candidate.section.heading }),
           lexicalScore,
           rerankScore,
-          combinedScore:
-            lexicalScore * LEXICAL_MATCH_WEIGHT + rerankScore * HASHED_LEXICAL_WEIGHT,
+          combinedScore: lexicalScore * LEXICAL_MATCH_WEIGHT + rerankScore * HASHED_LEXICAL_WEIGHT,
           snippet: candidate.snippet,
         };
       })

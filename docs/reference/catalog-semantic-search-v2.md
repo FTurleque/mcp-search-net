@@ -97,14 +97,14 @@ be738b1c0fc9c9fa04beb06a5699753cbfa2ff9c
 
 Résultats principaux :
 
-| Mesure | FTS5/BM25 | Reranker lexical hashé |
-| --- | ---: | ---: |
-| MRR@10 | 0,74 | 0,74 |
-| nDCG@10 | 0,74 | 0,74 |
-| Recall@10 | 0,74 | 0,74 |
-| Precision@5 | 0,148 | 0,148 |
-| Zero-result rate | 0,26 | 0,26 |
-| p95 | 17,572 ms | 17,720 ms |
+| Mesure           | FTS5/BM25 | Reranker lexical hashé |
+| ---------------- | --------: | ---------------------: |
+| MRR@10           |      0,74 |                   0,74 |
+| nDCG@10          |      0,74 |                   0,74 |
+| Recall@10        |      0,74 |                   0,74 |
+| Precision@5      |     0,148 |                  0,148 |
+| Zero-result rate |      0,26 |                   0,26 |
+| p95              | 17,572 ms |              17,720 ms |
 
 Le gain qualité du reranker est nul. Son ratio p95 par rapport à la baseline vaut 1,0084.
 
