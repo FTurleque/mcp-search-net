@@ -45,35 +45,32 @@ export async function ingestTextDocument(
   const content = await readFile(options.filePath, 'utf8');
   const contentHash = sha256(content);
   const stableKey = options.stableKey ?? stableKeyFromUrl(options.canonicalUrl);
-  const document = await repository.upsertDocument({
-    publicId: publicDocumentId(options.sourceKey, stableKey),
-    sourceId: source.id,
-    canonicalUrl: options.canonicalUrl,
-    stableKey,
-    title: options.title,
-    mimeType: options.mimeType,
-    language: options.language,
-    status: 'ACTIVE',
+  const revision = await repository.commitDocumentRevision({
+    document: {
+      publicId: publicDocumentId(options.sourceKey, stableKey),
+      sourceId: source.id,
+      canonicalUrl: options.canonicalUrl,
+      stableKey,
+      title: options.title,
+      mimeType: options.mimeType,
+      language: options.language,
+      status: 'ACTIVE',
+    },
+    version: {
+      ...(options.versionLabel === undefined ? {} : { versionLabel: options.versionLabel }),
+      contentHash,
+      extractionMode: 'static',
+      contentType: options.mimeType,
+      metadataJson: JSON.stringify({ ingestion: 'cli', sourceKey: options.sourceKey }),
+    },
+    sections: splitMarkdownSections(options.title, content),
   });
-  const version = await repository.addDocumentVersion({
-    documentId: document.id,
-    ...(options.versionLabel === undefined ? {} : { versionLabel: options.versionLabel }),
-    contentHash,
-    isCurrent: true,
-    extractionMode: 'static',
-    contentType: options.mimeType,
-    metadataJson: JSON.stringify({ ingestion: 'cli', sourceKey: options.sourceKey }),
-  });
-  const sections = await repository.replaceDocumentSections(
-    version.id,
-    splitMarkdownSections(options.title, content),
-  );
 
   return {
     schemaVersion: '1.0',
-    document,
-    version,
-    sectionCount: sections.length,
+    document: revision.document,
+    version: revision.version,
+    sectionCount: revision.sections.length,
     contentHash,
   };
 }

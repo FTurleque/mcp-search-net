@@ -106,6 +106,13 @@ describe('catalog text ingestion', () => {
       { ordinal: 1, heading: 'Usage', heading_path: 'Guide > Usage', anchor: 'usage' },
     ]);
     database.close();
+
+    await expect(fixture.catalog.searchDocuments({ query: 'run it' })).resolves.toMatchObject([
+      {
+        document: { publicId: result.document.publicId },
+        section: { heading: 'Usage' },
+      },
+    ]);
   });
 });
 

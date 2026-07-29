@@ -1,7 +1,8 @@
 # ADR-015 — Utiliser FTS5 `contentless-delete` comme index dérivé
 
-- **Statut** : Accepté pour V2.0
+- **Statut** : Accepté, implémentation réconciliée en V2.9
 - **Date** : 2026-07-03
+- **Réconciliation** : 2026-07-29
 - **Décision liée** : ADR-010, ADR-014
 
 ## Contexte
@@ -16,21 +17,37 @@ Le catalogue V2 conserve les contenus métier dans `document_sections`. L'index 
 
 La V2 utilisera un index FTS5 `contentless-delete` dans la base `catalog.db`.
 
-Table cible indicative :
+Table effective depuis la migration corrective immuable `C007` :
 
 ```sql
-CREATE VIRTUAL TABLE document_sections_fts USING fts5(
+CREATE VIRTUAL TABLE document_section_fts USING fts5(
+  section_id UNINDEXED,
+  document_id UNINDEXED,
+  source_key UNINDEXED,
+  language UNINDEXED,
   title,
   heading,
-  body,
-  code,
+  heading_path,
+  content,
   content = '',
   contentless_delete = 1,
-  tokenize = 'unicode61'
+  tokenize = 'unicode61 remove_diacritics 2'
 );
 ```
 
 Le texte métier reste dans `document_sections`. L'index FTS5 n'est pas une source de vérité.
+
+La correspondance est exclusivement `document_section_fts.rowid = document_sections.id`. Une
+table contentless ne restitue pas les colonnes applicatives ; les recherches et vérifications
+rejoignent donc la table métier par `rowid`.
+
+## Réconciliation C006 / C007
+
+`C006__create_document_section_fts.sql` a créé historiquement une table FTS5 classique alors que
+cette ADR retenait déjà `contentless-delete`. C006 reste immuable. La correction est portée par
+`C007__harden_revision_integrity.sql`, qui recrée l'index selon cette décision et le reconstruit à
+partir des sections courantes. Le runner conserve un SHA-256 normalisé de chaque migration et
+refuse toute dérive ultérieure d'une version appliquée.
 
 ## Justification
 
@@ -40,7 +57,8 @@ Cette stratégie évite de coupler fortement `document_sections` à une table FT
 
 ## Ranking initial
 
-Colonnes et poids à benchmarker :
+L'implémentation V2.9 utilise BM25 FTS5, puis un ordre stable par titre et ordinal. Les poids
+suivants restent des candidats de benchmark, pas un contrat actuel :
 
 ```text
 title   = 8
@@ -65,8 +83,7 @@ mcp-search-net catalog verify
 1. vider l'index FTS5 ;
 2. relire les sections courantes ;
 3. réinsérer les lignes FTS ;
-4. vérifier le nombre de sections indexées ;
-5. produire un rapport de cohérence.
+4. retourner le nombre de sections indexées.
 
 `verify` doit contrôler :
 
@@ -74,7 +91,22 @@ mcp-search-net catalog verify
 - nombre d'entrées FTS ;
 - absence de sections courantes non indexées ;
 - absence d'entrées FTS orphelines ;
-- intégrité SQLite.
+- `PRAGMA integrity_check` et `PRAGMA foreign_key_check` ;
+- documents actifs sans version courante ;
+- pointeurs courants invalides ou versions courantes sans section.
+
+## Atomicité
+
+`CatalogRepository.commitDocumentRevision` écrit dans une transaction SQLite unique le document,
+la version, les sections et l'index dérivé, puis bascule `documents.current_version_id` en dernier.
+Une erreur de section ou d'indexation annule l'ensemble de la révision et restaure aussi l'ancien
+FTS. Les mises à jour de statut ou de métadonnées d'un document réindexent ou désindexent sa
+version courante dans la même transaction.
+
+La relation cyclique `documents.current_version_id -> document_versions` n'est pas matérialisée
+par une FK ajoutée rétroactivement : C007 installe des triggers qui refusent un pointeur vers une
+version absente ou appartenant à un autre document, ainsi que la suppression ou le déplacement
+d'une version pointée. `catalog verify` contrôle en plus la cohérence avec `is_current`.
 
 ## Requêtes
 

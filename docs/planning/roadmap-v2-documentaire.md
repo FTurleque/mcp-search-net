@@ -2,13 +2,12 @@
 
 > **Statut** : implémentation V2 documentaire en cours dans la PR #8.
 >
-> **Dernière mise à jour** : 2026-07-05.
+> **Dernière mise à jour** : 2026-07-29 — V2.9 en cours sur `fix/v2-9-catalog-integrity`.
 >
 > **PR active** : #8 — `feat/v2-catalog-storage`, conservée en draft.
 >
-> **Dernier head validé CI complète** : `4bfb191da05768759b6a9d8531aa3fd5762612c1`, run 462.
->
-> **Dernier head validé localement V2.7** : `8f0e5541773df285b6ae65dd7f4e532bfc7514c5`.
+> **Roadmap opérationnelle actuelle** : issue #19, séquence #12 à #18. Les validations datées
+> antérieures restent des preuves historiques attachées à leurs propres SHA.
 >
 > **GitHub Actions** : workflow `CI` temporairement déclenchable uniquement manuellement via `workflow_dispatch`, car le quota mensuel d'Actions minutes est épuisé.
 
@@ -28,6 +27,10 @@ Avancement :
 - V2.7 recherche hybride locale : implémentée et validée localement comme prototype optionnel sans API payante, modèle téléchargé ni service externe.
 
 Le travail postérieur au dernier head vert est bien récupéré dans la PR #8. La validation locale couvre désormais V2.6 et V2.7, mais la CI complète reste à rejouer manuellement lorsque les minutes Actions seront de nouveau disponibles.
+
+Le hardening post-audit suit désormais V2.9 à V2.15. V2.9 remplace les écritures fractionnées par
+une primitive de révision atomique, réconcilie ADR-015 via C007, protège les migrations par checksum
+et étend `catalog verify`. Aucun item ultérieur ni le merge de #8 ne peut contourner son gate.
 
 ## Pré-requis V2
 
@@ -103,7 +106,8 @@ La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intell
 ### V2.1 — Stockage catalogue et migrations
 
 - [x] `catalog.db` séparé de `cache.db`.
-- [x] Migrations catalogue `C001` à `C005`.
+- [x] Migrations catalogue `C001` à `C007` sans réécriture rétroactive.
+- [x] Checksums SHA-256 et transition sûre du registre C001-C006.
 - [x] `CatalogRepository`.
 - [x] `SqliteCatalogRepository`.
 - [x] Ouverture runtime et fermeture propre au shutdown.
@@ -205,6 +209,18 @@ Validation locale V2.7 :
 - Statut archivé dans [`status-v2-7.md`](status-v2-7.md).
 - Validation archivée dans [`validation-v2-7-local-success-2026-07-05.md`](validation-v2-7-local-success-2026-07-05.md).
 
+### V2.8 à V2.15 — Hardening post-audit
+
+- [x] V2.8 : benchmark initial de taille MCP et nettoyage qualité incrémental (#9, #10, #11).
+- [x] V2.9 : intégrité transactionnelle, FTS et migrations (#12) — implémentée et qualifiée
+  localement sur la branche focalisée ; agrégation dans la PR #8 et clôture de #12 encore requises.
+- [ ] V2.10 : gates qualité, coverage et gouvernance (#13, #10).
+- [ ] V2.11 : scalabilité, pagination et budget contexte (#14, #9, #11).
+- [ ] V2.12 : sécurité, installation et exploitation (#15).
+- [ ] V2.13 : qualité de recherche et benchmark représentatif (#16).
+- [ ] V2.14 : clients MCP et gel des contrats (#17).
+- [ ] V2.15 : qualification finale et réconciliation documentaire exhaustive (#18).
+
 ## Critères d'acceptation V2
 
 ### AC-V2-01 : Catalogue local opérationnel
@@ -268,11 +284,11 @@ Validation locale V2.7 :
 
 ## Ordre de réalisation recommandé
 
-1. Ne plus consommer GitHub Actions tant que le quota mensuel est épuisé.
-2. Continuer les changements avec validation locale uniquement.
-3. Exécuter le spike IntelliJ/Copilot final sur `search_docs` et les resources MCP V2.
-4. Réaliser le benchmark comparatif lexical/hybride avant toute généralisation de V2.7.
-5. Après reset du quota, lancer manuellement `CI` via `workflow_dispatch`.
+1. Terminer et qualifier #12.
+2. Exécuter dans l'ordre #13, #14, #15, #16, #17 puis #18.
+3. Conserver #8 en draft et ne pas déclencher GitHub Actions pendant la restriction de quota.
+4. Qualifier exact-head localement, Docker/Linux et clients selon #18.
+5. Merger #8 sous garde expected-head uniquement après tous les gates, puis revalider `master`.
 
 ## Validation locale recommandée
 

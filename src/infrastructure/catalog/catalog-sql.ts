@@ -136,6 +136,17 @@ export const SELECT_CURRENT_DOCUMENT_SECTIONS_SQL = `
 
 export const DELETE_DOCUMENT_SECTION_FTS_SQL = 'DELETE FROM document_section_fts';
 
+export const DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL = `
+  DELETE FROM document_section_fts
+  WHERE rowid IN (
+    SELECT document_sections.id
+    FROM document_sections
+    INNER JOIN document_versions
+      ON document_versions.id = document_sections.document_version_id
+    WHERE document_versions.document_id = ?
+  )
+`;
+
 export const INSERT_CURRENT_DOCUMENT_SECTIONS_FTS_SQL = `
   INSERT INTO document_section_fts(
     rowid, section_id, document_id, source_key, language,
@@ -161,6 +172,33 @@ export const INSERT_CURRENT_DOCUMENT_SECTIONS_FTS_SQL = `
   INNER JOIN catalog_sources
     ON catalog_sources.id = documents.source_id
   WHERE catalog_sources.enabled = 1
+    AND documents.status = 'ACTIVE'
+`;
+
+export const INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL = `
+  INSERT INTO document_section_fts(
+    rowid, section_id, document_id, source_key, language,
+    title, heading, heading_path, content
+  )
+  SELECT
+    document_sections.id,
+    document_sections.id,
+    documents.id,
+    catalog_sources.source_key,
+    documents.language,
+    documents.title,
+    coalesce(document_sections.heading, ''),
+    coalesce(document_sections.heading_path, ''),
+    document_sections.content
+  FROM document_sections
+  INNER JOIN document_versions
+    ON document_versions.id = document_sections.document_version_id
+  INNER JOIN documents
+    ON documents.id = document_versions.document_id
+  INNER JOIN catalog_sources
+    ON catalog_sources.id = documents.source_id
+  WHERE document_versions.id = ?
+    AND catalog_sources.enabled = 1
     AND documents.status = 'ACTIVE'
 `;
 
@@ -216,7 +254,7 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL = `
     bm25(document_section_fts) AS rank
   FROM document_section_fts
   INNER JOIN document_sections
-    ON document_sections.id = document_section_fts.section_id
+    ON document_sections.id = document_section_fts.rowid
   INNER JOIN document_versions
     ON document_versions.id = document_sections.document_version_id
    AND document_versions.is_current = 1

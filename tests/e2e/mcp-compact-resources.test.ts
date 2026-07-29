@@ -1,4 +1,6 @@
-import { resolve } from 'node:path';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -8,19 +10,23 @@ const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
 
 describe('MCP compact catalog resources', () => {
   let client: Client | undefined;
+  let cacheRoot: string | undefined;
 
   afterEach(async () => {
     await client?.close();
+    if (cacheRoot !== undefined) rmSync(cacheRoot, { recursive: true, force: true });
   });
 
   it('keeps the global sections resource compact', async () => {
     client = new Client({ name: 'mcp-search-net-compact-resource-test', version: '1.0.0' });
+    cacheRoot = mkdtempSync(join(tmpdir(), 'mcp-search-compact-resources-'));
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [resolve('build/bootstrap/main.js')],
       env: {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
         [crawl4aiEnvironmentName]: 'mcp-search-local-development-value',
+        MCP_CACHE_PATH: join(cacheRoot, 'cache.sqlite'),
       },
       stderr: 'pipe',
     });

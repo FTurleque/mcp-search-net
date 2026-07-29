@@ -115,6 +115,20 @@ export interface DocumentSectionInput {
   readonly tokenCount?: number;
 }
 
+export type DocumentRevisionVersionInput = Omit<DocumentVersionInput, 'documentId' | 'isCurrent'>;
+
+export interface CatalogDocumentRevisionInput {
+  readonly document: CatalogDocumentInput;
+  readonly version: DocumentRevisionVersionInput;
+  readonly sections: readonly DocumentSectionInput[];
+}
+
+export interface CatalogDocumentRevision {
+  readonly document: CatalogDocument;
+  readonly version: DocumentVersion;
+  readonly sections: readonly DocumentSection[];
+}
+
 export interface CatalogCurrentDocumentSection {
   readonly source: CatalogSource;
   readonly document: CatalogDocument;

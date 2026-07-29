@@ -67,8 +67,7 @@ type SyncCatalogRepository = Pick<
   | 'getDocumentByPublicId'
   | 'getCurrentDocumentVersion'
   | 'upsertDocument'
-  | 'addDocumentVersion'
-  | 'replaceDocumentSections'
+  | 'commitDocumentRevision'
   | 'addCatalogSyncRun'
 >;
 
@@ -140,7 +139,7 @@ export class SyncCatalogDocuments {
           continue;
         }
 
-        const storedDocument = await this.repository.upsertDocument({
+        const documentInput = {
           publicId,
           sourceId: source.id,
           canonicalUrl: fetched.canonicalUrl,
@@ -149,9 +148,10 @@ export class SyncCatalogDocuments {
           mimeType: document.mimeType,
           language: document.language,
           status: documentStatusFor(fetched),
-        });
+        } as const;
 
         if (currentVersion?.contentHash === fetched.contentHash) {
+          const storedDocument = await this.repository.upsertDocument(documentInput);
           entries.push({
             sourceKey: document.sourceKey,
             stableKey: document.stableKey,
@@ -164,36 +164,34 @@ export class SyncCatalogDocuments {
         }
 
         const redirectMetadata = createRedirectVersionMetadata(fetched);
-        const version = await this.repository.addDocumentVersion({
-          documentId: storedDocument.id,
-          contentHash: fetched.contentHash,
-          ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
-          ...(fetched.lastModified === undefined ? {} : { lastModified: fetched.lastModified }),
-          publishedAt: new Date(fetched.fetchedAt),
-          isCurrent: true,
-          extractionMode: fetched.extractionMode,
-          contentType: fetched.contentType,
-          metadataJson: JSON.stringify({
-            ingestion: 'catalog-sync',
-            sourceKey: document.sourceKey,
-            requestedUrl: fetched.requestedUrl,
-            finalUrl: fetched.finalUrl,
-            statusCode: fetched.statusCode,
-            ...redirectMetadata,
-          }),
+        const revision = await this.repository.commitDocumentRevision({
+          document: documentInput,
+          version: {
+            contentHash: fetched.contentHash,
+            ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
+            ...(fetched.lastModified === undefined ? {} : { lastModified: fetched.lastModified }),
+            publishedAt: new Date(fetched.fetchedAt),
+            extractionMode: fetched.extractionMode,
+            contentType: fetched.contentType,
+            metadataJson: JSON.stringify({
+              ingestion: 'catalog-sync',
+              sourceKey: document.sourceKey,
+              requestedUrl: fetched.requestedUrl,
+              finalUrl: fetched.finalUrl,
+              statusCode: fetched.statusCode,
+              ...redirectMetadata,
+            }),
+          },
+          sections: createSections(fetched.title ?? document.title, fetched),
         });
-        const sections = await this.repository.replaceDocumentSections(
-          version.id,
-          createSections(fetched.title ?? document.title, fetched),
-        );
         entries.push({
           sourceKey: document.sourceKey,
           stableKey: document.stableKey,
           title: fetched.title ?? document.title,
           url: document.url,
           status: existingDocument === undefined ? 'added' : 'updated',
-          document: storedDocument,
-          sectionCount: sections.length,
+          document: revision.document,
+          sectionCount: revision.sections.length,
         });
       } catch (error) {
         if (isMissingRemoteHttpError(error) && existingDocument !== undefined) {

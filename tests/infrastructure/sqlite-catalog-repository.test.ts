@@ -18,7 +18,6 @@ const EXPECTED_CATALOG_TABLES = [
   'document_aliases',
   'document_section_fts',
   'document_section_fts_config',
-  'document_section_fts_content',
   'document_section_fts_data',
   'document_section_fts_docsize',
   'document_section_fts_idx',
@@ -45,12 +44,15 @@ describe('SqliteCatalogRepository', () => {
     catalogs.push(secondRepository);
 
     const database = new Database(fixture.path, { readonly: true });
-    expect(readTables(database)).toEqual(EXPECTED_CATALOG_TABLES);
-    const versions = database
-      .prepare('SELECT version FROM catalog_schema_migrations ORDER BY version')
-      .all() as { version: number }[];
-    expect(versions.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6]);
+    const tables = readTables(database);
+    const migrations = database
+      .prepare('SELECT version, checksum FROM catalog_schema_migrations ORDER BY version')
+      .all() as { version: number; checksum: string }[];
     database.close();
+
+    expect(tables).toEqual(EXPECTED_CATALOG_TABLES);
+    expect(migrations.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(migrations.every(({ checksum }) => /^[a-f0-9]{64}$/u.test(checksum))).toBe(true);
   });
 
   it('stores sources, documents, versions and sections', async () => {
