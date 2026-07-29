@@ -39,11 +39,12 @@ npm run catalog:health -- --path .data/catalog.db
 ```
 
 La commande expose les nombres de sources et documents ainsi que le rapport
-complet de `catalog verify`. Elle renvoie `healthy` et un code zéro uniquement si
-l'intégrité SQLite, les clés étrangères, les révisions courantes et le FTS sont
-cohérents. `degraded` ou une base physiquement illisible produisent un code non
-nul : ce résultat ne doit pas être masqué par un simple test d'existence du
-fichier.
+complet de `catalog verify`. Les comptages utilisent les requêtes SQL bornées du
+repository et ne chargent pas l'ensemble des sources ou documents en mémoire.
+Elle renvoie `healthy` et un code zéro uniquement si l'intégrité SQLite, les clés
+étrangères, les révisions courantes et le FTS sont cohérents. `degraded` ou une
+base physiquement illisible produisent un code non nul : ce résultat ne doit pas
+être masqué par un simple test d'existence du fichier.
 
 ## Snapshot et restauration
 
@@ -51,12 +52,20 @@ Créer un snapshot cohérent pendant que des lecteurs ou un writer WAL sont
 actifs :
 
 ```bash
-npm run catalog -- backup --path .data/catalog.db --output backups/catalog-2026-07-29.db
+npm run catalog -- backup --path .data/catalog.db --output catalog-2026-07-29.db
 ```
+
+`--output` fournit un nom de fichier, pas un emplacement libre. Seuls les noms
+ASCII bornés composés de lettres, chiffres, `.`, `_` et `-`, terminés par `.db`,
+sont acceptés. Même si l'appelant fournit un chemin, seul son nom de fichier
+validé est conservé. Le snapshot est toujours publié dans le sous-répertoire
+`backups/` adjacent au catalogue ; avec l'exemple ci-dessus, la destination est
+`.data/backups/catalog-2026-07-29.db`. Cette règle empêche `catalog backup`
+d'écrire arbitrairement ailleurs dans le système de fichiers.
 
 La commande utilise l'API de sauvegarde en ligne SQLite, vérifie le snapshot,
 calcule son SHA-256 et le publie seulement après validation. Elle refuse une
-source absente, une destination identique ou une destination déjà existante.
+source absente, un nom de snapshot invalide ou une destination déjà existante.
 
 Procédure de restauration :
 
@@ -67,9 +76,9 @@ Procédure de restauration :
    vers ce chemin ;
 5. exécuter `catalog health` avant de remettre les clients en service.
 
-Ne jamais recopier un snapshot par-dessus une base ouverte. Le test
-d'intégration couvre santé, snapshot sous writer WAL non validé, corruption
-détectée et restauration saine.
+Ne jamais recopier un snapshot par-dessus une base ouverte. Les tests couvrent
+le snapshot sous writer WAL non validé, le confinement du chemin de sortie, le
+refus d'écrasement, la corruption détectée et la restauration saine.
 
 ## Commande
 
@@ -136,8 +145,14 @@ Chaque cycle exécute :
 - migrations catalogue idempotentes ;
 - `PRAGMA analysis_limit = 400` ;
 - `PRAGMA optimize` ;
-- `PRAGMA wal_checkpoint(TRUNCATE)` ;
+- `PRAGMA wal_checkpoint(TRUNCATE)` avec contrôle du champ `busy` réellement
+  retourné par SQLite ;
 - `VACUUM` uniquement avec `--vacuum`.
+
+Un checkpoint `TRUNCATE` empêché par un lecteur SQLite actif n'est jamais déclaré
+réussi : la maintenance échoue explicitement avec
+`CATALOG_WAL_CHECKPOINT_BUSY`, libère son lease et peut être rejouée après la fin
+du lecteur.
 
 ## Observabilité structurée
 
