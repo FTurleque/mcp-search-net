@@ -1,12 +1,22 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, existsSync, linkSync, mkdirSync, rmSync, statSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import {
+  createReadStream,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import Database from 'better-sqlite3';
 
 import type { Clock } from '../../application/ports/clock.js';
 import { verifyCatalogIntegrity } from './catalog-integrity.js';
 import { openCatalogDatabase } from './catalog-database.js';
+
+const SAFE_BACKUP_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.db$/u;
 
 export interface CatalogBackupOutput {
   readonly schemaVersion: '1.0';
@@ -25,15 +35,20 @@ export class SqliteCatalogBackup {
     private readonly clock: Clock,
   ) {}
 
-  public async run(destinationPath: string): Promise<CatalogBackupOutput> {
-    const sourcePath = resolve(this.catalogPath);
-    const finalPath = resolve(destinationPath);
-    if (!existsSync(sourcePath)) throw new Error('CATALOG_BACKUP_SOURCE_NOT_FOUND');
-    if (sourcePath === finalPath) throw new Error('CATALOG_BACKUP_DESTINATION_IS_SOURCE');
+  public async run(destinationFileName: string): Promise<CatalogBackupOutput> {
+    const requestedSourcePath = resolve(this.catalogPath);
+    if (!existsSync(requestedSourcePath)) throw new Error('CATALOG_BACKUP_SOURCE_NOT_FOUND');
+    const sourcePath = realpathSync(requestedSourcePath);
+    const fileName = validateBackupFileName(destinationFileName);
+    const backupDirectory = join(dirname(sourcePath), 'backups');
+    const finalPath = join(backupDirectory, fileName);
     if (existsSync(finalPath)) throw new Error('CATALOG_BACKUP_DESTINATION_EXISTS');
 
-    mkdirSync(dirname(finalPath), { recursive: true });
-    const temporaryPath = `${finalPath}.partial-${process.pid}-${this.clock.now().getTime()}`;
+    mkdirSync(backupDirectory, { recursive: true });
+    const temporaryPath = join(
+      backupDirectory,
+      `.partial-${process.pid}-${this.clock.now().getTime()}-${fileName}`,
+    );
     const source = openCatalogDatabase(sourcePath);
     try {
       const metadata = await source.backup(temporaryPath);
@@ -72,6 +87,20 @@ export class SqliteCatalogBackup {
       snapshot.close();
     }
   }
+}
+
+function validateBackupFileName(value: string): string {
+  const fileName = value.trim();
+  if (
+    fileName.length === 0 ||
+    fileName !== basename(fileName) ||
+    fileName.includes('/') ||
+    fileName.includes('\\') ||
+    !SAFE_BACKUP_FILE_NAME.test(fileName)
+  ) {
+    throw new Error('CATALOG_BACKUP_INVALID_FILE_NAME');
+  }
+  return fileName;
 }
 
 async function sha256File(path: string): Promise<string> {
