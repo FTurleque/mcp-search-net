@@ -133,11 +133,48 @@ requestId=… cache=DISABLED
    Outil MCP search_docs, resources read-only catalogue/sources/documents/sections…
 ```
 
+## `list_docs`
+
+Liste les documents sans contenu de section. La sélection, les filtres et la pagination sont
+exécutés en SQL avec un ordre stable par identifiant.
+
+| Champ       | Défaut | Contraintes                                                 |
+| ----------- | ------ | ----------------------------------------------------------- |
+| `sourceKey` | absent | clé source optionnelle                                      |
+| `language`  | absent | langue optionnelle                                          |
+| `status`    | absent | `ACTIVE`, `STALE`, `REDIRECTED`, `REMOVED` ou `UNAVAILABLE` |
+| `limit`     | `20`   | de 1 à 50                                                   |
+| `offset`    | `0`    | entier positif ou nul                                       |
+
+La sortie expose `count`, `total`, `offset`, `limit`, `nextOffset`, `truncated` et une liste de
+documents compacts. Le champ `data` sérialisé est limité à 20 000 caractères, indépendamment de
+`limit`. Si ce budget coupe une page, `nextOffset` reprend exactement au premier document non
+retourné ; aucun identifiant, titre ou URL n'est tronqué silencieusement.
+
+## `read_doc_section`
+
+Lit directement une section courante par `sectionId`, sans charger toutes les sections du
+catalogue. `maxCharacters` vaut 3 000 par défaut et accepte de 200 à 8 000 caractères. La sortie
+signale explicitement `found` et `truncated`.
+
 ## Resources MCP V2 et budget contexte
 
-Les resources V2 sont read-only. Elles exposent le catalogue, les sources, les documents, les versions et les sections.
+Les resources V2 sont read-only. Les collections de sources, documents, versions et sections
+retournent 20 éléments au maximum et fournissent `nextOffset` et `nextUri`. Les templates paginés
+sont :
 
-Risque token : `mcp-search-net://sections` peut contenir le texte complet des sections. Pour Copilot, la stratégie recommandée est :
+```text
+mcp-search-net://sources/page/{offset}
+mcp-search-net://documents/page/{offset}
+mcp-search-net://documents/{documentId}/versions/page/{offset}
+mcp-search-net://sections/page/{offset}
+```
+
+Les resources ciblées par identifiant utilisent des requêtes SQL dédiées. Une réponse resource est
+limitée à 24 000 caractères, une section détaillée à 8 000 caractères et les métadonnées de version
+à 2 000 caractères ; `contentTruncated` ou `metadataTruncated` rendent toute réduction explicite.
+
+Pour Copilot, la stratégie recommandée est :
 
 ```text
 search_docs -> choisir le résultat utile -> lire uniquement la resource ciblée si le client MCP le permet
@@ -154,6 +191,10 @@ Préférer :
 ```text
 Utilise search_docs avec maxResults 3 pour trouver les sections sur la synchronisation V2.
 ```
+
+Le benchmark V2.11 à 10 000 sections mesure la page de sections à 15 636 caractères au p95
+(~3 909 tokens), contre 4 733 639 caractères (~1 183 410 tokens) pour la simulation historique non
+bornée.
 
 ## Annotations et erreurs
 

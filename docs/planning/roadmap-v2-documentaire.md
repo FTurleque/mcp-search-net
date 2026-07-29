@@ -2,8 +2,8 @@
 
 > **Statut** : implémentation V2 documentaire en cours dans la PR #8.
 >
-> **Dernière mise à jour** : 2026-07-29 — V2.9 intégrée ; V2.10 implémentée et qualifiée
-> localement sur `fix/v2-10-quality-gates`.
+> **Dernière mise à jour** : 2026-07-29 — V2.9 et V2.10 intégrées ; V2.11 implémentée et qualifiée
+> localement sur `fix/v2-11-catalog-scale`.
 >
 > **PR active** : #8 — `feat/v2-catalog-storage`, conservée en draft.
 >
@@ -24,6 +24,8 @@ Avancement :
 - V2.3 recherche lexicale : implémentée sur sections courantes.
 - V2.4 exposition MCP : implémentée avec `search_docs`, resources read-only, versions documentaires et recette de spike IntelliJ/Copilot préparée.
 - V2.5 synchronisation incrémentale : implémentée avec sync contrôlé, sync exhaustive, rate limiting applicatif, reprise par curseur, validateurs, staleness et redirections permanentes.
+- V2.11 scalabilité : lectures par identifiant, filtres SQL, pagination stable, resources bornées et
+  benchmark jusqu'à 10 000 sections qualifiés localement sans skip.
 - V2.6 automatisation contrôlée : implémentée et validée localement sur la tranche maintenance contrôlée.
 - V2.7 recherche hybride locale : implémentée et validée localement comme prototype optionnel sans API payante, modèle téléchargé ni service externe.
 
@@ -220,7 +222,8 @@ Validation locale V2.7 :
 - [x] V2.10 : gates qualité, coverage et gouvernance (#13, #10) — runtime et tests V2
       réintégrés dans ESLint/Prettier, couverture globale et ciblée mesurée, workflow manuel
       dédupliqué, rapports publiables et gates locaux qualifiés sans skip.
-- [ ] V2.11 : scalabilité, pagination et budget contexte (#14, #9, #11).
+- [x] V2.11 : scalabilité, pagination et budget contexte (#14, #9, #11) — implémentation,
+      benchmark et qualification locale terminés sans skip.
 - [ ] V2.12 : sécurité, installation et exploitation (#15).
 - [ ] V2.13 : qualité de recherche et benchmark représentatif (#16).
 - [ ] V2.14 : clients MCP et gel des contrats (#17).
@@ -259,6 +262,10 @@ Validation locale V2.7 :
 - [x] `list_docs` et `read_doc_section` implémentés avec réponses compactes.
 - [x] Resources read-only implémentées côté serveur.
 - [x] Templates dynamiques sources, documents, versions et sections implémentés côté serveur.
+- [x] Collections MCP paginées par 20, lectures par identifiant ciblées et réponses bornées à
+      24 000 caractères.
+- [x] Benchmark de budget contexte exécuté jusqu'à 10 000 sections : réduction de 99,67 % face à
+      la simulation globale non bornée.
 - [x] E2E MCP partiel ajouté.
 - [x] Recette de spike IntelliJ/Copilot préparée.
 - [ ] Validation locale ou CI manuelle sur le head courant de la PR #8.

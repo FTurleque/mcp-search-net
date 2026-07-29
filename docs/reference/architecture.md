@@ -31,4 +31,15 @@ Le domaine ne dépend ni du SDK MCP, ni de SearXNG, Crawl4AI, SQLite, Docker, YA
 
 Le cache possède uniquement les tables `search_cache`, `content_cache` et `schema_migrations`. Les contenus conservent URL, type, Markdown nettoyé, sections, statut HTTP, date, ETag, Last-Modified et hash. Une entrée expirée reste disponible pendant la rétention stale : si le fournisseur échoue, elle produit `STALE_FALLBACK` et `STALE_CACHE_USED`. Sans cache, les outils continuent avec `DISABLED`.
 
-Les futurs ports documentaires V2 peuvent être ajoutés sans modifier le domaine V1, mais aucune indexation, synchronisation ou recherche multi-document n’est implémentée ici.
+## Catalogue documentaire V2
+
+La V2 ajoute des ports applicatifs de catalogue sans modifier le domaine V1. SQLite implémente les
+transactions documentaires, l'index FTS5, les recherches par identifiant et les pages filtrées par
+source, langue et statut. Les adaptateurs MCP ne dépendent jamais directement de SQLite : ils
+appellent le port `CatalogRepository` ou les cas d'usage.
+
+Les collections MCP sont bornées à 20 éléments et les outils n'acceptent pas plus de 50 documents
+par page. Les lectures par identifiant utilisent des requêtes ciblées, tandis que les anciennes
+méthodes de chargement global restent réservées aux opérations CLI internes et aux comparaisons de
+benchmark. La migration `C008` ajoute les index de pagination mesurés pour la langue et les filtres
+composés.

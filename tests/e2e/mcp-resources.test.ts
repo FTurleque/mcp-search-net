@@ -16,10 +16,14 @@ const expectedResourceUris = [
 ];
 const expectedResourceTemplateUris = [
   'mcp-search-net://documents/{documentId}',
+  'mcp-search-net://documents/page/{offset}',
   'mcp-search-net://documents/{documentId}/versions',
+  'mcp-search-net://documents/{documentId}/versions/page/{offset}',
   'mcp-search-net://documents/{documentId}/versions/{versionId}',
   'mcp-search-net://sections/{sectionId}',
+  'mcp-search-net://sections/page/{offset}',
   'mcp-search-net://sources/{sourceId}',
+  'mcp-search-net://sources/page/{offset}',
 ];
 
 describe('MCP catalog resources', () => {
@@ -53,7 +57,7 @@ describe('MCP catalog resources', () => {
 
     const templates = await client.listResourceTemplates();
     expect(templates.resourceTemplates.map((resource) => resource.uriTemplate).sort()).toEqual(
-      expectedResourceTemplateUris,
+      [...expectedResourceTemplateUris].sort(),
     );
 
     const catalog = await client.readResource({ uri: catalogResourceUri });
@@ -95,16 +99,41 @@ describe('MCP catalog resources', () => {
     const missingVersions = await readJsonResource<{
       documentId: number;
       available: boolean;
+      bounded: boolean;
       count: number;
+      total: number;
+      offset: number;
+      limit: number;
+      nextOffset: number | null;
+      nextUri: string | null;
       versions: unknown[];
     }>(client, 'mcp-search-net://documents/999999/versions');
-    expect(missingVersions).toEqual({
+    expect(missingVersions).toMatchObject({
       schemaVersion: '1.0',
       documentId: 999999,
       available: true,
+      bounded: true,
       count: 0,
+      total: 0,
+      offset: 0,
+      limit: 20,
+      nextOffset: null,
+      nextUri: null,
       versions: [],
     });
+
+    for (const uri of [
+      'mcp-search-net://sources/page/0',
+      'mcp-search-net://documents/page/0',
+      'mcp-search-net://sections/page/0',
+    ]) {
+      await expect(readJsonResource(client, uri)).resolves.toMatchObject({
+        schemaVersion: '1.0',
+        bounded: true,
+        offset: 0,
+        limit: 20,
+      });
+    }
   });
 });
 

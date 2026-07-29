@@ -60,6 +60,14 @@ describe('MCP V2 in-memory contracts', () => {
             contentHash: 'sample-section',
             characterCount: 53,
           },
+          {
+            ordinal: 1,
+            heading: 'Large appendix',
+            headingPath: 'Sample Guide > Large appendix',
+            content: 'x'.repeat(12_000),
+            contentHash: 'sample-large-section',
+            characterCount: 12_000,
+          },
         ],
       });
 
@@ -109,12 +117,16 @@ describe('MCP V2 in-memory contracts', () => {
       const resourceUris = [
         'mcp-search-net://catalog',
         'mcp-search-net://sources',
+        'mcp-search-net://sources/page/0',
         `mcp-search-net://sources/${source.id}`,
         'mcp-search-net://documents',
+        'mcp-search-net://documents/page/0',
         `mcp-search-net://documents/${revision.document.id}`,
         `mcp-search-net://documents/${revision.document.id}/versions`,
+        `mcp-search-net://documents/${revision.document.id}/versions/page/0`,
         `mcp-search-net://documents/${revision.document.id}/versions/${revision.version.id}`,
         'mcp-search-net://sections',
+        'mcp-search-net://sections/page/0',
         `mcp-search-net://sections/${revision.sections[0]?.id}`,
       ];
       for (const uri of resourceUris) {
@@ -128,6 +140,72 @@ describe('MCP V2 in-memory contracts', () => {
           schemaVersion: '1.0',
         });
       }
+
+      const largeSectionUri = `mcp-search-net://sections/${revision.sections[1]?.id}`;
+      const largeSection = await client.readResource({ uri: largeSectionUri });
+      const largeContent = largeSection.contents[0];
+      if (largeContent === undefined || !('text' in largeContent)) {
+        throw new Error('Expected the large section resource to contain JSON text');
+      }
+      expect(largeContent.text.length).toBeLessThanOrEqual(24_000);
+      expect(JSON.parse(largeContent.text)).toMatchObject({
+        entry: {
+          section: {
+            contentTruncated: true,
+            content: expect.stringMatching(/^x{7999}…$/u),
+          },
+        },
+      });
+
+      for (let index = 0; index < 50; index += 1) {
+        await container.catalog.upsertDocument({
+          publicId: `bulk-${index}-${'p'.repeat(300)}`,
+          sourceId: source.id,
+          canonicalUrl: `https://example.test/bulk/${index}`,
+          stableKey: `bulk-${index}`,
+          title: `Bulk document ${index} ${'t'.repeat(800)}`,
+          mimeType: 'text/markdown',
+          language: 'en',
+          status: 'ACTIVE',
+        });
+      }
+      const boundedDocuments = await client.callTool({
+        name: 'list_docs',
+        arguments: { limit: 50 },
+      });
+      const boundedData = boundedDocuments.structuredContent as {
+        readonly data: {
+          readonly count: number;
+          readonly total: number;
+          readonly nextOffset: number | null;
+          readonly truncated: boolean;
+          readonly documents: readonly { readonly publicId: string }[];
+        };
+      };
+      expect(JSON.stringify(boundedData.data).length).toBeLessThanOrEqual(20_000);
+      expect(boundedData.data).toMatchObject({
+        total: 51,
+        nextOffset: boundedData.data.count,
+        truncated: true,
+      });
+      expect(boundedData.data.count).toBeLessThan(boundedData.data.total);
+
+      const nextOffset = boundedData.data.nextOffset;
+      if (nextOffset === null) throw new Error('Expected a continuation offset');
+      const continuedDocuments = await client.callTool({
+        name: 'list_docs',
+        arguments: { limit: 50, offset: nextOffset },
+      });
+      const continuedData = continuedDocuments.structuredContent as {
+        readonly data: {
+          readonly count: number;
+          readonly documents: readonly { readonly publicId: string }[];
+        };
+      };
+      expect(continuedData.data.count).toBeGreaterThan(0);
+      expect(continuedData.data.documents[0]?.publicId).not.toBe(
+        boundedData.data.documents.at(-1)?.publicId,
+      );
     } finally {
       await client.close().catch(() => undefined);
       await container.mcpServer.close().catch(() => undefined);

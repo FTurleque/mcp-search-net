@@ -45,9 +45,27 @@ Bonnes pratiques pour économiser le contexte :
 
 `search_docs` retourne une réponse compacte : titre, URL, section pertinente, snippet et score. Il ne renvoie pas le contenu complet des sections.
 
+## `list_docs` et `read_doc_section`
+
+`list_docs` parcourt les documents par page SQL stable. Il accepte `sourceKey`, `language`,
+`status`, `limit` (20 par défaut, 50 maximum) et `offset`. La réponse expose `nextOffset` ; le
+contenu des sections n'est jamais inclus.
+
+`read_doc_section` lit directement une section par `sectionId`, avec un budget compris entre 200
+et 8 000 caractères. Le workflow recommandé reste :
+
+```text
+search_docs compact -> read_doc_section
+```
+
 ## Resources MCP du catalogue
 
-Les resources `mcp-search-net://catalog`, `mcp-search-net://sources`, `mcp-search-net://documents` et `mcp-search-net://sections` sont read-only. Elles servent surtout à l'inspection, au debug et aux clients MCP qui savent les parcourir proprement.
+Les resources `mcp-search-net://catalog`, `mcp-search-net://sources`,
+`mcp-search-net://documents` et `mcp-search-net://sections` sont read-only. Les collections sont
+des premières pages de 20 éléments ; les templates `.../page/{offset}` permettent de continuer via
+`nextUri`. Une resource complète est bornée à 24 000 caractères et une section détaillée à 8 000.
+Elles servent surtout à l'inspection, au debug et aux clients MCP qui savent les parcourir
+proprement.
 
 Pour économiser les tokens Copilot, éviter les demandes du type :
 

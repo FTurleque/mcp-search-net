@@ -50,6 +50,11 @@ export interface CatalogDocument {
   readonly updatedAt: Date;
 }
 
+export interface CatalogDocumentEntry {
+  readonly source: CatalogSource;
+  readonly document: CatalogDocument;
+}
+
 export interface CatalogDocumentInput {
   readonly publicId: string;
   readonly sourceId: number;

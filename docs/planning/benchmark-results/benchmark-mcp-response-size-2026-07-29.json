@@ -1,0 +1,591 @@
+{
+  "schemaVersion": "2.0",
+  "generatedAt": "2026-07-29T12:24:24.656Z",
+  "protocol": {
+    "syntheticCorpus": true,
+    "sectionsPerDocument": 20,
+    "targetSectionCounts": [100, 1000, 10000],
+    "remoteIterations": 15,
+    "legacyIterations": 5,
+    "tokenEstimate": "ceil(serialized UTF-16 characters / 4)",
+    "latency": "warm process, wall-clock client call or repository query plus serialization",
+    "memory": "benchmark runner RSS after each scale; MCP child RSS is not included",
+    "database": "one incremental temporary SQLite catalog, removed after report generation"
+  },
+  "scales": [
+    {
+      "sectionCount": 100,
+      "documentCount": 5,
+      "databaseBytes": 212992,
+      "benchmarkProcessRssBytes": 73781248,
+      "cases": [
+        {
+          "name": "search_docs compact maxResults=3 maxSnippetChars=160",
+          "iterations": 15,
+          "characters": {
+            "min": 2315,
+            "p50": 2317,
+            "p95": 2317,
+            "max": 2317
+          },
+          "structuredJsonCharacters": {
+            "min": 1503,
+            "p50": 1505,
+            "p95": 1505,
+            "max": 1505
+          },
+          "estimatedTokens": {
+            "min": 579,
+            "p50": 580,
+            "p95": 580,
+            "max": 580
+          },
+          "latencyMs": {
+            "min": 1.11,
+            "p50": 1.609,
+            "p95": 6.53,
+            "max": 6.53
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 72957952,
+            "p50": 73154560,
+            "p95": 73170944,
+            "max": 73170944
+          }
+        },
+        {
+          "name": "list_docs page limit=20 offset=0",
+          "iterations": 15,
+          "characters": {
+            "min": 2244,
+            "p50": 2245,
+            "p95": 2245,
+            "max": 2245
+          },
+          "structuredJsonCharacters": {
+            "min": 1439,
+            "p50": 1440,
+            "p95": 1440,
+            "max": 1440
+          },
+          "estimatedTokens": {
+            "min": 561,
+            "p50": 562,
+            "p95": 562,
+            "max": 562
+          },
+          "latencyMs": {
+            "min": 0.66,
+            "p50": 0.864,
+            "p95": 2.549,
+            "max": 2.549
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 73039872,
+            "p50": 73113600,
+            "p95": 73244672,
+            "max": 73244672
+          }
+        },
+        {
+          "name": "resource sections bounded page offset=0 limit=20",
+          "iterations": 15,
+          "characters": {
+            "min": 15634,
+            "p50": 15634,
+            "p95": 15634,
+            "max": 15634
+          },
+          "structuredJsonCharacters": {
+            "min": 9344,
+            "p50": 9344,
+            "p95": 9344,
+            "max": 9344
+          },
+          "estimatedTokens": {
+            "min": 3909,
+            "p50": 3909,
+            "p95": 3909,
+            "max": 3909
+          },
+          "latencyMs": {
+            "min": 0.823,
+            "p50": 0.964,
+            "p95": 1.241,
+            "max": 1.241
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 73187328,
+            "p50": 73445376,
+            "p95": 73883648,
+            "max": 73883648
+          }
+        },
+        {
+          "name": "read_doc_section maxCharacters=2000 sectionId=1",
+          "iterations": 15,
+          "characters": {
+            "min": 1445,
+            "p50": 1446,
+            "p95": 1446,
+            "max": 1446
+          },
+          "structuredJsonCharacters": {
+            "min": 882,
+            "p50": 883,
+            "p95": 883,
+            "max": 883
+          },
+          "estimatedTokens": {
+            "min": 362,
+            "p50": 362,
+            "p95": 362,
+            "max": 362
+          },
+          "latencyMs": {
+            "min": 0.556,
+            "p50": 0.704,
+            "p95": 2.209,
+            "max": 2.209
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 73928704,
+            "p50": 73969664,
+            "p95": 74375168,
+            "max": 74375168
+          }
+        },
+        {
+          "name": "legacy simulated unbounded sections resource",
+          "iterations": 5,
+          "characters": {
+            "min": 45955,
+            "p50": 45955,
+            "p95": 45955,
+            "max": 45955
+          },
+          "structuredJsonCharacters": {
+            "min": 45955,
+            "p50": 45955,
+            "p95": 45955,
+            "max": 45955
+          },
+          "estimatedTokens": {
+            "min": 11489,
+            "p50": 11489,
+            "p95": 11489,
+            "max": 11489
+          },
+          "latencyMs": {
+            "min": 0.681,
+            "p50": 0.691,
+            "p95": 1.218,
+            "max": 1.218
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 74465280,
+            "p50": 74469376,
+            "p95": 74481664,
+            "max": 74481664
+          }
+        }
+      ]
+    },
+    {
+      "sectionCount": 1000,
+      "documentCount": 50,
+      "databaseBytes": 851968,
+      "benchmarkProcessRssBytes": 93593600,
+      "cases": [
+        {
+          "name": "search_docs compact maxResults=3 maxSnippetChars=160",
+          "iterations": 15,
+          "characters": {
+            "min": 2315,
+            "p50": 2317,
+            "p95": 2317,
+            "max": 2317
+          },
+          "structuredJsonCharacters": {
+            "min": 1503,
+            "p50": 1505,
+            "p95": 1505,
+            "max": 1505
+          },
+          "estimatedTokens": {
+            "min": 579,
+            "p50": 580,
+            "p95": 580,
+            "max": 580
+          },
+          "latencyMs": {
+            "min": 2.139,
+            "p50": 2.347,
+            "p95": 7.024,
+            "max": 7.024
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 76562432,
+            "p50": 76701696,
+            "p95": 77090816,
+            "max": 77090816
+          }
+        },
+        {
+          "name": "list_docs page limit=20 offset=0",
+          "iterations": 15,
+          "characters": {
+            "min": 7722,
+            "p50": 7723,
+            "p95": 7723,
+            "max": 7723
+          },
+          "structuredJsonCharacters": {
+            "min": 4896,
+            "p50": 4897,
+            "p95": 4897,
+            "max": 4897
+          },
+          "estimatedTokens": {
+            "min": 1931,
+            "p50": 1931,
+            "p95": 1931,
+            "max": 1931
+          },
+          "latencyMs": {
+            "min": 0.997,
+            "p50": 1.193,
+            "p95": 3.134,
+            "max": 3.134
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 77123584,
+            "p50": 77623296,
+            "p95": 78368768,
+            "max": 78368768
+          }
+        },
+        {
+          "name": "resource sections bounded page offset=0 limit=20",
+          "iterations": 15,
+          "characters": {
+            "min": 15635,
+            "p50": 15635,
+            "p95": 15635,
+            "max": 15635
+          },
+          "structuredJsonCharacters": {
+            "min": 9345,
+            "p50": 9345,
+            "p95": 9345,
+            "max": 9345
+          },
+          "estimatedTokens": {
+            "min": 3909,
+            "p50": 3909,
+            "p95": 3909,
+            "max": 3909
+          },
+          "latencyMs": {
+            "min": 0.737,
+            "p50": 0.828,
+            "p95": 1.001,
+            "max": 1.001
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 78462976,
+            "p50": 79294464,
+            "p95": 80044032,
+            "max": 80044032
+          }
+        },
+        {
+          "name": "read_doc_section maxCharacters=2000 sectionId=1",
+          "iterations": 15,
+          "characters": {
+            "min": 1445,
+            "p50": 1446,
+            "p95": 1446,
+            "max": 1446
+          },
+          "structuredJsonCharacters": {
+            "min": 882,
+            "p50": 883,
+            "p95": 883,
+            "max": 883
+          },
+          "estimatedTokens": {
+            "min": 362,
+            "p50": 362,
+            "p95": 362,
+            "max": 362
+          },
+          "latencyMs": {
+            "min": 0.51,
+            "p50": 0.614,
+            "p95": 1.829,
+            "max": 1.829
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 80113664,
+            "p50": 80371712,
+            "p95": 80556032,
+            "max": 80556032
+          }
+        },
+        {
+          "name": "legacy simulated unbounded sections resource",
+          "iterations": 5,
+          "characters": {
+            "min": 465597,
+            "p50": 465597,
+            "p95": 465597,
+            "max": 465597
+          },
+          "structuredJsonCharacters": {
+            "min": 465597,
+            "p50": 465597,
+            "p95": 465597,
+            "max": 465597
+          },
+          "estimatedTokens": {
+            "min": 116400,
+            "p50": 116400,
+            "p95": 116400,
+            "max": 116400
+          },
+          "latencyMs": {
+            "min": 6.037,
+            "p50": 6.374,
+            "p95": 7.983,
+            "max": 7.983
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 83140608,
+            "p50": 90378240,
+            "p95": 93609984,
+            "max": 93609984
+          }
+        }
+      ]
+    },
+    {
+      "sectionCount": 10000,
+      "documentCount": 500,
+      "databaseBytes": 6971392,
+      "benchmarkProcessRssBytes": 248000512,
+      "cases": [
+        {
+          "name": "search_docs compact maxResults=3 maxSnippetChars=160",
+          "iterations": 15,
+          "characters": {
+            "min": 2317,
+            "p50": 2318,
+            "p95": 2318,
+            "max": 2318
+          },
+          "structuredJsonCharacters": {
+            "min": 1505,
+            "p50": 1506,
+            "p95": 1506,
+            "max": 1506
+          },
+          "estimatedTokens": {
+            "min": 580,
+            "p50": 580,
+            "p95": 580,
+            "max": 580
+          },
+          "latencyMs": {
+            "min": 13.094,
+            "p50": 13.958,
+            "p95": 22.567,
+            "max": 22.567
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 100155392,
+            "p50": 100327424,
+            "p95": 100327424,
+            "max": 100327424
+          }
+        },
+        {
+          "name": "list_docs page limit=20 offset=0",
+          "iterations": 15,
+          "characters": {
+            "min": 7725,
+            "p50": 7725,
+            "p95": 7725,
+            "max": 7725
+          },
+          "structuredJsonCharacters": {
+            "min": 4898,
+            "p50": 4898,
+            "p95": 4898,
+            "max": 4898
+          },
+          "estimatedTokens": {
+            "min": 1932,
+            "p50": 1932,
+            "p95": 1932,
+            "max": 1932
+          },
+          "latencyMs": {
+            "min": 0.964,
+            "p50": 1.162,
+            "p95": 2.958,
+            "max": 2.958
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 100335616,
+            "p50": 100343808,
+            "p95": 100343808,
+            "max": 100343808
+          }
+        },
+        {
+          "name": "resource sections bounded page offset=0 limit=20",
+          "iterations": 15,
+          "characters": {
+            "min": 15636,
+            "p50": 15636,
+            "p95": 15636,
+            "max": 15636
+          },
+          "structuredJsonCharacters": {
+            "min": 9346,
+            "p50": 9346,
+            "p95": 9346,
+            "max": 9346
+          },
+          "estimatedTokens": {
+            "min": 3909,
+            "p50": 3909,
+            "p95": 3909,
+            "max": 3909
+          },
+          "latencyMs": {
+            "min": 1.303,
+            "p50": 1.542,
+            "p95": 1.738,
+            "max": 1.738
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 100343808,
+            "p50": 100429824,
+            "p95": 100610048,
+            "max": 100610048
+          }
+        },
+        {
+          "name": "read_doc_section maxCharacters=2000 sectionId=1",
+          "iterations": 15,
+          "characters": {
+            "min": 1445,
+            "p50": 1446,
+            "p95": 1446,
+            "max": 1446
+          },
+          "structuredJsonCharacters": {
+            "min": 882,
+            "p50": 883,
+            "p95": 883,
+            "max": 883
+          },
+          "estimatedTokens": {
+            "min": 362,
+            "p50": 362,
+            "p95": 362,
+            "max": 362
+          },
+          "latencyMs": {
+            "min": 0.487,
+            "p50": 0.607,
+            "p95": 2.361,
+            "max": 2.361
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 100610048,
+            "p50": 100610048,
+            "p95": 100610048,
+            "max": 100610048
+          }
+        },
+        {
+          "name": "legacy simulated unbounded sections resource",
+          "iterations": 5,
+          "characters": {
+            "min": 4733639,
+            "p50": 4733639,
+            "p95": 4733639,
+            "max": 4733639
+          },
+          "structuredJsonCharacters": {
+            "min": 4733639,
+            "p50": 4733639,
+            "p95": 4733639,
+            "max": 4733639
+          },
+          "estimatedTokens": {
+            "min": 1183410,
+            "p50": 1183410,
+            "p95": 1183410,
+            "max": 1183410
+          },
+          "latencyMs": {
+            "min": 60.452,
+            "p50": 65.344,
+            "p95": 74.61,
+            "max": 74.61
+          },
+          "benchmarkProcessRssBytes": {
+            "min": 144216064,
+            "p50": 229281792,
+            "p95": 254386176,
+            "max": 254386176
+          }
+        }
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "sectionCount": 100,
+      "boundedPageCharactersP95": 15634,
+      "legacyUnboundedCharactersP95": 45955,
+      "boundedPageEstimatedTokensP95": 3909,
+      "legacyUnboundedEstimatedTokensP95": 11489,
+      "characterReductionPercent": 65.98
+    },
+    {
+      "sectionCount": 1000,
+      "boundedPageCharactersP95": 15635,
+      "legacyUnboundedCharactersP95": 465597,
+      "boundedPageEstimatedTokensP95": 3909,
+      "legacyUnboundedEstimatedTokensP95": 116400,
+      "characterReductionPercent": 96.642
+    },
+    {
+      "sectionCount": 10000,
+      "boundedPageCharactersP95": 15636,
+      "legacyUnboundedCharactersP95": 4733639,
+      "boundedPageEstimatedTokensP95": 3909,
+      "legacyUnboundedEstimatedTokensP95": 1183410,
+      "characterReductionPercent": 99.67
+    }
+  ],
+  "queryPlans": {
+    "sourceById": ["SEARCH catalog_sources USING INTEGER PRIMARY KEY (rowid=?)"],
+    "documentById": ["SEARCH documents USING INTEGER PRIMARY KEY (rowid=?)"],
+    "sectionById": [
+      "SEARCH document_sections USING INTEGER PRIMARY KEY (rowid=?)",
+      "SEARCH document_versions USING INTEGER PRIMARY KEY (rowid=?)",
+      "SEARCH documents USING INTEGER PRIMARY KEY (rowid=?)",
+      "SEARCH catalog_sources USING INTEGER PRIMARY KEY (rowid=?)"
+    ],
+    "documentsByLanguage": [
+      "SEARCH documents USING INDEX ix_documents_language_id (language=?)",
+      "SEARCH catalog_sources USING INTEGER PRIMARY KEY (rowid=?)"
+    ]
+  }
+}
