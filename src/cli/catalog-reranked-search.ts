@@ -1,11 +1,11 @@
 import { resolve } from 'node:path';
 import process from 'node:process';
 
-import { HybridSearchCatalogDocuments } from '../application/use-cases/hybrid-search-catalog-documents.js';
+import { RerankedSearchCatalogDocuments } from '../application/use-cases/reranked-search-catalog-documents.js';
 import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
 
-interface CatalogHybridSearchOptions {
+interface CatalogRerankedSearchOptions {
   readonly path: string;
   readonly query: string;
   readonly sourceKey?: string;
@@ -18,14 +18,14 @@ async function main(argv: readonly string[]): Promise<void> {
   const options = parseArguments(argv);
   const repository = new SqliteCatalogRepository(options.path, new SystemClock());
   try {
-    const result = await new HybridSearchCatalogDocuments(repository).execute(options);
+    const result = await new RerankedSearchCatalogDocuments(repository).execute(options);
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {
     repository.close();
   }
 }
 
-function parseArguments(argv: readonly string[]): CatalogHybridSearchOptions {
+function parseArguments(argv: readonly string[]): CatalogRerankedSearchOptions {
   if (argv.includes('--help') || argv.includes('-h')) throw new Error(usage());
   const sourceKey = normalizeCliText(getOption(argv, '--source-key'));
   const language = normalizeCliText(getOption(argv, '--language'));
@@ -63,8 +63,9 @@ function requireOption(argv: readonly string[], name: string): string {
 function parsePositiveInteger(value: string | undefined, optionName: string): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new Error(`Invalid ${optionName} ${value}`);
+  }
   return parsed;
 }
 
@@ -80,7 +81,7 @@ function normalizeRequiredCliText(value: string): string {
 function usage(): string {
   return [
     'Usage:',
-    '  catalog-hybrid-search --query <text> [--path <catalog.db>] [--source-key <key>] [--language <language>] [--limit <n>] [--candidate-limit <n>]',
+    '  catalog-reranked-search --query <text> [--path <catalog.db>] [--source-key <key>] [--language <language>] [--limit <n>] [--candidate-limit <n>]',
   ].join('\n');
 }
 

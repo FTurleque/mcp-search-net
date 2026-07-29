@@ -26,26 +26,30 @@ const STOP_WORDS = new Set([
   'une',
 ]);
 
-export interface LocalSemanticVectorizerOptions {
+export interface HashedLexicalVectorizerOptions {
   readonly dimensions?: number;
 }
 
-export interface LocalSemanticVector {
+export interface HashedLexicalVector {
   readonly dimensions: number;
   readonly values: readonly number[];
 }
 
-export class LocalSemanticVectorizer {
+/**
+ * Deterministic lexical feature hashing over normalized tokens, lightweight stems and bigrams.
+ * This is intentionally not called semantic: it uses no embeddings, model or learned representation.
+ */
+export class HashedLexicalVectorizer {
   private readonly dimensions: number;
 
-  public constructor(options: LocalSemanticVectorizerOptions = {}) {
+  public constructor(options: HashedLexicalVectorizerOptions = {}) {
     this.dimensions = options.dimensions ?? DEFAULT_DIMENSIONS;
     if (!Number.isSafeInteger(this.dimensions) || this.dimensions <= 0) {
-      throw new Error('Local semantic vector dimensions must be a positive safe integer');
+      throw new Error('Hashed lexical vector dimensions must be a positive safe integer');
     }
   }
 
-  public encode(text: string): LocalSemanticVector {
+  public encode(text: string): HashedLexicalVector {
     const tokens = tokenize(text);
     const values = Array.from({ length: this.dimensions }, () => 0);
 
@@ -65,9 +69,9 @@ export class LocalSemanticVectorizer {
     return { dimensions: this.dimensions, values: normalize(values) };
   }
 
-  public similarity(left: LocalSemanticVector, right: LocalSemanticVector): number {
+  public similarity(left: HashedLexicalVector, right: HashedLexicalVector): number {
     if (left.dimensions !== right.dimensions) {
-      throw new Error('Cannot compare local semantic vectors with different dimensions');
+      throw new Error('Cannot compare hashed lexical vectors with different dimensions');
     }
     return cosineSimilarity(left.values, right.values);
   }

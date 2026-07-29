@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { HybridSearchCatalogDocuments } from '../../src/application/use-cases/hybrid-search-catalog-documents.js';
+import { RerankedSearchCatalogDocuments } from '../../src/application/use-cases/reranked-search-catalog-documents.js';
 import type {
   CatalogDocumentSearchQuery,
   CatalogDocumentSearchResult,
@@ -19,26 +19,29 @@ class SearchOnlyCatalogRepository {
   }
 }
 
-describe('HybridSearchCatalogDocuments', () => {
-  it('expands candidate retrieval and returns hybrid scores', async () => {
+describe('RerankedSearchCatalogDocuments', () => {
+  it('expands FTS candidates and returns honestly named lexical reranking scores', async () => {
     const repository = new SearchOnlyCatalogRepository([catalogSearchResult]);
-    const useCase = new HybridSearchCatalogDocuments(repository);
+    const useCase = new RerankedSearchCatalogDocuments(repository);
 
     const response = await useCase.execute({ query: 'sqlite maintenance', limit: 1 });
 
     expect(repository.lastQuery).toEqual({ query: 'sqlite maintenance', limit: 4 });
-    expect(response.strategy).toBe('lexical-semantic-hybrid');
+    expect(response.strategy).toBe('fts5-hashed-lexical-rerank');
+    expect(response.schemaVersion).toBe('2.0');
     expect(response.resultCount).toBe(1);
     expect(response.results[0]?.sourceKey).toBe('local-docs');
-    expect(response.results[0]?.hybridScore).toBeGreaterThan(0);
+    expect(response.results[0]?.rerankScore).toBeGreaterThan(0);
+    expect(response.results[0]?.combinedScore).toBeGreaterThan(0);
+    expect(response.results[0]).not.toHaveProperty('semanticScore');
   });
 
   it('rejects empty queries before reaching the repository', async () => {
     const repository = new SearchOnlyCatalogRepository([]);
-    const useCase = new HybridSearchCatalogDocuments(repository);
+    const useCase = new RerankedSearchCatalogDocuments(repository);
 
     await expect(useCase.execute({ query: '   ' })).rejects.toThrow(
-      'Hybrid catalog search query must not be empty',
+      'Reranked catalog search query must not be empty',
     );
     expect(repository.lastQuery).toBeUndefined();
   });
