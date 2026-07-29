@@ -13,8 +13,9 @@ technologie :
 - similarité : cosine sur le vecteur hashé local ;
 - reranking : combinaison du score lexical exposé par le repository et du score hashé local.
 
-La recherche FTS5/BM25 reste la baseline et la surface de référence tant que le benchmark V2.13 ne
-démontre pas qu'un reranker mérite sa complexité.
+Le benchmark V2.13 du 29 juillet 2026 montre que le reranker lexical hashé n'améliore aucune métrique
+qualité sur le corpus de référence. FTS5/BM25 reste donc la baseline opérationnelle. Une étude séparée
+d'embeddings locaux est autorisée pour améliorer le rappel, sans intégration automatique au produit.
 
 ## Commande expérimentale
 
@@ -32,6 +33,9 @@ Options :
 --limit <n>
 --candidate-limit <n>
 ```
+
+Cette commande reste expérimentale. Le benchmark V2.13 ne justifie pas sa généralisation comme
+stratégie de recherche par défaut.
 
 ## Contrat
 
@@ -72,19 +76,48 @@ Le protocole versionné utilise :
 
 - 10 domaines de documentation officielle ;
 - 100 documents synthétiques reproductibles dérivés du manifest ;
-- 10 000 sections par défaut ;
+- 10 000 sections ;
 - anglais et français ;
 - 50 requêtes annotées dans 10 catégories ;
 - MRR@10, nDCG@10, Recall@10, Precision@5 et zero-result rate ;
-- warm-up contrôlé, ordre lexical/reranker alterné, répétitions, p50/p95/p99 ;
+- warm-up contrôlé, ordre lexical/reranker alterné, 6 répétitions, p50/p95/p99 ;
 - RSS, taille SQLite/FTS, rebuild complet et sync incrémentale.
+
+Rapport :
+
+```text
+docs/planning/benchmark-results/benchmark-v2-search-quality-2026-07-29.json
+```
+
+SHA benchmarké :
+
+```text
+be738b1c0fc9c9fa04beb06a5699753cbfa2ff9c
+```
+
+Résultats principaux :
+
+| Mesure | FTS5/BM25 | Reranker lexical hashé |
+| --- | ---: | ---: |
+| MRR@10 | 0,74 | 0,74 |
+| nDCG@10 | 0,74 | 0,74 |
+| Recall@10 | 0,74 | 0,74 |
+| Precision@5 | 0,148 | 0,148 |
+| Zero-result rate | 0,26 | 0,26 |
+| p95 | 17,572 ms | 17,720 ms |
+
+Le gain qualité du reranker est nul. Son ratio p95 par rapport à la baseline vaut 1,0084.
+
+Les catégories `paraphrase` et `multi-document` affichent chacune un zero-result rate de 1,00. Les
+catégories API exacte, configuration, filtres, accents, identifiants et versions atteignent Recall@10 =
+1,00 sur ce corpus. Le principal déficit mesuré concerne donc le rappel lexical, pas la performance.
 
 Les contenus du benchmark sont des **surrogates synthétiques** : les domaines et sujets sont
 versionnés dans le manifest, mais aucun gros téléchargement de documentation tierce n'est committé.
-Cette propriété rend le benchmark déterministe et reproductible ; elle doit rester explicite dans
-l'interprétation des résultats.
+Cette propriété rend le benchmark déterministe et reproductible, mais limite la validité externe des
+résultats ; une alternative devra être revalidée sur corpus réel ou plus représentatif avant adoption.
 
-## Règle de décision
+## Décision V2.13
 
 Seuils de départ :
 
@@ -95,11 +128,16 @@ nDCG@10   >= 0,75
 p95       <= 150 ms à 10 000 sections
 ```
 
-Le reranker local n'est conservé que s'il apporte au moins 0,02 de gain absolu sur Recall@10 ou
-nDCG@10, reste sous le budget de 150 ms et ne dépasse pas 2,5× le p95 de la baseline.
+La baseline passe MRR@10 et la latence, mais manque Recall@10 et nDCG@10. Le reranker lexical ne
+ferme aucun écart et n'atteint pas le gain minimal de 0,02.
 
-Les embeddings locaux ne sont étudiés que si FTS5/BM25 manque un seuil et que le reranking lexical
-ne ferme pas l'écart. Aucune API commerciale obligatoire n'est introduite.
+Décision :
+
+- conserver FTS5/BM25 comme baseline opérationnelle actuelle ;
+- ne pas généraliser le reranker lexical hashé ;
+- autoriser une étude distincte d'embeddings locaux pour les paraphrases et le rappel multi-document ;
+- ne pas ajouter d'embeddings au produit sans tranche dédiée et benchmark comparatif ;
+- ne pas introduire d'API commerciale obligatoire.
 
 ## Limites volontaires
 
@@ -107,4 +145,5 @@ ne ferme pas l'écart. Aucune API commerciale obligatoire n'est introduite.
 - Pas de stockage vectoriel durable.
 - Pas de mutation du catalogue par la recherche.
 - Pas d'exposition MCP mutable.
-- Pas de conclusion d'architecture sans rapport de benchmark versionné.
+- Pas de généralisation du reranker lexical hashé après un gain mesuré nul.
+- Pas d'adoption d'une alternative sans nouveau benchmark versionné.
