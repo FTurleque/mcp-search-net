@@ -27,18 +27,18 @@ Cible minimale :
 
 Sources candidates :
 
-| Source | Type | Langue | Usage |
-|---|---|---|---|
-| Node.js docs | API runtime | en | API, erreurs, options |
-| TypeScript handbook | langage | en | concepts, config |
-| MDN | Web/API | en/fr | APIs navigateur |
-| GitHub Docs | plateforme | en | Actions, Copilot, API |
-| JetBrains Docs | IDE | en | IntelliJ, configuration |
-| Maven Docs | build Java | en | lifecycle, plugins |
-| Java/OpenJDK Docs | langage/runtime | en | classes, modules |
-| Docker Docs | infra | en | compose, images |
-| SQLite Docs | base locale | en | FTS5, SQL |
-| SearXNG/Crawl4AI docs | providers | en | exploitation MCP |
+| Source                | Type            | Langue | Usage                   |
+| --------------------- | --------------- | ------ | ----------------------- |
+| Node.js docs          | API runtime     | en     | API, erreurs, options   |
+| TypeScript handbook   | langage         | en     | concepts, config        |
+| MDN                   | Web/API         | en/fr  | APIs navigateur         |
+| GitHub Docs           | plateforme      | en     | Actions, Copilot, API   |
+| JetBrains Docs        | IDE             | en     | IntelliJ, configuration |
+| Maven Docs            | build Java      | en     | lifecycle, plugins      |
+| Java/OpenJDK Docs     | langage/runtime | en     | classes, modules        |
+| Docker Docs           | infra           | en     | compose, images         |
+| SQLite Docs           | base locale     | en     | FTS5, SQL               |
+| SearXNG/Crawl4AI docs | providers       | en     | exploitation MCP        |
 
 Le corpus doit rester local, reproductible et versionné au niveau de ses manifests. Les contenus téléchargés peuvent rester hors Git si leur taille est importante.
 
@@ -46,16 +46,16 @@ Le corpus doit rester local, reproductible et versionné au niveau de ses manife
 
 Créer au moins 50 requêtes réparties par type :
 
-| Type | Exemple | Objectif |
-|---|---|---|
-| API exacte | `fs.readFile options` | retrouver une API précise |
-| Concept | `typescript narrowing` | retrouver une explication |
-| Configuration | `github actions cache npm` | retrouver une option |
-| Erreur | `docker compose service_healthy` | retrouver une cause |
-| Version | `node 24 permission model` | filtrer version/source |
-| Multi-document | `sqlite fts5 bm25 rank` | croiser sections |
-| Paraphrase | `how to avoid stdout logs in mcp stdio` | robustesse lexicale |
-| Filtre source | `source:github actions checkout` | tester filtres |
+| Type           | Exemple                                 | Objectif                  |
+| -------------- | --------------------------------------- | ------------------------- |
+| API exacte     | `fs.readFile options`                   | retrouver une API précise |
+| Concept        | `typescript narrowing`                  | retrouver une explication |
+| Configuration  | `github actions cache npm`              | retrouver une option      |
+| Erreur         | `docker compose service_healthy`        | retrouver une cause       |
+| Version        | `node 24 permission model`              | filtrer version/source    |
+| Multi-document | `sqlite fts5 bm25 rank`                 | croiser sections          |
+| Paraphrase     | `how to avoid stdout logs in mcp stdio` | robustesse lexicale       |
+| Filtre source  | `source:github actions checkout`        | tester filtres            |
 
 Chaque requête doit avoir :
 

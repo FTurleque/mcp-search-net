@@ -2,7 +2,8 @@
 
 > **Statut** : implémentation V2 documentaire en cours dans la PR #8.
 >
-> **Dernière mise à jour** : 2026-07-29 — V2.9 en cours sur `fix/v2-9-catalog-integrity`.
+> **Dernière mise à jour** : 2026-07-29 — V2.9 intégrée ; V2.10 implémentée et qualifiée
+> localement sur `fix/v2-10-quality-gates`.
 >
 > **PR active** : #8 — `feat/v2-catalog-storage`, conservée en draft.
 >
@@ -73,13 +74,14 @@ La V2 reste local-first : SQLite, FTS, BM25, CLI/worker et MCP STDIO. Aucun LLM 
 - Synchronisation : CLI contrôlée, ETag, Last-Modified, hash, staleness non destructif, sync exhaustive, rate limiting et reprise par curseur.
 - Maintenance contrôlée locale : cycle `catalog:maintain`, verrou inter-processus, rétention opérationnelle, analyse/optimisation SQLite, checkpoint WAL et vacuum optionnel.
 - Recherche hybride locale optionnelle : reranking lexical/sémantique déterministe côté CLI, sans API payante, sans modèle téléchargé et sans service externe.
-- MCP : outils V1 conservés, outil V2 `search_docs`, resources read-only.
+- MCP : outils V1 conservés, outils V2 `search_docs`, `list_docs` et `read_doc_section`, resources
+  read-only.
 
 ## Exposition MCP V2
 
 État implémenté dans la PR #8 :
 
-- outil V2 : `search_docs` ;
+- outils V2 : `search_docs`, `list_docs`, `read_doc_section` ;
 - resources statiques :
   - `mcp-search-net://catalog` ;
   - `mcp-search-net://sources` ;
@@ -138,6 +140,7 @@ La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intell
 ### V2.4 — Exposition MCP V2
 
 - [x] Outil MCP `search_docs`.
+- [x] Outils MCP compacts `list_docs` et `read_doc_section`.
 - [x] Wrapper MCP V2 conservant `search_web` et `fetch_url`.
 - [x] Resources read-only catalogue/sources/documents/sections.
 - [x] Templates read-only sources/documents/sections.
@@ -212,9 +215,11 @@ Validation locale V2.7 :
 ### V2.8 à V2.15 — Hardening post-audit
 
 - [x] V2.8 : benchmark initial de taille MCP et nettoyage qualité incrémental (#9, #10, #11).
-- [x] V2.9 : intégrité transactionnelle, FTS et migrations (#12) — implémentée et qualifiée
-  localement sur la branche focalisée ; agrégation dans la PR #8 et clôture de #12 encore requises.
-- [ ] V2.10 : gates qualité, coverage et gouvernance (#13, #10).
+- [x] V2.9 : intégrité transactionnelle, FTS et migrations (#12) — intégrée dans la branche
+      d'agrégation, qualifiée sur le head exact et clôturée.
+- [x] V2.10 : gates qualité, coverage et gouvernance (#13, #10) — runtime et tests V2
+      réintégrés dans ESLint/Prettier, couverture globale et ciblée mesurée, workflow manuel
+      dédupliqué, rapports publiables et gates locaux qualifiés sans skip.
 - [ ] V2.11 : scalabilité, pagination et budget contexte (#14, #9, #11).
 - [ ] V2.12 : sécurité, installation et exploitation (#15).
 - [ ] V2.13 : qualité de recherche et benchmark représentatif (#16).
@@ -251,6 +256,7 @@ Validation locale V2.7 :
 ### AC-V2-04 : Exposition MCP validée
 
 - [x] `search_docs` implémenté.
+- [x] `list_docs` et `read_doc_section` implémentés avec réponses compactes.
 - [x] Resources read-only implémentées côté serveur.
 - [x] Templates dynamiques sources, documents, versions et sections implémentés côté serveur.
 - [x] E2E MCP partiel ajouté.
