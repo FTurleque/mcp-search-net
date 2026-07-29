@@ -1,6 +1,6 @@
 # ADR-017 — Choisir la stratégie de recherche V2 sur benchmark mesuré
 
-- **Statut** : Proposé — décision finale après exécution du benchmark V2.13
+- **Statut** : Accepté
 - **Date** : 2026-07-29
 - **Décisions liées** : ADR-010, ADR-015, ADR-016
 - **Issue** : #16
@@ -92,26 +92,64 @@ Aucune API commerciale obligatoire n'est autorisée par cet ADR.
 
 ## Résultat V2.13
 
-À compléter avec le rapport exact-head :
+Exécution Windows PowerShell du 29 juillet 2026 sur Node.js 24.17.0 :
 
 ```text
 Rapport : docs/planning/benchmark-results/benchmark-v2-search-quality-2026-07-29.json
-SHA testé : À COMPLÉTER
-Décision : À COMPLÉTER
-Recall@10 baseline : À COMPLÉTER
-MRR@10 baseline : À COMPLÉTER
-nDCG@10 baseline : À COMPLÉTER
-p95 baseline : À COMPLÉTER
-Gain reranker : À COMPLÉTER
-p95 reranker : À COMPLÉTER
+SHA benchmarké : be738b1c0fc9c9fa04beb06a5699753cbfa2ff9c
+Corpus : 10 sources / 100 documents / 10 000 sections / 50 requêtes / en + fr
+Décision : evaluate-local-embeddings
+
+FTS5/BM25
+MRR@10        0,74  PASS seuil 0,70
+nDCG@10       0,74  FAIL seuil 0,75
+Recall@10     0,74  FAIL seuil 0,85
+Precision@5   0,148
+zero-result   0,26
+p95           17,572 ms  PASS seuil 150 ms
+
+Reranker lexical hashé
+MRR@10        0,74
+nDCG@10       0,74
+Recall@10     0,74
+Precision@5   0,148
+zero-result   0,26
+p95           17,720 ms
+Gain qualité  0
+Ratio p95     1,0084
 ```
 
-Le statut de cet ADR passe à **Accepté** uniquement après insertion de ces mesures et qualification du
-SHA exact correspondant.
+La baseline est très largement dans le budget de latence mais manque les seuils Recall@10 et nDCG@10.
+Le reranker lexical hashé ne modifie aucune métrique qualité et n'atteint donc pas le gain minimal de
+0,02. Il n'est pas retenu comme stratégie produit.
+
+Les deux catégories les plus faibles sont `paraphrase` et `multi-document` : chacune affiche un
+zero-result rate de 1,00 sur les cinq requêtes du jeu. Les catégories API exacte, configuration,
+filtres, accents, identifiants et versions atteignent Recall@10 = 1,00 sur ce corpus. Ces écarts
+montrent que le problème mesuré est principalement un problème de rappel lexical, pas de latence.
+
+La décision V2.13 est donc :
+
+1. conserver FTS5/BM25 comme baseline opérationnelle actuelle ;
+2. ne pas généraliser le reranker lexical hashé, car son gain mesuré est nul ;
+3. autoriser une tranche d'étude séparée sur des embeddings **locaux** pour les paraphrases et le
+   rappel multi-document ;
+4. ne pas intégrer d'embeddings au produit sans benchmark comparatif dédié sur corpus réel ou plus
+   représentatif ;
+5. ne pas introduire d'API commerciale obligatoire.
+
+Le corpus V2.13 étant synthétique, cette décision autorise une étude et fixe une baseline mesurée ;
+elle ne constitue pas une preuve de qualité externe sur l'ensemble des documentations réelles.
 
 ## Conséquences
 
 - La recherche reste local-first et sans coût d'API obligatoire.
 - La terminologie publique reflète la technologie réelle.
+- Le reranker lexical hashé reste une expérience mesurée, non une capacité « sémantique » à
+  généraliser.
+- FTS5/BM25 reste le moteur actuel tant qu'une alternative locale n'a pas démontré un meilleur rappel
+  avec un coût acceptable.
+- Une étude d'embeddings locaux est désormais justifiée, mais son intégration nécessite une tranche et
+  une décision distinctes.
 - Toute complexité supplémentaire doit être justifiée par une mesure reproductible.
 - Les résultats V2.13 servent de baseline pour les évolutions futures de recherche.
