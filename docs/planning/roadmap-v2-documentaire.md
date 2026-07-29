@@ -2,8 +2,8 @@
 
 > **Statut** : implémentation V2 documentaire en cours dans la PR #8.
 >
-> **Dernière mise à jour** : 2026-07-29 — V2.12 qualifiée exact-head, mergée dans
-> `feat/v2-catalog-storage` via PR #23 et réconciliée post-merge ; prochain jalon : V2.13 / #16.
+> **Dernière mise à jour** : 2026-07-29 — V2.13 qualifiée exact-head, mergée dans
+> `feat/v2-catalog-storage` via PR #24 et réconciliée post-merge ; prochain jalon : V2.14 / #17.
 >
 > **PR active** : #8 — `feat/v2-catalog-storage`, conservée en draft jusqu'au gate final #18.
 >
@@ -14,7 +14,7 @@
 
 ## État synthétique
 
-La V2 documentaire est avancée. La PR #8 contient déjà une implémentation locale couvrant stockage catalogue, ingestion, recherche, synchronisation contrôlée, purge, maintenance opérationnelle, recherche hybride optionnelle et exposition MCP read-only.
+La V2 documentaire est avancée. La PR #8 contient déjà une implémentation locale couvrant stockage catalogue, ingestion, recherche, synchronisation contrôlée, purge, maintenance opérationnelle, reranking lexical optionnel et exposition MCP read-only.
 
 Avancement :
 
@@ -27,17 +27,23 @@ Avancement :
 - V2.11 scalabilité : lectures par identifiant, filtres SQL, pagination stable, resources bornées et
   benchmark jusqu'à 10 000 sections qualifiés localement sans skip.
 - V2.6 automatisation contrôlée : implémentée et validée localement sur la tranche maintenance contrôlée.
-- V2.7 recherche hybride locale : implémentée et validée localement comme prototype optionnel sans API payante, modèle téléchargé ni service externe.
+- V2.7 reranking lexical historique : prototype local optionnel, initialement nommé « hybrid/semantic » alors qu'il n'utilise aucun embedding.
 - V2.12 sécurité/exploitation : corrections post-audit qualifiées sous Windows sur le head exact
   `4651ccae3315e4b64e1bd42e1274fa9eed34a83f`, SonarQube Cloud vert avec 0 Security Hotspots,
   puis merge tree-equivalent `64622e6e40f3ad18bc5c2a867a5600f19bf2d25c` dans la branche d'agrégation.
+- V2.13 qualité de recherche : nomenclature corrigée, benchmark 10 sources / 100 documents / 10 000
+  sections / 50 requêtes, qualification exacte sur `aeb49b1f6a7f035779e726a9db641710f172819f`,
+  merge #24 tree-equivalent `c9ba09345cebb1a9f9dfa63f98e0352c33dcefd2`. FTS5/BM25 reste la baseline,
+  le reranker lexical hashé n'est pas généralisé et une étude séparée d'embeddings locaux est justifiée.
 
-Les validations historiques restent attachées à leurs SHA respectifs. La preuve V2.12 finale archive
-la qualification exact-head et la vérification que le merge n'a introduit aucun changement de contenu.
+Les validations historiques restent attachées à leurs SHA respectifs. Les preuves V2.12 et V2.13
+archivent chacune la qualification exact-head et la vérification que leur merge n'a introduit aucun
+changement de contenu.
 
-Le hardening post-audit suit désormais V2.9 à V2.15. V2.9 remplace les écritures fractionnées par
-une primitive de révision atomique, réconcilie ADR-015 via C007, protège les migrations par checksum
-et étend `catalog verify`. Aucun item ultérieur ni le merge de #8 ne peut contourner son gate.
+Le hardening post-audit suit V2.9 à V2.15. V2.9 remplace les écritures fractionnées par une primitive
+de révision atomique, réconcilie ADR-015 via C007, protège les migrations par checksum et étend
+`catalog verify`. Les tranches V2.9 à V2.13 sont maintenant intégrées et qualifiées. Aucun item
+ultérieur ni le merge de #8 ne peut contourner son gate.
 
 ## Pré-requis V2
 
@@ -60,9 +66,10 @@ et étend `catalog verify`. Aucun item ultérieur ni le merge de #8 ne peut cont
 - [x] ADR-014 : séparation `cache.db` / `catalog.db`.
 - [x] ADR-015 : FTS5 `contentless-delete`.
 - [x] ADR-016 : exposition mixte outil + resources MCP.
+- [x] ADR-017 : stratégie de recherche décidée sur benchmark V2.13.
 - [x] Schéma catalogue V2 documenté.
 - [x] Synchronisation V2 documentée.
-- [x] Benchmark V2 documenté.
+- [x] Benchmark V2 documenté et exécuté.
 
 ## Vision V2
 
@@ -76,10 +83,11 @@ La V2 reste local-first : SQLite, FTS, BM25, CLI/worker et MCP STDIO. Aucun LLM 
 - Catalogue V2 : `.data/catalog.db`, durable.
 - Migrations catalogue : `catalog-migrations/Cxxx__...`.
 - Tables principales : `catalog_sources`, `documents`, `document_versions`, `document_sections`, `sync_runs`, `document_section_fts`.
-- Recherche : FTS/BM25 avec fallback LIKE et snippets.
+- Recherche : FTS5/BM25 avec fallback LIKE et snippets ; baseline produit actuelle confirmée par V2.13.
 - Synchronisation : CLI contrôlée, ETag, Last-Modified, hash, staleness non destructif, sync exhaustive, rate limiting et reprise par curseur.
 - Maintenance contrôlée locale : cycle `catalog:maintain`, verrou inter-processus, rétention opérationnelle, analyse/optimisation SQLite, checkpoint WAL et vacuum optionnel.
-- Recherche hybride locale optionnelle : reranking lexical/sémantique déterministe côté CLI, sans API payante, sans modèle téléchargé et sans service externe.
+- Reranking lexical hashé : expérimental et non généralisé après gain qualité V2.13 mesuré à zéro.
+- Embeddings locaux : étude autorisée uniquement dans une tranche distincte avec benchmark comparatif ; aucune API commerciale obligatoire.
 - MCP : outils V1 conservés, outils V2 `search_docs`, `list_docs` et `read_doc_section`, resources
   read-only.
 
@@ -154,7 +162,7 @@ La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intell
 - [x] Lookup SQLite des versions documentaires par document et par id.
 - [x] E2E MCP partiel sur resources et templates.
 - [x] Recette de spike IntelliJ/Copilot V2 préparée.
-- [ ] Revalidation locale ou CI manuelle du head courant de PR.
+- [ ] Revalidation locale ou CI manuelle du head courant de PR #8.
 - [ ] Spike IntelliJ/Copilot sur resources MCP à exécuter.
 
 ### V2.5 — Synchronisation incrémentale
@@ -172,7 +180,7 @@ La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intell
 - [x] `404` traité en `STALE` non destructif.
 - [x] `410` traité en `REMOVED` non destructif.
 - [x] Redirection permanente traitée en `REDIRECTED`.
-- [ ] Revalidation locale ou CI manuelle du head courant de PR.
+- [ ] Revalidation locale ou CI manuelle du head courant de PR #8.
 
 ### V2.6 — Automatisation contrôlée
 
@@ -194,27 +202,31 @@ Validation locale V2.6 :
 - Statut archivé dans [`status-v2-6.md`](status-v2-6.md).
 - Validation archivée dans [`validation-v2-6-local-success-2026-07-05.md`](validation-v2-6-local-success-2026-07-05.md).
 
-### V2.7 — Recherche hybride locale optionnelle
+### V2.7 — Prototype de reranking lexical local
+
+État historique V2.7 :
 
 - [x] Prototype local sans API payante.
-- [x] Vectorisation locale déterministe.
-- [x] Use-case `HybridSearchCatalogDocuments`.
-- [x] CLI `catalog-hybrid-search`.
-- [x] Script npm `catalog:hybrid-search`.
-- [x] Test applicatif du reranking hybride.
-- [x] Documentation `catalog-semantic-search-v2.md`.
-- [x] Validation locale typecheck/build/tests/recherche hybride.
-- [ ] Benchmark comparatif lexical/hybride sur corpus représentatif.
-- [ ] Décision de généralisation après mesure du gain et de la latence.
+- [x] Vectorisation locale déterministe par feature hashing.
+- [x] Prototype initialement exposé sous les noms `HybridSearchCatalogDocuments`, `catalog-hybrid-search` et `lexical-semantic-hybrid`.
+- [x] Validation locale historique typecheck/build/tests/reranking.
 
-Validation locale V2.7 :
+Réconciliation V2.13 :
+
+- [x] Nomenclature corrigée : `HashedLexicalVectorizer`, `RerankedSearchCatalogDocuments`, `rerankScore`, `combinedScore`, `fts5-hashed-lexical-rerank`.
+- [x] Anciens symboles `semantic`/`hybrid` trompeurs retirés du build courant.
+- [x] Benchmark comparatif exécuté sur 10 000 sections et 50 requêtes annotées.
+- [x] Gain qualité du reranker mesuré à 0 : aucune généralisation.
+- [x] Étude séparée d'embeddings locaux autorisée par ADR-017, sans intégration automatique.
+
+Validation locale historique V2.7 :
 
 - `npm run typecheck` : OK.
 - `npm run build` : OK.
 - `npm run test` : OK, 36 fichiers de tests passés, 182 tests passés.
-- Recherche hybride : OK sur le catalogue de spike.
+- Recherche hybride historique : OK sur le catalogue de spike.
 - Résultats retournés : 10.
-- Stratégie : `lexical-semantic-hybrid`.
+- Ancienne stratégie : `lexical-semantic-hybrid`.
 - Statut archivé dans [`status-v2-7.md`](status-v2-7.md).
 - Validation archivée dans [`validation-v2-7-local-success-2026-07-05.md`](validation-v2-7-local-success-2026-07-05.md).
 
@@ -231,7 +243,9 @@ Validation locale V2.7 :
 - [x] V2.12 : sécurité, installation et exploitation (#15) — corrections post-audit qualifiées sur
       head exact Windows/déterministe, runtime et rollback validés, audits npm à zéro, SonarQube
       Cloud vert, merge #23 tree-equivalent intégré dans `feat/v2-catalog-storage`.
-- [ ] V2.13 : qualité de recherche et benchmark représentatif (#16).
+- [x] V2.13 : qualité de recherche et benchmark représentatif (#16) — qualification exact-head
+      `aeb49b1f6a7f035779e726a9db641710f172819f`, merge #24 tree-equivalent, FTS5/BM25 conservé
+      comme baseline, reranker lexical non généralisé, étude d'embeddings locaux autorisée.
 - [ ] V2.14 : clients MCP et gel des contrats (#17).
 - [ ] V2.15 : qualification finale et réconciliation documentaire exhaustive (#18).
 
@@ -242,15 +256,16 @@ Validation locale V2.7 :
 - [x] `catalog.db` existe et reste séparé de `cache.db`.
 - [x] Documents ajoutables et récupérables via repository.
 - [x] Migrations catalogue idempotentes.
-- [x] Runtime ouvert et fermé proprement.
+- [x] Runtime ouvert et fermé propre au shutdown.
 
 ### AC-V2-02 : Recherche fonctionnelle
 
 - [x] Recherche multi-document sur sections courantes.
 - [x] Résultats filtrables.
 - [x] Snippets disponibles.
-- [x] Recherche hybride locale disponible en CLI optionnelle.
-- [ ] Benchmark final à exécuter sur corpus représentatif.
+- [x] Reranking lexical local disponible comme expérience mesurée.
+- [x] Benchmark représentatif exécuté : 10 sources, 100 documents, 10 000 sections, 50 requêtes.
+- [x] Décision V2.13 documentée dans ADR-017.
 
 ### AC-V2-03 : Synchronisation manuelle validée
 
@@ -282,9 +297,9 @@ Validation locale V2.7 :
 - [x] `search_web` et `fetch_url` conservés.
 - [x] Cache V1 non réutilisé comme catalogue.
 - [x] Catalogue séparé dans `catalog.db`.
-- [x] Suites V1/V2 revalidées localement sur le head exact V2.12.
-- [x] Merge V2.12 vérifié tree-equivalent au head qualifié.
-- [ ] Revalidation exact-head après intégration des tranches V2.13 à V2.15.
+- [x] Suites V1/V2 revalidées localement sur le head exact V2.13.
+- [x] Merge V2.13 vérifié tree-equivalent au head qualifié.
+- [ ] Revalidation exact-head après intégration des tranches V2.14 à V2.15.
 
 ### AC-V2-06 : Exploitation contrôlée V2.6 validée
 
@@ -295,13 +310,14 @@ Validation locale V2.7 :
 - [x] Maintenance SQLite locale documentée et testée.
 - [x] Validation locale sur `.data/catalog-spike.db`.
 
-### AC-V2-07 : Recherche hybride optionnelle V2.7 validée
+### AC-V2-07 : Reranking lexical V2.7/V2.13 validé
 
-- [x] Prototype local sans dépendance payante.
-- [x] CLI `catalog-hybrid-search` disponible.
-- [x] Scores lexical, sémantique local et hybride retournés.
-- [x] Validation locale sur catalogue de spike.
-- [ ] Benchmark final lexical/hybride restant à faire avant généralisation.
+- [x] Prototype historique local sans dépendance payante.
+- [x] Nomenclature corrigée pour refléter le feature hashing lexical réel.
+- [x] Benchmark lexical/reranker exécuté sur corpus représentatif reproductible.
+- [x] Reranker non généralisé après gain qualité mesuré à zéro.
+- [x] FTS5/BM25 conservé comme baseline actuelle.
+- [x] Étude d'embeddings locaux autorisée uniquement comme tranche distincte.
 
 ### AC-V2-08 : Sécurité et exploitation V2.12 validées
 
@@ -322,10 +338,21 @@ Validation locale V2.7 :
 - [x] Preuve finale archivée dans
       [`validation-v2-12-security-operations-2026-07-29.md`](validation-v2-12-security-operations-2026-07-29.md).
 
+### AC-V2-09 : Qualité de recherche V2.13 validée
+
+- [x] Benchmark exact-head exécuté sur 10 000 sections et 50 requêtes annotées.
+- [x] `npm run check` complet PASS sur `aeb49b1f6a7f035779e726a9db641710f172819f`.
+- [x] 221 required, 100 unit, 6 contract, 68 security, 25 resilience, 2 performance, 35 integration
+      et 2 E2E déterministes PASS sans skip.
+- [x] Audits npm complet et production : 0 vulnérabilité.
+- [x] Merge #24 sous garde exact-head vérifié tree-equivalent.
+- [x] Preuve finale archivée dans
+      [`validation-v2-13-search-quality-2026-07-29.md`](validation-v2-13-search-quality-2026-07-29.md).
+
 ## Ordre de réalisation recommandé
 
-1. V2.9 à V2.12 (#12 à #15) sont intégrées et qualifiées localement.
-2. Exécuter maintenant #16 / V2.13, puis #17 / V2.14 et #18 / V2.15.
+1. V2.9 à V2.13 (#12 à #16) sont intégrées et qualifiées localement.
+2. Exécuter maintenant #17 / V2.14 puis #18 / V2.15.
 3. Conserver #8 en draft et ne pas déclencher GitHub Actions pendant la restriction de quota.
 4. Qualifier exact-head localement, Docker/Linux et clients selon #18.
 5. Merger #8 sous garde expected-head uniquement après tous les gates, puis revalider `master`.
@@ -353,7 +380,7 @@ docker compose down
 ## Risques et mitigation
 
 - **Corruption cache/catalogue** : bases distinctes, runners distincts, tests de séparation.
-- **Performance recherche insuffisante** : benchmark, corpus borné, pondérations mesurées.
+- **Qualité de rappel insuffisante** : FTS5/BM25 reste la baseline ; étude d'embeddings locaux autorisée uniquement sur benchmark dédié.
 - **Synchronisation trop agressive** : seeds explicites, rate limiting, profondeur zéro, CLI contrôlée.
 - **Incompatibilité resources IntelliJ/Copilot** : spike avant gel du contrat, outil `search_docs` comme fallback read-only si nécessaire.
 - **Régression V1** : validation locale puis CI manuelle dès reset du quota Actions.
@@ -364,13 +391,14 @@ docker compose down
 
 La V2 sera considérée opérationnelle lorsque :
 
-- les critères AC-V2-01 à AC-V2-08 seront validés avec preuves sur un head courant ;
+- les critères AC-V2-01 à AC-V2-09 seront validés avec preuves sur un head courant ;
 - le catalogue contiendra au moins 10 documents de test indexés ;
 - la recherche retournera des résultats pertinents classés ;
 - IntelliJ/Copilot détectera et exploitera `search_docs` ou les resources validées ;
 - la synchronisation manuelle via CLI sera documentée et testée ;
 - la maintenance contrôlée sera documentée et testée ;
-- la recherche hybride restera optionnelle tant que le benchmark final ne justifie pas sa généralisation ;
+- le reranker lexical hashé ne sera pas généralisé sans nouveau gain mesuré ;
+- toute alternative par embeddings restera locale et devra gagner un benchmark comparatif dédié ;
 - aucune régression V1 ne sera introduite.
 
 ## Références
@@ -382,12 +410,14 @@ La V2 sera considérée opérationnelle lorsque :
 - [ADR-014 — Isoler le catalogue V2 dans catalog.db](../adr/ADR-014-catalog-db-isolation.md)
 - [ADR-015 — Utiliser FTS5 contentless-delete](../adr/ADR-015-fts5-contentless-delete.md)
 - [ADR-016 — Exposer la V2 avec outil et resources MCP](../adr/ADR-016-mcp-v2-tools-resources.md)
+- [ADR-017 — Choisir la stratégie de recherche V2](../adr/ADR-017-search-quality-strategy-v2.md)
 - [Schéma catalogue V2](../reference/catalog-schema-v2.md)
 - [Synchronisation catalogue V2](../reference/catalog-sync-v2.md)
 - [Exploitation catalogue V2.12](../reference/catalog-operations-v2.md)
-- [Recherche sémantique V2.7](../reference/catalog-semantic-search-v2.md)
+- [Recherche documentaire V2.13 — FTS5 et reranking lexical](../reference/catalog-semantic-search-v2.md)
 - [Spike IntelliJ/Copilot — MCP V2 documentaire](spike-intellij-copilot-mcp-v2.md)
 - [Benchmark V2](benchmark-v2.md)
+- [Validation V2.13](validation-v2-13-search-quality-2026-07-29.md)
 - [Statut V2.6](status-v2-6.md)
 - [Validation locale V2.6](validation-v2-6-local-success-2026-07-05.md)
 - [Statut V2.7](status-v2-7.md)
