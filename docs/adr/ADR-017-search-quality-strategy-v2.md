@@ -90,13 +90,15 @@ ferme pas l'écart. Cette branche n'autorise pas automatiquement l'ajout d'embed
 
 Aucune API commerciale obligatoire n'est autorisée par cet ADR.
 
-## Résultat V2.13
+## Résultat V2.13 final
 
-Exécution Windows PowerShell du 29 juillet 2026 sur Node.js 24.17.0 :
+Qualification Windows PowerShell du 29 juillet 2026 sur Node.js 24.17.0 :
 
 ```text
-Rapport : docs/planning/benchmark-results/benchmark-v2-search-quality-2026-07-29.json
-SHA benchmarké : be738b1c0fc9c9fa04beb06a5699753cbfa2ff9c
+Rapport versionné : docs/planning/benchmark-results/benchmark-v2-search-quality-2026-07-29.json
+Preuve finale : docs/planning/validation-v2-13-search-quality-2026-07-29.md
+SHA fonctionnel qualifié exact : aeb49b1f6a7f035779e726a9db641710f172819f
+Merge #24 : c9ba09345cebb1a9f9dfa63f98e0352c33dcefd2
 Corpus : 10 sources / 100 documents / 10 000 sections / 50 requêtes / en + fr
 Décision : evaluate-local-embeddings
 
@@ -106,7 +108,9 @@ nDCG@10       0,74  FAIL seuil 0,75
 Recall@10     0,74  FAIL seuil 0,85
 Precision@5   0,148
 zero-result   0,26
-p95           17,572 ms  PASS seuil 150 ms
+p50           0,792 ms
+p95           17,246 ms  PASS seuil 150 ms
+p99           21,211 ms
 
 Reranker lexical hashé
 MRR@10        0,74
@@ -114,9 +118,11 @@ nDCG@10       0,74
 Recall@10     0,74
 Precision@5   0,148
 zero-result   0,26
-p95           17,720 ms
+p50           3,623 ms
+p95           17,939 ms
+p99           21,234 ms
 Gain qualité  0
-Ratio p95     1,0084
+Ratio p95     1,0402
 ```
 
 La baseline est très largement dans le budget de latence mais manque les seuils Recall@10 et nDCG@10.
@@ -140,6 +146,11 @@ La décision V2.13 est donc :
 
 Le corpus V2.13 étant synthétique, cette décision autorise une étude et fixe une baseline mesurée ;
 elle ne constitue pas une preuve de qualité externe sur l'ensemble des documentations réelles.
+
+Le merge de #24 a été effectué avec une garde sur le SHA qualifié. La comparaison GitHub entre
+`aeb49b1f6a7f035779e726a9db641710f172819f` et
+`c9ba09345cebb1a9f9dfa63f98e0352c33dcefd2` retourne `files: []` : aucun changement de contenu n'a
+été introduit par le commit de merge.
 
 ## Conséquences
 
