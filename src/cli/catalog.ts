@@ -218,10 +218,10 @@ async function main(argv: readonly string[]): Promise<void> {
     }
 
     if (options.command === 'health') {
-      const [verification, sources, documents] = await Promise.all([
+      const [verification, sourceCount, documentCount] = await Promise.all([
         new VerifyCatalog(repository).execute(),
-        repository.listSources(),
-        repository.listDocuments(),
+        repository.countSources(),
+        repository.countDocuments(),
       ]);
       const status = verification.status === 'OK' ? 'healthy' : 'degraded';
       process.stdout.write(
@@ -230,8 +230,8 @@ async function main(argv: readonly string[]): Promise<void> {
             schemaVersion: '1.0',
             status,
             path: options.path,
-            sourceCount: sources.length,
-            documentCount: documents.length,
+            sourceCount,
+            documentCount,
             verification,
           },
           null,
@@ -254,16 +254,16 @@ async function main(argv: readonly string[]): Promise<void> {
       return;
     }
 
-    const [sources, documents] = await Promise.all([
-      repository.listSources(),
-      repository.listDocuments(),
+    const [sourceCount, documentCount] = await Promise.all([
+      repository.countSources(),
+      repository.countDocuments(),
     ]);
     const output: CatalogStatusOutput = {
       schemaVersion: '1.0',
       status: 'ready',
       path: options.path,
-      sourceCount: sources.length,
-      documentCount: documents.length,
+      sourceCount,
+      documentCount,
     };
 
     process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
