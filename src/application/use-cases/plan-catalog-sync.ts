@@ -82,7 +82,9 @@ export class PlanCatalogSync {
 
     const configuredDocuments = input.documents ?? [];
     const entries = selectedSources.map((source): CatalogSyncPlanEntry => {
-      const currentDocumentCount = documents.filter((document) => document.sourceId === source.id).length;
+      const currentDocumentCount = documents.filter(
+        (document) => document.sourceId === source.id,
+      ).length;
       const documentEntries = configuredDocuments
         .filter((document) => document.sourceKey === source.sourceKey)
         .map((document): CatalogSyncDocumentPlanEntry => {
@@ -144,8 +146,12 @@ export class PlanCatalogSync {
 
     const plannedCount = entries.filter((entry) => entry.status === 'planned').length;
     const skippedCount = entries.filter((entry) => entry.status === 'skipped').length;
-    const plannedDocumentCount = entries.flatMap((entry) => entry.documents).filter((entry) => entry.status === 'planned').length;
-    const skippedDocumentCount = entries.flatMap((entry) => entry.documents).filter((entry) => entry.status === 'skipped').length;
+    const plannedDocumentCount = entries
+      .flatMap((entry) => entry.documents)
+      .filter((entry) => entry.status === 'planned').length;
+    const skippedDocumentCount = entries
+      .flatMap((entry) => entry.documents)
+      .filter((entry) => entry.status === 'skipped').length;
     const now = this.clock.now();
     const syncRun = await this.repository.addCatalogSyncRun({
       ...(selectedSources.length === 1 && selectedSources[0] !== undefined

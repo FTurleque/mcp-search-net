@@ -29,6 +29,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "test:coverage": "node scripts/run-test-suite.mjs coverage vitest.config.ts --coverage",
     "test:watch": "vitest",
     "test:required": "node scripts/run-test-suite.mjs required vitest.required.config.ts",
     "test:unit": "node scripts/run-test-suite.mjs unit vitest.unit.config.ts",
@@ -44,7 +45,7 @@
     "benchmark:v1": "node scripts/benchmark-v1.mjs",
     "install:user": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1",
     "install:user:run": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1 -StartServices -RunAfterInstall",
-    "check": "npm run check:runtime && npm run check:copilot && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test"
+    "check": "npm run check:runtime && npm run check:copilot && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run test:coverage"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
@@ -57,6 +58,7 @@
     "@eslint/js": "9.39.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "24.13.2",
+    "@vitest/coverage-v8": "4.1.9",
     "eslint": "9.39.1",
     "prettier": "3.6.2",
     "rimraf": "6.1.3",

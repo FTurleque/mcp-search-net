@@ -33,19 +33,19 @@ sync_runs
 
 Décrit une source documentaire gérée par le catalogue.
 
-| Colonne | Type | Contraintes | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK | Identifiant interne |
-| `source_key` | TEXT | UNIQUE NOT NULL | Clé stable, ex. `nodejs-docs` |
-| `display_name` | TEXT | NOT NULL | Nom lisible |
-| `base_url` | TEXT | NOT NULL | URL racine publique |
-| `source_type` | TEXT | NOT NULL | `documentation`, `reference`, `api`, `guide` |
-| `language` | TEXT | NOT NULL | Langue par défaut |
-| `freshness_policy` | TEXT | NOT NULL | `manual`, `daily`, `weekly`, `monthly` |
-| `sync_strategy` | TEXT | NOT NULL | `manual`, `polling` |
-| `enabled` | INTEGER | NOT NULL | 0/1 |
-| `created_at` | INTEGER | NOT NULL | Epoch ms |
-| `updated_at` | INTEGER | NOT NULL | Epoch ms |
+| Colonne            | Type    | Contraintes     | Description                                  |
+| ------------------ | ------- | --------------- | -------------------------------------------- |
+| `id`               | INTEGER | PK              | Identifiant interne                          |
+| `source_key`       | TEXT    | UNIQUE NOT NULL | Clé stable, ex. `nodejs-docs`                |
+| `display_name`     | TEXT    | NOT NULL        | Nom lisible                                  |
+| `base_url`         | TEXT    | NOT NULL        | URL racine publique                          |
+| `source_type`      | TEXT    | NOT NULL        | `documentation`, `reference`, `api`, `guide` |
+| `language`         | TEXT    | NOT NULL        | Langue par défaut                            |
+| `freshness_policy` | TEXT    | NOT NULL        | `manual`, `daily`, `weekly`, `monthly`       |
+| `sync_strategy`    | TEXT    | NOT NULL        | `manual`, `polling`                          |
+| `enabled`          | INTEGER | NOT NULL        | 0/1                                          |
+| `created_at`       | INTEGER | NOT NULL        | Epoch ms                                     |
+| `updated_at`       | INTEGER | NOT NULL        | Epoch ms                                     |
 
 Index :
 
@@ -58,22 +58,22 @@ CREATE INDEX ix_catalog_sources_enabled ON catalog_sources(enabled);
 
 Représente un document logique, indépendamment de ses versions.
 
-| Colonne | Type | Contraintes | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK | Identifiant interne |
-| `public_id` | TEXT | UNIQUE NOT NULL | Identifiant stable exposable |
-| `source_id` | INTEGER | FK NOT NULL | Source |
-| `canonical_url` | TEXT | NOT NULL | URL canonique courante |
-| `stable_key` | TEXT | NOT NULL | Clé stable par source |
-| `title` | TEXT | NOT NULL | Titre courant |
-| `mime_type` | TEXT | NOT NULL | Type de contenu courant |
-| `language` | TEXT | NOT NULL | Langue détectée ou source |
-| `status` | TEXT | NOT NULL | `ACTIVE`, `STALE`, `REDIRECTED`, `REMOVED`, `UNAVAILABLE` |
-| `current_version_id` | INTEGER | NULL, invariant protégé par triggers C007 | Version courante |
-| `first_seen_at` | INTEGER | NOT NULL | Première observation |
-| `last_seen_at` | INTEGER | NOT NULL | Dernière observation |
-| `created_at` | INTEGER | NOT NULL | Création locale |
-| `updated_at` | INTEGER | NOT NULL | Mise à jour locale |
+| Colonne              | Type    | Contraintes                               | Description                                               |
+| -------------------- | ------- | ----------------------------------------- | --------------------------------------------------------- |
+| `id`                 | INTEGER | PK                                        | Identifiant interne                                       |
+| `public_id`          | TEXT    | UNIQUE NOT NULL                           | Identifiant stable exposable                              |
+| `source_id`          | INTEGER | FK NOT NULL                               | Source                                                    |
+| `canonical_url`      | TEXT    | NOT NULL                                  | URL canonique courante                                    |
+| `stable_key`         | TEXT    | NOT NULL                                  | Clé stable par source                                     |
+| `title`              | TEXT    | NOT NULL                                  | Titre courant                                             |
+| `mime_type`          | TEXT    | NOT NULL                                  | Type de contenu courant                                   |
+| `language`           | TEXT    | NOT NULL                                  | Langue détectée ou source                                 |
+| `status`             | TEXT    | NOT NULL                                  | `ACTIVE`, `STALE`, `REDIRECTED`, `REMOVED`, `UNAVAILABLE` |
+| `current_version_id` | INTEGER | NULL, invariant protégé par triggers C007 | Version courante                                          |
+| `first_seen_at`      | INTEGER | NOT NULL                                  | Première observation                                      |
+| `last_seen_at`       | INTEGER | NOT NULL                                  | Dernière observation                                      |
+| `created_at`         | INTEGER | NOT NULL                                  | Création locale                                           |
+| `updated_at`         | INTEGER | NOT NULL                                  | Mise à jour locale                                        |
 
 Contraintes :
 
@@ -86,20 +86,20 @@ UNIQUE(source_id, canonical_url)
 
 Stocke une version extraite d'un document.
 
-| Colonne | Type | Contraintes | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK | Identifiant interne |
-| `document_id` | INTEGER | FK NOT NULL | Document logique |
-| `version_label` | TEXT | NULL | Version upstream si disponible |
-| `content_hash` | TEXT | NOT NULL | Hash du contenu normalisé |
-| `etag` | TEXT | NULL | Validateur HTTP |
-| `last_modified` | TEXT | NULL | Validateur HTTP |
-| `published_at` | INTEGER | NULL | Date de publication |
-| `fetched_at` | INTEGER | NOT NULL | Date d'extraction |
-| `is_current` | INTEGER | NOT NULL | 0/1 |
-| `extraction_mode` | TEXT | NOT NULL | `static` ou `native-render` |
-| `content_type` | TEXT | NOT NULL | Type de contenu réel |
-| `metadata_json` | TEXT | NOT NULL | Métadonnées non structurantes |
+| Colonne           | Type    | Contraintes | Description                    |
+| ----------------- | ------- | ----------- | ------------------------------ |
+| `id`              | INTEGER | PK          | Identifiant interne            |
+| `document_id`     | INTEGER | FK NOT NULL | Document logique               |
+| `version_label`   | TEXT    | NULL        | Version upstream si disponible |
+| `content_hash`    | TEXT    | NOT NULL    | Hash du contenu normalisé      |
+| `etag`            | TEXT    | NULL        | Validateur HTTP                |
+| `last_modified`   | TEXT    | NULL        | Validateur HTTP                |
+| `published_at`    | INTEGER | NULL        | Date de publication            |
+| `fetched_at`      | INTEGER | NOT NULL    | Date d'extraction              |
+| `is_current`      | INTEGER | NOT NULL    | 0/1                            |
+| `extraction_mode` | TEXT    | NOT NULL    | `static` ou `native-render`    |
+| `content_type`    | TEXT    | NOT NULL    | Type de contenu réel           |
+| `metadata_json`   | TEXT    | NOT NULL    | Métadonnées non structurantes  |
 
 Contraintes :
 
@@ -114,19 +114,19 @@ courante dans la même transaction que les sections, l'index et le pointeur du d
 
 Stocke les sections exploitables pour recherche et lecture.
 
-| Colonne | Type | Contraintes | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK | Identifiant interne |
-| `document_version_id` | INTEGER | FK NOT NULL | Version |
-| `ordinal` | INTEGER | NOT NULL | Ordre documentaire |
-| `heading` | TEXT | NULL | Titre de section |
-| `heading_path` | TEXT | NULL | Chemin hiérarchique |
-| `heading_level` | INTEGER | NULL | Niveau Markdown/HTML |
-| `anchor` | TEXT | NULL | Ancre source |
-| `content` | TEXT | NOT NULL | Markdown nettoyé |
-| `content_hash` | TEXT | NOT NULL | Hash de section |
-| `character_count` | INTEGER | NOT NULL | Taille caractères |
-| `token_count` | INTEGER | NULL | Estimation token facultative |
+| Colonne               | Type    | Contraintes | Description                  |
+| --------------------- | ------- | ----------- | ---------------------------- |
+| `id`                  | INTEGER | PK          | Identifiant interne          |
+| `document_version_id` | INTEGER | FK NOT NULL | Version                      |
+| `ordinal`             | INTEGER | NOT NULL    | Ordre documentaire           |
+| `heading`             | TEXT    | NULL        | Titre de section             |
+| `heading_path`        | TEXT    | NULL        | Chemin hiérarchique          |
+| `heading_level`       | INTEGER | NULL        | Niveau Markdown/HTML         |
+| `anchor`              | TEXT    | NULL        | Ancre source                 |
+| `content`             | TEXT    | NOT NULL    | Markdown nettoyé             |
+| `content_hash`        | TEXT    | NOT NULL    | Hash de section              |
+| `character_count`     | INTEGER | NOT NULL    | Taille caractères            |
+| `token_count`         | INTEGER | NULL        | Estimation token facultative |
 
 Contraintes :
 
@@ -139,14 +139,14 @@ UNIQUE(document_version_id, content_hash)
 
 Conserve les anciennes URLs et redirections.
 
-| Colonne | Type | Contraintes | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK | Identifiant interne |
-| `document_id` | INTEGER | FK NOT NULL | Document |
-| `url` | TEXT | NOT NULL | URL alias |
-| `alias_type` | TEXT | NOT NULL | `OLD_URL`, `REDIRECT`, `CANONICAL` |
-| `first_seen_at` | INTEGER | NOT NULL | Première observation |
-| `last_seen_at` | INTEGER | NOT NULL | Dernière observation |
+| Colonne         | Type    | Contraintes | Description                        |
+| --------------- | ------- | ----------- | ---------------------------------- |
+| `id`            | INTEGER | PK          | Identifiant interne                |
+| `document_id`   | INTEGER | FK NOT NULL | Document                           |
+| `url`           | TEXT    | NOT NULL    | URL alias                          |
+| `alias_type`    | TEXT    | NOT NULL    | `OLD_URL`, `REDIRECT`, `CANONICAL` |
+| `first_seen_at` | INTEGER | NOT NULL    | Première observation               |
+| `last_seen_at`  | INTEGER | NOT NULL    | Dernière observation               |
 
 Contraintes :
 
@@ -158,32 +158,32 @@ UNIQUE(document_id, url)
 
 Trace les synchronisations.
 
-| Colonne | Type | Contraintes | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK | Identifiant interne |
-| `source_id` | INTEGER | FK NULL | Source ciblée ou toutes sources |
-| `started_at` | INTEGER | NOT NULL | Début |
-| `completed_at` | INTEGER | NULL | Fin |
-| `status` | TEXT | NOT NULL | `RUNNING`, `SUCCESS`, `PARTIAL`, `FAILED`, `CANCELLED` |
-| `documents_checked` | INTEGER | NOT NULL | Nombre de documents vérifiés |
-| `documents_added` | INTEGER | NOT NULL | Ajouts |
-| `documents_updated` | INTEGER | NOT NULL | Mises à jour |
-| `documents_unchanged` | INTEGER | NOT NULL | Inchangés |
-| `documents_failed` | INTEGER | NOT NULL | Échecs |
-| `error_summary` | TEXT | NULL | Résumé court |
+| Colonne               | Type    | Contraintes | Description                                            |
+| --------------------- | ------- | ----------- | ------------------------------------------------------ |
+| `id`                  | INTEGER | PK          | Identifiant interne                                    |
+| `source_id`           | INTEGER | FK NULL     | Source ciblée ou toutes sources                        |
+| `started_at`          | INTEGER | NOT NULL    | Début                                                  |
+| `completed_at`        | INTEGER | NULL        | Fin                                                    |
+| `status`              | TEXT    | NOT NULL    | `RUNNING`, `SUCCESS`, `PARTIAL`, `FAILED`, `CANCELLED` |
+| `documents_checked`   | INTEGER | NOT NULL    | Nombre de documents vérifiés                           |
+| `documents_added`     | INTEGER | NOT NULL    | Ajouts                                                 |
+| `documents_updated`   | INTEGER | NOT NULL    | Mises à jour                                           |
+| `documents_unchanged` | INTEGER | NOT NULL    | Inchangés                                              |
+| `documents_failed`    | INTEGER | NOT NULL    | Échecs                                                 |
+| `error_summary`       | TEXT    | NULL        | Résumé court                                           |
 
 ## `staleness_events`
 
 Trace les événements de fraîcheur ou d'obsolescence.
 
-| Colonne | Type | Contraintes | Description |
-|---|---|---|---|
-| `id` | INTEGER | PK | Identifiant interne |
-| `document_id` | INTEGER | FK NOT NULL | Document |
-| `sync_run_id` | INTEGER | FK NULL | Run associé |
-| `event_type` | TEXT | NOT NULL | Type d'événement |
-| `observed_at` | INTEGER | NOT NULL | Date |
-| `details_json` | TEXT | NOT NULL | Détails contrôlés |
+| Colonne        | Type    | Contraintes | Description         |
+| -------------- | ------- | ----------- | ------------------- |
+| `id`           | INTEGER | PK          | Identifiant interne |
+| `document_id`  | INTEGER | FK NOT NULL | Document            |
+| `sync_run_id`  | INTEGER | FK NULL     | Run associé         |
+| `event_type`   | TEXT    | NOT NULL    | Type d'événement    |
+| `observed_at`  | INTEGER | NOT NULL    | Date                |
+| `details_json` | TEXT    | NOT NULL    | Détails contrôlés   |
 
 Types d'événement :
 

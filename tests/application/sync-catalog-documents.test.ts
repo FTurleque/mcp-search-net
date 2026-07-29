@@ -125,10 +125,12 @@ class CatalogSyncRepositoryStub {
 
 class ContentFetcherStub implements ContentFetcher {
   public readonly requests: ContentFetchRequest[] = [];
-  public readonly contexts: Array<ContentFetchContext | undefined> = [];
-  private readonly results: Array<ContentFetchResult | Error>;
+  public readonly contexts: (ContentFetchContext | undefined)[] = [];
+  private readonly results: (ContentFetchResult | Error)[];
 
-  public constructor(result: ContentFetchResult | Error | readonly (ContentFetchResult | Error)[] = fetchedContent()) {
+  public constructor(
+    result: ContentFetchResult | Error | readonly (ContentFetchResult | Error)[] = fetchedContent(),
+  ) {
     this.results = Array.isArray(result) ? [...result] : [result];
   }
 
@@ -258,10 +260,15 @@ describe('SyncCatalogDocuments', () => {
     ]);
     const delays: number[] = [];
 
-    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock, (milliseconds) => {
-      delays.push(milliseconds);
-      return Promise.resolve();
-    }).execute({
+    const result = await new SyncCatalogDocuments(
+      repository,
+      fetcher,
+      fixedClock,
+      (milliseconds) => {
+        delays.push(milliseconds);
+        return Promise.resolve();
+      },
+    ).execute({
       sourceKey: 'enabled-docs',
       documents: [declaredDocument, secondDeclaredDocument],
       timeoutMs: 1_000,
@@ -346,8 +353,14 @@ describe('SyncCatalogDocuments', () => {
   });
 
   it('passes current version validators and does not duplicate identical content', async () => {
-    const repository = new CatalogSyncRepositoryStub([enabledSource], existingDocument, currentVersion);
-    const fetcher = new ContentFetcherStub(fetchedContent({ contentHash: currentVersion.contentHash }));
+    const repository = new CatalogSyncRepositoryStub(
+      [enabledSource],
+      existingDocument,
+      currentVersion,
+    );
+    const fetcher = new ContentFetcherStub(
+      fetchedContent({ contentHash: currentVersion.contentHash }),
+    );
 
     const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
       sourceKey: 'enabled-docs',
@@ -385,7 +398,11 @@ describe('SyncCatalogDocuments', () => {
   });
 
   it('keeps an existing document unchanged when the remote source returns not modified', async () => {
-    const repository = new CatalogSyncRepositoryStub([enabledSource], existingDocument, currentVersion);
+    const repository = new CatalogSyncRepositoryStub(
+      [enabledSource],
+      existingDocument,
+      currentVersion,
+    );
     const fetcher = new ContentFetcherStub({ notModified: true });
 
     const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
@@ -423,7 +440,11 @@ describe('SyncCatalogDocuments', () => {
   });
 
   it('marks an existing document stale without replacing versions when it returns 404', async () => {
-    const repository = new CatalogSyncRepositoryStub([enabledSource], existingDocument, currentVersion);
+    const repository = new CatalogSyncRepositoryStub(
+      [enabledSource],
+      existingDocument,
+      currentVersion,
+    );
     const fetcher = new ContentFetcherStub(new HttpError('Remote server returned HTTP 404', 404));
 
     const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
@@ -470,7 +491,11 @@ describe('SyncCatalogDocuments', () => {
   });
 
   it('marks an existing document removed without replacing versions when it returns 410', async () => {
-    const repository = new CatalogSyncRepositoryStub([enabledSource], existingDocument, currentVersion);
+    const repository = new CatalogSyncRepositoryStub(
+      [enabledSource],
+      existingDocument,
+      currentVersion,
+    );
     const fetcher = new ContentFetcherStub(new HttpError('Remote server returned HTTP 410', 410));
 
     const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({

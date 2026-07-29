@@ -2,48 +2,13 @@ node_modules
 dist
 coverage
 .data
-package-lock.json
-README.md
 
+# Generated dependency lockfile; formatted and verified by npm itself.
+package-lock.json
+
+# Prettier has no SQL parser in this project.
 catalog-migrations/*.sql
 
-src/application/use-cases/load-catalog-sources.ts
-src/application/use-cases/plan-catalog-sync.ts
-src/application/use-cases/sync-catalog-documents.ts
-src/application/use-cases/maintain-catalog.ts
-src/application/use-cases/hybrid-search-catalog-documents.ts
-src/cli/catalog-source-config.ts
-src/cli/catalog.ts
-src/cli/catalog-maintain.ts
-src/cli/catalog-hybrid-search.ts
-src/domain/models/content.ts
-src/domain/search/local-semantic-vectorizer.ts
-src/infrastructure/catalog/sqlite-catalog-repository.ts
-src/infrastructure/catalog/sqlite-catalog-version-purger.ts
-src/infrastructure/catalog/sqlite-catalog-maintenance.ts
-src/infrastructure/fetch/crawl4ai-content-fetcher.ts
-src/infrastructure/fetch/secure-http-gateway.ts
-src/presentation/mcp/mcp-server-v2.ts
-tests/application/catalog-source-config.test.ts
-tests/application/load-catalog-sources.test.ts
-tests/application/plan-catalog-sync.test.ts
-tests/application/sync-catalog-documents.test.ts
-tests/application/maintain-catalog.test.ts
-tests/application/hybrid-search-catalog-documents.test.ts
-tests/infrastructure/crawl4ai-content-fetcher.test.ts
-tests/infrastructure/secure-http-gateway.test.ts
-tests/infrastructure/sqlite-catalog-fts-index.test.ts
-
-docs/adr/ADR-013-sdk-mcp-v2-start-decision.md
-docs/adr/ADR-014-catalog-db-isolation.md
-docs/adr/ADR-015-fts5-contentless-delete.md
-docs/adr/ADR-016-mcp-v2-tools-resources.md
-docs/adr/README.md
-docs/planning/benchmark-v2.md
-docs/planning/roadmap-v2-documentaire.md
+# Historical evidence stays byte-stable; current documentation is formatted.
+docs/planning/validation-*.md
 docs/planning/status-v2-7.md
-docs/planning/validation-v1-recette-finale-2026-06-27.md
-docs/reference/catalog-schema-v2.md
-docs/reference/catalog-sync-v2.md
-docs/reference/catalog-operations-v2.md
-docs/reference/catalog-semantic-search-v2.md

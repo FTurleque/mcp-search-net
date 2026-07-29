@@ -161,7 +161,9 @@ async function main(argv: readonly string[]): Promise<void> {
         maxResponseBytes: appConfig.security.maxDownloadBytes,
         maxRedirects: appConfig.security.maxRedirects,
         rateLimitMs: options.sync.rateLimitMs ?? appConfig.security.minimumDelayMs,
-        ...(options.sync.resumeAfter === undefined ? {} : { resumeAfter: options.sync.resumeAfter }),
+        ...(options.sync.resumeAfter === undefined
+          ? {}
+          : { resumeAfter: options.sync.resumeAfter }),
       });
       const verification = await new VerifyCatalog(repository).execute();
       if (verification.status === 'FAILED') {
@@ -275,7 +277,10 @@ function parseSync(argv: readonly string[], path: string): CatalogCommandOptions
   const sourceKey = getOption(argv, '--source-key') ?? getOption(argv, '--source');
   const filePath = getOption(argv, '--file');
   const limit = parseLimit(getOption(argv, '--limit'));
-  const rateLimitMs = parseNonNegativeInteger(getOption(argv, '--rate-limit-ms'), '--rate-limit-ms');
+  const rateLimitMs = parseNonNegativeInteger(
+    getOption(argv, '--rate-limit-ms'),
+    '--rate-limit-ms',
+  );
   const resumeAfter = parseResumeAfter(getOption(argv, '--resume-after'), sourceKey);
   return {
     command: 'sync',
@@ -390,10 +395,14 @@ function parseKeepPreviousVersions(value: string | undefined): number | undefine
   return keepPreviousVersions;
 }
 
-function parseNonNegativeInteger(value: string | undefined, optionName: string): number | undefined {
+function parseNonNegativeInteger(
+  value: string | undefined,
+  optionName: string,
+): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`Invalid ${optionName} ${value}`);
+  if (!Number.isSafeInteger(parsed) || parsed < 0)
+    throw new Error(`Invalid ${optionName} ${value}`);
   return parsed;
 }
 

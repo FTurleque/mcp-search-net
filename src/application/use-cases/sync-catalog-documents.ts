@@ -90,7 +90,9 @@ export class SyncCatalogDocuments {
     }
 
     const configuredDocuments = options.documents
-      .filter((document) => options.sourceKey === undefined || document.sourceKey === options.sourceKey)
+      .filter(
+        (document) => options.sourceKey === undefined || document.sourceKey === options.sourceKey,
+      )
       .filter((document) => document.enabled);
     const resumedDocuments = applyResumeCursor(configuredDocuments, options.resumeAfter);
     const selectedDocuments = applyLimit(resumedDocuments, options.limit);
@@ -101,7 +103,7 @@ export class SyncCatalogDocuments {
       if (entries.length > 0 && rateLimitMs > 0) await this.delay(rateLimitMs);
 
       const source = sourceByKey.get(document.sourceKey);
-      if (source === undefined || !source.enabled) {
+      if (!source?.enabled) {
         entries.push({
           sourceKey: document.sourceKey,
           stableKey: document.stableKey,
@@ -236,7 +238,8 @@ export class SyncCatalogDocuments {
     const skippedCount = entries.filter((entry) => entry.status === 'skipped').length;
     const checkedCount = addedCount + updatedCount + unchangedCount + failedCount;
     const now = this.clock.now();
-    const scopedSource = options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
+    const scopedSource =
+      options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
     const syncRun = await this.repository.addCatalogSyncRun({
       ...(scopedSource === undefined ? {} : { sourceId: scopedSource.id }),
       startedAt: now,
@@ -282,7 +285,8 @@ function applyResumeCursor(
 ): readonly CatalogSyncDocumentInput[] {
   if (cursor === undefined) return documents;
   const index = documents.findIndex(
-    (document) => document.sourceKey === cursor.sourceKey && document.stableKey === cursor.stableKey,
+    (document) =>
+      document.sourceKey === cursor.sourceKey && document.stableKey === cursor.stableKey,
   );
   if (index === -1) {
     throw new Error(`Resume cursor ${cursor.sourceKey}:${cursor.stableKey} was not found`);
@@ -336,18 +340,27 @@ function createRedirectVersionMetadata(fetched: FetchedContent): Readonly<Record
   return metadata;
 }
 
-function isMissingRemoteHttpError(error: unknown): error is HttpError & { readonly status: 404 | 410 } {
+function isMissingRemoteHttpError(
+  error: unknown,
+): error is HttpError & { readonly status: 404 | 410 } {
   return error instanceof HttpError && (error.status === 404 || error.status === 410);
 }
 
-function documentStatusForMissingRemote(error: HttpError & { readonly status: 404 | 410 }): DocumentStatus {
+function documentStatusForMissingRemote(
+  error: HttpError & { readonly status: 404 | 410 },
+): DocumentStatus {
   return error.status === 410 ? 'REMOVED' : 'STALE';
 }
 
 function createSections(title: string, fetched: FetchedContent): readonly DocumentSectionInput[] {
-  const extracted = fetched.documentSections.filter((section) => section.markdown.trim().length > 0);
-  const sections = extracted.length === 0 ? [{ heading: title, markdown: fetched.markdown }] : extracted;
-  return sections.map((section, index) => createSection(index, title, section.heading, section.markdown));
+  const extracted = fetched.documentSections.filter(
+    (section) => section.markdown.trim().length > 0,
+  );
+  const sections =
+    extracted.length === 0 ? [{ heading: title, markdown: fetched.markdown }] : extracted;
+  return sections.map((section, index) =>
+    createSection(index, title, section.heading, section.markdown),
+  );
 }
 
 function createSection(

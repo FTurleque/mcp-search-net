@@ -133,9 +133,10 @@ export class SqliteCatalogVersionPurger implements CatalogVersionPurgeRepository
     keepPreviousVersions: number,
   ): readonly number[] {
     const rows = this.database
-      .prepare<[string | null, string | null, number], PurgeableDocumentVersionRow>(
-        SELECT_PURGEABLE_DOCUMENT_VERSION_IDS_SQL,
-      )
+      .prepare<
+        [string | null, string | null, number],
+        PurgeableDocumentVersionRow
+      >(SELECT_PURGEABLE_DOCUMENT_VERSION_IDS_SQL)
       .all(sourceKey, sourceKey, keepPreviousVersions);
     return rows.map((row) => row.id);
   }
@@ -154,7 +155,7 @@ export class SqliteCatalogVersionPurger implements CatalogVersionPurgeRepository
     const placeholders = createPlaceholders(versionIds.length);
     this.database
       .prepare(
-        `DELETE FROM document_section_fts WHERE section_id IN (
+        `DELETE FROM document_section_fts WHERE rowid IN (
           SELECT id FROM document_sections WHERE document_version_id IN (${placeholders})
         )`,
       )
@@ -162,14 +163,16 @@ export class SqliteCatalogVersionPurger implements CatalogVersionPurgeRepository
     const info = this.database
       .prepare(`DELETE FROM document_sections WHERE document_version_id IN (${placeholders})`)
       .run(...versionIds);
-    return Number(info.changes);
+    return info.changes;
   }
 
   private deleteVersionsByIds(versionIds: readonly number[]): number {
     const info = this.database
-      .prepare(`DELETE FROM document_versions WHERE id IN (${createPlaceholders(versionIds.length)})`)
+      .prepare(
+        `DELETE FROM document_versions WHERE id IN (${createPlaceholders(versionIds.length)})`,
+      )
       .run(...versionIds);
-    return Number(info.changes);
+    return info.changes;
   }
 }
 

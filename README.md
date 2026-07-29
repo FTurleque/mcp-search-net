@@ -10,9 +10,9 @@ IDEA. La V1 expose deux outils stables :
 
 La V2 documentaire est en cours de construction dans la PR #8. Elle ajoute un
 catalogue local séparé dans `catalog.db`, l'ingestion texte/Markdown, la
-synchronisation contrôlée, la recherche documentaire locale et une première
-exposition MCP read-only via `search_docs` et des resources catalogue. Le serveur
-n'embarque aucun LLM et ne requiert aucune API commerciale.
+synchronisation contrôlée, la recherche documentaire locale et une exposition
+MCP read-only via `search_docs`, `list_docs`, `read_doc_section` et des resources
+catalogue. Le serveur n'embarque aucun LLM et ne requiert aucune API commerciale.
 
 > Note budget CI : le workflow GitHub Actions est temporairement déclenchable
 > uniquement manuellement via `workflow_dispatch`, afin d'éviter toute
@@ -77,13 +77,16 @@ n’ouvre aucun port applicatif.
 
 ## Validation
 
-Validation locale recommandée pendant la suspension des Actions automatiques :
+Validation locale de référence pendant la suspension des Actions automatiques :
 
 ```bash
-npm run format:check
-npm run lint
-npm run build
+npm run check
+npm run test:required
 npm run test:unit
+npm run test:contract
+npm run test:security
+npm run test:resilience
+npm run test:performance
 npm run test:integration
 npm run test:e2e:deterministic
 ```
@@ -95,8 +98,10 @@ les fournisseurs démarrés :
 npm run test:e2e
 ```
 
-Les rapports JSON sont écrits dans `.data/test-reports`. Les lanceurs de release
-échouent si un test requis est ignoré.
+`npm run check` inclut typecheck, lint, contrôle Prettier, build, tests
+déterministes et seuils de couverture V8. Les rapports JSON sont écrits dans
+`.data/test-reports`, et les rapports de couverture dans `coverage/`. Les
+lanceurs de release échouent si un test requis est ignoré.
 
 ## Docker
 
@@ -189,7 +194,7 @@ démarrage avec un diagnostic sur `stderr`.
 Fonctionnalités en cours de stabilisation dans la PR #8 :
 
 - catalogue durable séparé de `cache.db` ;
-- migrations catalogue `C001` à `C005` ;
+- migrations catalogue `C001` à `C007` avec checksums SHA-256 ;
 - CLI `catalog init`, `status`, `verify`, `add-source`, `list-sources`,
   `load-sources`, `ingest-text`, `sync`, `search`, `rebuild-index`,
   `purge-versions` ;
@@ -197,6 +202,7 @@ Fonctionnalités en cours de stabilisation dans la PR #8 :
 - recherche documentaire locale ;
 - synchronisation contrôlée avec ETag, Last-Modified, hash, staleness et
   redirections permanentes ;
+- outils MCP read-only `search_docs`, `list_docs` et `read_doc_section` ;
 - resources MCP read-only pour catalogue, sources, documents, versions et
   sections.
 
@@ -216,9 +222,9 @@ Fonctionnalités en cours de stabilisation dans la PR #8 :
 
 ## Diagnostic rapide
 
-| Symptôme                   | Vérification                                                               |
-| -------------------------- | -------------------------------------------------------------------------- |
-| `stdout` corrompu          | rechercher un `console.log` ; seuls les logs JSON sur `stderr` sont permis |
-| SearXNG répond 403         | vérifier que `json` est activé dans `config/searxng/settings.yml`          |
-| Crawl4AI répond 401/403    | aligner `MCP_CRAWL4AI_TOKEN` et `CRAWL4AI_API_TOKEN`                       |
-| healthcheck en échec       | `docker compose ps` puis `docker compose logs <service>`                   |
+| Symptôme                | Vérification                                                               |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `stdout` corrompu       | rechercher un `console.log` ; seuls les logs JSON sur `stderr` sont permis |
+| SearXNG répond 403      | vérifier que `json` est activé dans `config/searxng/settings.yml`          |
+| Crawl4AI répond 401/403 | aligner `MCP_CRAWL4AI_TOKEN` et `CRAWL4AI_API_TOKEN`                       |
+| healthcheck en échec    | `docker compose ps` puis `docker compose logs <service>`                   |

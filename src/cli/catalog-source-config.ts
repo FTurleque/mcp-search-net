@@ -66,7 +66,10 @@ function parseCatalogSourceEntry(sourceKey: string, value: unknown): CatalogSour
     sourceKey,
     displayName: requiredString(source, 'display_name', sourceKey),
     baseUrl: validateHttpUrl(requiredString(source, 'base_url', sourceKey), sourceKey),
-    sourceType: parseSourceType(optionalString(source, 'source_type') ?? 'documentation', sourceKey),
+    sourceType: parseSourceType(
+      optionalString(source, 'source_type') ?? 'documentation',
+      sourceKey,
+    ),
     language,
     freshnessPolicy: parseFreshnessPolicy(
       optionalString(source, 'freshness_policy') ?? 'manual',
@@ -87,7 +90,8 @@ function parseDocuments(
   sourceLanguage: string,
 ): readonly CatalogSourceDocumentConfig[] {
   if (value === undefined) return [];
-  if (!Array.isArray(value)) throw new Error(`catalog source ${sourceKey} documents must be an array`);
+  if (!Array.isArray(value))
+    throw new Error(`catalog source ${sourceKey} documents must be an array`);
   return value.map((entry, index) => parseDocument(sourceKey, index, entry, sourceLanguage));
 }
 
@@ -117,7 +121,11 @@ function asRecord(value: unknown, context: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function requiredString(source: Record<string, unknown>, propertyName: string, sourceKey: string): string {
+function requiredString(
+  source: Record<string, unknown>,
+  propertyName: string,
+  sourceKey: string,
+): string {
   const value = optionalString(source, propertyName);
   if (value === undefined || value.length === 0) {
     throw new Error(`catalog source ${sourceKey} must define ${propertyName}`);
@@ -132,7 +140,10 @@ function optionalString(source: Record<string, unknown>, propertyName: string): 
   return value.trim();
 }
 
-function optionalBoolean(source: Record<string, unknown>, propertyName: string): boolean | undefined {
+function optionalBoolean(
+  source: Record<string, unknown>,
+  propertyName: string,
+): boolean | undefined {
   const value = source[propertyName];
   if (value === undefined) return undefined;
   if (typeof value !== 'boolean') throw new Error(`${propertyName} must be a boolean`);

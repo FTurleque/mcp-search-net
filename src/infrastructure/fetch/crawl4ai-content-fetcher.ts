@@ -68,7 +68,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     );
     if (resource.status === 304) return { notModified: true };
     const contentType = detectContentType(resource);
-    const decoded = await decodeResource(resource, contentType);
+    const decoded = decodeResource(resource, contentType);
     let markdown = decoded.markdown;
     let extractionMode: FetchedContent['extractionMode'] = 'static';
 
@@ -169,10 +169,7 @@ interface DecodedContent {
   readonly safeHtml?: string;
 }
 
-async function decodeResource(
-  resource: DownloadedResource,
-  contentType: string,
-): Promise<DecodedContent> {
+function decodeResource(resource: DownloadedResource, contentType: string): DecodedContent {
   if (contentType === 'application/pdf') return decodePdf(resource.body);
   if (contentType.startsWith('image/')) {
     throw new OcrRequiredNotSupportedError();
@@ -274,7 +271,7 @@ function removeNoisyBlocks(value: string): string {
 
 function collectPlainLinks(text: string, baseUrl: string): readonly string[] {
   const urls = [...text.matchAll(/https?:\/\/[^\s)>'"]+/giu)].flatMap((match) =>
-    normalizeLink(match[0] ?? '', baseUrl),
+    normalizeLink(match[0], baseUrl),
   );
   return [...new Set(urls)];
 }
@@ -293,7 +290,10 @@ function stripTags(value: string): string {
 }
 
 function detectContentType(resource: DownloadedResource): string {
-  return (resource.headers['content-type'] ?? 'text/plain').split(';')[0]?.trim().toLowerCase() ?? 'text/plain';
+  return (
+    (resource.headers['content-type'] ?? 'text/plain').split(';')[0]?.trim().toLowerCase() ??
+    'text/plain'
+  );
 }
 
 function isHtml(contentType: string): boolean {
@@ -314,10 +314,10 @@ function decodeEntities(value: string): string {
     .replace(/&#39;/gu, "'");
 }
 
-async function decodePdf(body: Uint8Array): Promise<DecodedContent> {
+function decodePdf(body: Uint8Array): DecodedContent {
   const text = new TextDecoder('latin1', { fatal: false }).decode(body);
-  const streams = [...text.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/gu)].map((match) =>
-    match[1] ?? '',
+  const streams = [...text.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/gu)].map(
+    (match) => match[1] ?? '',
   );
   const decoded = streams
     .flatMap((stream) => [...stream.matchAll(/\(([^()]*)\)\s*Tj/gu)].map((match) => match[1] ?? ''))

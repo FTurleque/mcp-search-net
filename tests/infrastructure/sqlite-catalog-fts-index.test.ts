@@ -5,9 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Clock } from '../../src/application/ports/clock.js';
-import {
-  SqliteCatalogRepository,
-} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 class FixedClock implements Clock {
   public now(): Date {

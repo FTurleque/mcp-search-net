@@ -43,6 +43,11 @@ describe('SqliteCatalogVersionPurger', () => {
     });
 
     await addVersionWithSection(fixture.catalog, document.id, 'hash-v1', 'section-v1');
+    const [purgeableSectionId] = readNumberColumn(
+      fixture.path,
+      "SELECT id FROM document_sections WHERE content_hash = 'section-v1'",
+    );
+    expect(purgeableSectionId).toBeDefined();
     fixture.setNow(2_000);
     await addVersionWithSection(fixture.catalog, document.id, 'hash-v2', 'section-v2');
     fixture.setNow(3_000);
@@ -55,6 +60,10 @@ describe('SqliteCatalogVersionPurger', () => {
 
     const purger = new SqliteCatalogVersionPurger(fixture.path, fixture.clock);
     purgers.push(purger);
+    insertSectionIntoSearchIndex(fixture.path, purgeableSectionId!);
+    expect(
+      readNumberColumn(fixture.path, 'SELECT rowid FROM document_section_fts ORDER BY rowid'),
+    ).toContain(purgeableSectionId);
 
     await expect(
       purger.purgeOldDocumentVersions({ keepPreviousVersions: 1, dryRun: true }),
@@ -89,6 +98,9 @@ describe('SqliteCatalogVersionPurger', () => {
     expect(
       readColumn(fixture.path, 'SELECT content_hash FROM document_sections ORDER BY id'),
     ).toEqual(['section-v2', 'section-v3']);
+    expect(
+      readNumberColumn(fixture.path, 'SELECT rowid FROM document_section_fts ORDER BY rowid'),
+    ).not.toContain(purgeableSectionId);
     await expect(fixture.catalog.getDocumentByPublicId('nodejs-fs')).resolves.toMatchObject({
       currentVersionId: currentVersion.id,
     });
@@ -145,6 +157,51 @@ function readColumn(path: string, sql: string): readonly string[] {
     return (database.prepare(sql).all() as { content_hash: string }[]).map(
       (row) => row.content_hash,
     );
+  } finally {
+    database.close();
+  }
+}
+
+function readNumberColumn(path: string, sql: string): readonly number[] {
+  const database = new Database(path, { readonly: true });
+  try {
+    return (database.prepare(sql).all() as { id?: number; rowid?: number }[]).map(
+      (row) => row.id ?? row.rowid!,
+    );
+  } finally {
+    database.close();
+  }
+}
+
+function insertSectionIntoSearchIndex(path: string, sectionId: number): void {
+  const database = new Database(path);
+  try {
+    database
+      .prepare(
+        `INSERT INTO document_section_fts(
+          rowid, section_id, document_id, source_key, language,
+          title, heading, heading_path, content
+        )
+        SELECT
+          document_sections.id,
+          document_sections.id,
+          documents.id,
+          catalog_sources.source_key,
+          documents.language,
+          documents.title,
+          coalesce(document_sections.heading, ''),
+          coalesce(document_sections.heading_path, ''),
+          document_sections.content
+        FROM document_sections
+        INNER JOIN document_versions
+          ON document_versions.id = document_sections.document_version_id
+        INNER JOIN documents
+          ON documents.id = document_versions.document_id
+        INNER JOIN catalog_sources
+          ON catalog_sources.id = documents.source_id
+        WHERE document_sections.id = ?`,
+      )
+      .run(sectionId);
   } finally {
     database.close();
   }

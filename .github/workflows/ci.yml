@@ -25,35 +25,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check formatting
-        run: npm run format:check
-
-      - name: Lint sources
-        run: npm run lint
-
-      - name: Build TypeScript
-        run: npm run build
-
-      - name: Run unit tests
-        run: npm run test:unit
-
-      - name: Run integration tests
-        run: npm run test:integration
-
-      - name: Run required suite without skips
-        run: npm run test:required
-
-      - name: Run deterministic MCP E2E
-        run: npm run test:e2e:deterministic
-
-      - name: Run security suite
-        run: npm run test:security
-
-      - name: Run unit and contract suites
-        run: npm run test:unit && npm run test:contract
-
-      - name: Run resilience suite
-        run: npm run test:resilience
+      - name: Run static, build, deterministic tests and coverage gates
+        run: npm run check
 
       - name: Run performance suite
         run: npm run test:performance
@@ -63,7 +36,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deterministic-test-reports
-          path: .data/test-reports
+          path: |
+            .data/test-reports
+            coverage
 
   integration:
     name: Docker integration and live E2E
@@ -81,8 +56,6 @@ jobs:
         run: docker compose build mcp-search-net
       - name: Start real providers
         run: docker compose up -d --wait searxng crawl4ai
-      - name: Run integration suite
-        run: npm run test:integration
       - name: Run live MCP E2E suite
         run: npm run test:e2e
       - name: Upload integration reports

@@ -214,7 +214,9 @@ export function createMcpServer(dependencies: McpServerV2Dependencies): McpServe
           const data = await readDocSection(dependencies.catalogRepository, input);
           return {
             status: 'success',
-            warnings: data.found ? [] : [{ code: 'NO_RESULTS' as const, message: 'No section matched the id' }],
+            warnings: data.found
+              ? []
+              : [{ code: 'NO_RESULTS' as const, message: 'No section matched the id' }],
             cacheStatus: 'DISABLED',
             provider: 'catalog',
             data,
@@ -239,7 +241,11 @@ function formatSearchDocsText(response: ToolResponse<SearchDocsData>): string {
   ];
   response.data.results.forEach((result, index) => {
     const heading = result.headingPath ?? result.heading ?? result.title;
-    lines.push(`${index + 1}. ${result.title} — ${heading}`, `   ${result.url}`, `   ${result.snippet}`);
+    lines.push(
+      `${index + 1}. ${result.title} — ${heading}`,
+      `   ${result.url}`,
+      `   ${result.snippet}`,
+    );
   });
   response.warnings.forEach((warning) => lines.push(`Warning ${warning.code}: ${warning.message}`));
   return lines.join('\n');
@@ -251,7 +257,11 @@ function formatListDocsText(response: ToolResponse<ListDocsData>): string {
     `offset=${response.data.offset} limit=${response.data.limit}`,
   ];
   response.data.documents.forEach((document, index) => {
-    lines.push(`${index + 1}. ${document.title}`, `   ${document.url}`, `   ${document.sourceKey} · ${document.publicId}`);
+    lines.push(
+      `${index + 1}. ${document.title}`,
+      `   ${document.url}`,
+      `   ${document.sourceKey} · ${document.publicId}`,
+    );
   });
   return lines.join('\n');
 }
@@ -269,7 +279,10 @@ function formatReadDocSectionText(response: ToolResponse<ReadDocSectionData>): s
   ].join('\n');
 }
 
-function toSearchDocsData(output: SearchCatalogDocumentsOutput, snippetLimit: number): SearchDocsData {
+function toSearchDocsData(
+  output: SearchCatalogDocumentsOutput,
+  snippetLimit: number,
+): SearchDocsData {
   return {
     query: output.query,
     resultCount: output.resultCount,
@@ -284,7 +297,10 @@ async function listDocs(
   repository: CatalogRepository,
   input: z.infer<typeof listDocsInputSchema>,
 ): Promise<ListDocsData> {
-  const [sources, documents] = await Promise.all([repository.listSources(), repository.listDocuments()]);
+  const [sources, documents] = await Promise.all([
+    repository.listSources(),
+    repository.listDocuments(),
+  ]);
   const sourceKeys = new Map(sources.map((source) => [source.id, source.sourceKey] as const));
   const filtered = documents.filter((document) => {
     if (input.sourceKey === undefined) return true;
@@ -296,7 +312,9 @@ async function listDocs(
     total: filtered.length,
     offset: input.offset,
     limit: input.limit,
-    documents: page.map((document) => toCompactDocument(document, sourceKeys.get(document.sourceId) ?? 'unknown')),
+    documents: page.map((document) =>
+      toCompactDocument(document, sourceKeys.get(document.sourceId) ?? 'unknown'),
+    ),
   };
 }
 

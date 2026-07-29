@@ -36,8 +36,10 @@ function parseArguments(argv: readonly string[]): CatalogMaintainOptions {
       parseNonNegativeInteger(getOption(argv, '--keep-sync-runs'), '--keep-sync-runs') ??
       DEFAULT_KEEP_SYNC_RUNS,
     maxSyncRunAgeDays:
-      parseNonNegativeInteger(getOption(argv, '--max-sync-run-age-days'), '--max-sync-run-age-days') ??
-      DEFAULT_MAX_SYNC_RUN_AGE_DAYS,
+      parseNonNegativeInteger(
+        getOption(argv, '--max-sync-run-age-days'),
+        '--max-sync-run-age-days',
+      ) ?? DEFAULT_MAX_SYNC_RUN_AGE_DAYS,
     vacuum: argv.includes('--vacuum'),
     staleLockMs:
       parsePositiveInteger(getOption(argv, '--stale-lock-ms'), '--stale-lock-ms') ??
