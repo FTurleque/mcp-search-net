@@ -2,10 +2,11 @@
 
 > **Statut** : implémentation V2 documentaire en cours dans la PR #8.
 >
-> **Dernière mise à jour** : 2026-07-29 — V2.9 et V2.10 intégrées ; V2.11 implémentée et qualifiée
-> localement sur `fix/v2-11-catalog-scale`.
+> **Dernière mise à jour** : 2026-07-29 — V2.12 corrigée post-audit dans la PR #23 ; Quality Gate
+> SonarQube Cloud vert ; requalification locale exact-head encore requise avant clôture de #15.
 >
-> **PR active** : #8 — `feat/v2-catalog-storage`, conservée en draft.
+> **PR active** : #8 — `feat/v2-catalog-storage`, conservée en draft ; PR focalisée #23 —
+> `fix/v2-12-security-operations`, également conservée en draft jusqu'à requalification exact-head.
 >
 > **Roadmap opérationnelle actuelle** : issue #19, séquence #12 à #18. Les validations datées
 > antérieures restent des preuves historiques attachées à leurs propres SHA.
@@ -28,8 +29,10 @@ Avancement :
   benchmark jusqu'à 10 000 sections qualifiés localement sans skip.
 - V2.6 automatisation contrôlée : implémentée et validée localement sur la tranche maintenance contrôlée.
 - V2.7 recherche hybride locale : implémentée et validée localement comme prototype optionnel sans API payante, modèle téléchargé ni service externe.
+- V2.12 sécurité/exploitation : implémentation corrigée après audit dans #23 ; Quality Gate SonarQube
+  Cloud vert, mais les gates locaux doivent être rejoués sur le SHA exact final avant merge et clôture.
 
-Le travail postérieur au dernier head vert est bien récupéré dans la PR #8. La validation locale couvre désormais V2.6 et V2.7, mais la CI complète reste à rejouer manuellement lorsque les minutes Actions seront de nouveau disponibles.
+Le travail postérieur au dernier head vert est bien récupéré dans la PR #8. Les validations historiques restent attachées à leurs SHA respectifs ; aucune validation antérieure n'est réutilisée pour qualifier automatiquement les corrections post-audit de V2.12.
 
 Le hardening post-audit suit désormais V2.9 à V2.15. V2.9 remplace les écritures fractionnées par
 une primitive de révision atomique, réconcilie ADR-015 via C007, protège les migrations par checksum
@@ -224,10 +227,9 @@ Validation locale V2.7 :
       dédupliqué, rapports publiables et gates locaux qualifiés sans skip.
 - [x] V2.11 : scalabilité, pagination et budget contexte (#14, #9, #11) — implémentation,
       benchmark et qualification locale terminés sans skip.
-- [x] V2.12 : sécurité, installation et exploitation (#15) — contenu externe
-      explicitement non fiable, provenance, installateur vérifié, secrets par
-      profil, lease interprocessus, santé/snapshot/restauration et supply chain
-      qualifiés localement sans skip.
+- [ ] V2.12 : sécurité, installation et exploitation (#15) — implémentation et corrections d'audit
+      présentes dans #23, Quality Gate SonarQube Cloud vert et 0 Security Hotspots ; requalification
+      locale exact-head Windows/déterministe requise avant merge et clôture de #15.
 - [ ] V2.13 : qualité de recherche et benchmark représentatif (#16).
 - [ ] V2.14 : clients MCP et gel des contrats (#17).
 - [ ] V2.15 : qualification finale et réconciliation documentaire exhaustive (#18).
@@ -279,7 +281,8 @@ Validation locale V2.7 :
 - [x] `search_web` et `fetch_url` conservés.
 - [x] Cache V1 non réutilisé comme catalogue.
 - [x] Catalogue séparé dans `catalog.db`.
-- [x] Suites V1/V2 revalidées localement sur le head courant de la PR #8.
+- [x] Suites V1/V2 revalidées localement sur le dernier head qualifié de la PR #8.
+- [ ] Revalidation exact-head après intégration de V2.12 et des tranches suivantes.
 
 ### AC-V2-06 : Exploitation contrôlée V2.6 validée
 
@@ -298,23 +301,28 @@ Validation locale V2.7 :
 - [x] Validation locale sur catalogue de spike.
 - [ ] Benchmark final lexical/hybride restant à faire avant généralisation.
 
-### AC-V2-08 : Sécurité et exploitation V2.12 validées
+### AC-V2-08 : Sécurité et exploitation V2.12
 
 - [x] Réponses et resources marquées `EXTERNAL_UNTRUSTED_CONTENT`.
 - [x] Provenance publique explicite et dates réelles uniquement.
-- [x] Archive Node vérifiée par SHA-256 avant extraction, signature OpenJS et
-      manifeste de preuve.
+- [x] Archive Node vérifiée par SHA-256 avant extraction et signature OpenJS vérifiée avant
+      exécution du runtime.
 - [x] Secrets locaux générés, profils non développement durcis et logs expurgés.
-- [x] Lease PID/hostname/token/heartbeat testé avec deux processus.
-- [x] Santé, backup WAL cohérent, corruption et restauration testés.
-- [x] Audits npm complet/production à zéro, licences contrôlées et images par digest.
-- [x] Preuve archivée dans
+- [x] Lease PID/hostname/token/heartbeat implémenté avec tests de régression multi-processus.
+- [x] Santé bornée, backup WAL cohérent et confiné, checkpoint concurrent et restauration couverts
+      par des tests de régression dans la branche.
+- [x] Supply chain durcie : licences, versions/digests et chemins de manifests contrôlés.
+- [x] Quality Gate SonarQube Cloud vert avec 0 Security Hotspots sur la PR #23.
+- [ ] Rejouer les gates locaux exact-head après les corrections post-audit : suites npm, intégrité
+      runtime Windows, cycle d'installation/rollback et audits npm.
+- [x] Preuve historique et supersession archivées dans
       [`validation-v2-12-security-operations-2026-07-29.md`](validation-v2-12-security-operations-2026-07-29.md).
 
 ## Ordre de réalisation recommandé
 
-1. V2.9 à V2.12 (#12 à #15) sont intégrées et qualifiées localement.
-2. Exécuter dans l'ordre #16, #17 puis #18.
+1. V2.9 à V2.11 sont intégrées et qualifiées localement ; V2.12 reste à requalifier exact-head dans
+   #23 avant merge dans `feat/v2-catalog-storage` et clôture de #15.
+2. Après PASS de #15, exécuter dans l'ordre #16, #17 puis #18.
 3. Conserver #8 en draft et ne pas déclencher GitHub Actions pendant la restriction de quota.
 4. Qualifier exact-head localement, Docker/Linux et clients selon #18.
 5. Merger #8 sous garde expected-head uniquement après tous les gates, puis revalider `master`.
@@ -353,7 +361,7 @@ docker compose down
 
 La V2 sera considérée opérationnelle lorsque :
 
-- les critères AC-V2-01 à AC-V2-07 seront validés avec preuves sur un head courant ;
+- les critères AC-V2-01 à AC-V2-08 seront validés avec preuves sur un head courant ;
 - le catalogue contiendra au moins 10 documents de test indexés ;
 - la recherche retournera des résultats pertinents classés ;
 - IntelliJ/Copilot détectera et exploitera `search_docs` ou les resources validées ;
@@ -373,7 +381,7 @@ La V2 sera considérée opérationnelle lorsque :
 - [ADR-016 — Exposer la V2 avec outil et resources MCP](../adr/ADR-016-mcp-v2-tools-resources.md)
 - [Schéma catalogue V2](../reference/catalog-schema-v2.md)
 - [Synchronisation catalogue V2](../reference/catalog-sync-v2.md)
-- [Exploitation catalogue V2.6](../reference/catalog-operations-v2.md)
+- [Exploitation catalogue V2.12](../reference/catalog-operations-v2.md)
 - [Recherche sémantique V2.7](../reference/catalog-semantic-search-v2.md)
 - [Spike IntelliJ/Copilot — MCP V2 documentaire](spike-intellij-copilot-mcp-v2.md)
 - [Benchmark V2](benchmark-v2.md)
