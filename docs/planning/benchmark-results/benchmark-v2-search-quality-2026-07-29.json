@@ -1,0 +1,132 @@
+{
+  "schemaVersion": "2.0",
+  "generatedAt": "2026-07-29T17:38:36.476Z",
+  "runtime": {
+    "node": "v24.17.0",
+    "platform": "win32",
+    "arch": "x64"
+  },
+  "corpus": {
+    "sourceCount": 10,
+    "documentCount": 100,
+    "sectionCount": 10000,
+    "languages": [
+      "en",
+      "fr"
+    ],
+    "sectionsPerDocument": 100,
+    "seedDurationMs": 375.36,
+    "synthetic": true,
+    "sourceModel": "versioned official-documentation domain manifest"
+  },
+  "protocol": {
+    "queryCount": 50,
+    "warmupRounds": 2,
+    "repetitions": 6,
+    "order": "alternating lexical-first / reranker-first by query and repetition",
+    "resultCutoff": 10
+  },
+  "quality": {
+    "lexical": {
+      "queryCount": 50,
+      "mrrAt10": 0.74,
+      "ndcgAt10": 0.74,
+      "recallAt10": 0.74,
+      "precisionAt5": 0.148,
+      "zeroResultRate": 0.26
+    },
+    "reranked": {
+      "queryCount": 50,
+      "mrrAt10": 0.74,
+      "ndcgAt10": 0.74,
+      "recallAt10": 0.74,
+      "precisionAt5": 0.148,
+      "zeroResultRate": 0.26
+    },
+    "byCategory": {
+      "accents": {
+        "lexical": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0},
+        "reranked": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0}
+      },
+      "concept": {
+        "lexical": {"queryCount": 5, "mrrAt10": 0.6, "ndcgAt10": 0.6, "recallAt10": 0.6, "precisionAt5": 0.12, "zeroResultRate": 0.4},
+        "reranked": {"queryCount": 5, "mrrAt10": 0.6, "ndcgAt10": 0.6, "recallAt10": 0.6, "precisionAt5": 0.12, "zeroResultRate": 0.4}
+      },
+      "configuration": {
+        "lexical": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0},
+        "reranked": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0}
+      },
+      "errors": {
+        "lexical": {"queryCount": 5, "mrrAt10": 0.8, "ndcgAt10": 0.8, "recallAt10": 0.8, "precisionAt5": 0.16, "zeroResultRate": 0.2},
+        "reranked": {"queryCount": 5, "mrrAt10": 0.8, "ndcgAt10": 0.8, "recallAt10": 0.8, "precisionAt5": 0.16, "zeroResultRate": 0.2}
+      },
+      "exact-api": {
+        "lexical": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0},
+        "reranked": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0}
+      },
+      "filters": {
+        "lexical": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0},
+        "reranked": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0}
+      },
+      "identifiers": {
+        "lexical": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0},
+        "reranked": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0}
+      },
+      "multi-document": {
+        "lexical": {"queryCount": 5, "mrrAt10": 0, "ndcgAt10": 0, "recallAt10": 0, "precisionAt5": 0, "zeroResultRate": 1},
+        "reranked": {"queryCount": 5, "mrrAt10": 0, "ndcgAt10": 0, "recallAt10": 0, "precisionAt5": 0, "zeroResultRate": 1}
+      },
+      "paraphrase": {
+        "lexical": {"queryCount": 5, "mrrAt10": 0, "ndcgAt10": 0, "recallAt10": 0, "precisionAt5": 0, "zeroResultRate": 1},
+        "reranked": {"queryCount": 5, "mrrAt10": 0, "ndcgAt10": 0, "recallAt10": 0, "precisionAt5": 0, "zeroResultRate": 1}
+      },
+      "versions": {
+        "lexical": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0},
+        "reranked": {"queryCount": 5, "mrrAt10": 1, "ndcgAt10": 1, "recallAt10": 1, "precisionAt5": 0.2, "zeroResultRate": 0}
+      }
+    },
+    "failures": [
+      {"id": "concept-02", "category": "concept", "query": "stream backpressure pipeline", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "concept-03", "category": "concept", "query": "container rootless user namespaces", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "error-03", "category": "errors", "query": "promise rejection async await", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "multi-01", "category": "multi-document", "query": "local search bm25 fts5 rank", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "multi-02", "category": "multi-document", "query": "dependency build tests verify", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "multi-03", "category": "multi-document", "query": "web security origin policy credentials", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "multi-04", "category": "multi-document", "query": "github security dependency scanning", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "multi-05", "category": "multi-document", "query": "docker security filesystem capabilities rootless", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "para-01", "category": "paraphrase", "query": "keep a container immutable except temporary files", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "para-02", "category": "paraphrase", "query": "avoid loading everything when streaming data", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "para-03", "category": "paraphrase", "query": "find why a sqlite writer cannot finish checkpointing", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "para-04", "category": "paraphrase", "query": "share reusable type behavior with constraints", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0},
+      {"id": "para-05", "category": "paraphrase", "query": "authenticate deployment without storing a cloud secret", "lexicalRecallAt10": 0, "rerankedRecallAt10": 0}
+    ]
+  },
+  "performance": {
+    "lexical": {"samples": 300, "p50Ms": 0.873, "p95Ms": 17.572, "p99Ms": 19.726, "maxMs": 22.219},
+    "reranked": {"samples": 300, "p50Ms": 3.695, "p95Ms": 17.72, "p99Ms": 21.866, "maxMs": 24.601},
+    "rebuild": {"durationMs": 92.6, "indexedSections": 10000},
+    "incrementalSyncMs": 1.12,
+    "memoryRssBytes": 95850496,
+    "catalogBytes": 9986048,
+    "ftsBytes": 2506752,
+    "indexedSections": 10000
+  },
+  "thresholds": {
+    "recallAt10": 0.85,
+    "mrrAt10": 0.7,
+    "ndcgAt10": 0.75,
+    "p95MsAt10000Sections": 150,
+    "minimumRerankerQualityGain": 0.02,
+    "maximumRerankerP95Ratio": 2.5
+  },
+  "decision": {
+    "recommendation": "evaluate-local-embeddings",
+    "lexicalThresholdsMet": false,
+    "performanceThresholdMet": true,
+    "keepHashedLexicalReranker": false,
+    "evaluateLocalEmbeddings": true,
+    "reason": "FTS5/BM25 misses at least one quality or latency threshold and lexical reranking does not close the gap.",
+    "qualityGain": 0,
+    "rerankerP95Ratio": 1.0084
+  }
+}
