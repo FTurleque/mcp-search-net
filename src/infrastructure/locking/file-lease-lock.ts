@@ -154,7 +154,9 @@ export class FileLeaseLock {
     if (metadata.hostname !== this.hostname) return false;
     if (this.processAlive(metadata.pid)) return false;
 
-    const quarantinePath = `${this.lockPath}.stale-${metadata.ownerToken}-${randomUUID()}`;
+    // The quarantine name contains only server-generated randomness. Lock metadata is
+    // external state and must never influence a filesystem path.
+    const quarantinePath = `${this.lockPath}.stale-${randomUUID()}`;
     try {
       renameSync(this.lockPath, quarantinePath);
     } catch (error) {
