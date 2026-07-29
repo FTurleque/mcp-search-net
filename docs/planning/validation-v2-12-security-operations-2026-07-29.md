@@ -26,7 +26,7 @@
 - SDK MCP, transitives, chaîne ESLint et images OCI sont verrouillés ; licences
   et digests sont contrôlés hors ligne.
 
-## Gates déterministes
+## Gates déterministes historiques
 
 Runtime : Node.js `24.17.0`.
 
@@ -40,7 +40,7 @@ Le gate comprend runtime, configuration Copilot, supply chain, Prettier, ESLint,
 typecheck, build et couverture. L'architecture reste conforme : aucun import
 `infrastructure` depuis `src/domain`.
 
-## Installation et supply chain
+## Installation et supply chain historiques
 
 ```text
 scripts/test-node-runtime-integrity.ps1
@@ -62,7 +62,7 @@ réinstallation, conservation de configuration/données/secrets, package de
 production, désinstallation `-KeepData`, puis désinstallation complète. Le vrai
 wrapper CMD charge aussi le token généré dans un test comportemental.
 
-## Docker local
+## Docker local historique
 
 `docker compose config --quiet` passe avec deux secrets éphémères limités au
 processus. Aucun service existant n'a été démarré, arrêté ou supprimé.
@@ -78,18 +78,10 @@ local manifest list: sha256:523c0f78f2f460b493709c3b6112208bb73fab85a6e43f9d65d0
 L'image de validation reste locale ; aucune suppression Docker n'a été effectuée
 sans autorisation distincte.
 
-## Réserves
-
-- Les tests live SearXNG/Crawl4AI ne sont pas un gate spécifique de V2.12 et
-  n'ont pas été rejoués à cette étape ; ils restent requis par la qualification
-  finale #18.
-- La validation exact-head de la branche et du merge d'agrégation doit être
-  enregistrée dans le PR focalisé et l'issue avant clôture.
-
 ## Erratum et supersession — audit du 29 juillet 2026
 
-Les résultats ci-dessus constituent une **preuve historique** du candidat
-`131d12fb4d2cf03937c24a7106bfcd758cd0c368`. Ils ne qualifient pas les commits
+Les résultats historiques ci-dessus qualifiaient le candidat
+`131d12fb4d2cf03937c24a7106bfcd758cd0c368`. Ils ne qualifiaient pas les commits
 postérieurs ajoutés pendant l'audit de reprise.
 
 L'audit a identifié puis corrigé les écarts suivants :
@@ -114,40 +106,121 @@ L'audit a identifié puis corrigé les écarts suivants :
 - le fixture multi-processus ne reçoit plus de chemins filesystem via
   `process.argv` ;
 - les secrets éphémères du workflow manuel sont générés avec une source
-  cryptographiquement aléatoire sans sink filesystem JavaScript piloté par une
-  variable d'environnement ;
+  cryptographiquement aléatoire ;
 - les tokens de développement connus ne sont plus stockés en clair dans le code
   runtime chargé de les refuser hors profil `development`.
 
-Après ces corrections, SonarQube Cloud a annoncé **Quality Gate passed**, avec
-**0 Security Hotspots**, sur le candidat runtime/documentation antérieur à cette
-réconciliation documentaire (`4a36fe97925d8e6d13486434a3feb2d31a186513`).
-Cette preuve Sonar ne remplace pas les gates locaux.
+SonarQube Cloud a ensuite annoncé **Quality Gate passed** avec
+**0 Security Hotspots** sur la PR #23. Cette preuve Sonar ne remplace pas les
+gates locaux.
 
-### Qualification encore requise
+## Qualification locale exact-head finale
 
-Le connecteur GitHub ne fournit pas de runner Windows local. Aucune commande
-locale n'a donc été rejouée sur le head issu de ces corrections et aucun workflow
-GitHub Actions n'a été déclenché.
+Qualification exécutée sous Windows sur le SHA exact :
 
-Avant merge de #23, exécuter sur le **SHA exact final** de la branche :
+```text
+4651ccae3315e4b64e1bd42e1274fa9eed34a83f
+```
+
+État Git avant exécution : branche `fix/v2-12-security-operations` synchronisée
+avec `origin`, working tree clean.
+
+### Gate global
 
 ```text
 npm run check
-npm run test:required
-npm run test:unit
-npm run test:contract
-npm run test:security
-npm run test:resilience
-npm run test:performance
-npm run test:integration
-npm run test:e2e:deterministic
-scripts/test-node-runtime-integrity.ps1
-scripts/test-installation.ps1 -NodeRuntimeSource <Node-24-root>
-npm audit --audit-level=moderate
-npm audit --omit=dev --audit-level=moderate
+Node.js runtime validated: 24.17.0
+SUPPLY_CHAIN_CHECK_PASSED
+Prettier: PASS
+ESLint: PASS
+typecheck: PASS
+build: PASS
+REQUIRED_SUITE_VALID coverage: 216 passed, 0 skipped
+Statements 78.03% | Branches 64.51% | Functions 84.18% | Lines 80.55%
 ```
 
-Puis enregistrer les sorties exactes, le SHA qualifié et le verdict dans cette
-preuve, dans la PR #23 et dans l'issue #15. Tant que cette étape n'est pas faite,
-#23 reste en **draft** et #15 reste **ouverte**.
+Le contrôle supply-chain a validé le SDK MCP `1.30.0`, les overrides attendus,
+4 références OCI pinées par digest et 132 paquets de production avec licences
+admises.
+
+### Suites obligatoires
+
+```text
+npm run test:required
+REQUIRED_SUITE_VALID required: 216 passed, 0 skipped
+
+npm run test:unit
+REQUIRED_SUITE_VALID unit: 95 passed, 0 skipped
+
+npm run test:contract
+REQUIRED_SUITE_VALID contract: 6 passed, 0 skipped
+
+npm run test:security
+REQUIRED_SUITE_VALID security: 68 passed, 0 skipped
+
+npm run test:resilience
+REQUIRED_SUITE_VALID resilience: 25 passed, 0 skipped
+
+npm run test:performance
+REQUIRED_SUITE_VALID performance: 2 passed, 0 skipped
+
+npm run test:integration
+REQUIRED_SUITE_VALID integration: 35 passed, 0 skipped
+
+npm run test:e2e:deterministic
+2 passed, 0 failed
+```
+
+Le test E2E STDIO confirme les outils V1/V2 attendus et le maintien de `stdout`
+en JSON-RPC avec diagnostics structurés uniquement sur `stderr`.
+
+### Windows, installation et rollback
+
+```text
+scripts/test-node-runtime-integrity.ps1
+NODE_RUNTIME_INTEGRITY_VALID: valid checksum accepted; invalid checksum rejected.
+
+scripts/test-installation.ps1 -NodeRuntimeSource <Node-24-root>
+INSTALLATION_LIFECYCLE_VALID
+```
+
+La recette a observé un échec d'activation volontaire
+`MCP_INSTALL_TEST_ACTIVATION_FAILURE`, a restauré l'installation précédente,
+puis a poursuivi avec succès le cycle de mise à jour, conservation des données,
+désinstallation partielle, réinstallation et désinstallation complète.
+
+Pendant la recette :
+
+- installation développement : 280 paquets, 0 vulnérabilité ;
+- installation production : 132 paquets, 0 vulnérabilité.
+
+### Audits npm
+
+```text
+npm audit --audit-level=moderate
+found 0 vulnerabilities
+
+npm audit --omit=dev --audit-level=moderate
+found 0 vulnerabilities
+```
+
+## Merge V2.12
+
+PR #23 mergée dans `feat/v2-catalog-storage` :
+
+```text
+head qualifié : 4651ccae3315e4b64e1bd42e1274fa9eed34a83f
+merge commit  : 64622e6e40f3ad18bc5c2a867a5600f19bf2d25c
+```
+
+La comparaison GitHub entre le head qualifié et le merge commit retourne
+`files: []` : le merge n'a introduit aucun changement de contenu. Le tree intégré
+est donc équivalent au tree exact-head qualifié.
+
+## Verdict
+
+**V2.12 — PASS / MERGED.**
+
+L'issue #15 peut être clôturée. Les tests live SearXNG/Crawl4AI restent hors du
+gate spécifique V2.12 et seront rejoués dans la qualification finale #18. Aucun
+workflow GitHub Actions n'a été déclenché pendant cette qualification.
