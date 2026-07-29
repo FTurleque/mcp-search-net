@@ -135,7 +135,7 @@ describe('MCP STDIO server', () => {
     if (catalogContent === undefined || !('text' in catalogContent)) {
       throw new Error('Catalog resource must expose JSON text');
     }
-    const parsedCatalog = JSON.parse(String(catalogContent.text)) as Record<string, unknown>;
+    const parsedCatalog = JSON.parse(catalogContent.text) as Record<string, unknown>;
     expect(parsedCatalog).toMatchObject({
       schemaVersion: '1.0',
       contentTrust: 'EXTERNAL_UNTRUSTED_CONTENT',
