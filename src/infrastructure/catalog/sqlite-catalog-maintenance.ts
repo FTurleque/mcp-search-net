@@ -23,6 +23,13 @@ export class CatalogMaintenanceLockError extends Error {
   }
 }
 
+export class CatalogMaintenanceCheckpointError extends Error {
+  public constructor(message: string) {
+    super(message);
+    this.name = 'CatalogMaintenanceCheckpointError';
+  }
+}
+
 export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
   public constructor(
     private readonly catalogPath: string,
@@ -56,7 +63,7 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
           database.pragma('analysis_limit = 400');
           database.pragma('optimize');
           renewLock();
-          database.pragma('wal_checkpoint(TRUNCATE)');
+          this.checkpointWal(database);
           if (input.vacuum) {
             renewLock();
             database.exec('VACUUM');
@@ -124,6 +131,15 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
       return action(() => lease.renew());
     } finally {
       lease.release();
+    }
+  }
+
+  private checkpointWal(database: Database.Database): void {
+    const busy = database.pragma('wal_checkpoint(TRUNCATE)', { simple: true });
+    if (busy !== 0) {
+      throw new CatalogMaintenanceCheckpointError(
+        'CATALOG_WAL_CHECKPOINT_BUSY: active SQLite readers prevented a complete TRUNCATE checkpoint',
+      );
     }
   }
 
