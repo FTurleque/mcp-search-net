@@ -51,16 +51,11 @@ jobs:
           node-version: 24
           cache: npm
       - name: Generate ephemeral provider secrets
+        shell: bash
         run: |
-          node --input-type=module <<'NODE'
-          import { randomBytes } from 'node:crypto';
-          import { appendFileSync } from 'node:fs';
-
-          const environmentFile = process.env.GITHUB_ENV;
-          if (!environmentFile) throw new Error('GITHUB_ENV is unavailable');
-          appendFileSync(environmentFile, `SEARXNG_SECRET=${randomBytes(32).toString('hex')}\n`);
-          appendFileSync(environmentFile, `CRAWL4AI_API_TOKEN=${randomBytes(32).toString('hex')}\n`);
-          NODE
+          set -euo pipefail
+          printf 'SEARXNG_SECRET=%s\n' "$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          printf 'CRAWL4AI_API_TOKEN=%s\n' "$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run build
       - name: Build MCP container
