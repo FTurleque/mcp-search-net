@@ -84,8 +84,8 @@ describe('SqliteCatalogBackup', () => {
 
   it('confines an arbitrary requested path to the catalog backup directory', async () => {
     const fixture = createCatalogFixture();
-    const requestedOutsidePath = join(dirname(fixture.root), 'escaped.db');
-    const expectedPath = join(fixture.root, 'backups', 'escaped.db');
+    const requestedOutsidePath = `${fixture.root}-escaped.db`;
+    const expectedPath = join(fixture.root, 'backups', `${fixture.root.split(/[/\\]/u).at(-1)}-escaped.db`);
 
     const result = await new SqliteCatalogBackup(fixture.path, fixture.clock).run(
       requestedOutsidePath,
