@@ -17,9 +17,10 @@ export const applicationConfigSchema = z
       .object({
         name: z.string().min(1),
         version: z.string().min(1),
+        profile: z.enum(['development', 'production', 'test']).default('development'),
       })
       .strict()
-      .default({ name: 'mcp-search-net', version: '1.0.0' }),
+      .default({ name: 'mcp-search-net', version: '1.0.0', profile: 'development' }),
     searxng: z
       .object({
         baseUrl: httpUrlSchema.default('http://127.0.0.1:8888'),
@@ -141,6 +142,7 @@ export type ApplicationConfig = z.infer<typeof applicationConfigSchema>;
 
 export const applicationEnvironmentSchema = z.object({
   MCP_CONFIG_PATH: z.string().min(1).optional(),
+  MCP_PROFILE: z.enum(['development', 'production', 'test']).optional(),
   MCP_LOG_LEVEL: z.enum(['debug', 'info', 'warning', 'error']).optional(),
   MCP_CACHE_PATH: z.string().min(1).optional(),
   MCP_OFFICIAL_SOURCES_PATH: z.string().min(1).optional(),

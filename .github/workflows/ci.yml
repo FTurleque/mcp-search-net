@@ -50,6 +50,12 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Generate ephemeral provider secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'SEARXNG_SECRET=%s\n' "$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          printf 'CRAWL4AI_API_TOKEN=%s\n' "$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run build
       - name: Build MCP container

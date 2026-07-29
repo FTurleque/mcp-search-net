@@ -17,6 +17,7 @@ import type {
   CatalogSyncStrategy,
   NewCatalogSource,
 } from '../domain/models/catalog.js';
+import { SqliteCatalogBackup } from '../infrastructure/catalog/sqlite-catalog-backup.js';
 import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
 import { SqliteCatalogVersionPurger } from '../infrastructure/catalog/sqlite-catalog-version-purger.js';
 import { loadConfiguration } from '../infrastructure/config/load-configuration.js';
@@ -37,6 +38,8 @@ const DEFAULT_KEEP_PREVIOUS_VERSIONS = 3;
 type CatalogCommand =
   | 'init'
   | 'status'
+  | 'health'
+  | 'backup'
   | 'list-sources'
   | 'load-sources'
   | 'sync'
@@ -50,6 +53,9 @@ type CatalogCommand =
 interface CatalogCommandOptions {
   readonly command: CatalogCommand;
   readonly path: string;
+  readonly backup?: {
+    readonly destinationPath: string;
+  };
   readonly source?: NewCatalogSource;
   readonly sourceConfig?: {
     readonly filePath: string;
@@ -97,6 +103,15 @@ interface CatalogStatusOutput {
 async function main(argv: readonly string[]): Promise<void> {
   const options = parseArguments(argv);
   const clock = new SystemClock();
+
+  if (options.command === 'backup') {
+    if (options.backup === undefined) throw new Error(usage());
+    const result = await new SqliteCatalogBackup(options.path, clock).run(
+      options.backup.destinationPath,
+    );
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return;
+  }
 
   if (options.command === 'purge-versions') {
     if (options.purge === undefined) throw new Error(usage());
@@ -202,6 +217,31 @@ async function main(argv: readonly string[]): Promise<void> {
       return;
     }
 
+    if (options.command === 'health') {
+      const [verification, sourceCount, documentCount] = await Promise.all([
+        new VerifyCatalog(repository).execute(),
+        repository.countSources(),
+        repository.countDocuments(),
+      ]);
+      const status = verification.status === 'OK' ? 'healthy' : 'degraded';
+      process.stdout.write(
+        `${JSON.stringify(
+          {
+            schemaVersion: '1.0',
+            status,
+            path: options.path,
+            sourceCount,
+            documentCount,
+            verification,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      if (status === 'degraded') process.exitCode = 1;
+      return;
+    }
+
     if (options.command === 'rebuild-index') {
       const result = await new RebuildCatalogIndex(repository).execute();
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -214,16 +254,16 @@ async function main(argv: readonly string[]): Promise<void> {
       return;
     }
 
-    const [sources, documents] = await Promise.all([
-      repository.listSources(),
-      repository.listDocuments(),
+    const [sourceCount, documentCount] = await Promise.all([
+      repository.countSources(),
+      repository.countDocuments(),
     ]);
     const output: CatalogStatusOutput = {
       schemaVersion: '1.0',
       status: 'ready',
       path: options.path,
-      sourceCount: sources.length,
-      documentCount: documents.length,
+      sourceCount,
+      documentCount,
     };
 
     process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
@@ -241,6 +281,13 @@ function parseArguments(argv: readonly string[]): CatalogCommandOptions {
   if (command === 'ingest-text') return parseIngestText(argv, path);
   if (command === 'search') return parseSearch(argv, path);
   if (command === 'purge-versions') return parsePurgeVersions(argv, path);
+  if (command === 'backup') {
+    return {
+      command,
+      path: resolve(path),
+      backup: { destinationPath: resolve(requireOption(argv, '--output')) },
+    };
+  }
   return { command, path: resolve(path) };
 }
 
@@ -248,6 +295,8 @@ function parseCommand(value: string | undefined): CatalogCommand {
   if (
     value === 'init' ||
     value === 'status' ||
+    value === 'health' ||
+    value === 'backup' ||
     value === 'list-sources' ||
     value === 'load-sources' ||
     value === 'sync' ||
@@ -453,6 +502,8 @@ function usage(): string {
     'Usage:',
     '  catalog init [--path <catalog.db>]',
     '  catalog status [--path <catalog.db>]',
+    '  catalog health [--path <catalog.db>]',
+    '  catalog backup [--path <catalog.db>] --output <snapshot.db>',
     '  catalog verify [--path <catalog.db>]',
     '  catalog rebuild-index [--path <catalog.db>]',
     '  catalog purge-versions [--path <catalog.db>] [--source-key <key>] [--keep <previous-version-count>] [--dry-run]',

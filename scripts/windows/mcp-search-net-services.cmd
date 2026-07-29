@@ -6,5 +6,5 @@ if not exist "%MCP_SEARCH_HOME%\compose.yaml" (
   exit /b 2
 )
 if not defined MCP_SEARCH_COMPOSE_PROJECT set "MCP_SEARCH_COMPOSE_PROJECT=mcp-search-net"
-docker compose -p "%MCP_SEARCH_COMPOSE_PROJECT%" -f "%MCP_SEARCH_HOME%\compose.yaml" -f "%MCP_SEARCH_HOME%\compose.hybrid.yaml" %*
+docker compose --env-file "%MCP_SEARCH_HOME%\.env" -p "%MCP_SEARCH_COMPOSE_PROJECT%" -f "%MCP_SEARCH_HOME%\compose.yaml" -f "%MCP_SEARCH_HOME%\compose.hybrid.yaml" %*
 exit /b %ERRORLEVEL%

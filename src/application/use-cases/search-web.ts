@@ -148,6 +148,8 @@ export class SearchWeb {
           total: providerResponse.total ?? candidates.length,
           returned: results.length,
           unresponsiveEngines,
+          sourceProvider: 'searxng',
+          retrievedAt: new Date().toISOString(),
         },
       },
     };

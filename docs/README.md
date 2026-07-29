@@ -21,6 +21,7 @@
 ## Exploitation
 
 - [Dépannage](operations/troubleshooting.md)
+- [Supply chain et mises à jour](operations/supply-chain.md)
 - [Observabilité](operations/observability.md)
 
 ## Développement

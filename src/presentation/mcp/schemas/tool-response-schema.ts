@@ -2,6 +2,8 @@ import { z } from 'zod/v4';
 
 import {
   CACHE_STATUSES,
+  EXTERNAL_CONTENT_SAFETY_NOTICE,
+  EXTERNAL_CONTENT_TRUST,
   TOOL_ERROR_CODES,
   TOOL_WARNING_CODES,
 } from '../../../domain/models/tool-response.js';
@@ -28,6 +30,8 @@ export function createToolResponseSchema<T extends z.ZodType>(tool: ToolName, da
           durationMs: z.number().nonnegative(),
           cacheStatus: z.enum(CACHE_STATUSES),
           provider: z.string().min(1),
+          contentTrust: z.literal(EXTERNAL_CONTENT_TRUST),
+          contentSafetyNotice: z.literal(EXTERNAL_CONTENT_SAFETY_NOTICE),
         })
         .strict(),
       data,

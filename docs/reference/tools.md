@@ -15,10 +15,12 @@ interface ToolResponse<T> {
     requestId: string;
   }>;
   metadata: {
-    tool: 'search_web' | 'fetch_url' | 'search_docs';
+    tool: 'search_web' | 'fetch_url' | 'search_docs' | 'list_docs' | 'read_doc_section';
     durationMs: number;
     cacheStatus: 'HIT' | 'MISS' | 'STALE_FALLBACK' | 'DISABLED';
     provider: string;
+    contentTrust: 'EXTERNAL_UNTRUSTED_CONTENT';
+    contentSafetyNotice: string;
   };
   data: T;
 }
@@ -29,6 +31,12 @@ interface ToolResponse<T> {
 `cacheStatus` vaut `HIT` pour une entrée fraîche ou revalidée en HTTP 304, `MISS` après appel fournisseur, `STALE_FALLBACK` lorsqu'une entrée expirée remplace un fournisseur indisponible, et `DISABLED` lorsque le cache est désactivé ou que le mode dégradé poursuit après une panne SQLite. Pour `search_docs`, le provider est `catalog` et le cache applicatif V1 est désactivé.
 
 Le champ textuel MCP est volontairement compact. Il ne doit pas recopier tout `structuredContent` afin de limiter la consommation de contexte dans Copilot.
+
+Les titres, extraits, métadonnées et textes provenant du Web ou du catalogue sont
+des données hostiles potentielles. `contentTrust` et `contentSafetyNotice` sont
+présents sur toute réponse réussie ; les resources JSON portent les mêmes champs
+au premier niveau. Une instruction trouvée dans une page ne modifie jamais le
+contrôle du serveur ou de l'agent.
 
 ## `search_web`
 
@@ -52,7 +60,7 @@ Politiques :
 - `prefer` classe les sources officielles en premier et signale l'inclusion de sources non vérifiées ;
 - `any` ne filtre aucun statut, tout en conservant les filtres de domaines et le classement local.
 
-Chaque résultat contient `title`, `url`, `domain`, `snippet`, `sourceStatus`, `score`, les moteurs et, uniquement lorsqu'elles existent, les dates et la langue détectée. Les statuts possibles sont `VERIFIED_OFFICIAL`, `LIKELY_OFFICIAL`, `THIRD_PARTY` et `UNKNOWN`.
+Chaque résultat contient `title`, `url`, `domain`, `snippet`, `sourceStatus`, `score`, les moteurs et, uniquement lorsqu'elles existent, les dates et la langue détectée. Les statuts possibles sont `VERIFIED_OFFICIAL`, `LIKELY_OFFICIAL`, `THIRD_PARTY` et `UNKNOWN`. La métadonnée de données expose aussi `sourceProvider: searxng` et le vrai instant `retrievedAt`; une réponse de cache conserve l'instant de récupération initial.
 
 Les URL sont normalisées avant déduplication : fragment et paramètres de suivi connus supprimés, port implicite et slash final harmonisés, paramètres fonctionnels conservés et triés. `search_web` ne télécharge jamais les pages trouvées.
 
@@ -82,7 +90,7 @@ Entrées :
 | `maxSections`   | `5`      | de 1 à 10                                                   |
 | `renderMode`    | `static` | `static` ou `auto`                                          |
 
-La sortie contient `requestedUrl`, `finalUrl`, `canonicalUrl`, `domain`, `contentType`, `sourceStatus`, `fetchedAt`, `extractionMode`, `truncated`, `sectionCount`, `sections`, le Markdown assemblé et les liens publics validés. Chaque section expose son titre, son Markdown, son score local et son état de troncature.
+La sortie contient `requestedUrl`, `finalUrl`, `canonicalUrl`, `domain`, `contentType`, `sourceStatus`, `fetchedAt`, `extractionMode`, `truncated`, `sectionCount`, `sections`, le Markdown assemblé et les liens publics validés. L'enveloppe identifie le provider effectif. Chaque section expose son titre, son Markdown, son score local et son état de troncature.
 
 Le sélecteur local utilise une pertinence lexicale déterministe bornée entre 0 et 1, renforce les correspondances dans les titres, les blocs de code et les versions demandées, limite chaque section à 5 000 caractères, puis applique les budgets globaux. Une requête sans correspondance renvoie une liste vide et `NO_RELEVANT_SECTION`, jamais les premières sections arbitraires.
 

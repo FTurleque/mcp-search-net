@@ -17,6 +17,7 @@ describe('application configuration precedence and limits', () => {
   it('provides internal safe defaults', () => {
     const config = applicationConfigSchema.parse({});
     expect(config).toMatchObject({
+      application: { profile: 'development' },
       cache: { enabled: true, searchTtlMs: 3_600_000, documentationTtlMs: 86_400_000 },
       limits: {
         defaultSearchResults: 5,
@@ -69,6 +70,25 @@ describe('application configuration precedence and limits', () => {
     expect(loaded.application.searxng.baseUrl).toBe('http://searxng.internal:8080');
     expect(loaded.crawl4aiApiToken).toBe('test-token-from-environment');
     expect(loaded.application.security.allowedPorts).toEqual([80, 443, 8443]);
+  });
+
+  it('rejects known development tokens outside the development profile', async () => {
+    process.env['MCP_PROFILE'] = 'production';
+    process.env['MCP_CRAWL4AI_TOKEN'] = 'mcp-search-local-development-token';
+
+    await expect(loadConfiguration(resolve('config/application.yml'))).rejects.toThrow(
+      'A known development Crawl4AI token is forbidden in the production profile',
+    );
+  });
+
+  it('accepts a non-default secret in the production profile', async () => {
+    process.env['MCP_PROFILE'] = 'production';
+    process.env['MCP_CRAWL4AI_TOKEN'] = 'unique-production-token-value';
+
+    const loaded = await loadConfiguration(resolve('config/application.yml'));
+
+    expect(loaded.application.application.profile).toBe('production');
+    expect(loaded.crawl4aiApiToken).toBe('unique-production-token-value');
   });
 
   it('rejects an invalid legacy boolean override instead of casting a string to boolean', async () => {

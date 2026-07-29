@@ -15,6 +15,7 @@ Dans l’installation, modifier `%LOCALAPPDATA%\mcp-search-net\config`. L’inst
 ## Variables d’environnement
 
 - `MCP_CONFIG_PATH` remplace le chemin du fichier applicatif ;
+- `MCP_PROFILE` remplace le profil `development`, `test` ou `production` ;
 - `MCP_OFFICIAL_SOURCES_PATH` remplace le registre officiel ;
 - `MCP_CRAWL4AI_TOKEN` fournit le jeton de la façade ;
 - `MCP_SEARXNG_URL` et `MCP_CRAWL4AI_URL` remplacent les endpoints ;
@@ -24,7 +25,7 @@ Dans l’installation, modifier `%LOCALAPPDATA%\mcp-search-net\config`. L’inst
 
 Les anciens noms préfixés `MCP_SEARCH_` restent acceptés pour compatibilité. Les
 nouveaux déploiements utilisent les noms ci-dessus. `.env.example` ne contient
-que des valeurs d’exemple.
+que des valeurs d’exemple destinées au profil `development`.
 
 La priorité est : valeurs internes sûres, YAML, variables d'environnement, puis paramètres d'outil bornés. Toutes les surcharges repassent par Zod ; elles ne peuvent pas augmenter les maxima absolus.
 
@@ -56,4 +57,14 @@ Le registre V1 contient notamment MCP, GitHub, Node.js, TypeScript, SearXNG, Cra
 
 ## Secrets locaux
 
-Le jeton fourni est destiné au développement local et les ports sont liés à `127.0.0.1`. Pour un poste partagé ou une exposition réseau volontaire, définir un jeton fort dans un fichier `.env` à côté du `compose.yaml` installé et fournir la même valeur au processus MCP.
+Compose n'a plus de secret par défaut : `SEARXNG_SECRET` et
+`CRAWL4AI_API_TOKEN` doivent exister dans un fichier `.env` local ou dans
+l'environnement. Le jeton fourni au processus MCP doit avoir la même valeur que
+`CRAWL4AI_API_TOKEN`.
+
+Les fichiers du dépôt déclarent explicitement leur profil : développement pour
+`application.yml` et `application.user.yml`, production pour
+`application.docker.yml`. Un jeton d'exemple connu dans un profil non
+développement provoque un arrêt avant appel fournisseur. L'installateur Windows
+génère un `.env` aléatoire s'il n'existe pas, le préserve lors des mises à jour et
+le charge dans les wrappers Node et Compose.

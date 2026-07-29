@@ -2,6 +2,10 @@ import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/sdk/serv
 
 import type { CatalogPage, CatalogRepository } from '../../application/ports/catalog-repository.js';
 import { ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
+import {
+  EXTERNAL_CONTENT_SAFETY_NOTICE,
+  EXTERNAL_CONTENT_TRUST,
+} from '../../domain/models/tool-response.js';
 import type {
   CatalogCurrentDocumentSection,
   CatalogDocument,
@@ -319,7 +323,7 @@ async function createSectionResource(repository: CatalogRepository, uri: URL) {
 }
 
 function jsonResource(uri: URL, value: unknown) {
-  const text = JSON.stringify(value, null, 2);
+  const text = JSON.stringify(withContentTrust(value), null, 2);
   if (text.length > MAX_CATALOG_RESOURCE_CHARACTERS) {
     throw new ResponseTooLargeError('The catalog resource exceeds its response budget');
   }
@@ -331,6 +335,18 @@ function jsonResource(uri: URL, value: unknown) {
         text,
       },
     ],
+  };
+}
+
+function withContentTrust(value: unknown): Readonly<Record<string, unknown>> {
+  const data =
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Readonly<Record<string, unknown>>)
+      : { data: value };
+  return {
+    ...data,
+    contentTrust: EXTERNAL_CONTENT_TRUST,
+    contentSafetyNotice: EXTERNAL_CONTENT_SAFETY_NOTICE,
   };
 }
 

@@ -62,6 +62,8 @@ export function createSearchWebSchemas(defaultResults: number, maximumResults: n
           total: z.number(),
           returned: z.number(),
           unresponsiveEngines: z.array(z.string()),
+          sourceProvider: z.literal('searxng'),
+          retrievedAt: z.iso.datetime(),
         })
         .strict(),
     })
