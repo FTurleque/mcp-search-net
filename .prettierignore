@@ -12,3 +12,6 @@ catalog-migrations/*.sql
 # Historical evidence stays byte-stable; current documentation is formatted.
 docs/planning/validation-*.md
 docs/planning/status-v2-7.md
+
+# Versioned benchmark fixtures are machine-readable and validated structurally by tests.
+benchmarks/v2-search-quality/*.json
