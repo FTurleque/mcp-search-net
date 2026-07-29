@@ -35,11 +35,11 @@ export class SqliteCatalogBackup {
     private readonly clock: Clock,
   ) {}
 
-  public async run(destinationFileName: string): Promise<CatalogBackupOutput> {
+  public async run(destinationRequest: string): Promise<CatalogBackupOutput> {
     const requestedSourcePath = resolve(this.catalogPath);
     if (!existsSync(requestedSourcePath)) throw new Error('CATALOG_BACKUP_SOURCE_NOT_FOUND');
     const sourcePath = realpathSync(requestedSourcePath);
-    const fileName = validateBackupFileName(destinationFileName);
+    const fileName = validateBackupFileName(destinationRequest);
     const backupDirectory = join(dirname(sourcePath), 'backups');
     const finalPath = join(backupDirectory, fileName);
     if (existsSync(finalPath)) throw new Error('CATALOG_BACKUP_DESTINATION_EXISTS');
@@ -56,8 +56,6 @@ export class SqliteCatalogBackup {
       const sha256 = await sha256File(temporaryPath);
       const bytes = statSync(temporaryPath).size;
 
-      // The temporary file is created beside the destination. A hard link publishes the
-      // fully verified snapshot atomically and fails rather than replacing an existing file.
       linkSync(temporaryPath, finalPath);
       rmSync(temporaryPath);
 
@@ -90,14 +88,8 @@ export class SqliteCatalogBackup {
 }
 
 function validateBackupFileName(value: string): string {
-  const fileName = value.trim();
-  if (
-    fileName.length === 0 ||
-    fileName !== basename(fileName) ||
-    fileName.includes('/') ||
-    fileName.includes('\\') ||
-    !SAFE_BACKUP_FILE_NAME.test(fileName)
-  ) {
+  const fileName = basename(value.trim());
+  if (!SAFE_BACKUP_FILE_NAME.test(fileName)) {
     throw new Error('CATALOG_BACKUP_INVALID_FILE_NAME');
   }
   return fileName;
