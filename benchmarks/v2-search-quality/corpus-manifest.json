@@ -1,0 +1,188 @@
+{
+  "schemaVersion": "1.0",
+  "description": "Deterministic benchmark corpus modeled on official documentation domains. Content is generated locally from this versioned manifest; no large downloaded artifacts are committed.",
+  "documentsPerSource": 10,
+  "defaultSectionsPerDocument": 10,
+  "sources": [
+    {
+      "sourceKey": "nodejs",
+      "displayName": "Node.js Documentation",
+      "baseUrl": "https://nodejs.org/docs/latest/api",
+      "language": "en",
+      "topics": [
+        "fs-readfile|File system readFile options callback promises encoding",
+        "streams-pipeline|Streams pipeline backpressure readable writable transform",
+        "worker-threads|Worker threads message channel shared array buffer",
+        "permissions|Permission model allow fs read child process worker",
+        "esm|ECMAScript modules import export package type",
+        "http-server|HTTP server request response keep alive headers",
+        "crypto-random|Crypto randomBytes randomUUID hashing digest",
+        "process-signals|Process signals exit code SIGTERM uncaught exception",
+        "test-runner|Node test runner mock coverage assertions",
+        "diagnostics|Diagnostics channel performance hooks async local storage"
+      ]
+    },
+    {
+      "sourceKey": "typescript",
+      "displayName": "TypeScript Handbook",
+      "baseUrl": "https://www.typescriptlang.org/docs/handbook",
+      "language": "en",
+      "topics": [
+        "narrowing|Type narrowing control flow type guards discriminated unions",
+        "generics|Generics constraints keyof inference reusable types",
+        "modules|Modules import export resolution node next",
+        "tsconfig|TSConfig strict noUncheckedIndexedAccess exact optional property types",
+        "utility-types|Utility types Partial Pick Omit Record Awaited",
+        "conditional-types|Conditional types infer distributive conditions",
+        "mapped-types|Mapped types modifiers key remapping template literals",
+        "declaration-files|Declaration files d ts modules libraries",
+        "classes|Classes private protected abstract implements override",
+        "decorators|Decorators metadata class method experimental standard"
+      ]
+    },
+    {
+      "sourceKey": "mdn-en",
+      "displayName": "MDN Web Docs English",
+      "baseUrl": "https://developer.mozilla.org/en-US/docs/Web",
+      "language": "en",
+      "topics": [
+        "fetch-api|Fetch API request response abort controller credentials",
+        "web-storage|Web Storage localStorage sessionStorage quota",
+        "service-workers|Service workers cache offline lifecycle registration",
+        "websocket|WebSocket connection messages close protocol",
+        "cors|CORS access control allow origin preflight credentials",
+        "content-security-policy|Content Security Policy CSP script source nonce",
+        "css-grid|CSS Grid template columns rows areas gap",
+        "promises|JavaScript promises async await rejection all settled",
+        "url-api|URL API URLSearchParams origin pathname encoding",
+        "intl|Intl locale date number plural formatting"
+      ]
+    },
+    {
+      "sourceKey": "mdn-fr",
+      "displayName": "MDN Web Docs Français",
+      "baseUrl": "https://developer.mozilla.org/fr/docs/Web",
+      "language": "fr",
+      "topics": [
+        "fetch-api|API Fetch requête réponse annulation contrôleur identifiants",
+        "stockage-web|Stockage Web localStorage sessionStorage quota navigateur",
+        "service-workers|Service workers cache hors ligne cycle de vie",
+        "websocket|WebSocket connexion messages fermeture protocole",
+        "cors|CORS contrôle accès origine prérequête identifiants",
+        "csp|Politique sécurité contenu CSP script nonce source",
+        "css-grid|Grille CSS colonnes lignes zones espacement",
+        "promesses|Promesses JavaScript async await rejet all settled",
+        "url-api|API URL paramètres recherche origine chemin encodage",
+        "intl|Intl paramètres régionaux date nombre pluriel formatage"
+      ]
+    },
+    {
+      "sourceKey": "github",
+      "displayName": "GitHub Docs",
+      "baseUrl": "https://docs.github.com",
+      "language": "en",
+      "topics": [
+        "actions-cache|GitHub Actions cache npm dependency key restore keys",
+        "actions-checkout|Actions checkout fetch depth submodules credentials",
+        "oidc|OpenID Connect OIDC cloud deployment token permissions",
+        "copilot|GitHub Copilot custom instructions prompt files agents",
+        "rest-api|REST API pagination rate limits conditional requests",
+        "graphql|GraphQL API nodes connections pagination cursor",
+        "branch-protection|Branch protection required reviews status checks",
+        "dependabot|Dependabot version updates security updates configuration",
+        "codeql|CodeQL code scanning queries languages alerts",
+        "releases|Releases tags assets checksums provenance"
+      ]
+    },
+    {
+      "sourceKey": "jetbrains",
+      "displayName": "JetBrains IntelliJ IDEA Documentation",
+      "baseUrl": "https://www.jetbrains.com/help/idea",
+      "language": "en",
+      "topics": [
+        "maven|Maven import reload profiles dependency analyzer",
+        "gradle|Gradle sync JVM toolchain build window",
+        "debugger|Debugger breakpoints watches evaluate expression",
+        "run-configurations|Run configurations environment variables working directory",
+        "inspections|Code inspections severity quick fixes profiles",
+        "git|Git branches rebase merge changelists",
+        "terminal|Integrated terminal shell settings environment",
+        "plugins|Plugins marketplace install disable compatibility",
+        "indexing|Project indexing shared indexes caches",
+        "http-client|HTTP Client requests environments variables scripts"
+      ]
+    },
+    {
+      "sourceKey": "maven",
+      "displayName": "Apache Maven Documentation",
+      "baseUrl": "https://maven.apache.org/guides",
+      "language": "en",
+      "topics": [
+        "lifecycle|Maven lifecycle validate compile test package verify install deploy",
+        "dependency-management|Dependency management mediation scope exclusions",
+        "surefire|Surefire unit tests includes excludes parallel",
+        "failsafe|Failsafe integration tests integration-test verify",
+        "enforcer|Maven Enforcer Java version dependency convergence",
+        "wrapper|Maven Wrapper mvnw distribution URL checksum",
+        "profiles|Maven profiles activation properties JDK OS",
+        "settings|Maven settings mirrors proxies servers credentials",
+        "repositories|Repositories plugin repositories snapshots releases",
+        "multi-module|Multi module reactor dependency order resume from"
+      ]
+    },
+    {
+      "sourceKey": "openjdk",
+      "displayName": "OpenJDK Documentation",
+      "baseUrl": "https://docs.oracle.com/en/java/javase/24/docs/api",
+      "language": "en",
+      "topics": [
+        "virtual-threads|Java virtual threads executors structured concurrency",
+        "records|Java records canonical constructor components",
+        "sealed-classes|Sealed classes permits non sealed hierarchy",
+        "modules|Java module system requires exports opens uses provides",
+        "http-client|Java HTTP Client send async body handlers",
+        "nio-files|NIO Files Path walk copy move attributes",
+        "concurrency|CompletableFuture locks atomics concurrent collections",
+        "collections|Collections List Map Set sequenced collections",
+        "gc|Garbage collectors G1 ZGC heap pause tuning",
+        "javadoc|Javadoc doclint links snippets tags"
+      ]
+    },
+    {
+      "sourceKey": "docker",
+      "displayName": "Docker Documentation",
+      "baseUrl": "https://docs.docker.com",
+      "language": "en",
+      "topics": [
+        "compose-healthcheck|Docker Compose healthcheck service healthy depends on",
+        "compose-secrets|Compose secrets files environment variables",
+        "multi-stage|Dockerfile multi stage builds copy from image size",
+        "build-cache|BuildKit cache mounts layer cache invalidation",
+        "volumes|Docker volumes bind mounts persistence permissions",
+        "networks|Docker networks DNS ports expose bridge",
+        "rootless|Rootless mode user namespaces security",
+        "read-only|Read only filesystem tmpfs capabilities security opt",
+        "registry|Registry login push pull digest tags",
+        "logging|Container logging drivers json file rotation"
+      ]
+    },
+    {
+      "sourceKey": "sqlite",
+      "displayName": "SQLite Documentation",
+      "baseUrl": "https://www.sqlite.org",
+      "language": "en",
+      "topics": [
+        "fts5|SQLite FTS5 bm25 rank unicode61 tokenizer contentless delete",
+        "wal|SQLite WAL checkpoint truncate readers writers busy",
+        "transactions|SQLite transactions deferred immediate exclusive",
+        "pragma-integrity|PRAGMA integrity_check foreign_key_check quick_check",
+        "query-planner|SQLite query planner indexes explain query plan",
+        "vacuum|SQLite VACUUM auto vacuum page size",
+        "backup|SQLite online backup API snapshot consistency",
+        "locking|SQLite locking busy timeout concurrency",
+        "json|SQLite JSON functions json_extract json_each",
+        "upsert|SQLite UPSERT conflict target excluded update"
+      ]
+    }
+  ]
+}
