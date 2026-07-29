@@ -194,7 +194,7 @@ démarrage avec un diagnostic sur `stderr`.
 Fonctionnalités en cours de stabilisation dans la PR #8 :
 
 - catalogue durable séparé de `cache.db` ;
-- migrations catalogue `C001` à `C007` avec checksums SHA-256 ;
+- migrations catalogue `C001` à `C008` avec checksums SHA-256 ;
 - CLI `catalog init`, `status`, `verify`, `add-source`, `list-sources`,
   `load-sources`, `ingest-text`, `sync`, `search`, `rebuild-index`,
   `purge-versions` ;
@@ -203,8 +203,8 @@ Fonctionnalités en cours de stabilisation dans la PR #8 :
 - synchronisation contrôlée avec ETag, Last-Modified, hash, staleness et
   redirections permanentes ;
 - outils MCP read-only `search_docs`, `list_docs` et `read_doc_section` ;
-- resources MCP read-only pour catalogue, sources, documents, versions et
-  sections.
+- resources MCP read-only paginées pour catalogue, sources, documents, versions
+  et sections, avec lectures ciblées par identifiant et budgets de réponse fixes.
 
 ## Sécurité
 

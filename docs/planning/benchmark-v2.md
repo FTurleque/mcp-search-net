@@ -6,6 +6,10 @@
 - **Portée** : définition du benchmark, aucune exécution obligatoire dans V2.0
 - **Décision liée** : ADR-010, ADR-015
 
+> Mise à jour V2.11 : le benchmark distinct de **taille des réponses MCP et scalabilité SQL** a été
+> exécuté sur 100, 1 000 et 10 000 sections. Il ne remplace pas le benchmark de qualité de recherche
+> décrit dans ce document, prévu en V2.13 (#16).
+
 ## Objectif
 
 Évaluer objectivement la qualité et la performance de la recherche documentaire V2 avant d'introduire des optimisations lourdes ou des embeddings.
@@ -181,6 +185,32 @@ Contenu :
 - résultats performance ;
 - requêtes en échec ;
 - recommandations.
+
+## Preuve de scalabilité V2.11
+
+Commande :
+
+```bash
+npm run benchmark:mcp:size
+```
+
+Le rapport JSON mesure les caractères MCP sérialisés, les caractères JSON structurés, une
+estimation de tokens, les latences p50/p95, la RSS du runner et la taille de `catalog.db`. Le corpus
+synthétique est incrémental et les réponses sont mesurées sur un processus MCP chaud.
+
+| Sections | Base SQLite | Page sections p95 | Simulation globale p95 | Réduction |
+| -------- | ----------- | ----------------- | ---------------------- | --------- |
+| 100      | 212 992 o   | 15 634 caractères | 45 955 caractères      | 65,98 %   |
+| 1 000    | 851 968 o   | 15 635 caractères | 465 597 caractères     | 96,642 %  |
+| 10 000   | 6 971 392 o | 15 636 caractères | 4 733 639 caractères   | 99,67 %   |
+
+À 10 000 sections, la page bornée représente environ 3 909 tokens au p95 et répond en 1,738 ms au
+p95. La lecture ciblée d'une section répond en 2,361 ms au p95 et `list_docs` en 2,958 ms. Les plans
+SQLite utilisent les clés primaires pour les lectures par identifiant et
+`ix_documents_language_id` pour le filtre langue.
+
+Rapport brut :
+[`benchmark-mcp-response-size-2026-07-29.json`](benchmark-results/benchmark-mcp-response-size-2026-07-29.json).
 
 ## Règle embeddings
 

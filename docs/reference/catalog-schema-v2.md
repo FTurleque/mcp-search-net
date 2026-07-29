@@ -2,8 +2,8 @@
 
 ## Statut
 
-- **Phase** : V2.9 — intégrité transactionnelle et migrations immuables
-- **Portée** : schéma implémenté par `C001` à `C007`
+- **Phase** : V2.11 — pagination et lectures ciblées
+- **Portée** : schéma implémenté par `C001` à `C008`
 - **Base cible** : `.data/catalog.db`
 - **Décision liée** : ADR-014, ADR-015
 
@@ -81,6 +81,19 @@ Contraintes :
 UNIQUE(source_id, stable_key)
 UNIQUE(source_id, canonical_url)
 ```
+
+Index de parcours :
+
+```sql
+CREATE INDEX ix_documents_language_id ON documents(language, id);
+CREATE INDEX ix_documents_source_language_status_id
+  ON documents(source_id, language, status, id);
+```
+
+`C008` ajoute ces index après mesure des plans de requête. Les pages filtrées sont ordonnées par
+`documents.id`, tandis que les lectures `sourceId`, `documentId` et `sectionId` utilisent les clés
+primaires SQLite. Les filtres absents sont retirés du SQL généré afin de ne pas neutraliser les
+index avec des prédicats `OR` paramétriques.
 
 ## `document_versions`
 
@@ -238,8 +251,8 @@ contentless. Les jointures applicatives utilisent toujours `rowid`.
 `catalog_schema_migrations` stocke `version`, `name`, `applied_at` et `checksum`. Le checksum est un
 SHA-256 du SQL avec fins de ligne normalisées. Pour un registre C001-C006 antérieur à V2.9, le
 runner ajoute la colonne et établit une seule fois la baseline depuis les migrations embarquées,
-puis applique C007. Toute différence ultérieure de nom ou de checksum fait échouer l'ouverture du
-catalogue ; une migration appliquée ne doit jamais être modifiée rétroactivement.
+puis applique C007 et C008. Toute différence ultérieure de nom ou de checksum fait échouer
+l'ouverture du catalogue ; une migration appliquée ne doit jamais être modifiée rétroactivement.
 
 ## Transactions
 
@@ -272,7 +285,7 @@ Une transaction doit :
 2. mettre le document en `STALE` ou `UNAVAILABLE` selon politique ;
 3. ne pas supprimer le contenu existant.
 
-## Tests à prévoir
+## Couverture de validation
 
 - migration sur base vide ;
 - migration répétée idempotente et détection d'une dérive de checksum ;
@@ -286,3 +299,8 @@ Une transaction doit :
 - suppression de `cache.db` sans impact `catalog.db` ;
 - absence de tables V2 dans `cache.db` ;
 - absence de dépendance au cache V1.
+- lectures source, document et section par clé primaire sans chargement global ;
+- pagination stable après ajout de nouveaux documents ;
+- filtres SQL `sourceKey`, `language` et `status` avec comptage cohérent ;
+- plan `documentsByLanguage` utilisant `ix_documents_language_id` ;
+- refus d'une page supérieure à 50 éléments.
