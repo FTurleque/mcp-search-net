@@ -19,9 +19,14 @@ import { SqliteCatalogRepository } from '../build/infrastructure/catalog/sqlite-
 
 const root = resolve(import.meta.dirname, '..');
 const args = parseArgs(process.argv.slice(2));
-const manifest = readJson(resolve(root, 'benchmarks/v2-search-quality/corpus-manifest.json'));
-const querySet = readJson(resolve(root, 'benchmarks/v2-search-quality/queries.json'));
-const sectionsPerDocument = positiveInteger(args.sectionsPerDocument, 100);
+const manifest = parseManifest(
+  readJson(resolve(root, 'benchmarks/v2-search-quality/corpus-manifest.json')),
+);
+const queries = parseQuerySet(readJson(resolve(root, 'benchmarks/v2-search-quality/queries.json')));
+const sectionsPerDocument = positiveInteger(
+  args.sectionsPerDocument,
+  manifest.defaultSectionsPerDocument,
+);
 const repetitions = positiveInteger(args.repetitions, 6);
 const warmupRounds = positiveInteger(args.warmupRounds, 2);
 const catalogPath = resolve(root, args.path ?? '.data/benchmark-v2-search-quality.db');
@@ -30,7 +35,6 @@ const outputPath = resolve(
   args.output ?? `docs/planning/benchmark-results/benchmark-v2-search-quality-${today()}.json`,
 );
 
-assertManifest(manifest, querySet);
 resetCatalog(catalogPath);
 mkdirSync(dirname(outputPath), { recursive: true });
 
@@ -47,7 +51,6 @@ try {
   const rebuild = await repository.rebuildSearchIndex();
   const rebuildDurationMs = performance.now() - rebuildStarted;
 
-  const queries = querySet.queries;
   await warmup(queries, repository, rerankedSearch, warmupRounds);
   const quality = await measureQuality(queries, repository, rerankedSearch);
   const performanceResult = await measurePerformance(
@@ -188,22 +191,22 @@ function createSection(source, topic, zeroBasedIndex) {
   };
 }
 
-async function warmup(queries, repositoryValue, reranked, rounds) {
+async function warmup(queryDefinitions, repositoryValue, reranked, rounds) {
   for (let round = 0; round < rounds; round += 1) {
-    for (const query of queries) {
+    for (const query of queryDefinitions) {
       await runLexical(repositoryValue, query);
       await runReranked(reranked, query);
     }
   }
 }
 
-async function measureQuality(queries, repositoryValue, reranked) {
+async function measureQuality(queryDefinitions, repositoryValue, reranked) {
   const lexicalCases = [];
   const rerankedCases = [];
   const failures = [];
   const categories = new Map();
 
-  for (const query of queries) {
+  for (const query of queryDefinitions) {
     const lexical = await runLexical(repositoryValue, query);
     const rerankedResult = await runReranked(reranked, query);
     const lexicalMetrics = measureSearchQueryQuality(
@@ -251,12 +254,11 @@ async function measureQuality(queries, repositoryValue, reranked) {
   };
 }
 
-async function measurePerformance(queries, repositoryValue, reranked, repeatCount) {
+async function measurePerformance(queryDefinitions, repositoryValue, reranked, repeatCount) {
   const lexicalDurations = [];
   const rerankedDurations = [];
   for (let repetition = 0; repetition < repeatCount; repetition += 1) {
-    for (let queryIndex = 0; queryIndex < queries.length; queryIndex += 1) {
-      const query = queries[queryIndex];
+    for (const [queryIndex, query] of queryDefinitions.entries()) {
       if ((repetition + queryIndex) % 2 === 0) {
         lexicalDurations.push(await timed(() => runLexical(repositoryValue, query)));
         rerankedDurations.push(await timed(() => runReranked(reranked, query)));
@@ -273,7 +275,9 @@ async function measurePerformance(queries, repositoryValue, reranked, repeatCoun
 }
 
 async function measureIncrementalSync(repositoryValue, manifestValue, clockValue) {
-  const source = manifestValue.sources[0];
+  const source = manifestValue.sources.at(0);
+  if (source === undefined) throw new Error('Benchmark requires at least one source');
+
   const stableKey = 'benchmark-incremental-sync';
   let revision = 1;
   const fetcher = {
@@ -442,8 +446,14 @@ function latencySummary(values) {
     p50Ms: roundMetric(percentile(values, 0.5), 3),
     p95Ms: roundMetric(percentile(values, 0.95), 3),
     p99Ms: roundMetric(percentile(values, 0.99), 3),
-    maxMs: roundMetric(Math.max(0, ...values), 3),
+    maxMs: roundMetric(maxValue(values), 3),
   };
+}
+
+function maxValue(values) {
+  let maximum = 0;
+  for (const value of values) maximum = Math.max(maximum, value);
+  return maximum;
 }
 
 function roundedSummary(summary) {
@@ -457,7 +467,9 @@ function roundedSummary(summary) {
 
 function parseTopic(encoded) {
   const separator = encoded.indexOf('|');
-  if (separator <= 0) throw new Error(`Invalid topic definition ${encoded}`);
+  if (separator <= 0 || separator === encoded.length - 1) {
+    throw new Error(`Invalid topic definition ${encoded}`);
+  }
   const id = encoded.slice(0, separator);
   const title = encoded.slice(separator + 1);
   return { id, title, shortTitle: title.split(' ').slice(0, 5).join(' ') };
@@ -483,26 +495,99 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-function assertManifest(manifestValue, querySetValue) {
-  if (!Array.isArray(manifestValue.sources) || manifestValue.sources.length < 10) {
+function parseManifest(value) {
+  if (!isRecord(value) || !Array.isArray(value.sources) || value.sources.length < 10) {
     throw new Error('Benchmark requires at least 10 sources');
   }
-  const documents = manifestValue.sources.reduce((sum, source) => sum + source.topics.length, 0);
-  if (documents < 100) throw new Error('Benchmark requires at least 100 documents');
-  if (!Array.isArray(querySetValue.queries) || querySetValue.queries.length < 50) {
+  const defaultSectionsPerDocument = positiveInteger(
+    value.defaultSectionsPerDocument,
+    100,
+  );
+  const sources = value.sources.map((source, index) => parseSource(source, index));
+  const documentCount = sources.reduce((sum, source) => sum + source.topics.length, 0);
+  if (documentCount < 100) throw new Error('Benchmark requires at least 100 documents');
+  return { sources, defaultSectionsPerDocument };
+}
+
+function parseSource(value, index) {
+  if (!isRecord(value)) throw new Error(`Benchmark source ${index} must be an object`);
+  const sourceKey = requiredString(value.sourceKey, `source ${index} sourceKey`);
+  const displayName = requiredString(value.displayName, `source ${sourceKey} displayName`);
+  const baseUrl = requiredString(value.baseUrl, `source ${sourceKey} baseUrl`);
+  const language = requiredString(value.language, `source ${sourceKey} language`);
+  if (!Array.isArray(value.topics) || value.topics.length === 0) {
+    throw new Error(`Benchmark source ${sourceKey} requires topics`);
+  }
+  const topics = value.topics.map((topic, topicIndex) =>
+    requiredString(topic, `source ${sourceKey} topic ${topicIndex}`),
+  );
+  return { sourceKey, displayName, baseUrl, language, topics };
+}
+
+function parseQuerySet(value) {
+  if (!isRecord(value) || !Array.isArray(value.queries) || value.queries.length < 50) {
     throw new Error('Benchmark requires at least 50 annotated queries');
   }
-  for (const query of querySetValue.queries) {
-    if (!Array.isArray(query.judgments) || query.judgments.length === 0) {
-      throw new Error(`Query ${query.id} has no relevance judgments`);
-    }
+  return value.queries.map((query, index) => parseQuery(query, index));
+}
+
+function parseQuery(value, index) {
+  if (!isRecord(value)) throw new Error(`Benchmark query ${index} must be an object`);
+  const id = requiredString(value.id, `query ${index} id`);
+  const category = requiredString(value.category, `query ${id} category`);
+  const query = requiredString(value.query, `query ${id} text`);
+  if (!Array.isArray(value.judgments) || value.judgments.length === 0) {
+    throw new Error(`Query ${id} has no relevance judgments`);
   }
+  const judgments = value.judgments.map((judgment, judgmentIndex) =>
+    parseJudgment(judgment, id, judgmentIndex),
+  );
+  const sourceKey = optionalString(value.sourceKey, `query ${id} sourceKey`);
+  const language = optionalString(value.language, `query ${id} language`);
+  return {
+    id,
+    category,
+    query,
+    judgments,
+    ...(sourceKey === undefined ? {} : { sourceKey }),
+    ...(language === undefined ? {} : { language }),
+  };
+}
+
+function parseJudgment(value, queryId, index) {
+  if (!isRecord(value)) throw new Error(`Query ${queryId} judgment ${index} must be an object`);
+  const documentPublicId = requiredString(
+    value.documentPublicId,
+    `query ${queryId} judgment ${index} documentPublicId`,
+  );
+  const grade = Number(value.grade);
+  if (!Number.isSafeInteger(grade) || grade < 1 || grade > 3) {
+    throw new Error(`Query ${queryId} judgment ${index} grade must be 1..3`);
+  }
+  return { documentPublicId, grade };
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function requiredString(value, label) {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+  return value.trim();
+}
+
+function optionalString(value, label) {
+  if (value === undefined) return undefined;
+  return requiredString(value, label);
 }
 
 function parseArgs(argv) {
   const result = {};
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+    if (token === undefined) continue;
     const next = argv[index + 1];
     if (
       token === '--path' ||
@@ -526,7 +611,7 @@ function parseArgs(argv) {
 
 function positiveInteger(value, fallback) {
   if (value === undefined) return fallback;
-  const parsed = Number.parseInt(value, 10);
+  const parsed = typeof value === 'number' ? value : Number.parseInt(String(value), 10);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`Invalid integer ${value}`);
   return parsed;
 }
