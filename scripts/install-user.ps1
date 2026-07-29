@@ -4,7 +4,8 @@ param(
     [switch]$StartServices,
     [switch]$RunAfterInstall,
     [switch]$SkipChecks,
-    [switch]$ForceStopExistingProcess
+    [switch]$ForceStopExistingProcess,
+    [switch]$TestFailActivation
 )
 
 Set-StrictMode -Version Latest
@@ -256,10 +257,6 @@ if (-not (Test-Path -LiteralPath $NpmCmd -PathType Leaf)) {
     throw "Runtime Node.js incomplet : $NpmCmd est absent."
 }
 
-$InstalledNodeVersion = (& $NodeExe '--version').TrimStart('v')
-if ($LASTEXITCODE -ne 0 -or $InstalledNodeVersion -ne $NodeVersion) {
-    throw "Version Node.js installée invalide : attendu $NodeVersion, obtenu $InstalledNodeVersion."
-}
 $NodeSignature = Get-AuthenticodeSignature -LiteralPath $NodeExe
 if ($NodeSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
     $null -eq $NodeSignature.SignerCertificate -or
@@ -267,6 +264,10 @@ if ($NodeSignature.Status -ne [System.Management.Automation.SignatureStatus]::Va
     throw "Signature Authenticode Node.js invalide ou signataire inattendu : $($NodeSignature.Status)."
 }
 $NodeExeSha256 = (Get-FileHash -LiteralPath $NodeExe -Algorithm SHA256).Hash.ToLowerInvariant()
+$InstalledNodeVersion = (& $NodeExe '--version').TrimStart('v')
+if ($LASTEXITCODE -ne 0 -or $InstalledNodeVersion -ne $NodeVersion) {
+    throw "Version Node.js installée invalide : attendu $NodeVersion, obtenu $InstalledNodeVersion."
+}
 $RuntimeProof = [ordered]@{
     schemaVersion = '1.0'
     nodeVersion = $NodeVersion
@@ -352,6 +353,9 @@ try {
     }
 
     try {
+        if ($TestFailActivation) {
+            throw 'MCP_INSTALL_TEST_ACTIVATION_FAILURE'
+        }
         Move-Item -LiteralPath $StageApp -Destination $AppRoot -ErrorAction Stop
     }
     catch {
