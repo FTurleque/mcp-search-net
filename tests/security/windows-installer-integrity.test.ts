@@ -20,8 +20,12 @@ describe('Windows installer runtime integrity', () => {
     expect(verifier).toContain('RUNTIME_ARCHIVE_CHECKSUM_MISMATCH');
   });
 
-  it('requires a valid OpenJS Authenticode signature and writes a proof manifest', () => {
-    expect(installer).toContain('Get-AuthenticodeSignature');
+  it('verifies Authenticode before executing Node and writes a proof manifest', () => {
+    const signatureCheck = installer.indexOf('Get-AuthenticodeSignature -LiteralPath $NodeExe');
+    const nodeExecution = installer.indexOf("& $NodeExe '--version'");
+    expect(signatureCheck).toBeGreaterThan(0);
+    expect(nodeExecution).toBeGreaterThan(0);
+    expect(signatureCheck).toBeLessThan(nodeExecution);
     expect(installer).toContain(
       '$NodeSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid',
     );
@@ -35,6 +39,8 @@ describe('Windows installer runtime integrity', () => {
     expect(installer).toContain('Move-Item -LiteralPath $AppRoot -Destination $PreviousAppRoot');
     expect(installer).toContain('Move-Item -LiteralPath $PreviousAppRoot -Destination $AppRoot');
     expect(installer).toContain('Rollback effectué');
+    expect(installer).toContain('$TestFailActivation');
+    expect(installer).toContain('MCP_INSTALL_TEST_ACTIVATION_FAILURE');
     expect(installer).toContain('Get-CimInstance Win32_Process');
     expect(installer).toContain('Get-CurrentProcessLineage');
     expect(installer).toContain('Write-McpSearchNetProcessReport');
