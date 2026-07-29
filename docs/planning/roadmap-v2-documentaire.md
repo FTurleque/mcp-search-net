@@ -212,8 +212,8 @@ Validation locale V2.7 :
 ### V2.8 à V2.15 — Hardening post-audit
 
 - [x] V2.8 : benchmark initial de taille MCP et nettoyage qualité incrémental (#9, #10, #11).
-- [ ] V2.9 : intégrité transactionnelle, FTS et migrations (#12) — implémentation et tests ciblés
-  réalisés, qualification exact-head et clôture encore requises.
+- [x] V2.9 : intégrité transactionnelle, FTS et migrations (#12) — implémentée et qualifiée
+  localement sur la branche focalisée ; agrégation dans la PR #8 et clôture de #12 encore requises.
 - [ ] V2.10 : gates qualité, coverage et gouvernance (#13, #10).
 - [ ] V2.11 : scalabilité, pagination et budget contexte (#14, #9, #11).
 - [ ] V2.12 : sécurité, installation et exploitation (#15).
