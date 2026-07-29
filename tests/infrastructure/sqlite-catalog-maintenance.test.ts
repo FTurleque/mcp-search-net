@@ -89,7 +89,7 @@ describe('SqliteCatalogMaintenance', () => {
       expect(existsSync(`${fixture.path}.maintenance.lock`)).toBe(false);
       expect(existsSync(`${fixture.path}.maintenance.lock.heartbeat`)).toBe(false);
     } finally {
-      reader.exec('ROLLBACK');
+      if (reader.inTransaction) reader.exec('ROLLBACK');
       reader.close();
       writer.close();
     }
