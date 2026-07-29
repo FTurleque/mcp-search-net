@@ -7,7 +7,7 @@ import { HashedLexicalVectorizer } from '../../domain/search/hashed-lexical-vect
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_CANDIDATE_MULTIPLIER = 4;
-const BM25_WEIGHT = 0.65;
+const LEXICAL_MATCH_WEIGHT = 0.65;
 const HASHED_LEXICAL_WEIGHT = 0.35;
 
 export interface RerankedSearchCatalogDocumentsInput {
@@ -21,7 +21,7 @@ export interface RerankedSearchCatalogDocumentsInput {
 export interface RerankedSearchCatalogDocumentsOutput {
   readonly schemaVersion: '2.0';
   readonly query: string;
-  readonly strategy: 'bm25-hashed-lexical-rerank';
+  readonly strategy: 'fts5-hashed-lexical-rerank';
   readonly resultCount: number;
   readonly results: readonly RerankedSearchCatalogDocumentsItem[];
 }
@@ -67,7 +67,7 @@ export class RerankedSearchCatalogDocuments {
     return {
       schemaVersion: '2.0',
       query,
-      strategy: 'bm25-hashed-lexical-rerank',
+      strategy: 'fts5-hashed-lexical-rerank',
       resultCount: ranked.length,
       results: ranked,
     };
@@ -106,7 +106,8 @@ export class RerankedSearchCatalogDocuments {
             : { heading: candidate.section.heading }),
           lexicalScore,
           rerankScore,
-          combinedScore: lexicalScore * BM25_WEIGHT + rerankScore * HASHED_LEXICAL_WEIGHT,
+          combinedScore:
+            lexicalScore * LEXICAL_MATCH_WEIGHT + rerankScore * HASHED_LEXICAL_WEIGHT,
           snippet: candidate.snippet,
         };
       })
