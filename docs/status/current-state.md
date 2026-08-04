@@ -11,10 +11,11 @@ capacité ou le statut du candidat présent.
 - Règle : V2 est un jalon produit additif ; les contrats V1 restent exposés, donc le prochain
   incrément SemVer est mineur et non `2.0.0`.
 - Release publiée : aucune release V2/1.1.0 à ce jour ; `v1.0.0` reste la dernière release.
-- SHA candidat V2 : `912df9f6b6498c6d7356a1cd98ce6271eaeb4457` (2026-08-04).
-- Verdict production : **NO-GO — CI GitHub Actions en cours sur le SHA candidat ; merge autorisé
-  uniquement après CI verte et gate IntelliJ/Copilot complété manuellement**.
-- GitHub Actions : run déclenché sur SHA 912df9f le 2026-08-04 ; résultat attendu.
+- SHA candidat V2 : `7d6b43eff234f9a8d28ee52ce7721c626b95b72d` (2026-08-04).
+- Verdict production : **NO-GO tant que le gate IntelliJ/Copilot n'est pas exécuté manuellement.
+  La CI GitHub Actions est bloquée par facturation et ne peut pas valider le SHA courant.**
+- GitHub Actions : blocage facturation confirmé le 2026-08-04 (`account payments have failed`).
+  Les gates locaux (Node.js 24, STDIO, tests déterministes, npm audit) sont la source de vérité.
 
 ## Contrat MCP public
 
@@ -94,7 +95,7 @@ catalogue acceptent aussi `MCP_CATALOG_PATH` et leurs options `--path` document�
 | Claude Desktop / Codex           | **NON DISPONIBLE** — non configuré dans mcpServers        | Configurer `mcpServers` dans claude_desktop_config.json si requis ; recette fournie                      |
 | Docker/Linux                     | À requalifier sur le SHA final via CI                     | CI GitHub Actions job `integration` ; ou build+E2E live local                                           |
 | Installation utilisateur Windows | À requalifier sur installation propre                     | CI GitHub Actions job `windows-packaging` ; ou tests manuels install/upgrade/désinstall                 |
-| GitHub Actions                   | **Run déclenché** — SHA 912df9f, 2026-08-04, résultat attendu | CI verte sur SHA exact ; aucun run historique ne remplace                                            |
+| GitHub Actions                   | **BLOQUÉ — facturation** — `account payments have failed`     | Résoudre le problème de facturation dans Billing & plans ; CI ne peut pas valider le SHA 7d6b43e     |
 
 ## Gates de livraison
 
