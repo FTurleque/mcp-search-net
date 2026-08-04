@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string] $InstallRoot = (Join-Path $env:LOCALAPPDATA 'mcp-search-net'),
     [switch] $AddToPath
@@ -39,7 +39,8 @@ Write-Host "Variable d'environnement MCP_SEARCH_HOME=$InstallRoot (utilisateur)"
 
 if ($AddToPath) {
     $BinPath = Join-Path $InstallRoot 'bin'
-    $current = [System.Environment]::GetEnvironmentVariable('Path', [System.EnvironmentVariableTarget]::User) ?? ''
+    $rawPath = [System.Environment]::GetEnvironmentVariable('Path', [System.EnvironmentVariableTarget]::User)
+    $current = if ($null -eq $rawPath) { '' } else { $rawPath }
     $entries = $current -split ';' | Where-Object { $_ -ne '' }
     if ($entries -notcontains $BinPath) {
         $newPath = ($entries + $BinPath) -join ';'
