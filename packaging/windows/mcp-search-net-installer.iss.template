@@ -48,14 +48,17 @@ Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "MCP_SEARCH_H
 [Code]
 var
   DeleteUserDataOnUninstall: Boolean;
-  IntegPage: TWizardPage;
-  IntegList: TNewCheckListBox;
-
-const
-  IDX_DOCKER         = 0;
-  IDX_COPILOT_JB     = 1;
-  IDX_CLAUDE_DESKTOP = 2;
-  IDX_CLAUDE_CODE    = 3;
+  IntegPage:        TWizardPage;
+  ChkDocker:        TNewCheckBox;
+  LblDockerStatus:  TNewStaticText;
+  ChkCopilotJB:     TNewCheckBox;
+  LblCopilotStatus: TNewStaticText;
+  ChkClaudeDesktop: TNewCheckBox;
+  LblDesktopStatus: TNewStaticText;
+  ChkClaudeCode:    TNewCheckBox;
+  LblCodeStatus:    TNewStaticText;
+  IntegPreflightIni:  String;
+  IntegPreflightDone: Boolean;
 
 { ── Smoke build guard ───────────────────────────────────────────────────────── }
 
@@ -138,59 +141,159 @@ begin
   RegDeleteValue(HKCU, InstallerRegistryPath(), 'ManagedPath');
 end;
 
-{ ── Intégration wizard page ─────────────────────────────────────────────────── }
+{ ── Intégration wizard page — layout (modèle MINOS) ────────────────────────── }
+
+procedure ConfigureIntegRow(
+  CheckBox: TNewCheckBox; Status: TNewStaticText; Top: Integer; Caption: String);
+begin
+  CheckBox.Parent  := IntegPage.Surface;
+  CheckBox.Left    := 0;
+  CheckBox.Top     := Top;
+  CheckBox.Width   := IntegPage.SurfaceWidth;
+  CheckBox.Caption := Caption;
+  CheckBox.Checked := False;
+  Status.Parent    := IntegPage.Surface;
+  Status.Left      := ScaleX(13);
+  Status.Top       := Top + ScaleY(21);
+  Status.Width     := IntegPage.SurfaceWidth - ScaleX(13);
+  Status.AutoSize  := False;
+  Status.Height    := ScaleY(28);
+  Status.WordWrap  := True;
+end;
+
+procedure SetIntegAvailability(
+  CheckBox: TNewCheckBox; Status: TNewStaticText; Section: String);
+var
+  Available: Boolean;
+  Reason: String;
+begin
+  Available := GetIniString(Section, 'Available', '0', IntegPreflightIni) = '1';
+  Reason    := GetIniString(Section, 'Reason', 'Détection non disponible', IntegPreflightIni);
+  CheckBox.Enabled := Available;
+  CheckBox.Checked := Available;
+  Status.Caption   := Reason;
+end;
+
+procedure DisableAllIntegRows(Reason: String);
+begin
+  ChkDocker.Enabled        := False; ChkDocker.Checked        := False; LblDockerStatus.Caption  := Reason;
+  ChkCopilotJB.Enabled     := False; ChkCopilotJB.Checked     := False; LblCopilotStatus.Caption := Reason;
+  ChkClaudeDesktop.Enabled := False; ChkClaudeDesktop.Checked := False; LblDesktopStatus.Caption := Reason;
+  ChkClaudeCode.Enabled    := False; ChkClaudeCode.Checked    := False; LblCodeStatus.Caption    := Reason;
+end;
+
+{ ── Preflight detection ─────────────────────────────────────────────────────── }
+
+procedure RunIntegPreflight;
+var
+  PS: String;
+  TmpPs1: String;
+  Script: String;
+  ResultCode: Integer;
+begin
+  IntegPreflightIni := ExpandConstant('{tmp}\mcp-search-preflight.ini');
+  TmpPs1 := ExpandConstant('{tmp}\mcp-search-detect.ps1');
+  DeleteFile(IntegPreflightIni);
+  DeleteFile(TmpPs1);
+
+  { PS1 écrit à la volée — pas de fichier dontcopy nécessaire }
+  Script :=
+    'param([string]$Out)' + #13#10 +
+    '$nl = [System.Environment]::NewLine' + #13#10 +
+    '$r = ""' + #13#10 +
+    '$d = Get-Command docker -ErrorAction SilentlyContinue' + #13#10 +
+    '$r += "[Docker]" + $nl' + #13#10 +
+    'if ($d) { $r += "Available=1" + $nl + "Reason=Docker detecte" + $nl }' + #13#10 +
+    'else { $r += "Available=0" + $nl + "Reason=docker absent du PATH" + $nl }' + #13#10 +
+    '$j = Join-Path $env:LOCALAPPDATA "github-copilot\intellij"' + #13#10 +
+    '$r += "[CopilotJetBrains]" + $nl' + #13#10 +
+    'if (Test-Path -LiteralPath $j -PathType Container) {' + #13#10 +
+    '  $r += "Available=1" + $nl + "Reason=Copilot JetBrains detecte" + $nl }' + #13#10 +
+    'else { $r += "Available=0" + $nl + "Reason=Non installe" + $nl }' + #13#10 +
+    '$cd = $false' + #13#10 +
+    'foreach ($p in (Get-ChildItem "$env:LOCALAPPDATA\Packages" -Directory -Filter "Claude_*" -ErrorAction SilentlyContinue)) {' + #13#10 +
+    '  if (Test-Path "$($p.FullName)\LocalCache\Roaming\Claude") { $cd = $true; break }' + #13#10 +
+    '}' + #13#10 +
+    'if (-not $cd) { $cd = Test-Path -LiteralPath "$env:APPDATA\Claude" -PathType Container }' + #13#10 +
+    '$r += "[ClaudeDesktop]" + $nl' + #13#10 +
+    'if ($cd) { $r += "Available=1" + $nl + "Reason=Claude Desktop detecte" + $nl }' + #13#10 +
+    'else { $r += "Available=0" + $nl + "Reason=Claude Desktop non installe" + $nl }' + #13#10 +
+    '$cc = $null -ne (Get-Command claude -ErrorAction SilentlyContinue)' + #13#10 +
+    'if (-not $cc) { $cc = Test-Path -LiteralPath "$env:APPDATA\Claude\claude-code" -PathType Container }' + #13#10 +
+    '$r += "[ClaudeCode]" + $nl' + #13#10 +
+    'if ($cc) { $r += "Available=1" + $nl + "Reason=CLI claude detecte" + $nl }' + #13#10 +
+    'else { $r += "Available=0" + $nl + "Reason=claude absent du PATH" + $nl }' + #13#10 +
+    '[System.IO.File]::WriteAllText($Out, $r, [System.Text.Encoding]::UTF8)' + #13#10;
+
+  if not SaveStringToFile(TmpPs1, Script, False) then
+  begin
+    DisableAllIntegRows('Détection indisponible');
+    exit;
+  end;
+
+  PS := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  if (not Exec(PS,
+        '-NoProfile -ExecutionPolicy Bypass -File "' + TmpPs1 + '" -Out "' + IntegPreflightIni + '"',
+        '', SW_HIDE, ewWaitUntilTerminated, ResultCode)) or
+     (ResultCode <> 0) or (not FileExists(IntegPreflightIni)) then
+  begin
+    DisableAllIntegRows('Détection indisponible');
+    exit;
+  end;
+
+  SetIntegAvailability(ChkDocker,        LblDockerStatus,  'Docker');
+  SetIntegAvailability(ChkCopilotJB,     LblCopilotStatus, 'CopilotJetBrains');
+  SetIntegAvailability(ChkClaudeDesktop, LblDesktopStatus, 'ClaudeDesktop');
+  SetIntegAvailability(ChkClaudeCode,    LblCodeStatus,    'ClaudeCode');
+end;
+
+{ ── Wizard lifecycle ────────────────────────────────────────────────────────── }
 
 procedure InitializeWizard;
-var
-  Lbl: TNewStaticText;
 begin
   if IsSmokeBuild() then Exit;
+
+  IntegPreflightDone := False;
 
   IntegPage := CreateCustomPage(
     wpSelectDir,
     'Intégrations MCP',
     'Sélectionnez les services et clients IA à configurer après l''installation.');
 
-  Lbl := TNewStaticText.Create(IntegPage);
-  Lbl.Parent    := IntegPage.Surface;
-  Lbl.AutoSize  := False;
-  Lbl.WordWrap  := True;
-  Lbl.SetBounds(0, 0, IntegPage.SurfaceWidth, ScaleY(32));
-  Lbl.Caption   :=
-    'Les intégrations cochées seront configurées automatiquement. ' +
-    'Décochez ce que vous préférez configurer manuellement.';
+  ChkDocker := TNewCheckBox.Create(IntegPage);
+  LblDockerStatus := TNewStaticText.Create(IntegPage);
+  ConfigureIntegRow(ChkDocker, LblDockerStatus, ScaleY(8), 'SearXNG + Crawl4AI  (Docker)');
 
-  IntegList := TNewCheckListBox.Create(IntegPage);
-  IntegList.Parent := IntegPage.Surface;
-  IntegList.SetBounds(0, ScaleY(38), IntegPage.SurfaceWidth, ScaleY(168));
-  IntegList.Flat := True;
+  ChkCopilotJB := TNewCheckBox.Create(IntegPage);
+  LblCopilotStatus := TNewStaticText.Create(IntegPage);
+  ConfigureIntegRow(ChkCopilotJB, LblCopilotStatus, ScaleY(62), 'GitHub Copilot — JetBrains / IntelliJ');
 
-  IntegList.AddCheckBox(
-    'SearXNG + Crawl4AI  (Docker)',
-    'Lance les services de recherche et scraping web — nécessite Docker Desktop démarré',
-    0, True, True, False, True, nil);
+  ChkClaudeDesktop := TNewCheckBox.Create(IntegPage);
+  LblDesktopStatus := TNewStaticText.Create(IntegPage);
+  ConfigureIntegRow(ChkClaudeDesktop, LblDesktopStatus, ScaleY(116), 'Claude Desktop');
 
-  IntegList.AddCheckBox(
-    'GitHub Copilot — JetBrains / IntelliJ',
-    'Écrit l''entrée mcp-search-net dans %LOCALAPPDATA%\github-copilot\intellij\mcp.json',
-    0, True, True, False, True, nil);
+  ChkClaudeCode := TNewCheckBox.Create(IntegPage);
+  LblCodeStatus := TNewStaticText.Create(IntegPage);
+  ConfigureIntegRow(ChkClaudeCode, LblCodeStatus, ScaleY(170), 'Claude Code  (CLI)');
 
-  IntegList.AddCheckBox(
-    'Claude Desktop',
-    'Fusionne l''entrée dans claude_desktop_config.json (détection automatique MSIX ou %APPDATA%\Claude)',
-    0, True, True, False, True, nil);
-
-  IntegList.AddCheckBox(
-    'Claude Code  (CLI)',
-    'Exécute : claude mcp add --scope user mcp-search-net',
-    0, True, True, False, True, nil);
+  DisableAllIntegRows('Détection en attente...');
 end;
 
 function ShouldSkipPage(PageID: Integer): Boolean;
 begin
   Result := False;
   if (IntegPage <> nil) and (PageID = IntegPage.ID) then
-    Result := IsSmokeBuild();
+    Result := IsSmokeBuild() or WizardSilent();
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (IntegPage <> nil) and (CurPageID = wpSelectDir) and (not IntegPreflightDone) then
+  begin
+    RunIntegPreflight;
+    IntegPreflightDone := True;
+  end;
 end;
 
 { ── Configure-install invocation ────────────────────────────────────────────── }
@@ -216,10 +319,11 @@ var
   Clients: String;
 begin
   Clients := '';
-  if IntegList.Checked[IDX_DOCKER]         then Clients := Clients + 'docker,';
-  if IntegList.Checked[IDX_COPILOT_JB]     then Clients := Clients + 'copilot-jetbrains,';
-  if IntegList.Checked[IDX_CLAUDE_DESKTOP] then Clients := Clients + 'claude-desktop,';
-  if IntegList.Checked[IDX_CLAUDE_CODE]    then Clients := Clients + 'claude-code,';
+  if IntegPage = nil then begin Result := Clients; exit; end;
+  if ChkDocker.Enabled        and ChkDocker.Checked        then Clients := Clients + 'docker,';
+  if ChkCopilotJB.Enabled     and ChkCopilotJB.Checked     then Clients := Clients + 'copilot-jetbrains,';
+  if ChkClaudeDesktop.Enabled and ChkClaudeDesktop.Checked then Clients := Clients + 'claude-desktop,';
+  if ChkClaudeCode.Enabled    and ChkClaudeCode.Checked    then Clients := Clients + 'claude-code,';
   if (Length(Clients) > 0) and (Clients[Length(Clients)] = ',') then
     Delete(Clients, Length(Clients), 1);
   Result := Clients;
