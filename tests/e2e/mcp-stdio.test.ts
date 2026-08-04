@@ -9,6 +9,20 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
 
+const readOnlyClosedWorldAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+};
+
+const readOnlyOpenWorldAnnotations = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: true,
+};
+
 describe('MCP STDIO server', () => {
   let client: Client | undefined;
   let cacheRoot: string | undefined;
@@ -18,7 +32,7 @@ describe('MCP STDIO server', () => {
     if (cacheRoot !== undefined) rmSync(cacheRoot, { recursive: true, force: true });
   });
 
-  it('advertises V1 tools and compact V2 catalog tools', async () => {
+  it('advertises and freezes V1/V2 tools, resources and compact structured contracts', async () => {
     client = new Client({ name: 'mcp-search-net-test', version: '1.0.0' });
     cacheRoot = mkdtempSync(join(tmpdir(), 'mcp-search-stdio-'));
     const transport = new StdioClientTransport({
@@ -43,7 +57,24 @@ describe('MCP STDIO server', () => {
       'search_web',
     ]);
 
+    const searchWebTool = response.tools.find((tool) => tool.name === 'search_web');
+    const fetchUrlTool = response.tools.find((tool) => tool.name === 'fetch_url');
     const searchDocsTool = response.tools.find((tool) => tool.name === 'search_docs');
+    const listDocsTool = response.tools.find((tool) => tool.name === 'list_docs');
+    const readSectionTool = response.tools.find((tool) => tool.name === 'read_doc_section');
+
+    expect(searchWebTool?.annotations).toEqual(readOnlyOpenWorldAnnotations);
+    expect(fetchUrlTool?.annotations).toEqual(readOnlyOpenWorldAnnotations);
+    expect(searchDocsTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
+    expect(listDocsTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
+    expect(readSectionTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
+
+    expect(searchDocsTool?.description).toContain('read_doc_section');
+    expect(searchDocsTool?.description).toContain('fetch_url');
+    expect(listDocsTool?.description).toContain('metadata');
+    expect(listDocsTool?.description).toContain('search_docs');
+    expect(readSectionTool?.description).toContain('search_docs');
+
     expect(searchDocsTool?.inputSchema).toMatchObject({
       properties: {
         query: { type: 'string', maxLength: 500 },
@@ -54,7 +85,6 @@ describe('MCP STDIO server', () => {
       },
     });
 
-    const listDocsTool = response.tools.find((tool) => tool.name === 'list_docs');
     expect(listDocsTool?.inputSchema).toMatchObject({
       properties: {
         language: { type: 'string', maxLength: 32 },
@@ -66,11 +96,53 @@ describe('MCP STDIO server', () => {
       },
     });
 
-    const readSectionTool = response.tools.find((tool) => tool.name === 'read_doc_section');
     expect(readSectionTool?.inputSchema).toMatchObject({
       properties: {
         sectionId: { type: 'integer' },
         maxCharacters: { default: 3000, maximum: 8000 },
+      },
+    });
+
+    const resources = await client.listResources();
+    expect(resources.resources.map((resource) => resource.uri).sort()).toEqual([
+      'mcp-search-net://catalog',
+      'mcp-search-net://documents',
+      'mcp-search-net://sections',
+      'mcp-search-net://sources',
+    ]);
+
+    const templates = await client.listResourceTemplates();
+    expect(templates.resourceTemplates.map((template) => template.uriTemplate).sort()).toEqual([
+      'mcp-search-net://documents/page/{offset}',
+      'mcp-search-net://documents/{documentId}',
+      'mcp-search-net://documents/{documentId}/versions',
+      'mcp-search-net://documents/{documentId}/versions/page/{offset}',
+      'mcp-search-net://documents/{documentId}/versions/{versionId}',
+      'mcp-search-net://sections/page/{offset}',
+      'mcp-search-net://sections/{sectionId}',
+      'mcp-search-net://sources/page/{offset}',
+      'mcp-search-net://sources/{sourceId}',
+    ]);
+
+    const catalogResource = await client.readResource({ uri: 'mcp-search-net://catalog' });
+    expect(catalogResource.contents).toHaveLength(1);
+    const catalogContent = catalogResource.contents[0];
+    expect(catalogContent).toMatchObject({
+      uri: 'mcp-search-net://catalog',
+      mimeType: 'application/json',
+    });
+    expect(catalogContent).toHaveProperty('text');
+    if (catalogContent === undefined || !('text' in catalogContent)) {
+      throw new Error('Catalog resource must expose JSON text');
+    }
+    const parsedCatalog = JSON.parse(catalogContent.text) as Record<string, unknown>;
+    expect(parsedCatalog).toMatchObject({
+      schemaVersion: '1.0',
+      contentTrust: 'EXTERNAL_UNTRUSTED_CONTENT',
+      budgets: {
+        pageLimit: 20,
+        maxResourceCharacters: 24_000,
+        maxDetailedSectionCharacters: 8_000,
       },
     });
 

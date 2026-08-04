@@ -118,7 +118,8 @@ export function createMcpServer(dependencies: McpServerV2Dependencies): McpServe
     'search_docs',
     {
       title: 'Search local catalog documents',
-      description: 'Search already ingested catalog documents.',
+      description:
+        'Search the already ingested local catalog first and return compact ranked section snippets. Prefer 1–3 useful results, then call read_doc_section for the selected section. Use fetch_url only when the needed content is fresh Web content or is not available in the catalog.',
       inputSchema: schemas.input,
       outputSchema: schemas.output.shape,
       annotations: {
@@ -165,7 +166,8 @@ export function createMcpServer(dependencies: McpServerV2Dependencies): McpServe
     'list_docs',
     {
       title: 'List local catalog documents',
-      description: 'List catalog documents without section content.',
+      description:
+        'List bounded catalog document metadata only. Use search_docs for content questions; use list_docs only to browse or filter the catalog without loading section content.',
       inputSchema: listDocsInputSchema,
       outputSchema: listDocsOutputSchema.shape,
       annotations: {
@@ -202,7 +204,8 @@ export function createMcpServer(dependencies: McpServerV2Dependencies): McpServe
     'read_doc_section',
     {
       title: 'Read one catalog section',
-      description: 'Read one catalog section by id with a character budget.',
+      description:
+        'Read one bounded current catalog section by sectionId, normally after search_docs selected it. Do not enumerate the catalog to answer a content question; search first, then read only the chosen section.',
       inputSchema: readDocSectionInputSchema,
       outputSchema: readDocSectionOutputSchema.shape,
       annotations: {
