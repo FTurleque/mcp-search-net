@@ -1,0 +1,201 @@
+#define AppName "mcp-search-net"
+#define AppVersion "@@VERSION@@"
+#define AppNumericVersion "@@APP_VERSION@@"
+#define AppId "@@APP_ID@@"
+#define SmokeMode @@SMOKE_MODE@@
+#define SourceDir "@@SOURCE_DIR@@"
+#define OutputDir "@@OUTPUT_DIR@@"
+#define OutputBaseFilename "@@OUTPUT_BASENAME@@"
+
+[Setup]
+AppId={#AppId}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppPublisher=FTurleque
+DefaultDirName={localappdata}\Programs\{#AppName}
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
+PrivilegesRequired=lowest
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+OutputDir={#OutputDir}
+OutputBaseFilename={#OutputBaseFilename}
+Compression=lzma2/ultra64
+SolidCompression=yes
+WizardStyle=modern
+ChangesEnvironment=yes
+SetupLogging=yes
+UninstallDisplayName={#AppName} {#AppVersion}
+VersionInfoVersion={#AppNumericVersion}
+VersionInfoCompany=FTurleque
+VersionInfoDescription={#AppName} Windows installer
+VersionInfoProductName={#AppName}
+VersionInfoProductVersion={#AppNumericVersion}
+VersionInfoProductTextVersion={#AppVersion}
+
+[Tasks]
+Name: "addtopath"; Description: "Ajouter {#AppName}\bin au PATH utilisateur"; GroupDescription: "Intégration Windows :"; Flags: checkedonce
+
+[Files]
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{userprograms}\{#AppName}\Dossier d'installation {#AppName}"; Filename: "{app}"
+
+[Registry]
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "MCP_SEARCH_HOME"; ValueData: "{app}"; Flags: uninsdeletevalue; Check: NotSmokeBuild
+
+[Code]
+var
+  DeleteUserDataOnUninstall: Boolean;
+
+function IsSmokeBuild(): Boolean;
+begin
+  Result := {#SmokeMode} = 1;
+end;
+
+function NotSmokeBuild(): Boolean;
+begin
+  Result := not IsSmokeBuild();
+end;
+
+function InstallerRegistryPath(): String;
+begin
+  Result := 'Software\FTurleque\mcp-search-net';
+end;
+
+function TrimTrailingBackslash(Value: String): String;
+begin
+  Result := Value;
+  while (Length(Result) > 3) and (Result[Length(Result)] = '\') do
+    Delete(Result, Length(Result), 1);
+end;
+
+function PathContainsEntry(PathValue: String; Entry: String): Boolean;
+var
+  Haystack: String;
+  Needle: String;
+begin
+  Haystack := ';' + Lowercase(PathValue) + ';';
+  Needle := ';' + Lowercase(TrimTrailingBackslash(Entry)) + ';';
+  Result := Pos(Needle, Haystack) > 0;
+end;
+
+procedure AddBinToUserPath;
+var
+  CurrentPath: String;
+  BinPath: String;
+begin
+  if IsSmokeBuild() then exit;
+  BinPath := TrimTrailingBackslash(ExpandConstant('{app}\bin'));
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', CurrentPath) then CurrentPath := '';
+  if not PathContainsEntry(CurrentPath, BinPath) then
+  begin
+    if (CurrentPath <> '') and (CurrentPath[Length(CurrentPath)] <> ';') then
+      CurrentPath := CurrentPath + ';';
+    CurrentPath := CurrentPath + BinPath;
+    RegWriteExpandStringValue(HKCU, 'Environment', 'Path', CurrentPath);
+    RegWriteStringValue(HKCU, InstallerRegistryPath(), 'ManagedPath', BinPath);
+  end;
+end;
+
+procedure RemoveBinFromUserPath;
+var
+  CurrentPath: String;
+  BinPath: String;
+  PaddedPath: String;
+  Needle: String;
+  ManagedPath: String;
+begin
+  if IsSmokeBuild() then exit;
+  if not RegQueryStringValue(HKCU, InstallerRegistryPath(), 'ManagedPath', ManagedPath) then exit;
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', CurrentPath) then
+  begin
+    RegDeleteValue(HKCU, InstallerRegistryPath(), 'ManagedPath');
+    exit;
+  end;
+  BinPath := TrimTrailingBackslash(ManagedPath);
+  PaddedPath := ';' + CurrentPath + ';';
+  Needle := ';' + BinPath + ';';
+  StringChangeEx(PaddedPath, Needle, ';', True);
+  while (Length(PaddedPath) > 0) and (PaddedPath[1] = ';') do Delete(PaddedPath, 1, 1);
+  while (Length(PaddedPath) > 0) and (PaddedPath[Length(PaddedPath)] = ';') do Delete(PaddedPath, Length(PaddedPath), 1);
+  RegWriteExpandStringValue(HKCU, 'Environment', 'Path', PaddedPath);
+  RegDeleteValue(HKCU, InstallerRegistryPath(), 'ManagedPath');
+end;
+
+procedure RunConfigureInstall;
+var
+  PowerShell: String;
+  ScriptPath: String;
+  InstallRoot: String;
+  Parameters: String;
+  ResultCode: Integer;
+begin
+  PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  ScriptPath := ExpandConstant('{app}\scripts\configure-install.ps1');
+  InstallRoot := ExpandConstant('{app}');
+  Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" -InstallRoot "' + InstallRoot + '"';
+  if IsSmokeBuild() then Parameters := Parameters + ' -SmokeMode';
+  if not Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+    MsgBox(
+      'La configuration post-installation n''a pas pu être complétée.' + #13#10 +
+      'mcp-search-net est installé mais .env et mcp.json.example sont absents.' + #13#10 +
+      'Relancez scripts\configure-install.ps1 -InstallRoot "' + InstallRoot + '" manuellement.',
+      mbError, MB_OK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    RunConfigureInstall;
+    if WizardIsTaskSelected('addtopath') then AddBinToUserPath;
+    if not IsSmokeBuild() then
+      RegWriteStringValue(HKCU, InstallerRegistryPath(), 'InstallRoot', ExpandConstant('{app}'));
+  end;
+end;
+
+procedure PromptForUserDataRemoval;
+var
+  DataRoot: String;
+  MessageText: String;
+begin
+  DeleteUserDataOnUninstall := False;
+  if IsSmokeBuild() or UninstallSilent() then exit;
+  DataRoot := ExpandConstant('{app}\data');
+  if not DirExists(DataRoot) then exit;
+  MessageText :=
+    'Supprimer également les données locales (cache, catalogue, configuration) ?' + #13#10 + #13#10 +
+    DataRoot + #13#10 + #13#10 +
+    'Oui supprime cache.sqlite, catalog.db et les configurations personnalisées.' + #13#10 +
+    'Cette opération est irréversible. Choisissez Non pour conserver les données.';
+  DeleteUserDataOnUninstall := MsgBox(MessageText, mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+end;
+
+procedure DeleteUserData;
+var
+  DataRoot: String;
+  EnvFile: String;
+begin
+  if IsSmokeBuild() or (not DeleteUserDataOnUninstall) then exit;
+  DataRoot := ExpandConstant('{app}\data');
+  EnvFile := ExpandConstant('{app}\.env');
+  if DirExists(DataRoot) then DelTree(DataRoot, True, True, True);
+  if FileExists(EnvFile) then DeleteFile(EnvFile);
+  RegDeleteKeyIncludingSubkeys(HKCU, InstallerRegistryPath());
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    if not IsSmokeBuild() then
+    begin
+      RemoveBinFromUserPath;
+      PromptForUserDataRemoval;
+    end;
+  end
+  else if CurUninstallStep = usPostUninstall then
+    DeleteUserData;
+end;

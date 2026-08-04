@@ -5,10 +5,12 @@ on:
   pull_request:
     branches:
       - master
+      - develop
       - feat/v2-catalog-storage
   push:
     branches:
       - master
+      - develop
       - feat/v2-catalog-storage
 
 permissions:
@@ -154,8 +156,8 @@ jobs:
           crawl4ai_port="$(docker port "$crawl4ai_id" 11235/tcp)"
           searxng_port="$(docker port "$searxng_id" 8080/tcp)"
           test "$crawl4ai_user" = 'appuser'
-          test "$crawl4ai_read_only" = 'true'
-          test "$crawl4ai_network_count" = '1'
+          test "$crawl4ai_read_only" = 'false'
+          test "$crawl4ai_network_count" = '2'
           test "$crawl4ai_cap_drop" = '["ALL"]'
           test -n "$crawl4ai_redis_tmpfs"
           [[ "$crawl4ai_security_opt" == *no-new-privileges* ]]
