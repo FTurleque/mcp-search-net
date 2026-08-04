@@ -398,11 +398,8 @@ if ($Uninstall) {
 
 $CopilotExe = $null
 $copilotCmd = Get-Command copilot -ErrorAction SilentlyContinue
-if ($copilotCmd -and $copilotCmd.CommandType -eq 'Application') {
-    $p = $copilotCmd.Source.ToLowerInvariant()
-    if (-not ($p -like '*microsoft vs code*') -and -not ($p -like '*code\bin*') -and -not ($p -like '*vscode*\bin*')) {
-        $CopilotExe = $copilotCmd.Source
-    }
+if ($copilotCmd -and $copilotCmd.CommandType -in @('Application', 'ExternalScript')) {
+    $CopilotExe = $copilotCmd.Source
 }
 
 $integKeyCopilotCli = 'copilot-cli:mcp-search-net'

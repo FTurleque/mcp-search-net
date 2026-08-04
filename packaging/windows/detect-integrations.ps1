@@ -18,7 +18,7 @@ function Test-DockerPresent {
 function Resolve-RealCommand([string] $Name) {
     $c = Get-Command $Name -ErrorAction SilentlyContinue
     if ($null -eq $c) { return $null }
-    if ($c.CommandType -eq 'Application') { return $c.Source }
+    if ($c.CommandType -in @('Application', 'ExternalScript')) { return $c.Source }
     return $null
 }
 

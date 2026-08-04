@@ -50,16 +50,14 @@ Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "MCP_SEARCH_H
 var
   DeleteUserDataOnUninstall: Boolean;
   IntegPage:        TWizardPage;
-  ChkDocker:        TNewCheckBox;
-  LblDockerStatus:  TNewStaticText;
-  ChkCopilotJB:     TNewCheckBox;
+  ChkCopilotJB:    TNewCheckBox;
   LblCopilotStatus: TNewStaticText;
+  ChkCopilotCli:   TNewCheckBox;
+  LblCliStatus:    TNewStaticText;
   ChkClaudeDesktop: TNewCheckBox;
   LblDesktopStatus: TNewStaticText;
   ChkClaudeCode:    TNewCheckBox;
   LblCodeStatus:    TNewStaticText;
-  ChkCopilotCli:   TNewCheckBox;
-  LblCliStatus:    TNewStaticText;
   ChkCodex:        TNewCheckBox;
   LblCodexStatus:  TNewStaticText;
   IntegPreflightIni:  String;
@@ -181,7 +179,6 @@ end;
 
 procedure DisableAllIntegRows(Reason: String);
 begin
-  ChkDocker.Enabled        := False; ChkDocker.Checked        := False; LblDockerStatus.Caption  := Reason;
   ChkCopilotJB.Enabled     := False; ChkCopilotJB.Checked     := False; LblCopilotStatus.Caption := Reason;
   ChkCopilotCli.Enabled    := False; ChkCopilotCli.Checked    := False; LblCliStatus.Caption     := Reason;
   ChkClaudeDesktop.Enabled := False; ChkClaudeDesktop.Checked := False; LblDesktopStatus.Caption := Reason;
@@ -219,7 +216,6 @@ begin
     exit;
   end;
 
-  SetIntegAvailability(ChkDocker,        LblDockerStatus,  'Docker');
   SetIntegAvailability(ChkCopilotJB,     LblCopilotStatus, 'CopilotJetBrains');
   SetIntegAvailability(ChkCopilotCli,    LblCliStatus,     'CopilotCli');
   SetIntegAvailability(ChkClaudeDesktop, LblDesktopStatus, 'ClaudeDesktop');
@@ -237,32 +233,29 @@ begin
 
   IntegPage := CreateCustomPage(
     wpSelectDir,
-    'Intégrations MCP',
-    'Sélectionnez les services et clients IA à configurer après l''installation.');
-
-  ChkDocker := TNewCheckBox.Create(IntegPage);
-  LblDockerStatus := TNewStaticText.Create(IntegPage);
-  ConfigureIntegRow(ChkDocker, LblDockerStatus, ScaleY(8), 'SearXNG + Crawl4AI  (Docker)');
+    'Clients IA à configurer',
+    'SearXNG + Crawl4AI (Docker) démarrent automatiquement.' + #13#10 +
+    'Cochez les clients IA dans lesquels enregistrer mcp-search-net.');
 
   ChkCopilotJB := TNewCheckBox.Create(IntegPage);
   LblCopilotStatus := TNewStaticText.Create(IntegPage);
-  ConfigureIntegRow(ChkCopilotJB, LblCopilotStatus, ScaleY(56), 'GitHub Copilot — JetBrains / IntelliJ');
+  ConfigureIntegRow(ChkCopilotJB, LblCopilotStatus, ScaleY(8), 'GitHub Copilot — JetBrains / IntelliJ');
 
   ChkCopilotCli := TNewCheckBox.Create(IntegPage);
   LblCliStatus := TNewStaticText.Create(IntegPage);
-  ConfigureIntegRow(ChkCopilotCli, LblCliStatus, ScaleY(104), 'GitHub Copilot CLI');
+  ConfigureIntegRow(ChkCopilotCli, LblCliStatus, ScaleY(62), 'GitHub Copilot CLI');
 
   ChkClaudeDesktop := TNewCheckBox.Create(IntegPage);
   LblDesktopStatus := TNewStaticText.Create(IntegPage);
-  ConfigureIntegRow(ChkClaudeDesktop, LblDesktopStatus, ScaleY(152), 'Claude Desktop');
+  ConfigureIntegRow(ChkClaudeDesktop, LblDesktopStatus, ScaleY(116), 'Claude Desktop');
 
   ChkClaudeCode := TNewCheckBox.Create(IntegPage);
   LblCodeStatus := TNewStaticText.Create(IntegPage);
-  ConfigureIntegRow(ChkClaudeCode, LblCodeStatus, ScaleY(200), 'Claude Code  (CLI)');
+  ConfigureIntegRow(ChkClaudeCode, LblCodeStatus, ScaleY(170), 'Claude Code  (CLI)');
 
   ChkCodex := TNewCheckBox.Create(IntegPage);
   LblCodexStatus := TNewStaticText.Create(IntegPage);
-  ConfigureIntegRow(ChkCodex, LblCodexStatus, ScaleY(248), 'Codex Desktop');
+  ConfigureIntegRow(ChkCodex, LblCodexStatus, ScaleY(224), 'Codex Desktop');
 
   DisableAllIntegRows('Détection en attente...');
 end;
@@ -308,7 +301,6 @@ var
 begin
   Clients := '';
   if IntegPage = nil then begin Result := Clients; exit; end;
-  if ChkDocker.Enabled        and ChkDocker.Checked        then Clients := Clients + 'docker,';
   if ChkCopilotJB.Enabled     and ChkCopilotJB.Checked     then Clients := Clients + 'copilot-jetbrains,';
   if ChkCopilotCli.Enabled    and ChkCopilotCli.Checked    then Clients := Clients + 'copilot-cli,';
   if ChkClaudeDesktop.Enabled and ChkClaudeDesktop.Checked then Clients := Clients + 'claude-desktop,';
@@ -335,10 +327,11 @@ begin
     RunConfigureScript('');
     Exit;
   end;
-  Clients := BuildClientsParam;
-  ExtraParams := '-FromInstaller';
-  if Clients <> '' then
-    ExtraParams := ExtraParams + ' -Clients "' + Clients + '"';
+  { Docker toujours obligatoire — sans lui les outils MCP ne fonctionnent pas }
+  Clients := 'docker';
+  ExtraParams := BuildClientsParam;
+  if ExtraParams <> '' then Clients := Clients + ',' + ExtraParams;
+  ExtraParams := '-FromInstaller -Clients "' + Clients + '"';
   if not RunConfigureScript(ExtraParams) then
     MsgBox(
       'La configuration post-installation n''a pas pu être complétée.' + #13#10 +
