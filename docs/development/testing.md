@@ -46,7 +46,7 @@ contractuels et E2E restent des gates séparés ; la couverture ne les remplace 
 Pour les suites réelles :
 
 ```powershell
-docker compose up -d searxng crawl4ai
+docker compose -f compose.yaml -f compose.hybrid.yaml up -d searxng crawl4ai
 npm run test:e2e:live
 ```
 

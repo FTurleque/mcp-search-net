@@ -3,6 +3,13 @@ import type { SourceStatus } from './search.js';
 export type RenderMode = 'static' | 'auto';
 export type ExtractionMode = 'static' | 'native-render';
 
+export interface ContentRedirect {
+  readonly fromUrl: string;
+  readonly toUrl: string;
+  readonly status: number;
+  readonly permanent: boolean;
+}
+
 export interface FetchRequest {
   readonly url: string;
   readonly query?: string;
@@ -25,12 +32,16 @@ export interface FetchedContent {
   readonly etag?: string;
   readonly lastModified?: string;
   readonly contentHash: string;
+  readonly redirectChain: readonly ContentRedirect[];
   readonly metadata: Readonly<Record<string, unknown>>;
   readonly links: readonly string[];
 }
 
 export interface NotModifiedContent {
   readonly notModified: true;
+  readonly requestedUrl: string;
+  readonly finalUrl: string;
+  readonly redirectChain: readonly ContentRedirect[];
 }
 
 export type ContentFetchResult = FetchedContent | NotModifiedContent;

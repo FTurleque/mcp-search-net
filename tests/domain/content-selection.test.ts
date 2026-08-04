@@ -1,6 +1,45 @@
 import { describe, expect, it } from 'vitest';
 
-import { selectRelevantContent } from '../../src/domain/services/content-selection.js';
+import {
+  extractDocumentSections,
+  selectRelevantContent,
+} from '../../src/domain/services/content-selection.js';
+
+describe('extractDocumentSections', () => {
+  it('keeps a document without headings as one section', () => {
+    expect(extractDocumentSections('Plain documentation.\n\nSecond paragraph.')).toEqual([
+      {
+        heading: '',
+        markdown: 'Plain documentation.\n\nSecond paragraph.',
+      },
+    ]);
+  });
+
+  it('preserves the preamble before the first heading', () => {
+    expect(
+      extractDocumentSections('Introductory preamble.\n\n# Install\n\nRun the installer.'),
+    ).toEqual([
+      { heading: '', markdown: 'Introductory preamble.' },
+      { heading: 'Install', markdown: '# Install\n\nRun the installer.' },
+    ]);
+  });
+
+  it('keeps nested headings in document order', () => {
+    expect(
+      extractDocumentSections(
+        '# Guide\n\nOverview.\n\n## Install\n\nSteps.\n\n### Windows\n\nDetails.',
+      ),
+    ).toEqual([
+      { heading: 'Guide', markdown: '# Guide\n\nOverview.' },
+      { heading: 'Install', markdown: '## Install\n\nSteps.' },
+      { heading: 'Windows', markdown: '### Windows\n\nDetails.' },
+    ]);
+  });
+
+  it.each(['', '   ', '\r\n\r\n'])('does not create a section for empty Markdown', (markdown) => {
+    expect(extractDocumentSections(markdown)).toEqual([]);
+  });
+});
 
 describe('selectRelevantContent', () => {
   const markdown = `# Introduction

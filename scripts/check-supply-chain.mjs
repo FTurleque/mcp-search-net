@@ -14,11 +14,12 @@ const expected = {
   nodeImage:
     'node:24.17.0-bookworm-slim@sha256:862263c612aa437e3037674b85419622a9d93bff80aa1eee5398dfe686375532',
   overrides: {
-    '@hono/node-server': '2.0.12',
-    'fast-uri': '3.1.4',
-    hono: '4.12.32',
+    '@hono/node-server': '2.1.0',
+    'fast-uri': '3.1.5',
+    hono: '4.12.34',
   },
   developmentOverrides: {
+    'brace-expansion': '5.0.9',
     postcss: '8.5.25',
   },
 };

@@ -47,12 +47,23 @@ try {
     if ($StartServices) {
         $Docker = Get-Command docker -ErrorAction Stop
         Write-Diagnostic 'Démarrage de SearXNG et Crawl4AI via Docker Compose...'
-        Invoke-NativeToStderr $Docker.Source 'compose' 'up' '-d' '--wait' 'searxng' 'crawl4ai'
+        Invoke-NativeToStderr $Docker.Source 'compose' '-f' 'compose.yaml' '-f' 'compose.hybrid.yaml' 'up' '-d' '--wait' 'searxng' 'crawl4ai'
     }
 
     $env:MCP_CONFIG_PATH = Join-Path $RepositoryRoot 'config\application.yml'
     if ([string]::IsNullOrWhiteSpace($env:MCP_CRAWL4AI_TOKEN)) {
-        $env:MCP_CRAWL4AI_TOKEN = 'mcp-search-local-development-token'
+        $EnvironmentPath = Join-Path $RepositoryRoot '.env'
+        if (Test-Path -LiteralPath $EnvironmentPath -PathType Leaf) {
+            $TokenLine = Get-Content -LiteralPath $EnvironmentPath |
+                Where-Object { $_.StartsWith('CRAWL4AI_API_TOKEN=', [System.StringComparison]::Ordinal) } |
+                Select-Object -First 1
+            if (-not [string]::IsNullOrWhiteSpace($TokenLine)) {
+                $env:MCP_CRAWL4AI_TOKEN = $TokenLine.Substring('CRAWL4AI_API_TOKEN='.Length)
+            }
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($env:MCP_CRAWL4AI_TOKEN)) {
+        throw 'MCP_CRAWL4AI_TOKEN est absent. Définissez-le ou renseignez CRAWL4AI_API_TOKEN dans .env.'
     }
     $env:MCP_CACHE_PATH = Join-Path $RepositoryRoot '.data\intellij-cache.sqlite'
 

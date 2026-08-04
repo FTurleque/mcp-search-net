@@ -3,6 +3,7 @@ import type {
   CatalogDocument,
   CatalogDocumentEntry,
   CatalogDocumentInput,
+  CatalogDocumentObservationInput,
   CatalogDocumentRevision,
   CatalogDocumentRevisionInput,
   CatalogDocumentSearchQuery,
@@ -10,7 +11,8 @@ import type {
   CatalogSearchIndexRebuildResult,
   CatalogSource,
   CatalogSyncRun,
-  CatalogSyncRunInput,
+  CatalogSyncRunCompletionInput,
+  CatalogSyncRunStartInput,
   DocumentVersion,
   DocumentStatus,
   NewCatalogSource,
@@ -83,8 +85,22 @@ export interface CatalogRepository {
   listSources(): Promise<readonly CatalogSource[]>;
   listSourcesPage(query: CatalogSourcePageQuery): Promise<CatalogPage<CatalogSource>>;
   countSources(enabled?: boolean): Promise<number>;
-  commitDocumentRevision(revision: CatalogDocumentRevisionInput): Promise<CatalogDocumentRevision>;
-  upsertDocument(document: CatalogDocumentInput): Promise<CatalogDocument>;
+  commitDocumentRevision(
+    revision: CatalogDocumentRevisionInput,
+    observation?: CatalogDocumentObservationInput,
+  ): Promise<CatalogDocumentRevision>;
+  upsertDocument(
+    document: CatalogDocumentInput,
+    observation?: CatalogDocumentObservationInput,
+  ): Promise<CatalogDocument>;
+  touchDocumentObservation(
+    documentId: number,
+    observation?: CatalogDocumentObservationInput,
+  ): Promise<CatalogDocument>;
+  recordDocumentObservation(
+    documentId: number,
+    observation: CatalogDocumentObservationInput,
+  ): Promise<void>;
   getDocumentByPublicId(publicId: string): Promise<CatalogDocument | undefined>;
   getDocumentById(documentId: number): Promise<CatalogDocument | undefined>;
   getCurrentDocumentVersion?(documentId: number): Promise<DocumentVersion | undefined>;
@@ -110,7 +126,11 @@ export interface CatalogRepository {
   countCurrentDocumentSections(filters?: CatalogDocumentFilters): Promise<number>;
   verifyIntegrity(): Promise<CatalogIntegrityReport>;
   rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult>;
-  addCatalogSyncRun(input: CatalogSyncRunInput): Promise<CatalogSyncRun>;
+  startCatalogSyncRun(input: CatalogSyncRunStartInput): Promise<CatalogSyncRun>;
+  completeCatalogSyncRun(
+    syncRunId: number,
+    input: CatalogSyncRunCompletionInput,
+  ): Promise<CatalogSyncRun>;
   searchDocuments(
     query: CatalogDocumentSearchQuery,
   ): Promise<readonly CatalogDocumentSearchResult[]>;

@@ -1,6 +1,6 @@
 # ADR-017 — Choisir la stratégie de recherche V2 sur benchmark mesuré
 
-- **Statut** : Accepté
+- **Statut** : Accepté — stratégie conservée dans le candidat `1.1.0`
 - **Date** : 2026-07-29
 - **Décisions liées** : ADR-010, ADR-015, ADR-016
 - **Issue** : #16
@@ -90,7 +90,7 @@ ferme pas l'écart. Cette branche n'autorise pas automatiquement l'ajout d'embed
 
 Aucune API commerciale obligatoire n'est autorisée par cet ADR.
 
-## Résultat V2.13 final
+## Résultat historique V2.13
 
 Qualification Windows PowerShell du 29 juillet 2026 sur Node.js 24.17.0 :
 
@@ -151,6 +151,10 @@ Le merge de #24 a été effectué avec une garde sur le SHA qualifié. La compar
 `aeb49b1f6a7f035779e726a9db641710f172819f` et
 `c9ba09345cebb1a9f9dfa63f98e0352c33dcefd2` retourne `files: []` : aucun changement de contenu n'a
 été introduit par le commit de merge.
+
+Cette preuve qualifie les SHA indiqués, pas automatiquement le checkout candidat courant. Le
+candidat `1.1.0` conserve FTS5/BM25 et ne généralise pas le reranker lexical hashé ; sa qualification
+exact-head reste régie par [`docs/status/current-state.md`](../status/current-state.md).
 
 ## Conséquences
 

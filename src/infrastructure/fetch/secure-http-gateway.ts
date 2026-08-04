@@ -104,7 +104,7 @@ export class SecureHttpGateway {
       sameOrigin ? conditionalHeaders : {},
       limits.maxBytes,
     );
-    if (response.status >= 300 && response.status < 400) {
+    if (response.status >= 300 && response.status < 400 && response.status !== 304) {
       const location = response.headers['location'];
       if (location === undefined)
         throw new HttpError('Redirect response has no Location header', response.status);

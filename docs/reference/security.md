@@ -2,7 +2,12 @@
 
 ## Frontières
 
-Le serveur accepte uniquement des lectures Web et écrit seulement son cache SQLite local. Il n’exécute pas le contenu récupéré et n’accorde à Copilot aucun accès direct aux API ou fonctionnalités avancées de Crawl4AI.
+Le serveur accepte uniquement des lectures. Il écrit deux bases SQLite locales séparées :
+`cache.sqlite`, cache Web jetable, et `catalog.db`, catalogue documentaire persistant administré
+hors MCP. Il n’exécute pas le contenu récupéré et n’accorde à Copilot aucun accès direct aux API ou
+fonctionnalités avancées de Crawl4AI. Le candidat `1.1.0` expose exactement cinq outils read-only :
+`search_web`, `fetch_url`, `search_docs`, `list_docs` et `read_doc_section`. Toutes les resources
+restent également read-only.
 
 La politique URL rejette les schémas autres que HTTP(S), les identifiants intégrés, les ports interdits, les noms locaux et les résolutions vers les plages loopback, privées, link-local, réservées ou documentaires.
 
@@ -10,7 +15,8 @@ La politique URL rejette les schémas autres que HTTP(S), les identifiants inté
 
 ## Défense en profondeur
 
-- services liés à `127.0.0.1` ;
+- réseau backend Docker interne par défaut ; l'overlay hôte publie les providers uniquement sur
+  `127.0.0.1` ;
 - jeton entre le MCP et Crawl4AI ;
 - capacités Linux supprimées et `no-new-privileges` dans Compose ;
 - SearXNG en lecture seule avec répertoire temporaire borné ;
@@ -22,7 +28,12 @@ La politique URL rejette les schémas autres que HTTP(S), les identifiants inté
 
 ## Frontière Crawl4AI
 
-Crawl4AI ne télécharge plus directement la cible publique. En mode `auto`, il traite uniquement un document `raw://` construit à partir du HTML déjà contrôlé. Scripts, styles, éléments de ressources, métadonnées de navigation, attributs d'événement et URL de chargement sont supprimés avant ce rendu. Le conteneur rejoint le bridge `egress` uniquement pour rendre son port disponible sur le loopback Windows ; l'API reste liée à `127.0.0.1`, protégée par token et n'est jamais exposée comme outil MCP.
+Crawl4AI ne télécharge plus directement la cible publique. En mode `auto`, il traite uniquement un
+document `raw://` construit à partir du HTML déjà contrôlé. Scripts, styles, éléments de ressources,
+métadonnées de navigation, attributs d'événement et URL de chargement sont supprimés avant ce rendu.
+Dans le Compose complet, Crawl4AI reste uniquement sur le réseau interne `backend` et n'a pas accès
+au bridge `egress`. L'overlay hybride peut publier son API sur le loopback hôte pour le serveur Node ;
+elle reste protégée par token et n'est jamais exposée comme outil MCP.
 
 ## Contenu malveillant
 
@@ -45,9 +56,14 @@ recopiés dans le diagnostic. Compose exige explicitement `SEARXNG_SECRET` et
 `CRAWL4AI_API_TOKEN`. L'installateur Windows génère des valeurs aléatoires
 propres au profil utilisateur et les conserve lors des mises à jour.
 
+Les profils distribués Windows et Docker sont `production` et fixent
+`security.allowHttp: false`. Le schéma refuse toute combinaison
+`profile: production` avec HTTP public activé. Cette règle vise les URLs publiques demandées aux
+outils ; les endpoints internes SearXNG/Crawl4AI en HTTP restent séparés de cette politique.
+
 ## Supply chain
 
-Le SDK MCP est fixé exactement, les transitives corrigées sont verrouillées et
+Le SDK MCP est fixé exactement à `@modelcontextprotocol/sdk@1.30.0`, les transitives corrigées sont verrouillées et
 les images OCI sont référencées par digest. `npm run check:supply-chain` contrôle
 hors ligne versions, digests, absence de secrets Compose par défaut et licences
 de production. La qualification réseau complète ce gate par `npm audit` et

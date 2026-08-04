@@ -78,6 +78,28 @@ describe('SecureHttpGateway', () => {
     ]);
   });
 
+  it('returns a conditional 304 response without treating it as a redirect', async () => {
+    let conditionalHeader: string | undefined;
+    const server = await listen((request, response) => {
+      conditionalHeader = request.headers['if-none-match'];
+      response.writeHead(304, { etag: '"v1"' });
+      response.end();
+    });
+
+    const resource = await createGateway(policyFor(server.port)).download(server.url, {
+      'if-none-match': '"v1"',
+    });
+
+    expect(conditionalHeader).toBe('"v1"');
+    expect(resource).toMatchObject({
+      requestedUrl: server.url,
+      finalUrl: `${server.url}/`,
+      status: 304,
+      redirectChain: [],
+    });
+    expect(resource.body).toHaveLength(0);
+  });
+
   it('interrupts a response before it exceeds the byte budget', async () => {
     const server = await listen((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/plain' });

@@ -1,8 +1,8 @@
 # ADR-016 — Exposer la V2 avec des outils ciblés et des resources MCP bornées
 
-- **Statut** : Accepté — gel V2.14 en qualification dans la PR #25
+- **Statut** : Accepté — contrat du candidat `1.1.0`, gel V2.14 encore en qualification
 - **Date** : 2026-07-03
-- **Dernière mise à jour** : 2026-07-29
+- **Dernière mise à jour** : 2026-08-04
 - **Décision liée** : ADR-002, ADR-011, ADR-013
 - **Issue de gel client** : #17
 
@@ -22,25 +22,29 @@ La V2 doit privilégier une exposition mixte :
 2. deux outils MCP read-only ciblés pour lister les documents et lire une section ;
 3. des resources MCP paginées pour exposer les sources, documents, versions et sections.
 
-Nom retenu pour l'implémentation initiale :
+Nom retenu pour la recherche documentaire :
 
 ```text
 search_docs
 ```
 
-`search_catalog` reste un alias possible plus tard, mais n'est pas nécessaire pour la première exposition V2.
+Aucun alias `search_catalog` n'est exposé : le contrat candidat contient exactement les cinq noms
+documentés ci-dessous.
 
 ## Outils implémentés
 
 ```text
+search_web
+fetch_url
 search_docs
 list_docs
 read_doc_section
 ```
 
-Les trois outils sont read-only. `search_docs` recherche dans le catalogue documentaire local,
-`list_docs` filtre et pagine en SQL, et `read_doc_section` lit directement une section par
-identifiant. Aucun ne déclenche de synchronisation, purge ou reconstruction d'index.
+Les cinq outils sont read-only. Les deux premiers conservent le sous-contrat Web V1. `search_docs`
+recherche dans le catalogue documentaire local, `list_docs` filtre et pagine en SQL, et
+`read_doc_section` lit directement une section par identifiant. Aucun outil catalogue ne déclenche
+de synchronisation, purge ou reconstruction d'index.
 
 Le workflow agent recommandé et désormais couvert comme contrat ergonomique est :
 
@@ -139,7 +143,7 @@ catalog purge-versions
 
 La commande `catalog status` peut être exposée indirectement via resource read-only si elle ne déclenche aucune mutation.
 
-## État d'implémentation PR #8 / V2.14
+## État d'implémentation du candidat `1.1.0`
 
 - `search_docs` est implémenté.
 - `list_docs` et `read_doc_section` sont implémentés avec budgets de réponse fixes.
@@ -150,7 +154,13 @@ La commande `catalog status` peut être exposée indirectement via resource read
 - Les opérations mutables restent hors MCP.
 - V2.14 ajoute un E2E STDIO de gel observant outils, annotations, resources, templates,
   `structuredContent`, `schemaVersion` et compatibilité V1.
-- Le workflow GitHub Actions reste manuel uniquement pendant la restriction de quota de juillet.
+- Le workflow candidat contient des triggers PR, mais aucun run attaché à sa tête actuelle ne vaut
+  encore preuve. La restriction de facturation observée en juillet est un fait historique, pas un
+  état courant présumé.
+
+Les benchmarks et validations datés ci-dessus restent attachés à leurs SHA. Le verdict courant et
+les preuves encore exigées sont centralisés dans
+[`docs/status/current-state.md`](../status/current-state.md).
 
 ## Qualification client obligatoire V2.14
 

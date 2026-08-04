@@ -1,6 +1,6 @@
 application:
   name: mcp-search-net
-  version: 1.0.0
+  version: 1.1.0
   profile: development
 
 searxng:

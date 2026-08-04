@@ -1,7 +1,7 @@
 application:
   name: mcp-search-net
-  version: 1.0.0
-  profile: development
+  version: 1.1.0
+  profile: production
 
 searxng:
   baseUrl: http://127.0.0.1:8888
@@ -36,7 +36,7 @@ limits:
 
 security:
   allowedPorts: [80, 443]
-  allowHttp: true
+  allowHttp: false
   maxDownloadBytes: 10485760
   maxRedirects: 5
   maxConcurrency: 4

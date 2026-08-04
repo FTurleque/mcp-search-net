@@ -15,13 +15,13 @@ describe.runIf(live)('live MCP fetch', () => {
   });
 
   it('fetches a public page through the complete STDIO stack', async () => {
-    client = new Client({ name: 'mcp-search-net-live-test', version: '1.0.0' });
+    client = new Client({ name: 'mcp-search-net-live-test', version: '1.1.0' });
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [resolve('build/bootstrap/main.js')],
       env: {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
-        MCP_CRAWL4AI_TOKEN: 'mcp-search-local-development-token',
+        MCP_CRAWL4AI_TOKEN: requireCrawl4aiToken(),
       },
       stderr: 'pipe',
     });
@@ -82,6 +82,14 @@ describe.runIf(live)('live MCP fetch', () => {
     );
   });
 });
+
+function requireCrawl4aiToken(): string {
+  const token = process.env['CRAWL4AI_API_TOKEN'];
+  if (token === undefined || token.trim() === '') {
+    throw new Error('CRAWL4AI_API_TOKEN is required for live MCP tests');
+  }
+  return token;
+}
 
 function captureStderr(transport: StdioClientTransport, onChunk: (chunk: string) => void): void {
   const stderr = transport.stderr as Readable | null;

@@ -86,6 +86,52 @@ describe('SqliteCatalogRepository document revisions', () => {
     await expect(reopened.searchDocuments({ query: 'stable old' })).resolves.toHaveLength(0);
   });
 
+  it('rolls back revision, alias and event writes when observation persistence fails', async () => {
+    const fixture = await createFixture();
+    const first = await fixture.repository.commitDocumentRevision(
+      revisionInput('hash-v1', 'Stable content before observation failure'),
+    );
+
+    await expect(
+      fixture.repository.commitDocumentRevision(
+        revisionInput('hash-v2', 'Content that must not become current'),
+        {
+          syncRunId: 999_999,
+          aliases: [{ url: 'https://example.test/old-guide', aliasType: 'OLD_URL' }],
+          events: [{ eventType: 'CONTENT_HASH_CHANGED', detailsJson: '{}' }],
+        },
+      ),
+    ).rejects.toThrow(/FOREIGN KEY/u);
+
+    const database = new Database(fixture.path, { readonly: true });
+    expect(
+      database.prepare('SELECT current_version_id FROM documents WHERE public_id = ?').get('guide'),
+    ).toEqual({ current_version_id: first.version.id });
+    expect(database.prepare('SELECT count(*) AS count FROM document_versions').get()).toEqual({
+      count: 1,
+    });
+    expect(database.prepare('SELECT count(*) AS count FROM document_sections').get()).toEqual({
+      count: 1,
+    });
+    expect(database.prepare('SELECT count(*) AS count FROM document_section_fts').get()).toEqual({
+      count: 1,
+    });
+    expect(database.prepare('SELECT count(*) AS count FROM document_aliases').get()).toEqual({
+      count: 0,
+    });
+    expect(database.prepare('SELECT count(*) AS count FROM staleness_events').get()).toEqual({
+      count: 0,
+    });
+    database.close();
+
+    await expect(
+      fixture.repository.searchDocuments({ query: 'stable content' }),
+    ).resolves.toHaveLength(1);
+    await expect(
+      fixture.repository.searchDocuments({ query: 'must not become' }),
+    ).resolves.toHaveLength(0);
+  });
+
   it('rolls back document and version writes when FTS indexing fails', async () => {
     const fixture = await createFixture();
     const first = await fixture.repository.commitDocumentRevision(

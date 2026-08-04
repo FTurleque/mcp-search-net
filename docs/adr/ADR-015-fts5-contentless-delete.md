@@ -1,9 +1,13 @@
 # ADR-015 — Utiliser FTS5 `contentless-delete` comme index dérivé
 
-- **Statut** : Accepté, implémentation réconciliée en V2.9
+- **Statut** : Accepté, implémentation réconciliée en V2.9 et conservée dans `1.1.0`
 - **Date** : 2026-07-03
 - **Réconciliation** : 2026-07-29
 - **Décision liée** : ADR-010, ADR-014
+
+La preuve V2.9 reste historique. Cette décision décrit encore le code du candidat courant, dont la
+qualification de livraison est suivie séparément dans
+[`docs/status/current-state.md`](../status/current-state.md).
 
 ## Contexte
 
@@ -15,7 +19,7 @@ Le catalogue V2 conserve les contenus métier dans `document_sections`. L'index 
 
 ## Décision
 
-La V2 utilisera un index FTS5 `contentless-delete` dans la base `catalog.db`.
+La V2 utilise un index FTS5 `contentless-delete` dans la base `catalog.db`.
 
 Table effective depuis la migration corrective immuable `C007` :
 
@@ -67,25 +71,26 @@ code    = 3
 body    = 1
 ```
 
-La recherche utilise d'abord un score BM25 lexical. Les pondérations ne sont pas gelées tant que le benchmark V2 n'est pas exécuté.
+La recherche utilise d'abord un score BM25 lexical. Le benchmark V2.13 a conservé cette baseline ;
+les pondérations ci-dessus ne font toujours pas partie du contrat public.
 
 ## Rebuild et maintenance
 
-La V2 doit fournir :
+La V2 fournit :
 
 ```text
 mcp-search-net catalog rebuild-index
 mcp-search-net catalog verify
 ```
 
-`rebuild-index` doit :
+`rebuild-index` :
 
 1. vider l'index FTS5 ;
 2. relire les sections courantes ;
 3. réinsérer les lignes FTS ;
 4. retourner le nombre de sections indexées.
 
-`verify` doit contrôler :
+`verify` contrôle :
 
 - nombre de sections ;
 - nombre d'entrées FTS ;
@@ -126,8 +131,10 @@ Cette ADR ne décide pas :
 
 - des embeddings ;
 - d'un moteur externe comme Meilisearch ou OpenSearch ;
-- du nom final de l'outil MCP V2 ;
 - du format exact des snippets.
+
+Le nom et le contrat des outils MCP ont depuis été décidés par ADR-016 ; ils ne relèvent pas de la
+décision d'indexation prise ici.
 
 ## Conséquences
 

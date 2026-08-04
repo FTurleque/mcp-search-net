@@ -8,16 +8,17 @@ IDEA. La V1 expose deux outils stables :
 - `fetch_url` récupère une URL publique connue, applique la protection SSRF,
   extrait du Markdown et limite les sections retournées.
 
-La V2 documentaire est en cours de construction dans la PR #8. Elle ajoute un
+Le checkout courant est le candidat `1.1.0` du jalon V2 documentaire ; aucune
+release V2 n'est encore publiée. La PR #8 ajoute un
 catalogue local séparé dans `catalog.db`, l'ingestion texte/Markdown, la
 synchronisation contrôlée, la recherche documentaire locale et une exposition
 MCP read-only via `search_docs`, `list_docs`, `read_doc_section` et des resources
 catalogue. Le serveur n'embarque aucun LLM et ne requiert aucune API commerciale.
 
-> Note budget CI : le workflow GitHub Actions est temporairement déclenchable
-> uniquement manuellement via `workflow_dispatch`, afin d'éviter toute
-> consommation automatique d'Actions minutes pendant l'épuisement du quota
-> mensuel.
+> État CI au 4 août 2026 : aucun run ne prouve les têtes actuelles. Le blocage
+> de facturation observé le 4 juillet est historique et son état présent est
+> inconnu. Le candidat rétablit les triggers PR ; seul un run attaché au SHA
+> final vaut preuve. Voir [`docs/status/current-state.md`](docs/status/current-state.md).
 
 ## Architecture
 
@@ -32,7 +33,7 @@ src/bootstrap       assemblage et cycle de vie STDIO
 ```
 
 Le domaine ne dépend ni du SDK MCP, ni de Zod, YAML, SQLite, SearXNG ou
-Crawl4AI. Le cache V1 et le catalogue V2 sont séparés : `.data/cache.db` reste
+Crawl4AI. Le cache V1 et le catalogue V2 sont séparés : `.data/cache.sqlite` reste
 supprimable, `.data/catalog.db` porte le catalogue durable.
 
 ## Prérequis
@@ -56,13 +57,13 @@ autre que `development` refuse aussi les jetons d'exemple connus.
 ## Développement
 
 ```bash
-docker compose up -d searxng crawl4ai
+docker compose -f compose.yaml -f compose.hybrid.yaml up -d searxng crawl4ai
 npm run dev
 ```
 
-SearXNG et Crawl4AI sont publiés uniquement sur `127.0.0.1`, respectivement sur
-les ports 8888 et 11235. Le serveur MCP écrit exclusivement le protocole JSON-RPC
-sur `stdout` et ses diagnostics JSON sur `stderr`.
+L'overlay `compose.hybrid.yaml` publie SearXNG et Crawl4AI uniquement sur
+`127.0.0.1`, respectivement sur les ports 8888 et 11235. Le serveur MCP écrit
+exclusivement le protocole JSON-RPC sur `stdout` et ses diagnostics JSON sur `stderr`.
 
 ## Build et exécution locale
 
@@ -78,7 +79,7 @@ n’ouvre aucun port applicatif.
 
 ## Validation
 
-Validation locale de référence pendant la suspension des Actions automatiques :
+Validation locale de référence du candidat :
 
 ```bash
 npm run check
@@ -99,7 +100,7 @@ les fournisseurs démarrés :
 npm run test:e2e
 ```
 
-`npm run check` inclut le contrôle supply chain hors ligne, typecheck, lint, contrôle Prettier, build, tests
+`npm run check` inclut les contrôles supply chain et documentation (`docs:check`), typecheck, lint, contrôle Prettier, build, tests
 déterministes et seuils de couverture V8. Les rapports JSON sont écrits dans
 `.data/test-reports`, et les rapports de couverture dans `coverage/`. Les
 lanceurs de release échouent si un test requis est ignoré.
@@ -164,11 +165,12 @@ Exécution Docker :
 }
 ```
 
-En V1, Copilot doit afficher `search_web` et `fetch_url`. En V2 documentaire, le
-serveur expose aussi `search_docs` et des resources read-only de catalogue ; le
-spike final IntelliJ/Copilot reste à exécuter avant gel définitif de l'ergonomie
-V2. Voir le [guide IntelliJ détaillé](docs/getting-started/intellij-copilot.md)
-et la [recette de spike MCP V2](docs/planning/spike-intellij-copilot-mcp-v2.md).
+Le serveur candidat expose exactement cinq outils : `search_web`, `fetch_url`,
+`search_docs`, `list_docs` et `read_doc_section`. Les resources catalogue sont un
+canal read-only complémentaire ; le spike final IntelliJ/Copilot reste à exécuter
+avant gel définitif de l'ergonomie V2. Voir le
+[guide IntelliJ détaillé](docs/getting-started/intellij-copilot.md) et la
+[recette de spike MCP V2](docs/planning/spike-intellij-copilot-mcp-v2.md).
 
 ## Configuration
 
@@ -180,7 +182,6 @@ MCP_PROFILE
 MCP_LOG_LEVEL
 MCP_CACHE_PATH
 MCP_CATALOG_PATH
-MCP_CATALOG_SOURCES_PATH
 MCP_OFFICIAL_SOURCES_PATH
 MCP_SEARXNG_URL
 MCP_CRAWL4AI_URL
@@ -196,15 +197,16 @@ démarrage avec un diagnostic sur `stderr`.
 
 Fonctionnalités en cours de stabilisation dans la PR #8 :
 
-- catalogue durable séparé de `cache.db` ;
+- catalogue durable séparé de `cache.sqlite` ;
 - migrations catalogue `C001` à `C008` avec checksums SHA-256 ;
 - CLI `catalog init`, `status`, `verify`, `add-source`, `list-sources`,
   `load-sources`, `ingest-text`, `sync`, `search`, `rebuild-index`,
   `purge-versions`, ainsi que `health` et `backup` pour l'exploitation locale ;
 - ingestion texte/Markdown avec versioning et sections ;
 - recherche documentaire locale ;
-- synchronisation contrôlée avec ETag, Last-Modified, hash, staleness et
-  redirections permanentes ;
+- synchronisation contrôlée avec ETag, Last-Modified, hash du payload HTTP brut,
+  cycle `RUNNING` vers un statut terminal, observations `304`, aliases,
+  événements de staleness et redirections permanentes ;
 - outils MCP read-only `search_docs`, `list_docs` et `read_doc_section` ;
 - resources MCP read-only paginées pour catalogue, sources, documents, versions
   et sections, avec lectures ciblées par identifiant et budgets de réponse fixes.

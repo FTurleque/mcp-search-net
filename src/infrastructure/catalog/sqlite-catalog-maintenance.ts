@@ -155,10 +155,13 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
   ): number {
     const maxAgeMs = input.maxSyncRunAgeDays * 24 * 60 * 60 * 1_000;
     const threshold = this.clock.now().getTime() - maxAgeMs;
-    const result = database
-      .prepare<[number, number]>(
-        `
-          DELETE FROM sync_runs
+    const detachStalenessEvents = database.prepare<[number, number]>(
+      `
+        UPDATE staleness_events
+        SET sync_run_id = NULL
+        WHERE sync_run_id IN (
+          SELECT id
+          FROM sync_runs
           WHERE started_at < ?
             AND id NOT IN (
               SELECT id
@@ -166,9 +169,26 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
               ORDER BY started_at DESC, id DESC
               LIMIT ?
             )
-        `,
-      )
-      .run(threshold, input.keepSyncRuns);
-    return result.changes;
+        )
+      `,
+    );
+    const deleteSyncRuns = database.prepare<[number, number]>(
+      `
+        DELETE FROM sync_runs
+        WHERE started_at < ?
+          AND id NOT IN (
+            SELECT id
+            FROM sync_runs
+            ORDER BY started_at DESC, id DESC
+            LIMIT ?
+          )
+      `,
+    );
+    const retainEventsAndDeleteRuns = database.transaction(() => {
+      detachStalenessEvents.run(threshold, input.keepSyncRuns);
+      return deleteSyncRuns.run(threshold, input.keepSyncRuns).changes;
+    });
+
+    return retainEventsAndDeleteRuns();
   }
 }

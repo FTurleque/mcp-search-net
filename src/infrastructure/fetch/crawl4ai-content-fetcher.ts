@@ -17,6 +17,7 @@ import {
 import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
 import { extractDocumentSections } from '../../domain/services/content-selection.js';
 import { fetchJson } from '../http/http-utils.js';
+import { extractPdfText } from './pdf-text-extractor.js';
 import type { DownloadedResource } from './secure-http-gateway.js';
 import type { SecureHttpGateway } from './secure-http-gateway.js';
 
@@ -66,9 +67,16 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
         maxRedirects: request.maxRedirects,
       },
     );
-    if (resource.status === 304) return { notModified: true };
+    if (resource.status === 304) {
+      return {
+        notModified: true,
+        requestedUrl: resource.requestedUrl,
+        finalUrl: resource.finalUrl,
+        redirectChain: resource.redirectChain ?? [],
+      };
+    }
     const contentType = detectContentType(resource);
-    const decoded = decodeResource(resource, contentType);
+    const decoded = await decodeResource(resource, contentType);
     let markdown = decoded.markdown;
     let extractionMode: FetchedContent['extractionMode'] = 'static';
 
@@ -99,6 +107,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
         ? {}
         : { lastModified: resource.headers['last-modified'] }),
       contentHash: createHash('sha256').update(resource.body).digest('hex'),
+      redirectChain,
       metadata: {
         status: resource.status,
         bytes: resource.body.byteLength,
@@ -169,7 +178,10 @@ interface DecodedContent {
   readonly safeHtml?: string;
 }
 
-function decodeResource(resource: DownloadedResource, contentType: string): DecodedContent {
+async function decodeResource(
+  resource: DownloadedResource,
+  contentType: string,
+): Promise<DecodedContent> {
   if (contentType === 'application/pdf') return decodePdf(resource.body);
   if (contentType.startsWith('image/')) {
     throw new OcrRequiredNotSupportedError();
@@ -314,17 +326,8 @@ function decodeEntities(value: string): string {
     .replace(/&#39;/gu, "'");
 }
 
-function decodePdf(body: Uint8Array): DecodedContent {
-  const text = new TextDecoder('latin1', { fatal: false }).decode(body);
-  const streams = [...text.matchAll(/stream\r?\n([\s\S]*?)\r?\nendstream/gu)].map(
-    (match) => match[1] ?? '',
-  );
-  const decoded = streams
-    .flatMap((stream) => [...stream.matchAll(/\(([^()]*)\)\s*Tj/gu)].map((match) => match[1] ?? ''))
-    .map((value) => value.replaceAll('\\(', '(').replaceAll('\\)', ')').replaceAll('\\\\', '\\'))
-    .join('\n')
-    .trim();
-  if (decoded === '') throw new ExtractionError('The PDF does not contain extractable text');
+async function decodePdf(body: Uint8Array): Promise<DecodedContent> {
+  const decoded = await extractPdfText(body);
   return { markdown: decoded, links: collectPlainLinks(decoded, 'https://example.invalid/') };
 }
 

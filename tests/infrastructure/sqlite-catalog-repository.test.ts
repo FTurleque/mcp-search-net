@@ -328,6 +328,53 @@ describe('SqliteCatalogRepository', () => {
     ).resolves.toEqual([]);
   });
 
+  it('centers a bounded multi-term snippet on the densest matching window', async () => {
+    const fixture = createCatalogRepository();
+    const source = await fixture.catalog.addSource({
+      sourceKey: 'snippet-docs',
+      displayName: 'Snippet docs',
+      baseUrl: 'https://example.test/docs/',
+      sourceType: 'documentation',
+      language: 'en-US',
+      freshnessPolicy: 'manual',
+      syncStrategy: 'manual',
+      enabled: true,
+    });
+    await fixture.catalog.commitDocumentRevision({
+      document: {
+        publicId: 'multi-term-snippet',
+        sourceId: source.id,
+        canonicalUrl: 'https://example.test/docs/snippet',
+        stableKey: 'snippet',
+        title: 'Multi-term snippet',
+        mimeType: 'text/markdown',
+        language: 'en-US',
+        status: 'ACTIVE',
+      },
+      version: {
+        contentHash: 'multi-term-v1',
+        extractionMode: 'static',
+        contentType: 'text/markdown',
+        metadataJson: '{}',
+      },
+      sections: [
+        {
+          ordinal: 0,
+          content: `IRRELEVANT_BEGIN alpha ${'filler '.repeat(35)}Focused alpha guidance places beta nearby.`,
+          contentHash: 'multi-term-section',
+          characterCount: 340,
+          tokenCount: 42,
+        },
+      ],
+    });
+
+    const [result] = await fixture.catalog.searchDocuments({ query: 'alpha beta' });
+
+    expect(result?.snippet).toContain('alpha guidance places beta');
+    expect(result?.snippet).not.toContain('IRRELEVANT_BEGIN');
+    expect(result?.snippet.length).toBeLessThanOrEqual(162);
+  });
+
   it('keeps catalog tables out of cache.db and V1 cache tables out of catalog.db', () => {
     const root = mkdtempSync(join(tmpdir(), 'mcp-catalog-separation-'));
     roots.push(root);
@@ -431,6 +478,247 @@ describe('SqliteCatalogRepository', () => {
     expect(rows).toEqual([{ ordinal: 1, content_hash: 'existing-section' }]);
     database.close();
   });
+
+  it('persists the RUNNING to terminal sync lifecycle and rejects invalid transitions', async () => {
+    const fixture = createCatalogRepository();
+    const running = await fixture.catalog.startCatalogSyncRun({ startedAt: new Date(1_000) });
+
+    expect(running).toMatchObject({
+      status: 'RUNNING',
+      startedAt: new Date(1_000),
+      documentsChecked: 0,
+      documentsFailed: 0,
+    });
+    expect(running.completedAt).toBeUndefined();
+
+    const completed = await fixture.catalog.completeCatalogSyncRun(running.id, {
+      completedAt: new Date(2_000),
+      status: 'PARTIAL',
+      documentsChecked: 2,
+      documentsAdded: 1,
+      documentsUpdated: 0,
+      documentsUnchanged: 0,
+      documentsFailed: 1,
+      errorSummary: '1 document(s) failed',
+    });
+    expect(completed).toMatchObject({
+      id: running.id,
+      startedAt: new Date(1_000),
+      completedAt: new Date(2_000),
+      status: 'PARTIAL',
+      documentsChecked: 2,
+      documentsAdded: 1,
+      documentsFailed: 1,
+    });
+
+    await expect(
+      fixture.catalog.completeCatalogSyncRun(running.id, {
+        completedAt: new Date(3_000),
+        status: 'SUCCESS',
+        documentsChecked: 2,
+        documentsAdded: 1,
+        documentsUpdated: 0,
+        documentsUnchanged: 1,
+        documentsFailed: 0,
+      }),
+    ).rejects.toThrow('CATALOG_SYNC_RUN_ALREADY_COMPLETED');
+
+    const second = await fixture.catalog.startCatalogSyncRun({ startedAt: new Date(5_000) });
+    await expect(
+      fixture.catalog.completeCatalogSyncRun(second.id, {
+        completedAt: new Date(4_000),
+        status: 'FAILED',
+        documentsChecked: 0,
+        documentsAdded: 0,
+        documentsUpdated: 0,
+        documentsUnchanged: 0,
+        documentsFailed: 0,
+      }),
+    ).rejects.toThrow('CATALOG_SYNC_RUN_COMPLETION_PRECEDES_START');
+  });
+
+  it('touches observations without version, section or FTS churn and upserts tracking atomically', async () => {
+    const fixture = createCatalogRepository();
+    const source = await fixture.catalog.addSource({
+      sourceKey: 'touch-docs',
+      displayName: 'Touch docs',
+      baseUrl: 'https://example.test/',
+      sourceType: 'documentation',
+      language: 'en',
+      freshnessPolicy: 'manual',
+      syncStrategy: 'manual',
+      enabled: true,
+    });
+    const revision = await fixture.catalog.commitDocumentRevision({
+      document: {
+        publicId: 'touch-guide',
+        sourceId: source.id,
+        canonicalUrl: 'https://example.test/guide',
+        stableKey: 'guide',
+        title: 'Touch guide',
+        mimeType: 'text/markdown',
+        language: 'en',
+        status: 'ACTIVE',
+      },
+      version: {
+        contentHash: 'touch-hash-v1',
+        extractionMode: 'static',
+        contentType: 'text/markdown',
+        metadataJson: '{}',
+      },
+      sections: [
+        {
+          ordinal: 0,
+          heading: 'Guide',
+          content: 'Stable searchable observation content.',
+          contentHash: 'touch-section-v1',
+          characterCount: 38,
+        },
+      ],
+    });
+    const run = await fixture.catalog.startCatalogSyncRun({ startedAt: new Date(2_000) });
+    const before = readObservationSnapshot(fixture.path);
+
+    fixture.setNow(3_000);
+    const touched = await fixture.catalog.touchDocumentObservation(revision.document.id, {
+      syncRunId: run.id,
+      aliases: [{ url: 'https://example.test/old-guide', aliasType: 'REDIRECT' }],
+      events: [
+        {
+          eventType: 'PERMANENT_REDIRECT',
+          detailsJson: '{"status":301}',
+        },
+      ],
+    });
+
+    expect(touched.lastSeenAt).toEqual(new Date(3_000));
+    expect(touched.updatedAt).toEqual(revision.document.updatedAt);
+    expect(readObservationSnapshot(fixture.path)).toEqual({
+      ...before,
+      lastSeenAt: 3_000,
+    });
+
+    fixture.setNow(4_000);
+    await fixture.catalog.touchDocumentObservation(revision.document.id, {
+      syncRunId: run.id,
+      aliases: [{ url: 'https://example.test/old-guide', aliasType: 'OLD_URL' }],
+    });
+    const database = new Database(fixture.path, { readonly: true });
+    expect(
+      database
+        .prepare(
+          'SELECT url, alias_type, first_seen_at, last_seen_at FROM document_aliases WHERE document_id = ?',
+        )
+        .all(revision.document.id),
+    ).toEqual([
+      {
+        url: 'https://example.test/old-guide',
+        alias_type: 'OLD_URL',
+        first_seen_at: 3_000,
+        last_seen_at: 4_000,
+      },
+    ]);
+    expect(
+      database.prepare('SELECT sync_run_id, event_type, details_json FROM staleness_events').all(),
+    ).toEqual([
+      {
+        sync_run_id: run.id,
+        event_type: 'PERMANENT_REDIRECT',
+        details_json: '{"status":301}',
+      },
+    ]);
+    database.close();
+
+    fixture.setNow(5_000);
+    await expect(
+      fixture.catalog.touchDocumentObservation(revision.document.id, {
+        syncRunId: 999_999,
+        events: [{ eventType: 'SOURCE_UNAVAILABLE', detailsJson: '{}' }],
+      }),
+    ).rejects.toThrow(/FOREIGN KEY/u);
+    await expect(fixture.catalog.getDocumentById(revision.document.id)).resolves.toMatchObject({
+      lastSeenAt: new Date(4_000),
+    });
+  });
+
+  it('keeps a 304 redirect metadata transition atomic and the searchable index consistent', async () => {
+    const fixture = createCatalogRepository();
+    const source = await fixture.catalog.addSource({
+      sourceKey: 'redirect-docs',
+      displayName: 'Redirect docs',
+      baseUrl: 'https://example.test/',
+      sourceType: 'documentation',
+      language: 'en',
+      freshnessPolicy: 'manual',
+      syncStrategy: 'manual',
+      enabled: true,
+    });
+    const revision = await fixture.catalog.commitDocumentRevision({
+      document: {
+        publicId: 'redirect-guide',
+        sourceId: source.id,
+        canonicalUrl: 'https://example.test/old-guide',
+        stableKey: 'guide',
+        title: 'Redirect guide',
+        mimeType: 'text/markdown',
+        language: 'en',
+        status: 'ACTIVE',
+      },
+      version: {
+        contentHash: 'redirect-hash-v1',
+        extractionMode: 'static',
+        contentType: 'text/markdown',
+        metadataJson: '{}',
+      },
+      sections: [
+        {
+          ordinal: 0,
+          heading: 'Guide',
+          content: 'Stable redirect content.',
+          contentHash: 'redirect-section-v1',
+          characterCount: 24,
+        },
+      ],
+    });
+    const run = await fixture.catalog.startCatalogSyncRun({ startedAt: new Date(2_000) });
+
+    fixture.setNow(3_000);
+    const redirected = await fixture.catalog.upsertDocument(
+      {
+        publicId: revision.document.publicId,
+        sourceId: source.id,
+        canonicalUrl: 'https://example.test/new-guide',
+        stableKey: revision.document.stableKey,
+        title: revision.document.title,
+        mimeType: revision.document.mimeType,
+        language: revision.document.language,
+        status: 'REDIRECTED',
+      },
+      {
+        syncRunId: run.id,
+        aliases: [{ url: revision.document.canonicalUrl, aliasType: 'REDIRECT' }],
+        events: [{ eventType: 'PERMANENT_REDIRECT', detailsJson: '{"status":301}' }],
+      },
+    );
+
+    expect(redirected).toMatchObject({
+      id: revision.document.id,
+      stableKey: revision.document.stableKey,
+      canonicalUrl: 'https://example.test/new-guide',
+      status: 'REDIRECTED',
+      currentVersionId: revision.version.id,
+    });
+    const database = new Database(fixture.path, { readonly: true });
+    expect(database.prepare('SELECT id FROM document_versions').all()).toEqual([
+      { id: revision.version.id },
+    ]);
+    expect(database.prepare('SELECT id FROM document_sections').all()).toEqual([
+      { id: revision.sections[0]?.id },
+    ]);
+    expect(database.prepare('SELECT rowid FROM document_section_fts').all()).toEqual([]);
+    database.close();
+    await expect(fixture.catalog.verifyIntegrity()).resolves.toMatchObject({ issues: [] });
+  });
 });
 
 function createCatalogRepository() {
@@ -459,4 +747,38 @@ function readTables(database: Database.Database): readonly string[] {
       )
       .all() as { name: string }[]
   ).map(({ name }) => name);
+}
+
+function readObservationSnapshot(path: string) {
+  const database = new Database(path, { readonly: true });
+  try {
+    const document = database
+      .prepare(
+        'SELECT current_version_id, last_seen_at, updated_at FROM documents WHERE public_id = ?',
+      )
+      .get('touch-guide') as {
+      current_version_id: number;
+      last_seen_at: number;
+      updated_at: number;
+    };
+    const versionIds = database.prepare('SELECT id FROM document_versions ORDER BY id').all() as {
+      id: number;
+    }[];
+    const sectionIds = database.prepare('SELECT id FROM document_sections ORDER BY id').all() as {
+      id: number;
+    }[];
+    const ftsRowIds = database
+      .prepare('SELECT rowid FROM document_section_fts ORDER BY rowid')
+      .all() as { rowid: number }[];
+    return {
+      currentVersionId: document.current_version_id,
+      lastSeenAt: document.last_seen_at,
+      updatedAt: document.updated_at,
+      versionIds: versionIds.map(({ id }) => id),
+      sectionIds: sectionIds.map(({ id }) => id),
+      ftsRowIds: ftsRowIds.map(({ rowid }) => rowid),
+    };
+  } finally {
+    database.close();
+  }
 }

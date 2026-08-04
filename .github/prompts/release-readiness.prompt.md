@@ -1,9 +1,9 @@
 ---
 name: Release Readiness
 description: >-
-  Évalue la readiness de release V1 de mcp-search-net en lecture seule stricte :
-  tests, critères d'acceptation AC-01 à AC-15, packaging, sécurité, installation
-  Windows et documentation. Rend un verdict GO / NO-GO documenté et actionnable.
+  Évalue la readiness de release V1+V2 de mcp-search-net en lecture seule stricte :
+  tests, contrats MCP, catalogue, packaging, sécurité, clients réels, installation
+  Windows, Docker, CI et documentation. Rend un verdict GO / NO-GO exact-head.
 mode: agent
 agent: release-guardian
 owner: mcp-search-net
@@ -11,28 +11,30 @@ version: 1.1.0
 lastReviewed: '2026-06-21'
 ---
 
-# Évaluation release readiness — mcp-search-net V1
+# Évaluation release readiness — mcp-search-net V1 + V2
 
 ## Ce que l'agent doit faire
 
 1. **Vérifier** le runtime : `npm run check:runtime`, `node --version`, `package.json` engines.
 2. **Exécuter** `npm run check` et noter chaque résultat réel.
-3. **Évaluer** les critères d'acceptation AC-01 à AC-15 depuis `docs/planning/roadmap-v1-operationnelle.md`.
-4. **Vérifier** les contrats publics `search_web` / `fetch_url` vs `docs/reference/tools.md`.
+3. **Lire** `docs/status/current-state.md`, puis distinguer état courant et preuves historiques.
+4. **Vérifier** les cinq outils, quatre resources et neuf templates vs `docs/reference/tools.md`.
 5. **Vérifier** Docker : digests SHA256, healthchecks, binding réseau.
 6. **Vérifier** l'installation Windows : `scripts/install-user.ps1`, données utilisateur préservées.
-7. **Vérifier** CI : Node 24, `npm ci`, permissions minimales.
-8. **Ne pas** modifier de fichier, installer de paquet, ni démarrer de service.
+7. **Vérifier** CI : Node 24, `npm ci`, `docs:check`, audits, Windows, Docker, permissions minimales et SHA exact.
+8. **Qualifier** séparément IntelliJ/Copilot, Codex Desktop et le client STDIO ; ne jamais substituer l'un à l'autre.
+9. **Ne pas** modifier de fichier, installer de paquet, ni démarrer de service.
 
 ## Critères de blocage absolus (NO-GO automatique)
 
 - `npm run check` échoue
+- `npm run docs:check` ou un audit npm échoue
 - Tests déterministes skippés sans justification documentée
 - Texte informatif écrit sur stdout depuis le launcher MCP
 - Secrets dans les fichiers versionés
 - Node 24 non déclaré/utilisé en CI
 - Images Docker sans digest SHA256 dans `Dockerfile` ou `compose.yaml`
-- Contrats MCP non documentés ou incohérents avec le code
+- Contrats MCP, catalogue ou resources non documentés ou incohérents avec le code
 
 ## Statut des tests live (à indiquer explicitement)
 

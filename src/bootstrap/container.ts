@@ -1,5 +1,3 @@
-import { dirname, join } from 'node:path';
-
 import { FetchUrl } from '../application/use-cases/fetch-url.js';
 import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
 import { SearchWeb } from '../application/use-cases/search-web.js';
@@ -109,9 +107,5 @@ function createCache(
 }
 
 function createCatalog(loaded: LoadedConfiguration, clock: SystemClock): CatalogRepository {
-  return new SqliteCatalogRepository(resolveCatalogPath(loaded.application.cache.path), clock);
-}
-
-function resolveCatalogPath(cachePath: string): string {
-  return join(dirname(cachePath), 'catalog.db');
+  return new SqliteCatalogRepository(loaded.catalogPath, clock);
 }

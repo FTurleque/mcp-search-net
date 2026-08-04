@@ -7,8 +7,17 @@ import { describe, expect, it } from 'vitest';
 
 describe('Windows installer runtime integrity', () => {
   const installer = readFileSync('scripts/install-user.ps1', 'utf8');
+  const uninstaller = readFileSync('scripts/uninstall-user.ps1', 'utf8');
   const verifier = readFileSync('scripts/windows/verify-file-sha256.ps1', 'utf8');
   const launcher = readFileSync('scripts/windows/mcp-search-net.cmd', 'utf8');
+  const catalogLauncher = readFileSync('scripts/windows/mcp-search-net-catalog.cmd', 'utf8');
+  const maintenanceLauncher = readFileSync('scripts/windows/mcp-search-net-maintain.cmd', 'utf8');
+  const servicesLauncher = readFileSync('scripts/windows/mcp-search-net-services.cmd', 'utf8');
+  const containerLauncher = readFileSync('scripts/windows/mcp-search-net-container.cmd', 'utf8');
+  const installedProbe = readFileSync('scripts/probe-installed-mcp.mjs', 'utf8');
+  const installationRecipe = readFileSync('scripts/test-installation.ps1', 'utf8');
+  const dockerIgnore = readFileSync('.dockerignore', 'utf8');
+  const compose = readFileSync('compose.yaml', 'utf8');
 
   it('pins the official Node archive hash and verifies before extracting', () => {
     expect(installer).toContain('f2aa33b35b75aca5f3f7b85675a6f6423201053e9381911e64961f3bda2528ab');
@@ -56,6 +65,62 @@ describe('Windows installer runtime integrity', () => {
     expect(launcher).not.toContain('mcp-search-local-development-token');
   });
 
+  it('keeps installed Docker builds away from local data and preserves operator configuration', () => {
+    expect(installer).toContain("Join-Path $RepositoryRoot '.dockerignore'");
+    expect(installer).toContain(
+      "Copy-UserConfig (Join-Path $RepositoryRoot 'config\\application.docker.yml')",
+    );
+    expect(dockerIgnore).toMatch(/^data$/mu);
+    expect(dockerIgnore).toMatch(/^runtime$/mu);
+    expect(dockerIgnore).toMatch(/^config\/\*$/mu);
+    expect(dockerIgnore).toMatch(/^!config\/application\.docker\.yml$/mu);
+    expect(dockerIgnore).toMatch(/^!config\/official-sources\.yml$/mu);
+  });
+
+  it('records whether the source revision is clean instead of presenting dirty builds as exact', () => {
+    expect(installer).toContain('status --porcelain --untracked-files=normal');
+    expect(installer).toContain(
+      '$SourceState = if ([string]::IsNullOrWhiteSpace($WorkingTreeStatus))',
+    );
+    expect(installer).toContain('sourceState = $SourceState');
+    expect(installer).toContain("$env:GITHUB_SHA -match '^[a-fA-F0-9]{40}$'");
+  });
+
+  it('anchors local launchers in the installed root and bounds the installed MCP probe', () => {
+    for (const localLauncher of [launcher, catalogLauncher, maintenanceLauncher]) {
+      expect(localLauncher).toContain('pushd "%MCP_SEARCH_HOME%"');
+      expect(localLauncher).toContain('popd');
+      expect(localLauncher).toContain('MCP_EXIT_CODE');
+    }
+    expect(installedProbe).toContain('INSTALLED_LAUNCHER_PATH_INVALID');
+    expect(installedProbe).toContain('requestTimeoutMs = 30_000');
+    expect(installedProbe).toContain("join('bin', 'mcp-search-net.cmd')");
+    expect(installedProbe).toContain('command: resolvedLauncher');
+  });
+
+  it('generates Copilot-compatible local MCP examples', () => {
+    expect(installer).toContain('mcpServers = [ordered]@{');
+    expect(installer).not.toMatch(/^\s*servers = \[ordered\]@\{/mu);
+    expect(installer).toContain("type = 'local'");
+    expect(installer).toContain("tools = @('*')");
+    expect(installationRecipe).toContain("$McpExample.mcpServers.'mcp-search-net'");
+  });
+
+  it('keeps the STDIO container opt-in and protects Compose teardown with ShouldProcess', () => {
+    expect(compose).toMatch(/mcp-search-net:\s+profiles:\s+- stdio/gu);
+    expect(containerLauncher).toContain('--profile stdio run');
+    expect(uninstaller).toContain(
+      'if ($PSCmdlet.ShouldProcess("projet Compose $project", $ComposeAction))',
+    );
+    expect(uninstaller.indexOf('$PSCmdlet.ShouldProcess("projet Compose $project"')).toBeLessThan(
+      uninstaller.indexOf('& $Docker.Source @DownArguments'),
+    );
+    expect(servicesLauncher).toContain('where docker >nul 2>&1');
+    expect(servicesLauncher).toContain('compose.hybrid.yaml');
+    expect(containerLauncher).toContain('where docker >nul 2>&1');
+    expect(installationRecipe).not.toMatch(/[‘’]/u);
+  });
+
   it('loads the generated Crawl4AI token through the real Windows launcher', () => {
     if (process.platform !== 'win32') {
       expect(launcher).toContain('for /f "tokens=1,* delims=="');
@@ -63,8 +128,9 @@ describe('Windows installer runtime integrity', () => {
     }
 
     const root = mkdtempSync(join(tmpdir(), 'mcp-launcher-token-'));
-    const nodePath = join(root, 'runtime', 'node-v24.17.0-win-x64', 'node.exe');
-    const serverPath = join(root, 'app', 'build', 'bootstrap', 'main.js');
+    const installRoot = join(root, 'Installed Root With Spaces');
+    const nodePath = join(installRoot, 'runtime', 'node-v24.17.0-win-x64', 'node.exe');
+    const serverPath = join(installRoot, 'app', 'build', 'bootstrap', 'main.js');
     const token = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     try {
       mkdirSync(dirname(nodePath), { recursive: true });
@@ -72,10 +138,13 @@ describe('Windows installer runtime integrity', () => {
       copyFileSync(process.execPath, nodePath);
       writeFileSync(
         serverPath,
-        'process.stdout.write(process.env.MCP_CRAWL4AI_TOKEN ?? "missing");',
+        'process.stdout.write(JSON.stringify({ token: process.env.MCP_CRAWL4AI_TOKEN ?? "missing", catalogPath: process.env.MCP_CATALOG_PATH, cwd: process.cwd() }));',
       );
-      writeFileSync(join(root, '.env'), `CRAWL4AI_API_TOKEN=${token}\nSEARXNG_SECRET=test\n`);
-      const environment: NodeJS.ProcessEnv = { ...process.env, MCP_SEARCH_HOME: root };
+      writeFileSync(
+        join(installRoot, '.env'),
+        `CRAWL4AI_API_TOKEN=${token}\nSEARXNG_SECRET=test\n`,
+      );
+      const environment: NodeJS.ProcessEnv = { ...process.env, MCP_SEARCH_HOME: installRoot };
       delete environment['MCP_CRAWL4AI_TOKEN'];
 
       const output = execFileSync(
@@ -83,7 +152,16 @@ describe('Windows installer runtime integrity', () => {
         ['/d', '/s', '/c', resolve('scripts/windows/mcp-search-net.cmd')],
         { encoding: 'utf8', env: environment, windowsHide: true },
       );
-      expect(output).toBe(token);
+      const result = JSON.parse(output) as {
+        readonly token: string;
+        readonly catalogPath: string;
+        readonly cwd: string;
+      };
+      expect(result.token).toBe(token);
+      expect(result.catalogPath.toLowerCase()).toBe(
+        join(installRoot, 'data', 'catalog.db').toLowerCase(),
+      );
+      expect(resolve(result.cwd).toLowerCase()).toBe(resolve(installRoot).toLowerCase());
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -185,7 +185,12 @@ describe('Crawl4aiContentFetcher', () => {
           contentHash: 'abc',
         },
       }),
-    ).resolves.toEqual({ notModified: true });
+    ).resolves.toEqual({
+      notModified: true,
+      requestedUrl: 'https://example.com/docs',
+      finalUrl: 'https://example.com/docs',
+      redirectChain: [],
+    });
     expect(download).toHaveBeenCalledWith(
       'https://example.com/docs',
       { 'if-none-match': '"v1"', 'if-modified-since': 'Sun, 21 Jun 2026 00:00:00 GMT' },

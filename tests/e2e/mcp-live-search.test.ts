@@ -9,7 +9,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 const live = process.env['RUN_LIVE_SEARXNG'] === '1';
 const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
-const expectedToolNames = ['fetch_url', 'search_docs', 'search_web'];
+const expectedToolNames = [
+  'fetch_url',
+  'list_docs',
+  'read_doc_section',
+  'search_docs',
+  'search_web',
+];
 
 describe.runIf(live)('live MCP search', () => {
   let client: Client | undefined;
@@ -21,14 +27,14 @@ describe.runIf(live)('live MCP search', () => {
   });
 
   it('searches through the complete STDIO stack and returns the common envelope', async () => {
-    client = new Client({ name: 'mcp-search-net-live-search-test', version: '1.0.0' });
+    client = new Client({ name: 'mcp-search-net-live-search-test', version: '1.1.0' });
     cacheRoot = mkdtempSync(join(tmpdir(), 'mcp-search-live-cache-'));
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [resolve('build/bootstrap/main.js')],
       env: {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
-        [crawl4aiEnvironmentName]: 'mcp-search-local-development-value',
+        [crawl4aiEnvironmentName]: requireCrawl4aiToken(),
         MCP_CACHE_PATH: join(cacheRoot, 'cache.sqlite'),
       },
       stderr: 'pipe',
@@ -108,6 +114,14 @@ describe.runIf(live)('live MCP search', () => {
     );
   });
 });
+
+function requireCrawl4aiToken(): string {
+  const token = process.env['CRAWL4AI_API_TOKEN'];
+  if (token === undefined || token.trim() === '') {
+    throw new Error('CRAWL4AI_API_TOKEN is required for live MCP search tests');
+  }
+  return token;
+}
 
 function captureStderr(transport: StdioClientTransport, onChunk: (chunk: string) => void): void {
   const stderr = transport.stderr as Readable | null;

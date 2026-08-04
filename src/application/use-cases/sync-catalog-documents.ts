@@ -5,15 +5,19 @@ import type { CacheValidators } from '../ports/cache-repository.js';
 import type { Clock } from '../ports/clock.js';
 import type { ContentFetchContext, ContentFetcher } from '../ports/content-fetcher.js';
 import type { CatalogSyncDocumentInput } from './plan-catalog-sync.js';
-import { HttpError } from '../../domain/errors/domain-errors.js';
+import { ApplicationError, HttpError } from '../../domain/errors/domain-errors.js';
 import type {
   CatalogDocument,
+  CatalogDocumentAliasObservationInput,
+  CatalogDocumentAliasType,
+  CatalogDocumentObservationInput,
+  CatalogStalenessEventObservationInput,
   CatalogSyncRun,
   DocumentSectionInput,
   DocumentStatus,
   DocumentVersion,
 } from '../../domain/models/catalog.js';
-import type { FetchedContent } from '../../domain/models/content.js';
+import type { FetchedContent, NotModifiedContent } from '../../domain/models/content.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
 
 export interface SyncCatalogResumeCursor {
@@ -67,8 +71,11 @@ type SyncCatalogRepository = Pick<
   | 'getDocumentByPublicId'
   | 'getCurrentDocumentVersion'
   | 'upsertDocument'
+  | 'touchDocumentObservation'
+  | 'recordDocumentObservation'
   | 'commitDocumentRevision'
-  | 'addCatalogSyncRun'
+  | 'startCatalogSyncRun'
+  | 'completeCatalogSyncRun'
 >;
 
 type Delay = (milliseconds: number) => Promise<void>;
@@ -82,6 +89,7 @@ export class SyncCatalogDocuments {
   ) {}
 
   public async execute(options: SyncCatalogDocumentsOptions): Promise<SyncCatalogDocumentsOutput> {
+    const startedAt = this.clock.now();
     const sources = await this.repository.listSources();
     const sourceByKey = new Map(sources.map((source) => [source.sourceKey, source]));
 
@@ -97,153 +105,214 @@ export class SyncCatalogDocuments {
     const resumedDocuments = applyResumeCursor(configuredDocuments, options.resumeAfter);
     const selectedDocuments = applyLimit(resumedDocuments, options.limit);
     const rateLimitMs = normalizeRateLimit(options.rateLimitMs);
+    const scopedSource =
+      options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
+    const runningSyncRun = await this.repository.startCatalogSyncRun({
+      ...(scopedSource === undefined ? {} : { sourceId: scopedSource.id }),
+      startedAt,
+    });
 
     const entries: SyncedCatalogDocumentEntry[] = [];
-    for (const document of selectedDocuments) {
-      if (entries.length > 0 && rateLimitMs > 0) await this.delay(rateLimitMs);
+    try {
+      for (const document of selectedDocuments) {
+        if (entries.length > 0 && rateLimitMs > 0) await this.delay(rateLimitMs);
 
-      const source = sourceByKey.get(document.sourceKey);
-      if (!source?.enabled) {
-        entries.push({
-          sourceKey: document.sourceKey,
-          stableKey: document.stableKey,
-          title: document.title,
-          url: document.url,
-          status: 'skipped',
-          error: source === undefined ? 'SOURCE_NOT_FOUND' : 'SOURCE_DISABLED',
-        });
-        continue;
-      }
-
-      const publicId = publicDocumentId(document.sourceKey, document.stableKey);
-      const existingDocument = await this.repository.getDocumentByPublicId(publicId);
-      const currentVersion = await this.getCurrentVersion(existingDocument);
-      try {
-        const fetched = await this.fetcher.fetch(
-          {
-            url: WebUrl.create(document.url),
-            renderMode: 'auto',
-            timeoutMs: options.timeoutMs,
-            maxResponseBytes: options.maxResponseBytes,
-            maxRedirects: options.maxRedirects,
-          },
-          createFetchContext(currentVersion),
-        );
-        if ('notModified' in fetched) {
+        const source = sourceByKey.get(document.sourceKey);
+        if (!source?.enabled) {
           entries.push({
             sourceKey: document.sourceKey,
             stableKey: document.stableKey,
             title: document.title,
             url: document.url,
-            status: 'unchanged',
-            ...(existingDocument === undefined ? {} : { document: existingDocument }),
+            status: 'skipped',
+            error: source === undefined ? 'SOURCE_NOT_FOUND' : 'SOURCE_DISABLED',
           });
           continue;
         }
 
-        const documentInput = {
-          publicId,
-          sourceId: source.id,
-          canonicalUrl: fetched.canonicalUrl,
-          stableKey: document.stableKey,
-          title: fetched.title ?? document.title,
-          mimeType: document.mimeType,
-          language: document.language,
-          status: documentStatusFor(fetched),
-        } as const;
+        const publicId = publicDocumentId(document.sourceKey, document.stableKey);
+        let existingDocument: CatalogDocument | undefined;
+        let currentVersion: DocumentVersion | undefined;
+        try {
+          existingDocument = await this.repository.getDocumentByPublicId(publicId);
+          currentVersion = await this.getCurrentVersion(existingDocument);
+          const fetched = await this.fetcher.fetch(
+            {
+              url: WebUrl.create(document.url),
+              renderMode: 'auto',
+              timeoutMs: options.timeoutMs,
+              maxResponseBytes: options.maxResponseBytes,
+              maxRedirects: options.maxRedirects,
+            },
+            createFetchContext(currentVersion),
+          );
+          if ('notModified' in fetched) {
+            if (existingDocument === undefined || currentVersion === undefined) {
+              throw new Error('CATALOG_NOT_MODIFIED_WITHOUT_CURRENT_DOCUMENT');
+            }
+            const observation = createNotModifiedObservation(
+              existingDocument,
+              fetched,
+              runningSyncRun.id,
+            );
+            const redirectTarget = permanentRedirectTarget(fetched);
+            const storedDocument =
+              redirectTarget !== undefined &&
+              (existingDocument.canonicalUrl !== redirectTarget ||
+                existingDocument.status !== 'REDIRECTED')
+                ? await this.repository.upsertDocument(
+                    {
+                      publicId: existingDocument.publicId,
+                      sourceId: existingDocument.sourceId,
+                      canonicalUrl: redirectTarget,
+                      stableKey: existingDocument.stableKey,
+                      title: existingDocument.title,
+                      mimeType: existingDocument.mimeType,
+                      language: existingDocument.language,
+                      status: 'REDIRECTED',
+                    },
+                    observation,
+                  )
+                : await this.repository.touchDocumentObservation(existingDocument.id, observation);
+            entries.push({
+              sourceKey: document.sourceKey,
+              stableKey: document.stableKey,
+              title: document.title,
+              url: document.url,
+              status: 'unchanged',
+              document: storedDocument,
+            });
+            continue;
+          }
 
-        if (currentVersion?.contentHash === fetched.contentHash) {
-          const storedDocument = await this.repository.upsertDocument(documentInput);
+          const documentInput = {
+            publicId,
+            sourceId: source.id,
+            canonicalUrl: fetched.canonicalUrl,
+            stableKey: document.stableKey,
+            title: fetched.title ?? document.title,
+            mimeType: document.mimeType,
+            language: document.language,
+            status: documentStatusFor(fetched),
+          } as const;
+          const observation = createFetchedDocumentObservation(
+            existingDocument,
+            currentVersion,
+            fetched,
+            runningSyncRun.id,
+          );
+
+          if (currentVersion?.contentHash === fetched.contentHash) {
+            const storedDocument = await this.repository.upsertDocument(documentInput, observation);
+            entries.push({
+              sourceKey: document.sourceKey,
+              stableKey: document.stableKey,
+              title: fetched.title ?? document.title,
+              url: document.url,
+              status: 'unchanged',
+              document: storedDocument,
+            });
+            continue;
+          }
+
+          const redirectMetadata = createRedirectVersionMetadata(fetched);
+          const revision = await this.repository.commitDocumentRevision(
+            {
+              document: documentInput,
+              version: {
+                contentHash: fetched.contentHash,
+                ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
+                ...(fetched.lastModified === undefined
+                  ? {}
+                  : { lastModified: fetched.lastModified }),
+                publishedAt: new Date(fetched.fetchedAt),
+                extractionMode: fetched.extractionMode,
+                contentType: fetched.contentType,
+                metadataJson: JSON.stringify({
+                  ingestion: 'catalog-sync',
+                  sourceKey: document.sourceKey,
+                  requestedUrl: fetched.requestedUrl,
+                  finalUrl: fetched.finalUrl,
+                  statusCode: fetched.statusCode,
+                  ...redirectMetadata,
+                }),
+              },
+              sections: createSections(fetched.title ?? document.title, fetched),
+            },
+            observation,
+          );
           entries.push({
             sourceKey: document.sourceKey,
             stableKey: document.stableKey,
             title: fetched.title ?? document.title,
             url: document.url,
-            status: 'unchanged',
-            document: storedDocument,
+            status: existingDocument === undefined ? 'added' : 'updated',
+            document: revision.document,
+            sectionCount: revision.sections.length,
           });
-          continue;
-        }
-
-        const redirectMetadata = createRedirectVersionMetadata(fetched);
-        const revision = await this.repository.commitDocumentRevision({
-          document: documentInput,
-          version: {
-            contentHash: fetched.contentHash,
-            ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
-            ...(fetched.lastModified === undefined ? {} : { lastModified: fetched.lastModified }),
-            publishedAt: new Date(fetched.fetchedAt),
-            extractionMode: fetched.extractionMode,
-            contentType: fetched.contentType,
-            metadataJson: JSON.stringify({
-              ingestion: 'catalog-sync',
+        } catch (error) {
+          if (isMissingRemoteHttpError(error) && existingDocument !== undefined) {
+            const missingStatus = documentStatusForMissingRemote(error);
+            const staleDocument = await this.repository.upsertDocument(
+              {
+                publicId,
+                sourceId: source.id,
+                canonicalUrl: existingDocument.canonicalUrl,
+                stableKey: document.stableKey,
+                title: existingDocument.title,
+                mimeType: existingDocument.mimeType,
+                language: existingDocument.language,
+                status: missingStatus,
+              },
+              createHttpMissingObservation(error.status, document.url, runningSyncRun.id),
+            );
+            entries.push({
               sourceKey: document.sourceKey,
-              requestedUrl: fetched.requestedUrl,
-              finalUrl: fetched.finalUrl,
-              statusCode: fetched.statusCode,
-              ...redirectMetadata,
-            }),
-          },
-          sections: createSections(fetched.title ?? document.title, fetched),
-        });
-        entries.push({
-          sourceKey: document.sourceKey,
-          stableKey: document.stableKey,
-          title: fetched.title ?? document.title,
-          url: document.url,
-          status: existingDocument === undefined ? 'added' : 'updated',
-          document: revision.document,
-          sectionCount: revision.sections.length,
-        });
-      } catch (error) {
-        if (isMissingRemoteHttpError(error) && existingDocument !== undefined) {
-          const missingStatus = documentStatusForMissingRemote(error);
-          const staleDocument = await this.repository.upsertDocument({
-            publicId,
-            sourceId: source.id,
-            canonicalUrl: existingDocument.canonicalUrl,
-            stableKey: document.stableKey,
-            title: existingDocument.title,
-            mimeType: existingDocument.mimeType,
-            language: existingDocument.language,
-            status: missingStatus,
-          });
+              stableKey: document.stableKey,
+              title: existingDocument.title,
+              url: document.url,
+              status: 'updated',
+              document: staleDocument,
+              error: `HTTP_${error.status}_${missingStatus}`,
+            });
+            continue;
+          }
+
+          if (existingDocument !== undefined && isSourceUnavailable(error)) {
+            await this.repository.recordDocumentObservation(
+              existingDocument.id,
+              createSourceUnavailableObservation(error, runningSyncRun.id),
+            );
+          }
           entries.push({
             sourceKey: document.sourceKey,
             stableKey: document.stableKey,
-            title: existingDocument.title,
+            title: document.title,
             url: document.url,
-            status: 'updated',
-            document: staleDocument,
-            error: `HTTP_${error.status}_${missingStatus}`,
+            status: 'failed',
+            error: error instanceof Error ? error.message : String(error),
           });
-          continue;
         }
-
-        entries.push({
-          sourceKey: document.sourceKey,
-          stableKey: document.stableKey,
-          title: document.title,
-          url: document.url,
-          status: 'failed',
-          error: error instanceof Error ? error.message : String(error),
-        });
       }
+    } catch (error) {
+      const counts = countSyncEntries(entries);
+      await this.repository.completeCatalogSyncRun(runningSyncRun.id, {
+        completedAt: this.clock.now(),
+        status: 'FAILED',
+        documentsChecked: counts.checkedCount,
+        documentsAdded: counts.addedCount,
+        documentsUpdated: counts.updatedCount,
+        documentsUnchanged: counts.unchangedCount,
+        documentsFailed: counts.failedCount,
+        errorSummary: 'Synchronization aborted before completion',
+      });
+      throw error;
     }
 
-    const addedCount = entries.filter((entry) => entry.status === 'added').length;
-    const updatedCount = entries.filter((entry) => entry.status === 'updated').length;
-    const unchangedCount = entries.filter((entry) => entry.status === 'unchanged').length;
-    const failedCount = entries.filter((entry) => entry.status === 'failed').length;
-    const skippedCount = entries.filter((entry) => entry.status === 'skipped').length;
-    const checkedCount = addedCount + updatedCount + unchangedCount + failedCount;
-    const now = this.clock.now();
-    const scopedSource =
-      options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
-    const syncRun = await this.repository.addCatalogSyncRun({
-      ...(scopedSource === undefined ? {} : { sourceId: scopedSource.id }),
-      startedAt: now,
-      completedAt: now,
+    const { addedCount, updatedCount, unchangedCount, failedCount, skippedCount, checkedCount } =
+      countSyncEntries(entries);
+    const syncRun = await this.repository.completeCatalogSyncRun(runningSyncRun.id, {
+      completedAt: this.clock.now(),
       status: failedCount === 0 ? 'SUCCESS' : checkedCount === failedCount ? 'FAILED' : 'PARTIAL',
       documentsChecked: checkedCount,
       documentsAdded: addedCount,
@@ -321,23 +390,192 @@ function createCacheValidators(version: DocumentVersion): CacheValidators {
   };
 }
 
+interface SyncEntryCounts {
+  readonly addedCount: number;
+  readonly updatedCount: number;
+  readonly unchangedCount: number;
+  readonly failedCount: number;
+  readonly skippedCount: number;
+  readonly checkedCount: number;
+}
+
+function countSyncEntries(entries: readonly SyncedCatalogDocumentEntry[]): SyncEntryCounts {
+  const addedCount = entries.filter((entry) => entry.status === 'added').length;
+  const updatedCount = entries.filter((entry) => entry.status === 'updated').length;
+  const unchangedCount = entries.filter((entry) => entry.status === 'unchanged').length;
+  const failedCount = entries.filter((entry) => entry.status === 'failed').length;
+  const skippedCount = entries.filter((entry) => entry.status === 'skipped').length;
+  return {
+    addedCount,
+    updatedCount,
+    unchangedCount,
+    failedCount,
+    skippedCount,
+    checkedCount: addedCount + updatedCount + unchangedCount + failedCount,
+  };
+}
+
+function createFetchedDocumentObservation(
+  existingDocument: CatalogDocument | undefined,
+  currentVersion: DocumentVersion | undefined,
+  fetched: FetchedContent,
+  syncRunId: number,
+): CatalogDocumentObservationInput {
+  const permanentRedirects = fetched.redirectChain.filter((redirect) => redirect.permanent);
+  const aliases = collectAliases(fetched.canonicalUrl, [
+    ...(existingDocument === undefined || existingDocument.canonicalUrl === fetched.canonicalUrl
+      ? []
+      : [{ url: existingDocument.canonicalUrl, aliasType: 'OLD_URL' as const }]),
+    ...permanentRedirects.map((redirect) => ({
+      url: redirect.fromUrl,
+      aliasType: 'REDIRECT' as const,
+    })),
+    ...(fetched.finalUrl === fetched.canonicalUrl
+      ? []
+      : [{ url: fetched.finalUrl, aliasType: 'CANONICAL' as const }]),
+  ]);
+  const events: CatalogStalenessEventObservationInput[] = [];
+  if (permanentRedirects.length > 0) {
+    events.push(
+      createEvent('PERMANENT_REDIRECT', {
+        redirectChain: permanentRedirects,
+      }),
+    );
+  }
+  if (existingDocument !== undefined && existingDocument.canonicalUrl !== fetched.canonicalUrl) {
+    events.push(
+      createEvent('CANONICAL_CHANGED', {
+        previousCanonicalUrl: existingDocument.canonicalUrl,
+        canonicalUrl: fetched.canonicalUrl,
+      }),
+    );
+  }
+  if (currentVersion !== undefined && currentVersion.contentHash !== fetched.contentHash) {
+    events.push(
+      createEvent('CONTENT_HASH_CHANGED', {
+        previousContentHash: currentVersion.contentHash,
+        contentHash: fetched.contentHash,
+      }),
+    );
+  }
+  return { syncRunId, aliases, events };
+}
+
+function createNotModifiedObservation(
+  existingDocument: CatalogDocument,
+  fetched: NotModifiedContent,
+  syncRunId: number,
+): CatalogDocumentObservationInput {
+  const permanentRedirects = fetched.redirectChain.filter((redirect) => redirect.permanent);
+  const redirectTarget = permanentRedirectTarget(fetched);
+  const aliases = collectAliases(redirectTarget ?? existingDocument.canonicalUrl, [
+    ...(redirectTarget === undefined || redirectTarget === existingDocument.canonicalUrl
+      ? []
+      : [{ url: existingDocument.canonicalUrl, aliasType: 'OLD_URL' as const }]),
+    ...permanentRedirects.map((redirect) => ({
+      url: redirect.fromUrl,
+      aliasType: 'REDIRECT' as const,
+    })),
+  ]);
+  const events: CatalogStalenessEventObservationInput[] = [];
+  if (permanentRedirects.length > 0) {
+    events.push(createEvent('PERMANENT_REDIRECT', { redirectChain: permanentRedirects }));
+  }
+  if (redirectTarget !== undefined && redirectTarget !== existingDocument.canonicalUrl) {
+    events.push(
+      createEvent('CANONICAL_CHANGED', {
+        previousCanonicalUrl: existingDocument.canonicalUrl,
+        canonicalUrl: redirectTarget,
+      }),
+    );
+  }
+  return { syncRunId, aliases, events };
+}
+
+function createHttpMissingObservation(
+  status: 404 | 410,
+  requestedUrl: string,
+  syncRunId: number,
+): CatalogDocumentObservationInput {
+  return {
+    syncRunId,
+    events: [createEvent(status === 404 ? 'HTTP_404' : 'HTTP_410', { status, requestedUrl })],
+  };
+}
+
+function createSourceUnavailableObservation(
+  error: ApplicationError,
+  syncRunId: number,
+): CatalogDocumentObservationInput {
+  return {
+    syncRunId,
+    events: [
+      createEvent('SOURCE_UNAVAILABLE', {
+        code: error.code,
+        ...(error instanceof HttpError && error.status !== undefined
+          ? { status: error.status }
+          : {}),
+      }),
+    ],
+  };
+}
+
+function createEvent(
+  eventType: CatalogStalenessEventObservationInput['eventType'],
+  details: Readonly<Record<string, unknown>>,
+): CatalogStalenessEventObservationInput {
+  return { eventType, detailsJson: JSON.stringify(details) };
+}
+
+const ALIAS_TYPE_PRIORITY: Readonly<Record<CatalogDocumentAliasType, number>> = {
+  CANONICAL: 1,
+  OLD_URL: 2,
+  REDIRECT: 3,
+};
+
+function collectAliases(
+  canonicalUrl: string,
+  candidates: readonly CatalogDocumentAliasObservationInput[],
+): readonly CatalogDocumentAliasObservationInput[] {
+  const normalizedCanonical = WebUrl.tryCreate(canonicalUrl)?.value ?? canonicalUrl;
+  const aliases = new Map<string, CatalogDocumentAliasObservationInput>();
+  for (const candidate of candidates) {
+    const url = WebUrl.tryCreate(candidate.url)?.value;
+    if (url === undefined || url === normalizedCanonical) continue;
+    const existing = aliases.get(url);
+    if (
+      existing === undefined ||
+      ALIAS_TYPE_PRIORITY[candidate.aliasType] > ALIAS_TYPE_PRIORITY[existing.aliasType]
+    ) {
+      aliases.set(url, { url, aliasType: candidate.aliasType });
+    }
+  }
+  return [...aliases.values()];
+}
+
 function documentStatusFor(fetched: FetchedContent): DocumentStatus {
   return isPermanentlyRedirected(fetched) ? 'REDIRECTED' : 'ACTIVE';
 }
 
 function isPermanentlyRedirected(fetched: FetchedContent): boolean {
-  return fetched.metadata['redirectedPermanently'] === true;
+  return fetched.redirectChain.some((redirect) => redirect.permanent);
+}
+
+function permanentRedirectTarget(
+  fetched: Pick<NotModifiedContent, 'finalUrl' | 'redirectChain'>,
+): string | undefined {
+  return fetched.redirectChain.some((redirect) => redirect.permanent)
+    ? WebUrl.tryCreate(fetched.finalUrl)?.value
+    : undefined;
 }
 
 function createRedirectVersionMetadata(fetched: FetchedContent): Readonly<Record<string, unknown>> {
-  const metadata: Record<string, unknown> = {};
-  if (Array.isArray(fetched.metadata['redirectChain'])) {
-    metadata['redirectChain'] = fetched.metadata['redirectChain'];
-  }
-  if (fetched.metadata['redirectedPermanently'] === true) {
-    metadata['redirectedPermanently'] = true;
-  }
-  return metadata;
+  return fetched.redirectChain.length === 0
+    ? {}
+    : {
+        redirectChain: fetched.redirectChain,
+        ...(isPermanentlyRedirected(fetched) ? { redirectedPermanently: true } : {}),
+      };
 }
 
 function isMissingRemoteHttpError(
@@ -350,6 +588,19 @@ function documentStatusForMissingRemote(
   error: HttpError & { readonly status: 404 | 410 },
 ): DocumentStatus {
   return error.status === 410 ? 'REMOVED' : 'STALE';
+}
+
+function isSourceUnavailable(error: unknown): error is ApplicationError {
+  if (!(error instanceof ApplicationError)) return false;
+  if (error.code === 'CONTENT_PROVIDER_UNAVAILABLE' || error.code === 'REQUEST_TIMEOUT')
+    return true;
+  return (
+    error instanceof HttpError &&
+    (error.status === undefined ||
+      error.status === 408 ||
+      error.status === 429 ||
+      error.status >= 500)
+  );
 }
 
 function createSections(title: string, fetched: FetchedContent): readonly DocumentSectionInput[] {

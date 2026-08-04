@@ -64,6 +64,7 @@ describe('FetchUrl', () => {
             extractionMode: 'static' as const,
             statusCode: 200,
             contentHash: 'hash',
+            redirectChain: [],
             metadata: { language: 'en' },
             links: ['https://example.com/next'],
           };
@@ -110,6 +111,7 @@ describe('FetchUrl', () => {
             extractionMode: 'static',
             statusCode: 200,
             contentHash: 'hash',
+            redirectChain: [],
             metadata: { secret: 'must-not-leak' },
             links: ['https://example.com/ok', 'http://127.0.0.1/private'],
           };
@@ -193,7 +195,12 @@ describe('FetchUrl', () => {
     let received: unknown;
     const useCase = createCachedUseCase(cache, async (_request, context) => {
       received = context?.cacheValidators;
-      return { notModified: true as const };
+      return {
+        notModified: true as const,
+        requestedUrl: content.requestedUrl,
+        finalUrl: content.finalUrl,
+        redirectChain: [],
+      };
     });
     const response = await useCase.execute({
       url: content.requestedUrl,
@@ -252,6 +259,7 @@ function fetchedContent(): FetchedContent {
     statusCode: 200,
     etag: '"v1"',
     contentHash: 'abc',
+    redirectChain: [],
     metadata: {},
     links: [],
   };

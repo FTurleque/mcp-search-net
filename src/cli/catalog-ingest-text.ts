@@ -85,21 +85,33 @@ export function splitMarkdownSections(
     return [createSection(0, title, title, 1, 'document', content)];
   }
 
-  return headings.map((heading, index) => {
-    const nextHeading = headings[index + 1];
-    const sectionContent = lines
-      .slice(heading.lineIndex, nextHeading?.lineIndex ?? lines.length)
-      .join('\n')
-      .trim();
-    return createSection(
-      index,
-      heading.title,
-      heading.headingPath,
-      heading.level,
-      heading.anchor,
-      sectionContent,
-    );
-  });
+  const sections: DocumentSectionInput[] = [];
+  const firstHeading = headings[0];
+  if (firstHeading !== undefined) {
+    const preamble = lines.slice(0, firstHeading.lineIndex).join('\n').trim();
+    if (preamble !== '') {
+      sections.push(createSection(0, title, title, 1, 'document', preamble));
+    }
+  }
+
+  sections.push(
+    ...headings.map((heading, index) => {
+      const nextHeading = headings[index + 1];
+      const sectionContent = lines
+        .slice(heading.lineIndex, nextHeading?.lineIndex ?? lines.length)
+        .join('\n')
+        .trim();
+      return createSection(
+        sections.length + index,
+        heading.title,
+        heading.headingPath,
+        heading.level,
+        heading.anchor,
+        sectionContent,
+      );
+    }),
+  );
+  return sections;
 }
 
 function findHeadings(lines: readonly string[]): readonly MarkdownHeading[] {

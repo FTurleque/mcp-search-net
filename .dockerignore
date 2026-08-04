@@ -1,9 +1,24 @@
-.git
-.idea
-node_modules
-build
-dist
-coverage
-.data
-.env
-*.log
+# Deny by default: the image build receives only files explicitly consumed by
+# Dockerfile. This also keeps user-installation data and local secrets outside
+# the Docker build context.
+*
+
+!Dockerfile
+!.dockerignore
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.build.json
+
+!src/
+!src/**
+
+!config/
+config/*
+!config/application.docker.yml
+!config/official-sources.yml
+
+!migrations/
+!migrations/**
+!catalog-migrations/
+!catalog-migrations/**

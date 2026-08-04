@@ -101,7 +101,7 @@ healthcheck:
 
 ```powershell
 # ✅ Préservation de la config utilisateur
-$configPath = "$env:LOCALAPPDATA\mcp-search-net\config\application.user.yml"
+$configPath = "$env:LOCALAPPDATA\mcp-search-net\config\application.yml"
 if (-not (Test-Path $configPath)) {
     Copy-Item "$PSScriptRoot\..\config\application.user.yml" $configPath
 }
@@ -115,11 +115,11 @@ if (-not (Test-Path $configPath)) {
 ```cmd
 @echo off
 REM ✅ Correct — stdout exclusivement pour le processus Node
-node "%LOCALAPPDATA%\mcp-search-net\dist\bootstrap\main.js"
+node "%LOCALAPPDATA%\mcp-search-net\app\build\bootstrap\main.js"
 
 REM ❌ Interdit — corrompt le JSON-RPC
 echo Starting MCP server...
-node "%LOCALAPPDATA%\mcp-search-net\dist\bootstrap\main.js"
+node "%LOCALAPPDATA%\mcp-search-net\app\build\bootstrap\main.js"
 ```
 
 ## CI — permissions minimales
@@ -145,7 +145,7 @@ permissions: write-all
 
 - Les secrets (API keys, tokens) sont **des inputs d'environnement uniquement** — jamais committés.
 - `config/application.yml` contient des valeurs structurelles (URLs, limites, timeouts) — pas de credentials.
-- `config/application.user.yml` peut contenir des valeurs personnalisées non sensibles — documentées dans `docs/reference/configuration.md`.
+- L'installation conserve les personnalisations dans `config/application.yml`; `config/application.user.yml` reste le modèle distribué.
 
 ```yaml
 # ✅ Secret en variable d'environnement

@@ -5,11 +5,13 @@ import type {
   CatalogDocument,
   CatalogSource,
   CatalogSyncRun,
-  CatalogSyncRunInput,
+  CatalogSyncRunCompletionInput,
+  CatalogSyncRunStartInput,
 } from '../../src/domain/models/catalog.js';
 
 class SyncPlanRepositoryStub {
   private nextRunId = 1;
+  private readonly runs = new Map<number, CatalogSyncRun>();
 
   public constructor(
     private readonly sources: readonly CatalogSource[],
@@ -24,12 +26,30 @@ class SyncPlanRepositoryStub {
     return this.documents;
   }
 
-  public async addCatalogSyncRun(input: CatalogSyncRunInput): Promise<CatalogSyncRun> {
-    const syncRun = {
+  public async startCatalogSyncRun(input: CatalogSyncRunStartInput): Promise<CatalogSyncRun> {
+    const syncRun: CatalogSyncRun = {
       id: this.nextRunId,
       ...input,
+      status: 'RUNNING',
+      documentsChecked: 0,
+      documentsAdded: 0,
+      documentsUpdated: 0,
+      documentsUnchanged: 0,
+      documentsFailed: 0,
     };
+    this.runs.set(syncRun.id, syncRun);
     this.nextRunId += 1;
+    return syncRun;
+  }
+
+  public async completeCatalogSyncRun(
+    syncRunId: number,
+    input: CatalogSyncRunCompletionInput,
+  ): Promise<CatalogSyncRun> {
+    const running = this.runs.get(syncRunId);
+    if (running === undefined) throw new Error('RUN_NOT_FOUND');
+    const syncRun = { ...running, ...input };
+    this.runs.set(syncRunId, syncRun);
     return syncRun;
   }
 }
@@ -167,6 +187,21 @@ describe('PlanCatalogSync', () => {
     expect(result.sources[0]).toMatchObject({
       sourceKey: 'enabled-docs',
       currentDocumentCount: 1,
+    });
+  });
+
+  it('captures planning start before completion when the clock advances', async () => {
+    const repository = new SyncPlanRepositoryStub([enabledSource], []);
+    const moments = [new Date(1_000), new Date(2_000)];
+
+    const result = await new PlanCatalogSync(repository, {
+      now: () => moments.shift() ?? new Date(2_000),
+    }).execute({});
+
+    expect(result.syncRun).toMatchObject({
+      startedAt: new Date(1_000),
+      completedAt: new Date(2_000),
+      status: 'SUCCESS',
     });
   });
 

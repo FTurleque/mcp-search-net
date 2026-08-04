@@ -2,10 +2,18 @@
 
 ## Statut
 
-- **Phase** : V2.12 — exploitation locale durcie.
+- **Phase historique d'introduction** : V2.12 — exploitation locale durcie.
+- **État courant** : commandes présentes dans le candidat `1.1.0`, dont le verdict de livraison
+  reste celui de [`docs/status/current-state.md`](../status/current-state.md).
 - **Portée** : santé, snapshot, restauration documentée et maintenance planifiable.
 - **Commandes** : `catalog health`, `catalog backup` et `npm run catalog:maintain`.
 - **MCP** : aucune opération mutable de maintenance n'est exposée au LLM.
+
+Dans une installation Windows, remplacer `npm run catalog --` par
+`%LOCALAPPDATA%\mcp-search-net\bin\mcp-search-net-catalog.cmd` et
+`npm run catalog:maintain --` par
+`%LOCALAPPDATA%\mcp-search-net\bin\mcp-search-net-maintain.cmd`. Ces wrappers utilisent le runtime
+et le build installés, avec `data\catalog.db` par défaut.
 
 ## Objectif
 
@@ -136,7 +144,11 @@ La V2.6 applique une rétention sur `sync_runs` :
 - conserver au minimum les `--keep-sync-runs` runs les plus récents ;
 - supprimer les runs plus anciens que `--max-sync-run-age-days` uniquement s'ils ne font pas partie du lot conservé.
 
-Cette rétention ne supprime pas les documents, versions ou sections.
+Cette rétention ne supprime pas les documents, versions, sections, aliases ou événements. Avant de
+supprimer un ancien run, elle détache ses `staleness_events` en mettant `sync_run_id` à `NULL`. Elle
+ne transforme pas un ancien run `RUNNING` en statut terminal : un run abandonné doit d'abord être
+diagnostiqué ; lorsqu'il devient supprimable selon l'âge et le lot conservé, la rétention peut le
+purger comme toute autre ligne.
 
 ## Maintenance SQLite
 
@@ -171,4 +183,3 @@ Les champs sensibles restent soumis au masquage du `StructuredLogger`.
 - Pas de daemon interne permanent.
 - Pas d'outil MCP mutable de maintenance.
 - Pas de suppression automatique de documents ou versions.
-- Pas de lancement GitHub Actions.

@@ -15,6 +15,7 @@ describe('MCP V2 in-memory contracts', () => {
     const loaded = await loadConfiguration(resolve('config/application.yml'));
     const container = createContainer({
       ...loaded,
+      catalogPath: join(root, 'catalog.db'),
       application: {
         ...loaded.application,
         cache: { ...loaded.application.cache, path: join(root, 'cache.sqlite') },

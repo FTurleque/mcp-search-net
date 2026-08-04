@@ -1,6 +1,11 @@
 # Documentation mcp-search-net
 
-`mcp-search-net` est un serveur MCP Web local pour GitHub Copilot dans IntelliJ IDEA. La V1 expose `search_web` et `fetch_url`. La V2 documentaire est en cours de stabilisation dans la PR #8 avec catalogue local, recherche documentaire, synchronisation contrôlée, outil `search_docs` et resources MCP read-only.
+`mcp-search-net` est un serveur MCP Web local pour GitHub Copilot dans IntelliJ IDEA. Le candidat
+`1.1.0` conserve les outils V1 `search_web` et `fetch_url` et ajoute les outils read-only
+`search_docs`, `list_docs` et `read_doc_section`, soit exactement cinq outils, avec catalogue local,
+synchronisation contrôlée et resources MCP read-only. Cette version V2 n'est pas encore publiée.
+
+État autoritatif : [état courant du produit et des gates](status/current-state.md).
 
 ## Démarrage
 
@@ -17,18 +22,22 @@
 - [Schéma catalogue V2](reference/catalog-schema-v2.md)
 - [Synchronisation catalogue V2](reference/catalog-sync-v2.md)
 - [Exploitation catalogue V2.6](reference/catalog-operations-v2.md)
+- [Budget de contexte catalogue](getting-started/catalog-token-budget.md)
+- [Stratégie de recherche locale V2](reference/catalog-semantic-search-v2.md)
 
 ## Exploitation
 
 - [Dépannage](operations/troubleshooting.md)
 - [Supply chain et mises à jour](operations/supply-chain.md)
 - [Observabilité](operations/observability.md)
+- [Verrouillage de l'installation utilisateur](operations/install-user-lock.md)
 
 ## Développement
 
 - [Guide de développement](development/guide.md)
 - [Tests](development/testing.md)
 - [Boîte à outils IA Copilot](development/copilot-ai-toolkit.md)
+- [Hooks Git locaux](development/local-git-hooks.md)
 
 ## Planification
 
@@ -56,12 +65,9 @@
 - [ADR-014 — Isolation catalog.db](adr/ADR-014-catalog-db-isolation.md)
 - [ADR-015 — FTS5 contentless-delete](adr/ADR-015-fts5-contentless-delete.md)
 - [ADR-016 — Outil et resources MCP V2](adr/ADR-016-mcp-v2-tools-resources.md)
+- [ADR-017 — Stratégie de qualité de recherche V2](adr/ADR-017-search-quality-strategy-v2.md)
 
 ## État courant V2
 
-- PR active : #8 — `feat/v2-catalog-storage`, conservée en draft.
-- Dernier head validé CI complète : `4bfb191da05768759b6a9d8531aa3fd5762612c1`.
-- GitHub Actions est temporairement en déclenchement manuel uniquement via `workflow_dispatch`.
-- V2.5 est finalisée côté code : sync exhaustive, rate limiting, reprise après interruption, validateurs HTTP/hash, staleness non destructif et redirections permanentes.
-- V2.6 est validée localement sur la tranche maintenance contrôlée : scheduler externe, lock, observabilité, rétention opérationnelle et maintenance SQLite.
-- À finaliser : revalidation CI manuelle après reset quota Actions et spike IntelliJ/Copilot final sur `search_docs` et les resources MCP V2.
+Ne pas déduire l’état courant des preuves datées ci-dessus. Le verdict, l’inventaire public et les
+gates encore ouverts sont maintenus dans [l’état courant](status/current-state.md).

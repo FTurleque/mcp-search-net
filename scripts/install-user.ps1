@@ -441,14 +441,26 @@ function Copy-UserConfig {
 Copy-UserConfig (Join-Path $RepositoryRoot 'config\application.user.yml') (Join-Path $ConfigRoot 'application.yml')
 Copy-UserConfig (Join-Path $RepositoryRoot 'config\official-sources.yml') (Join-Path $ConfigRoot 'official-sources.yml')
 Copy-UserConfig (Join-Path $RepositoryRoot 'config\searxng\settings.yml') (Join-Path $SearxConfigRoot 'settings.yml')
+Copy-UserConfig (Join-Path $RepositoryRoot 'config\application.docker.yml') (Join-Path $ConfigRoot 'application.docker.yml')
 
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'compose.yaml') -Destination (Join-Path $InstallRoot 'compose.yaml') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'compose.hybrid.yaml') -Destination (Join-Path $InstallRoot 'compose.hybrid.yaml') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'Dockerfile') -Destination (Join-Path $InstallRoot 'Dockerfile') -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot '.dockerignore') -Destination (Join-Path $InstallRoot '.dockerignore') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Destination (Join-Path $InstallRoot 'package.json') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package-lock.json') -Destination (Join-Path $InstallRoot 'package-lock.json') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'tsconfig.json') -Destination (Join-Path $InstallRoot 'tsconfig.json') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'tsconfig.build.json') -Destination (Join-Path $InstallRoot 'tsconfig.build.json') -Force
+$InstalledMigrations = Join-Path $InstallRoot 'migrations'
+$InstalledCatalogMigrations = Join-Path $InstallRoot 'catalog-migrations'
+foreach ($installedMigrationRoot in @($InstalledMigrations, $InstalledCatalogMigrations)) {
+    Assert-PathInsideInstallRoot $installedMigrationRoot
+    if (Test-Path -LiteralPath $installedMigrationRoot) {
+        Remove-Item -LiteralPath $installedMigrationRoot -Recurse -Force
+    }
+}
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'migrations') -Destination $InstalledMigrations -Recurse
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'catalog-migrations') -Destination $InstalledCatalogMigrations -Recurse
 $InstalledSource = Join-Path $InstallRoot 'src'
 Assert-PathInsideInstallRoot $InstalledSource
 if (Test-Path -LiteralPath $InstalledSource) {
@@ -459,6 +471,8 @@ Copy-Item -LiteralPath (Join-Path $RepositoryRoot '.env.example') -Destination (
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net.cmd') -Destination $BinRoot -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net-services.cmd') -Destination $BinRoot -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net-container.cmd') -Destination $BinRoot -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net-catalog.cmd') -Destination $BinRoot -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net-maintain.cmd') -Destination $BinRoot -Force
 
 $InstalledDocs = Join-Path $InstallRoot 'docs'
 Assert-PathInsideInstallRoot $InstalledDocs
@@ -470,16 +484,56 @@ Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'docs') -Destination $Installe
 $Package = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Raw | ConvertFrom-Json
 $Utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText((Join-Path $InstallRoot 'VERSION'), "$($Package.version)`r`n", $Utf8WithoutBom)
+$SourceRevision = $null
+$SourceState = 'UNAVAILABLE'
+$Git = Get-Command git -ErrorAction SilentlyContinue
+if ($null -ne $Git -and (Test-Path -LiteralPath (Join-Path $RepositoryRoot '.git'))) {
+    Push-Location $RepositoryRoot
+    try {
+        $CandidateRevision = ((& $Git.Source rev-parse --verify HEAD 2>$null) | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0 -and $CandidateRevision -match '^[a-f0-9]{40}$') {
+            $SourceRevision = $CandidateRevision
+            $SourceState = 'REVISION_UNVERIFIED'
+            $WorkingTreeStatus = ((& $Git.Source status --porcelain --untracked-files=normal 2>$null) | Out-String).Trim()
+            if ($LASTEXITCODE -eq 0) {
+                $SourceState = if ([string]::IsNullOrWhiteSpace($WorkingTreeStatus)) { 'CLEAN' } else { 'DIRTY' }
+            }
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+if ($null -eq $SourceRevision -and $env:GITHUB_SHA -match '^[a-fA-F0-9]{40}$') {
+    $SourceRevision = $env:GITHUB_SHA.ToLowerInvariant()
+    $SourceState = 'CI_UNVERIFIED'
+}
+$BuildManifest = [ordered]@{
+    schemaVersion = '1.0'
+    name = [string]$Package.name
+    version = [string]$Package.version
+    sourceRevision = if ($null -eq $SourceRevision) { 'UNAVAILABLE' } else { $SourceRevision }
+    sourceState = $SourceState
+    nodeVersion = $NodeVersion
+    installedAt = (Get-Date).ToUniversalTime().ToString('o')
+}
+[System.IO.File]::WriteAllText(
+    (Join-Path $InstallRoot 'BUILD-MANIFEST.json'),
+    (($BuildManifest | ConvertTo-Json -Depth 3) + "`r`n"),
+    $Utf8WithoutBom
+)
 
 $Launcher = Join-Path $BinRoot 'mcp-search-net.cmd'
 $McpExample = [ordered]@{
-    servers = [ordered]@{
+    mcpServers = [ordered]@{
         'mcp-search-net' = [ordered]@{
+            type = 'local'
             command = 'cmd.exe'
             args = @('/d', '/s', '/c', $Launcher)
             env = [ordered]@{
                 MCP_SEARCH_HOME = $InstallRoot
             }
+            tools = @('*')
         }
     }
 }
@@ -491,11 +545,13 @@ $McpExample = [ordered]@{
 
 $ContainerLauncher = Join-Path $BinRoot 'mcp-search-net-container.cmd'
 $ContainerExample = [ordered]@{
-    servers = [ordered]@{
+    mcpServers = [ordered]@{
         'mcp-search-net-container' = [ordered]@{
+            type = 'local'
             command = 'cmd.exe'
             args = @('/d', '/s', '/c', $ContainerLauncher)
             env = [ordered]@{ MCP_SEARCH_HOME = $InstallRoot }
+            tools = @('*')
         }
     }
 }

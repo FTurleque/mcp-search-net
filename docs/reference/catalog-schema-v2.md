@@ -2,7 +2,9 @@
 
 ## Statut
 
-- **Phase** : V2.11 — pagination et lectures ciblées
+- **Phase historique d'introduction** : V2.11 — pagination et lectures ciblées
+- **État courant** : schéma du candidat `1.1.0`; verdict de livraison dans
+  [`docs/status/current-state.md`](../status/current-state.md)
 - **Portée** : schéma implémenté par `C001` à `C008`
 - **Base cible** : `.data/catalog.db`
 - **Décision liée** : ADR-014, ADR-015
@@ -28,6 +30,23 @@ catalog_sources
         └── staleness_events
 sync_runs
 ```
+
+## Migrations appliquées
+
+Le candidat `1.1.0` applique, dans cet ordre :
+
+```text
+C001__create_catalog_sources.sql
+C002__create_documents.sql
+C003__create_document_versions.sql
+C004__create_document_sections.sql
+C005__create_sync_tracking.sql
+C006__create_document_section_fts.sql
+C007__harden_revision_integrity.sql
+C008__add_catalog_pagination_indexes.sql
+```
+
+Une migration appliquée reste immuable. Toute évolution du schéma reçoit le numéro suivant.
 
 ## `catalog_sources`
 
@@ -99,20 +118,20 @@ index avec des prédicats `OR` paramétriques.
 
 Stocke une version extraite d'un document.
 
-| Colonne           | Type    | Contraintes | Description                    |
-| ----------------- | ------- | ----------- | ------------------------------ |
-| `id`              | INTEGER | PK          | Identifiant interne            |
-| `document_id`     | INTEGER | FK NOT NULL | Document logique               |
-| `version_label`   | TEXT    | NULL        | Version upstream si disponible |
-| `content_hash`    | TEXT    | NOT NULL    | Hash du contenu normalisé      |
-| `etag`            | TEXT    | NULL        | Validateur HTTP                |
-| `last_modified`   | TEXT    | NULL        | Validateur HTTP                |
-| `published_at`    | INTEGER | NULL        | Date de publication            |
-| `fetched_at`      | INTEGER | NOT NULL    | Date d'extraction              |
-| `is_current`      | INTEGER | NOT NULL    | 0/1                            |
-| `extraction_mode` | TEXT    | NOT NULL    | `static` ou `native-render`    |
-| `content_type`    | TEXT    | NOT NULL    | Type de contenu réel           |
-| `metadata_json`   | TEXT    | NOT NULL    | Métadonnées non structurantes  |
+| Colonne           | Type    | Contraintes | Description                     |
+| ----------------- | ------- | ----------- | ------------------------------- |
+| `id`              | INTEGER | PK          | Identifiant interne             |
+| `document_id`     | INTEGER | FK NOT NULL | Document logique                |
+| `version_label`   | TEXT    | NULL        | Version upstream si disponible  |
+| `content_hash`    | TEXT    | NOT NULL    | SHA-256 du payload HTTP brut V2 |
+| `etag`            | TEXT    | NULL        | Validateur HTTP                 |
+| `last_modified`   | TEXT    | NULL        | Validateur HTTP                 |
+| `published_at`    | INTEGER | NULL        | Date de publication             |
+| `fetched_at`      | INTEGER | NOT NULL    | Date d'extraction               |
+| `is_current`      | INTEGER | NOT NULL    | 0/1                             |
+| `extraction_mode` | TEXT    | NOT NULL    | `static` ou `native-render`     |
+| `content_type`    | TEXT    | NOT NULL    | Type de contenu réel            |
+| `metadata_json`   | TEXT    | NOT NULL    | Métadonnées non structurantes   |
 
 Contraintes :
 
@@ -122,6 +141,10 @@ UNIQUE(document_id, content_hash)
 
 Règle : `commitDocumentRevision` désactive les versions précédentes et marque une seule version
 courante dans la même transaction que les sections, l'index et le pointeur du document.
+
+En V2, `content_hash` est calculé sur les octets du payload HTTP avant extraction. Un wrapper HTML
+modifié peut donc créer une version même si le Markdown utile reste identique. Un éventuel hash du
+contenu normalisé nécessite une migration ou un double hash et est explicitement reporté à V3.
 
 ## `document_sections`
 
@@ -167,6 +190,15 @@ Contraintes :
 UNIQUE(document_id, url)
 ```
 
+La synchronisation écrit réellement ces aliases :
+
+- `OLD_URL` quand l'URL canonique précédemment stockée est remplacée ;
+- `REDIRECT` pour l'URL source d'une redirection permanente observée ;
+- `CANONICAL` quand l'URL finale diffère de l'URL canonique extraite.
+
+L'unicité `(document_id, url)` déduplique les observations. Une nouvelle observation conserve
+`first_seen_at`, actualise `last_seen_at` et met à jour le type de l'alias.
+
 ## `sync_runs`
 
 Trace les synchronisations.
@@ -184,6 +216,12 @@ Trace les synchronisations.
 | `documents_unchanged` | INTEGER | NOT NULL    | Inchangés                                              |
 | `documents_failed`    | INTEGER | NOT NULL    | Échecs                                                 |
 | `error_summary`       | TEXT    | NULL        | Résumé court                                           |
+
+Chaque dry-run ou synchronisation réelle crée d'abord une ligne `RUNNING`, sans date de fin et avec
+des compteurs nuls. La clôture atomique n'accepte qu'une ligne encore `RUNNING`, exige une date de
+fin postérieure au début et écrit un statut terminal. Les use cases actuels émettent `SUCCESS`,
+`PARTIAL` ou `FAILED`. `CANCELLED` appartient au schéma mais n'est pas produit par le runtime
+candidat.
 
 ## `staleness_events`
 
@@ -205,10 +243,15 @@ HTTP_404
 HTTP_410
 PERMANENT_REDIRECT
 CANONICAL_CHANGED
-FRESHNESS_EXPIRED
 SOURCE_UNAVAILABLE
 CONTENT_HASH_CHANGED
 ```
+
+Ces six types correspondent au runtime candidat. Les événements sont liés au `sync_run` courant :
+`HTTP_404` et `HTTP_410` accompagnent les statuts non destructifs, `PERMANENT_REDIRECT` et
+`CANONICAL_CHANGED` décrivent les changements d'URL, `SOURCE_UNAVAILABLE` trace un échec fournisseur
+temporaire sans changer automatiquement le statut du document, et `CONTENT_HASH_CHANGED` accompagne
+une nouvelle révision.
 
 ## `document_section_fts`
 
@@ -271,19 +314,24 @@ Une transaction doit :
 
 ### Synchronisation sans changement
 
-Une transaction doit :
+Sur une réponse HTTP `304`, une transaction :
 
 1. mettre à jour `last_seen_at` ;
 2. conserver la version courante ;
-3. réindexer la version courante seulement si les métadonnées ou le statut du document sont mis à jour.
+3. ne créer ni version ni section ;
+4. persister les aliases et événements de redirection éventuels ;
+5. mettre à jour l'URL canonique et le statut `REDIRECTED` seulement si une redirection permanente
+   fournit une nouvelle cible.
+
+Sur une réponse complète dont le hash est identique, le document et ses observations sont mis à
+jour, la version courante est conservée et aucune nouvelle version n'est créée.
 
 ### Échec réseau
 
-Une transaction doit :
-
-1. ajouter un `staleness_event` ;
-2. mettre le document en `STALE` ou `UNAVAILABLE` selon politique ;
-3. ne pas supprimer le contenu existant.
+Pour un document existant, un `404` écrit `HTTP_404` et passe le document en `STALE`; un `410` écrit
+`HTTP_410` et le passe en `REMOVED`. Une indisponibilité fournisseur écrit `SOURCE_UNAVAILABLE` sans
+forcer le statut `UNAVAILABLE`. Dans tous les cas, la version et les sections courantes sont
+conservées.
 
 ## Couverture de validation
 
@@ -296,11 +344,14 @@ Une transaction doit :
 - rollback sur échec d'écriture des sections ou du FTS ;
 - ingestion immédiatement recherchable sans rebuild ;
 - détection des sections FTS manquantes et des entrées orphelines ;
-- suppression de `cache.db` sans impact `catalog.db` ;
-- absence de tables V2 dans `cache.db` ;
-- absence de dépendance au cache V1.
+- suppression de `cache.sqlite` sans impact `catalog.db` ;
+- absence de tables V2 dans `cache.sqlite` ;
+- absence de dépendance au cache V1 ;
 - lectures source, document et section par clé primaire sans chargement global ;
 - pagination stable après ajout de nouveaux documents ;
 - filtres SQL `sourceKey`, `language` et `status` avec comptage cohérent ;
 - plan `documentsByLanguage` utilisant `ix_documents_language_id` ;
 - refus d'une page supérieure à 50 éléments.
+- cycle `RUNNING` vers un statut terminal sans double clôture ;
+- touch `304` sans nouvelle version ;
+- déduplication des aliases et persistance des six événements runtime.

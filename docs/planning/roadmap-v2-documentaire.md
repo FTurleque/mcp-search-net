@@ -1,20 +1,26 @@
 # Roadmap V2 — Catalogue documentaire et recherche avancée
 
-> **Statut** : implémentation V2 documentaire en cours dans la PR #8.
+> **Statut courant** : candidat `1.1.0` en qualification finale, non publié. Le verdict et les gates
+> du checkout sont centralisés dans [`docs/status/current-state.md`](../status/current-state.md).
 >
-> **Dernière mise à jour** : 2026-07-29 — V2.13 qualifiée exact-head, mergée dans
+> **Dernière preuve historique** : 2026-07-29 — V2.13 qualifiée exact-head, mergée dans
 > `feat/v2-catalog-storage` via PR #24 et réconciliée post-merge ; prochain jalon : V2.14 / #17.
 >
-> **PR active** : #8 — `feat/v2-catalog-storage`, conservée en draft jusqu'au gate final #18.
+> **Contexte de planification historique** : la PR #8, la branche `feat/v2-catalog-storage`,
+> l'issue #19 et la séquence #12 à #18 décrivent le pilotage de cette roadmap à l'époque. Ils ne
+> constituent pas le statut GitHub courant. Les validations datées restent attachées à leurs
+> propres SHA.
 >
-> **Roadmap opérationnelle actuelle** : issue #19, séquence #12 à #18. Les validations datées
-> antérieures restent des preuves historiques attachées à leurs propres SHA.
->
-> **GitHub Actions** : workflow `CI` temporairement déclenchable uniquement manuellement via `workflow_dispatch`, car le quota mensuel d'Actions minutes est épuisé.
+> **GitHub Actions** : le blocage de facturation observé le 4 juillet 2026 est historique. Son état
+> actuel n'est pas observable avec les permissions disponibles ; aucun run ne valide les têtes
+> actuelles. Le candidat rétablit les triggers PR, sans transformer l'absence de run en PASS.
 
 ## État synthétique
 
-La V2 documentaire est avancée. La PR #8 contient déjà une implémentation locale couvrant stockage catalogue, ingestion, recherche, synchronisation contrôlée, purge, maintenance opérationnelle, reranking lexical optionnel et exposition MCP read-only.
+Le candidat présent couvre le stockage catalogue, l'ingestion, la recherche, la synchronisation
+contrôlée, la purge, la maintenance opérationnelle, le reranking lexical optionnel et l'exposition
+MCP read-only. Cette phrase décrit le checkout ; les références aux anciennes PR ci-dessous restent
+des jalons historiques.
 
 Avancement :
 
@@ -22,8 +28,12 @@ Avancement :
 - V2.1 stockage catalogue : implémenté.
 - V2.2 ingestion CLI : implémenté pour texte/Markdown et configuration YAML.
 - V2.3 recherche lexicale : implémentée sur sections courantes.
-- V2.4 exposition MCP : implémentée avec `search_docs`, resources read-only, versions documentaires et recette de spike IntelliJ/Copilot préparée.
-- V2.5 synchronisation incrémentale : implémentée avec sync contrôlé, sync exhaustive, rate limiting applicatif, reprise par curseur, validateurs, staleness et redirections permanentes.
+- V2.4 exposition MCP : implémentée avec exactement cinq outils — les deux outils V1 et
+  `search_docs`, `list_docs`, `read_doc_section` — plus resources read-only, versions documentaires
+  et recette de spike IntelliJ/Copilot préparée.
+- V2.5 synchronisation incrémentale : implémentée avec cycle persistant `RUNNING` vers un statut
+  terminal, sync contrôlée/exhaustive, rate limiting, reprise, validateurs, touch sur `304`, aliases,
+  événements de staleness et redirections permanentes.
 - V2.11 scalabilité : lectures par identifiant, filtres SQL, pagination stable, resources bornées et
   benchmark jusqu'à 10 000 sections qualifiés localement sans skip.
 - V2.6 automatisation contrôlée : implémentée et validée localement sur la tranche maintenance contrôlée.
@@ -63,7 +73,7 @@ ultérieur ni le merge de #8 ne peut contourner son gate.
 
 - [x] ADR-010 : SQLite FTS5 et BM25.
 - [x] ADR-013 : conserver le SDK MCP actuel au démarrage V2.
-- [x] ADR-014 : séparation `cache.db` / `catalog.db`.
+- [x] ADR-014 : séparation `cache.sqlite` / `catalog.db`.
 - [x] ADR-015 : FTS5 `contentless-delete`.
 - [x] ADR-016 : exposition mixte outil + resources MCP.
 - [x] ADR-017 : stratégie de recherche décidée sur benchmark V2.13.
@@ -79,12 +89,15 @@ La V2 reste local-first : SQLite, FTS, BM25, CLI/worker et MCP STDIO. Aucun LLM 
 
 ## Architecture cible
 
-- Cache V1 : `.data/cache.db`, supprimable.
+- Cache V1 : `.data/cache.sqlite`, supprimable.
 - Catalogue V2 : `.data/catalog.db`, durable.
-- Migrations catalogue : `catalog-migrations/Cxxx__...`.
-- Tables principales : `catalog_sources`, `documents`, `document_versions`, `document_sections`, `sync_runs`, `document_section_fts`.
+- Migrations catalogue : `C001` à `C008` sous `catalog-migrations/`, immuables après application.
+- Tables principales : `catalog_sources`, `documents`, `document_versions`, `document_sections`,
+  `document_aliases`, `sync_runs`, `staleness_events`, `document_section_fts`.
 - Recherche : FTS5/BM25 avec fallback LIKE et snippets ; baseline produit actuelle confirmée par V2.13.
-- Synchronisation : CLI contrôlée, ETag, Last-Modified, hash, staleness non destructif, sync exhaustive, rate limiting et reprise par curseur.
+- Synchronisation : CLI contrôlée, ETag, Last-Modified, hash des octets HTTP en V2, lifecycle de
+  run, observations et staleness non destructif, sync exhaustive, rate limiting et reprise par
+  curseur. Un éventuel hash du contenu normalisé est reporté à V3.
 - Maintenance contrôlée locale : cycle `catalog:maintain`, verrou inter-processus, rétention opérationnelle, analyse/optimisation SQLite, checkpoint WAL et vacuum optionnel.
 - Reranking lexical hashé : expérimental et non généralisé après gain qualité V2.13 mesuré à zéro.
 - Embeddings locaux : étude autorisée uniquement dans une tranche distincte avec benchmark comparatif ; aucune API commerciale obligatoire.
@@ -93,19 +106,24 @@ La V2 reste local-first : SQLite, FTS, BM25, CLI/worker et MCP STDIO. Aucun LLM 
 
 ## Exposition MCP V2
 
-État implémenté dans la PR #8 :
+État implémenté dans le candidat `1.1.0` de la PR #8 :
 
-- outils V2 : `search_docs`, `list_docs`, `read_doc_section` ;
+- cinq outils read-only : `search_web`, `fetch_url`, `search_docs`, `list_docs`,
+  `read_doc_section` ;
 - resources statiques :
   - `mcp-search-net://catalog` ;
   - `mcp-search-net://sources` ;
   - `mcp-search-net://documents` ;
   - `mcp-search-net://sections` ;
 - templates read-only :
+  - `mcp-search-net://sources/page/{offset}` ;
   - `mcp-search-net://sources/{sourceId}` ;
+  - `mcp-search-net://documents/page/{offset}` ;
   - `mcp-search-net://documents/{documentId}` ;
   - `mcp-search-net://documents/{documentId}/versions` ;
+  - `mcp-search-net://documents/{documentId}/versions/page/{offset}` ;
   - `mcp-search-net://documents/{documentId}/versions/{versionId}` ;
+  - `mcp-search-net://sections/page/{offset}` ;
   - `mcp-search-net://sections/{sectionId}`.
 
 La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intellij-copilot-mcp-v2.md`. Son exécution manuelle reste obligatoire avant gel définitif du contrat utilisateur.
@@ -121,8 +139,8 @@ La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intell
 
 ### V2.1 — Stockage catalogue et migrations
 
-- [x] `catalog.db` séparé de `cache.db`.
-- [x] Migrations catalogue `C001` à `C007` sans réécriture rétroactive.
+- [x] `catalog.db` séparé de `cache.sqlite`.
+- [x] Migrations catalogue `C001` à `C008` sans réécriture rétroactive.
 - [x] Checksums SHA-256 et transition sûre du registre C001-C006.
 - [x] `CatalogRepository`.
 - [x] `SqliteCatalogRepository`.
@@ -173,10 +191,15 @@ La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intell
 - [x] Option `--rate-limit-ms` et délai applicatif entre documents.
 - [x] Option `--resume-after` pour reprendre après un document déjà traité.
 - [x] Sync réseau via `Crawl4aiContentFetcher`.
-- [x] `CatalogSyncRun`.
+- [x] `CatalogSyncRun` créé en `RUNNING`, puis clôturé une fois en `SUCCESS`, `PARTIAL` ou
+      `FAILED` ; `CANCELLED` reste un état de schéma non émis par les use cases actuels.
 - [x] Reconstruction de l'index après sync réel.
 - [x] Validateurs `contentHash`, `ETag`, `Last-Modified`.
-- [x] `notModified` et hash identique traités en `unchanged`.
+- [x] `notModified` traité en `unchanged` avec mise à jour de `last_seen_at`, sans nouvelle version ;
+      hash identique traité en `unchanged`.
+- [x] Aliases `OLD_URL`, `REDIRECT`, `CANONICAL` et événements réellement observés persistés avec
+      leur `sync_run`.
+- [x] Hash V2 défini sur le payload HTTP brut ; hash du contenu normalisé reporté à V3.
 - [x] `404` traité en `STALE` non destructif.
 - [x] `410` traité en `REMOVED` non destructif.
 - [x] Redirection permanente traitée en `REDIRECTED`.
@@ -236,8 +259,8 @@ Validation locale historique V2.7 :
 - [x] V2.9 : intégrité transactionnelle, FTS et migrations (#12) — intégrée dans la branche
       d'agrégation, qualifiée sur le head exact et clôturée.
 - [x] V2.10 : gates qualité, coverage et gouvernance (#13, #10) — runtime et tests V2
-      réintégrés dans ESLint/Prettier, couverture globale et ciblée mesurée, workflow manuel
-      dédupliqué, rapports publiables et gates locaux qualifiés sans skip.
+      réintégrés dans ESLint/Prettier, couverture globale et ciblée mesurée, workflow alors manuel
+      dédupliqué, rapports publiables et gates locaux historiques qualifiés sans skip.
 - [x] V2.11 : scalabilité, pagination et budget contexte (#14, #9, #11) — implémentation,
       benchmark et qualification locale terminés sans skip.
 - [x] V2.12 : sécurité, installation et exploitation (#15) — corrections post-audit qualifiées sur
@@ -253,7 +276,7 @@ Validation locale historique V2.7 :
 
 ### AC-V2-01 : Catalogue local opérationnel
 
-- [x] `catalog.db` existe et reste séparé de `cache.db`.
+- [x] `catalog.db` existe et reste séparé de `cache.sqlite`.
 - [x] Documents ajoutables et récupérables via repository.
 - [x] Migrations catalogue idempotentes.
 - [x] Runtime ouvert et fermé propre au shutdown.
@@ -275,6 +298,8 @@ Validation locale historique V2.7 :
 - [x] Reprise après interruption via `--resume-after`.
 - [x] Détection changements via ETag, Last-Modified et hash.
 - [x] Échecs 404/410 non destructifs.
+- [x] Runs persistés de `RUNNING` vers un statut terminal et observations `304`/aliases/événements
+      couvertes.
 - [ ] Validation locale ou CI manuelle sur le head courant de la PR #8.
 
 ### AC-V2-04 : Exposition MCP validée
@@ -353,7 +378,7 @@ Validation locale historique V2.7 :
 
 1. V2.9 à V2.13 (#12 à #16) sont intégrées et qualifiées localement.
 2. Exécuter maintenant #17 / V2.14 puis #18 / V2.15.
-3. Conserver #8 en draft et ne pas déclencher GitHub Actions pendant la restriction de quota.
+3. Conserver #8 en draft et déclencher la CI du candidat seulement quand son SHA est stabilisé.
 4. Qualifier exact-head localement, Docker/Linux et clients selon #18.
 5. Merger #8 sous garde expected-head uniquement après tous les gates, puis revalider `master`.
 
@@ -368,7 +393,7 @@ npm run test:integration
 npm run test:e2e:deterministic
 ```
 
-Validation Docker/live à faire localement ou après reset du quota :
+Validation Docker/live à exécuter sur le SHA final du candidat :
 
 ```bash
 docker compose build mcp-search-net
@@ -383,9 +408,10 @@ docker compose down
 - **Qualité de rappel insuffisante** : FTS5/BM25 reste la baseline ; étude d'embeddings locaux autorisée uniquement sur benchmark dédié.
 - **Synchronisation trop agressive** : seeds explicites, rate limiting, profondeur zéro, CLI contrôlée.
 - **Incompatibilité resources IntelliJ/Copilot** : spike avant gel du contrat, outil `search_docs` comme fallback read-only si nécessaire.
-- **Régression V1** : validation locale puis CI manuelle dès reset du quota Actions.
+- **Régression V1** : validation locale et CI attachées au même SHA final.
 - **Explosion du nombre de versions** : rétention configurable et purge explicite.
-- **Consommation GitHub Actions** : workflow `CI` manuel uniquement tant que le quota est épuisé.
+- **Preuve GitHub Actions** : conserver les validations locales exact-head et exiger un run GitHub
+  attaché au candidat avant merge final ; aucune preuve datée ne vaut pour un autre SHA.
 
 ## Définition de V2 opérationnelle
 

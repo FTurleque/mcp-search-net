@@ -16,6 +16,42 @@ afterEach(() => {
 });
 
 describe('catalog text ingestion', () => {
+  it('keeps a document without headings in one section', () => {
+    expect(splitMarkdownSections('Guide', 'Introduction.\n\nInstall with npm.')).toMatchObject([
+      {
+        ordinal: 0,
+        heading: 'Guide',
+        headingPath: 'Guide',
+        headingLevel: 1,
+        anchor: 'document',
+        content: 'Introduction.\n\nInstall with npm.',
+      },
+    ]);
+  });
+
+  it('preserves the preamble before the first heading', () => {
+    const sections = splitMarkdownSections(
+      'Guide',
+      'Introduction before the first heading.\n\n# Installation\n\nRun npm install.',
+    );
+
+    expect(sections).toMatchObject([
+      {
+        ordinal: 0,
+        heading: 'Guide',
+        anchor: 'document',
+        content: 'Introduction before the first heading.',
+      },
+      {
+        ordinal: 1,
+        heading: 'Installation',
+        headingPath: 'Installation',
+        anchor: 'installation',
+        content: '# Installation\n\nRun npm install.',
+      },
+    ]);
+  });
+
   it('splits markdown content into heading sections', () => {
     const sections = splitMarkdownSections(
       'Guide',
@@ -53,6 +89,36 @@ describe('catalog text ingestion', () => {
         headingPath: 'Guide > Usage',
         headingLevel: 2,
         anchor: 'usage',
+      },
+    ]);
+  });
+
+  it('keeps nested heading paths after a preamble section', () => {
+    const sections = splitMarkdownSections(
+      'Guide',
+      'Preamble.\n\n# Guide\n\nIntro.\n## Install\n\nSteps.\n### Windows\n\nDetails.',
+    );
+
+    expect(sections).toMatchObject([
+      { ordinal: 0, heading: 'Guide', headingPath: 'Guide', anchor: 'document' },
+      { ordinal: 1, heading: 'Guide', headingPath: 'Guide', anchor: 'guide' },
+      { ordinal: 2, heading: 'Install', headingPath: 'Guide > Install', anchor: 'install' },
+      {
+        ordinal: 3,
+        heading: 'Windows',
+        headingPath: 'Guide > Install > Windows',
+        anchor: 'windows',
+      },
+    ]);
+  });
+
+  it.each(['', '   ', '\r\n\r\n'])('keeps an empty document representable', (content) => {
+    expect(splitMarkdownSections('Empty', content)).toMatchObject([
+      {
+        ordinal: 0,
+        heading: 'Empty',
+        anchor: 'document',
+        content,
       },
     ]);
   });

@@ -21,6 +21,7 @@ if (-not (Test-Path -LiteralPath $InstallRoot)) {
 
 $Docker = Get-Command docker -ErrorAction SilentlyContinue
 $ComposeFile = Join-Path $InstallRoot 'compose.yaml'
+$ComposeHybridFile = Join-Path $InstallRoot 'compose.hybrid.yaml'
 $EnvironmentFile = Join-Path $InstallRoot '.env'
 $EnvironmentExampleFile = Join-Path $InstallRoot '.env.example'
 if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $ComposeFile)) {
@@ -31,23 +32,33 @@ if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $
         $env:MCP_SEARCH_COMPOSE_PROJECT
     }
     foreach ($project in @($ComposeProject, 'mcp-search-net-user') | Select-Object -Unique) {
+        $DownArguments = @('compose')
         if (Test-Path -LiteralPath $EnvironmentFile -PathType Leaf) {
-            & $Docker.Source compose --env-file $EnvironmentFile -p $project -f $ComposeFile down
+            $DownArguments += @('--env-file', $EnvironmentFile)
         }
         elseif (Test-Path -LiteralPath $EnvironmentExampleFile -PathType Leaf) {
-            & $Docker.Source compose --env-file $EnvironmentExampleFile -p $project -f $ComposeFile down
+            $DownArguments += @('--env-file', $EnvironmentExampleFile)
         }
-        else {
-            & $Docker.Source compose -p $project -f $ComposeFile down
+        $DownArguments += @('-p', $project, '-f', $ComposeFile)
+        if (Test-Path -LiteralPath $ComposeHybridFile -PathType Leaf) {
+            $DownArguments += @('-f', $ComposeHybridFile)
         }
-        if ($LASTEXITCODE -ne 0) {
-            throw "La commande '$($Docker.Source)' a échoué avec le code $LASTEXITCODE."
+        $DownArguments += 'down'
+        if (-not $KeepData) {
+            $DownArguments += '--volumes'
+        }
+        $ComposeAction = if ($KeepData) { 'Arrêter les services Compose' } else { 'Arrêter les services Compose et supprimer leurs volumes' }
+        if ($PSCmdlet.ShouldProcess("projet Compose $project", $ComposeAction)) {
+            & $Docker.Source @DownArguments
+            if ($LASTEXITCODE -ne 0) {
+                throw "La commande '$($Docker.Source)' a échoué avec le code $LASTEXITCODE."
+            }
         }
     }
 }
 
 if ($KeepData) {
-    foreach ($name in @('app', 'bin', 'docs', 'runtime', 'src', 'compose.yaml', 'compose.hybrid.yaml', 'Dockerfile', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json', '.env.example', 'mcp.json.example', 'mcp.container.json.example', 'VERSION')) {
+    foreach ($name in @('app', 'bin', 'docs', 'runtime', 'src', 'migrations', 'catalog-migrations', 'compose.yaml', 'compose.hybrid.yaml', 'Dockerfile', '.dockerignore', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json', '.env.example', 'mcp.json.example', 'mcp.container.json.example', 'VERSION', 'BUILD-MANIFEST.json')) {
         $target = Join-Path $InstallRoot $name
         if ((Test-Path -LiteralPath $target) -and $PSCmdlet.ShouldProcess($target, 'Supprimer')) {
             Remove-Item -LiteralPath $target -Recurse -Force

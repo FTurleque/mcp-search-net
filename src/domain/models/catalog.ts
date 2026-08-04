@@ -8,6 +8,18 @@ export type CatalogSyncStrategy = 'manual' | 'polling';
 
 export type CatalogSyncRunStatus = 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'CANCELLED';
 
+export type CatalogSyncRunTerminalStatus = Exclude<CatalogSyncRunStatus, 'RUNNING'>;
+
+export type CatalogDocumentAliasType = 'OLD_URL' | 'REDIRECT' | 'CANONICAL';
+
+export type CatalogStalenessEventType =
+  | 'HTTP_404'
+  | 'HTTP_410'
+  | 'PERMANENT_REDIRECT'
+  | 'CANONICAL_CHANGED'
+  | 'SOURCE_UNAVAILABLE'
+  | 'CONTENT_HASH_CHANGED';
+
 export interface CatalogSource {
   readonly id: number;
   readonly sourceKey: string;
@@ -173,15 +185,34 @@ export interface CatalogSyncRun {
   readonly errorSummary?: string;
 }
 
-export interface CatalogSyncRunInput {
+export interface CatalogSyncRunStartInput {
   readonly sourceId?: number;
   readonly startedAt: Date;
-  readonly completedAt?: Date;
-  readonly status: CatalogSyncRunStatus;
+}
+
+export interface CatalogSyncRunCompletionInput {
+  readonly completedAt: Date;
+  readonly status: CatalogSyncRunTerminalStatus;
   readonly documentsChecked: number;
   readonly documentsAdded: number;
   readonly documentsUpdated: number;
   readonly documentsUnchanged: number;
   readonly documentsFailed: number;
   readonly errorSummary?: string;
+}
+
+export interface CatalogDocumentAliasObservationInput {
+  readonly url: string;
+  readonly aliasType: CatalogDocumentAliasType;
+}
+
+export interface CatalogStalenessEventObservationInput {
+  readonly eventType: CatalogStalenessEventType;
+  readonly detailsJson: string;
+}
+
+export interface CatalogDocumentObservationInput {
+  readonly syncRunId: number;
+  readonly aliases?: readonly CatalogDocumentAliasObservationInput[];
+  readonly events?: readonly CatalogStalenessEventObservationInput[];
 }

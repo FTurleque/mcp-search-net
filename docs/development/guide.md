@@ -7,7 +7,7 @@ Le projet cible Node.js 24 LTS, npm et TypeScript strict. L’installateur utili
 ```powershell
 npm ci
 npm run check
-docker compose up -d
+docker compose -f compose.yaml -f compose.hybrid.yaml up -d
 npm run dev
 ```
 

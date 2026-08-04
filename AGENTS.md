@@ -2,7 +2,7 @@
 
 ## Mission
 
-Maintenir un serveur MCP TypeScript local, en lecture seule, pour GitHub Copilot. La V1 expose exactement `search_web` et `fetch_url`, alimentés par SearXNG, Crawl4AI, un cache SQLite et un registre de sources officielles. Aucun LLM interne, aucune API commerciale obligatoire.
+Maintenir un serveur MCP TypeScript local, en lecture seule, pour GitHub Copilot. Le contrat V1 conserve `search_web` et `fetch_url`, alimentés par SearXNG, Crawl4AI, `cache.sqlite` et un registre de sources officielles. La V2 ajoute `search_docs`, `list_docs`, `read_doc_section`, des resources MCP et le catalogue persistant isolé `catalog.db`. Aucun LLM interne, aucune API commerciale obligatoire.
 
 ## Contrat de travail
 
@@ -35,12 +35,13 @@ src/bootstrap       Composition des dépendances et cycle de vie STDIO uniquemen
 
 Vérification : `grep -r "from.*infrastructure" src/domain/` doit retourner vide.
 
-## Invariants V1 non négociables
+## Frontières V1/V2 non négociables
 
-- Exposer uniquement `search_web` et `fetch_url`.
+- Le sous-contrat V1 expose uniquement `search_web` et `fetch_url` ; le serveur complet expose aussi exactement les trois outils V2 read-only documentés.
 - `search_web` découvre des URLs et ne télécharge jamais les pages résultats.
 - `fetch_url` lit une URL publique connue ; il ne recherche pas, ne suit pas de liens de façon autonome, ne s'authentifie pas, ne remplit pas de formulaires, et n'accepte pas de JavaScript, hooks, cookies, proxies ou fichiers fournis par l'appelant.
-- SQLite reste un cache, pas un index permanent ni un catalogue V2.
+- `cache.sqlite` reste un cache Web ; `catalog.db` est le catalogue V2 persistant séparé et SQLite FTS5 n'est qu'un index dérivé reconstructible.
+- Les outils catalogue ne téléchargent rien et n'exposent aucune mutation MCP.
 - Conserver les limites de résultats, sections, caractères, timeout, redirects et téléchargements côté serveur en tant que constantes non configurables par l'appelant.
 - Préserver les URLs sources, les identifiants de requête, le statut de cache, les avertissements et les codes d'erreur publics stables.
 - Ne jamais inventer de dates de source ni prétendre qu'un score est une probabilité de vérité.
@@ -67,6 +68,9 @@ npm run build
 
 # Vérification complète (typecheck + lint + build + tests)
 npm run check
+
+# Cohérence documentaire
+npm run docs:check
 
 # Tests par couche
 npm run test:unit

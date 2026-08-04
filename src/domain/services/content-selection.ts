@@ -122,9 +122,7 @@ function splitMarkdown(markdown: string): readonly MarkdownSection[] {
     }
   }
   flush();
-  return sections.length === 0
-    ? [{ heading: '', body: markdown, index: 0, tokens: tokenize(markdown) }]
-    : sections;
+  return sections;
 }
 
 function tokenize(value: string): readonly string[] {

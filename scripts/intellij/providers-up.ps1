@@ -21,8 +21,8 @@ function Invoke-Native {
 Push-Location $RepositoryRoot
 try {
     $Docker = Get-Command docker -ErrorAction Stop
-    Invoke-Native $Docker.Source 'compose' 'up' '-d' '--wait' 'searxng' 'crawl4ai'
-    Invoke-Native $Docker.Source 'compose' 'ps'
+    Invoke-Native $Docker.Source 'compose' '-f' 'compose.yaml' '-f' 'compose.hybrid.yaml' 'up' '-d' '--wait' 'searxng' 'crawl4ai'
+    Invoke-Native $Docker.Source 'compose' '-f' 'compose.yaml' '-f' 'compose.hybrid.yaml' 'ps'
 }
 finally {
     Pop-Location

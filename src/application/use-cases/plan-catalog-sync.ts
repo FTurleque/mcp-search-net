@@ -61,12 +61,13 @@ export class PlanCatalogSync {
   public constructor(
     private readonly repository: Pick<
       CatalogRepository,
-      'listSources' | 'listDocuments' | 'addCatalogSyncRun'
+      'listSources' | 'listDocuments' | 'startCatalogSyncRun' | 'completeCatalogSyncRun'
     >,
     private readonly clock: Clock,
   ) {}
 
   public async execute(input: PlanCatalogSyncInput): Promise<PlanCatalogSyncOutput> {
+    const startedAt = this.clock.now();
     const [sources, documents] = await Promise.all([
       this.repository.listSources(),
       this.repository.listDocuments(),
@@ -79,6 +80,13 @@ export class PlanCatalogSync {
     if (input.sourceKey !== undefined && selectedSources.length === 0) {
       throw new Error(`Catalog source ${input.sourceKey} was not found`);
     }
+
+    const runningSyncRun = await this.repository.startCatalogSyncRun({
+      ...(selectedSources.length === 1 && selectedSources[0] !== undefined
+        ? { sourceId: selectedSources[0].id }
+        : {}),
+      startedAt,
+    });
 
     const configuredDocuments = input.documents ?? [];
     const entries = selectedSources.map((source): CatalogSyncPlanEntry => {
@@ -152,13 +160,8 @@ export class PlanCatalogSync {
     const skippedDocumentCount = entries
       .flatMap((entry) => entry.documents)
       .filter((entry) => entry.status === 'skipped').length;
-    const now = this.clock.now();
-    const syncRun = await this.repository.addCatalogSyncRun({
-      ...(selectedSources.length === 1 && selectedSources[0] !== undefined
-        ? { sourceId: selectedSources[0].id }
-        : {}),
-      startedAt: now,
-      completedAt: now,
+    const syncRun = await this.repository.completeCatalogSyncRun(runningSyncRun.id, {
+      completedAt: this.clock.now(),
       status: 'SUCCESS',
       documentsChecked: plannedDocumentCount,
       documentsAdded: 0,

@@ -2,14 +2,15 @@
 
 ## Statut
 
-- **Phase** : V2.5 — synchronisation incrémentale et obsolescence.
-- **Statut** : implémentation finalisée côté CLI/use-case pour la sync contrôlée, exhaustive, rate-limitée et reprenable.
-- **PR active** : #8 — `feat/v2-catalog-storage`.
+- **Couverture fonctionnelle** : V2.5 — synchronisation incrémentale et obsolescence.
+- **Statut courant** : comportement implémenté dans le candidat `1.1.0`, encore soumis aux gates de
+  livraison décrits dans [`docs/status/current-state.md`](../status/current-state.md).
 - **Décisions liées** : ADR-011, ADR-014, ADR-016.
 
 ## Objectif
 
-La synchronisation V2 alimente `catalog.db`, versionne les documents, reconstruit l'index documentaire et reste strictement hors des outils MCP mutables.
+La synchronisation V2 alimente `catalog.db`, versionne les documents, maintient l'index documentaire
+dans chaque transaction de révision et reste strictement hors des outils MCP mutables.
 
 Elle est déclenchée par CLI ou worker dédié, jamais par un outil MCP librement appelable par le LLM.
 
@@ -19,7 +20,7 @@ Elle est déclenchée par CLI ou worker dédié, jamais par un outil MCP libreme
 2. Les URLs restent soumises aux politiques SSRF existantes.
 3. Aucune authentification Web, cookie, proxy ou script utilisateur n'est accepté.
 4. Un échec réseau n'efface pas le dernier contenu valide.
-5. Les versions sont créées uniquement quand le contenu normalisé change.
+5. Les versions sont créées uniquement quand le SHA-256 du payload HTTP téléchargé change.
 6. Le catalogue est la source de vérité V2.
 7. Les opérations mutables restent hors MCP.
 8. Le traitement est séquentiel en V2 initiale pour faciliter le rate limiting et la reprise.
@@ -40,6 +41,8 @@ CatalogRepository.commitDocumentRevision
    ↓
 document + version + sections + FTS + current_version_id (transaction unique)
    ↓
+aliases + staleness_events liés au sync_run
+   ↓
 SyncReport JSON
 ```
 
@@ -57,7 +60,8 @@ Options :
 --source-key <key>     limite le plan à une source
 ```
 
-Le dry-run planifie les sources/documents configurés et écrit un `sync_run` de planification sans fetch réseau.
+Le dry-run planifie les sources/documents configurés sans fetch réseau. Il persiste néanmoins un
+`sync_run` créé en `RUNNING`, puis clôturé en `SUCCESS` avec les compteurs du plan.
 
 ### Sync réel
 
@@ -119,13 +123,34 @@ Le fetcher reçoit les validateurs de la version courante quand ils existent :
 
 Décisions :
 
-- réponse `notModified` => document `unchanged`, aucune nouvelle version ;
+- réponse `notModified`/HTTP `304` => document `unchanged`, `last_seen_at` actualisé, aucune nouvelle
+  version ni section ; une redirection permanente observée peut aussi actualiser l'URL canonique,
+  le statut `REDIRECTED`, les aliases et les événements associés ;
 - hash identique au contenu courant => document `unchanged`, aucune nouvelle version ;
 - hash différent => révision atomique, immédiatement recherchable sans rebuild manuel ;
-- redirection permanente => document `REDIRECTED`, `stableKey` conservé, chaîne de redirection stockée en métadonnées ;
+- redirection permanente => document `REDIRECTED`, `stableKey` conservé, chaîne de redirection
+  stockée en métadonnées, aliases et événements persistés ;
 - 404 sur document existant => document `STALE`, version courante conservée ;
 - 410 sur document existant => document `REMOVED`, version courante conservée ;
+- indisponibilité fournisseur sur un document existant => événement `SOURCE_UNAVAILABLE`, sans
+  mutation destructive ni passage automatique en `UNAVAILABLE` ;
 - autre erreur => entrée `failed`, run `FAILED` ou `PARTIAL` selon les autres documents.
+
+Les observations écrites par la synchronisation sont :
+
+- aliases `OLD_URL`, `REDIRECT` et `CANONICAL`, dédupliqués par document et URL ;
+- événements `HTTP_404`, `HTTP_410`, `PERMANENT_REDIRECT`, `CANONICAL_CHANGED`,
+  `SOURCE_UNAVAILABLE` et `CONTENT_HASH_CHANGED`.
+
+Chaque observation référence le `sync_run` courant. Une réobservation d'alias conserve sa première
+date et actualise sa dernière date.
+
+Le `content_hash` V2 caractérise volontairement les octets HTTP, avant extraction. Cette sémantique
+est compatible avec les versions déjà stockées et détecte toute modification upstream, mais elle
+peut créer du churn lorsqu'un wrapper HTML change sans changement documentaire. Passer à un hash
+du Markdown normalisé exige une stratégie de migration/double-hash pour les catalogues existants ;
+ce changement est donc reporté explicitement à V3 et devra être comparé sur un corpus réel avant
+adoption.
 
 ## Sortie JSON
 
@@ -172,15 +197,19 @@ Un document existant ne perd jamais sa version courante à cause d'un échec ré
 - `410` : document marqué `REMOVED`, sections conservées.
 - erreurs temporaires : échec dans le rapport, pas de mutation destructive.
 
-## Observabilité minimale
+## Lifecycle et observabilité
 
-Chaque run écrit un `sync_run` avec :
+Chaque dry-run ou sync réel écrit d'abord un `sync_run` en `RUNNING` avec compteurs nuls, puis le
+clôt une seule fois avec :
 
 - source ciblée si applicable ;
 - date de début et de fin ;
 - statut `SUCCESS`, `FAILED` ou `PARTIAL` ;
 - compteurs ajoutés, mis à jour, inchangés et échoués ;
 - résumé d'erreur si nécessaire.
+
+Une exception qui interrompt la boucle clôt le run en `FAILED` avant d'être propagée. Le schéma
+autorise aussi `CANCELLED`, mais aucun use case du candidat ne produit actuellement cet état.
 
 ## Tests couverts
 
@@ -190,17 +219,19 @@ Chaque run écrit un `sync_run` avec :
 - reprise via curseur ;
 - validateurs de version courante ;
 - contenu inchangé ;
-- réponse `notModified` ;
+- réponse `notModified` avec touch `last_seen_at` et absence de nouvelle version ;
 - redirection permanente ;
 - 404 non destructif ;
 - 410 non destructif ;
+- aliases dédupliqués et six types d'événements liés au run ;
+- transition `RUNNING` vers un seul statut terminal ;
 - index FTS mis à jour dans la transaction de chaque révision ;
 - rollback des écritures si sections ou indexation échouent ;
 - vérification post-sync sans rebuild correctif implicite.
 
-## Reste hors périmètre V2.5
+## Limites courantes
 
-- worker/scheduler automatique ;
-- lock inter-processus robuste ;
-- observabilité structurée complète par événement ;
-- découverte automatique ou crawl de domaine.
+- aucune découverte automatique ni crawl de domaine ;
+- aucune mutation de synchronisation exposée par MCP ;
+- aucun statut `CANCELLED` émis par les use cases actuels ;
+- aucun hash de contenu normalisé en V2 : cette évolution est reportée à V3.

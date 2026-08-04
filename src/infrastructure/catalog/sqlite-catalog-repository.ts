@@ -16,6 +16,7 @@ import type {
   CatalogDocument,
   CatalogDocumentEntry,
   CatalogDocumentInput,
+  CatalogDocumentObservationInput,
   CatalogDocumentRevision,
   CatalogDocumentRevisionInput,
   CatalogDocumentSearchQuery,
@@ -25,7 +26,8 @@ import type {
   CatalogSource,
   CatalogSourceType,
   CatalogSyncRun,
-  CatalogSyncRunInput,
+  CatalogSyncRunCompletionInput,
+  CatalogSyncRunStartInput,
   CatalogSyncRunStatus,
   CatalogSyncStrategy,
   DocumentSection,
@@ -93,16 +95,48 @@ import {
 const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SEARCH_LIMIT = 50;
 const SEARCH_SNIPPET_RADIUS = 80;
+const MAX_SNIPPET_TERMS = 32;
+const MAX_SNIPPET_OCCURRENCES_PER_TERM = 16;
 
 const INSERT_CATALOG_SYNC_RUN_SQL = `
   INSERT INTO sync_runs (
     source_id, started_at, completed_at, status,
     documents_checked, documents_added, documents_updated, documents_unchanged,
     documents_failed, error_summary
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ) VALUES (?, ?, NULL, 'RUNNING', 0, 0, 0, 0, 0, NULL)
 `;
 
 const SELECT_CATALOG_SYNC_RUN_BY_ID_SQL = 'SELECT * FROM sync_runs WHERE id = ?';
+
+const COMPLETE_CATALOG_SYNC_RUN_SQL = `
+  UPDATE sync_runs SET
+    completed_at = ?,
+    status = ?,
+    documents_checked = ?,
+    documents_added = ?,
+    documents_updated = ?,
+    documents_unchanged = ?,
+    documents_failed = ?,
+    error_summary = ?
+  WHERE id = ? AND status = 'RUNNING' AND completed_at IS NULL
+`;
+
+const TOUCH_DOCUMENT_OBSERVATION_SQL = 'UPDATE documents SET last_seen_at = ? WHERE id = ?';
+
+const UPSERT_DOCUMENT_ALIAS_SQL = `
+  INSERT INTO document_aliases (
+    document_id, url, alias_type, first_seen_at, last_seen_at
+  ) VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT(document_id, url) DO UPDATE SET
+    alias_type = excluded.alias_type,
+    last_seen_at = excluded.last_seen_at
+`;
+
+const INSERT_STALENESS_EVENT_SQL = `
+  INSERT INTO staleness_events (
+    document_id, sync_run_id, event_type, observed_at, details_json
+  ) VALUES (?, ?, ?, ?, ?)
+`;
 
 const SELECT_CURRENT_DOCUMENT_VERSION_SQL = `
   SELECT document_versions.*
@@ -169,10 +203,10 @@ type InsertDocumentSectionParams = [
   number | null,
 ];
 
-type InsertCatalogSyncRunParams = [
-  number | null,
+type InsertCatalogSyncRunParams = [number | null, number];
+
+type CompleteCatalogSyncRunParams = [
   number,
-  number | null,
   CatalogSyncRunStatus,
   number,
   number,
@@ -180,6 +214,7 @@ type InsertCatalogSyncRunParams = [
   number,
   number,
   string | null,
+  number,
 ];
 
 type SearchCurrentDocumentSectionsParams = [
@@ -346,6 +381,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
 
   public commitDocumentRevision(
     revision: CatalogDocumentRevisionInput,
+    observation?: CatalogDocumentObservationInput,
   ): Promise<CatalogDocumentRevision> {
     return this.asPromise(() => {
       const transaction = this.database.transaction((): CatalogDocumentRevision => {
@@ -372,6 +408,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
         this.database
           .prepare<[number, number, number]>(SET_DOCUMENT_CURRENT_VERSION_SQL)
           .run(versionRow.id, now, documentRow.id);
+        this.persistDocumentObservation(documentRow.id, observation, now);
 
         const currentDocumentRow = this.selectDocumentByPublicId(revision.document.publicId);
         if (currentDocumentRow === undefined) throw new Error('CATALOG_DOCUMENT_COMMIT_FAILED');
@@ -387,7 +424,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
-  public upsertDocument(document: CatalogDocumentInput): Promise<CatalogDocument> {
+  public upsertDocument(
+    document: CatalogDocumentInput,
+    observation?: CatalogDocumentObservationInput,
+  ): Promise<CatalogDocument> {
     return this.asPromise(() => {
       const transaction = this.database.transaction((): CatalogDocumentRow => {
         const documentRow = this.upsertDocumentRow(document);
@@ -399,9 +439,48 @@ export class SqliteCatalogRepository implements CatalogRepository {
             .prepare<[number]>(INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL)
             .run(documentRow.current_version_id);
         }
+        this.persistDocumentObservation(documentRow.id, observation, this.now());
         return documentRow;
       });
       return toCatalogDocument(transaction());
+    });
+  }
+
+  public touchDocumentObservation(
+    documentId: number,
+    observation?: CatalogDocumentObservationInput,
+  ): Promise<CatalogDocument> {
+    return this.asPromise(() => {
+      const transaction = this.database.transaction((): CatalogDocumentRow => {
+        const now = this.now();
+        const result = this.database
+          .prepare<[number, number]>(TOUCH_DOCUMENT_OBSERVATION_SQL)
+          .run(now, documentId);
+        if (result.changes !== 1) throw new Error('CATALOG_DOCUMENT_NOT_FOUND');
+        this.persistDocumentObservation(documentId, observation, now);
+        const row = this.database
+          .prepare<[number], CatalogDocumentRow>(SELECT_DOCUMENT_BY_ID_SQL)
+          .get(documentId);
+        if (row === undefined) throw new Error('CATALOG_DOCUMENT_TOUCH_FAILED');
+        return row;
+      });
+      return toCatalogDocument(transaction());
+    });
+  }
+
+  public recordDocumentObservation(
+    documentId: number,
+    observation: CatalogDocumentObservationInput,
+  ): Promise<void> {
+    return this.asPromise(() => {
+      const transaction = this.database.transaction(() => {
+        const document = this.database
+          .prepare<[number], CatalogDocumentRow>(SELECT_DOCUMENT_BY_ID_SQL)
+          .get(documentId);
+        if (document === undefined) throw new Error('CATALOG_DOCUMENT_NOT_FOUND');
+        this.persistDocumentObservation(documentId, observation, this.now());
+      });
+      transaction();
     });
   }
 
@@ -601,27 +680,56 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
-  public addCatalogSyncRun(input: CatalogSyncRunInput): Promise<CatalogSyncRun> {
+  public startCatalogSyncRun(input: CatalogSyncRunStartInput): Promise<CatalogSyncRun> {
     return this.asPromise(() => {
       const info = this.database
         .prepare<InsertCatalogSyncRunParams>(INSERT_CATALOG_SYNC_RUN_SQL)
-        .run(
-          input.sourceId ?? null,
-          input.startedAt.getTime(),
-          input.completedAt?.getTime() ?? null,
-          input.status,
-          input.documentsChecked,
-          input.documentsAdded,
-          input.documentsUpdated,
-          input.documentsUnchanged,
-          input.documentsFailed,
-          input.errorSummary ?? null,
-        );
+        .run(input.sourceId ?? null, input.startedAt.getTime());
       const row = this.database
         .prepare<[number], CatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
         .get(Number(info.lastInsertRowid));
       if (row === undefined) throw new Error('CATALOG_SYNC_RUN_INSERT_FAILED');
       return toCatalogSyncRun(row);
+    });
+  }
+
+  public completeCatalogSyncRun(
+    syncRunId: number,
+    input: CatalogSyncRunCompletionInput,
+  ): Promise<CatalogSyncRun> {
+    return this.asPromise(() => {
+      const transaction = this.database.transaction((): CatalogSyncRunRow => {
+        const running = this.database
+          .prepare<[number], CatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
+          .get(syncRunId);
+        if (running === undefined) throw new Error('CATALOG_SYNC_RUN_NOT_FOUND');
+        if (running.status !== 'RUNNING' || running.completed_at !== null) {
+          throw new Error('CATALOG_SYNC_RUN_ALREADY_COMPLETED');
+        }
+        if (input.completedAt.getTime() < running.started_at) {
+          throw new Error('CATALOG_SYNC_RUN_COMPLETION_PRECEDES_START');
+        }
+        const result = this.database
+          .prepare<CompleteCatalogSyncRunParams>(COMPLETE_CATALOG_SYNC_RUN_SQL)
+          .run(
+            input.completedAt.getTime(),
+            input.status,
+            input.documentsChecked,
+            input.documentsAdded,
+            input.documentsUpdated,
+            input.documentsUnchanged,
+            input.documentsFailed,
+            input.errorSummary ?? null,
+            syncRunId,
+          );
+        if (result.changes !== 1) throw new Error('CATALOG_SYNC_RUN_COMPLETION_FAILED');
+        const row = this.database
+          .prepare<[number], CatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
+          .get(syncRunId);
+        if (row === undefined) throw new Error('CATALOG_SYNC_RUN_COMPLETION_FAILED');
+        return row;
+      });
+      return toCatalogSyncRun(transaction());
     });
   }
 
@@ -782,6 +890,34 @@ export class SqliteCatalogRepository implements CatalogRepository {
       .all(documentVersionId);
   }
 
+  private persistDocumentObservation(
+    documentId: number,
+    observation: CatalogDocumentObservationInput | undefined,
+    observedAt: number,
+  ): void {
+    if (observation === undefined) return;
+
+    const aliasStatement =
+      this.database.prepare<[number, string, string, number, number]>(UPSERT_DOCUMENT_ALIAS_SQL);
+    for (const alias of observation.aliases ?? []) {
+      aliasStatement.run(documentId, alias.url, alias.aliasType, observedAt, observedAt);
+    }
+
+    const eventStatement = this.database.prepare<[number, number, string, number, string]>(
+      INSERT_STALENESS_EVENT_SQL,
+    );
+    for (const event of observation.events ?? []) {
+      assertJsonObject(event.detailsJson);
+      eventStatement.run(
+        documentId,
+        observation.syncRunId,
+        event.eventType,
+        observedAt,
+        event.detailsJson,
+      );
+    }
+  }
+
   private searchDocumentsWithFts(
     ftsQuery: string,
     pattern: string,
@@ -841,6 +977,18 @@ function assertCatalogPageQuery(query: CatalogPageQuery): void {
     query.limit > MAX_CATALOG_PAGE_SIZE
   ) {
     throw new Error('CATALOG_PAGE_LIMIT_INVALID');
+  }
+}
+
+function assertJsonObject(value: string): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    throw new Error('CATALOG_STALENESS_EVENT_DETAILS_INVALID');
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('CATALOG_STALENESS_EVENT_DETAILS_INVALID');
   }
 }
 
@@ -937,13 +1085,124 @@ function toDocumentSectionFromJoinedRow(row: CatalogCurrentDocumentSectionRow): 
 }
 
 function createSnippet(content: string, term: string): string {
-  const normalizedContent = content.toLocaleLowerCase();
-  if (!normalizedContent.includes(term)) return content.slice(0, SEARCH_SNIPPET_RADIUS * 2).trim();
-
-  const index = normalizedContent.indexOf(term);
-  const start = Math.max(0, index - SEARCH_SNIPPET_RADIUS);
-  const end = Math.min(content.length, index + term.length + SEARCH_SNIPPET_RADIUS);
+  const snippetLength = SEARCH_SNIPPET_RADIUS * 2;
+  const start = findBestMultiTermSnippetStart(content, term, snippetLength);
+  const end = Math.min(content.length, start + snippetLength);
   const prefix = start > 0 ? '…' : '';
   const suffix = end < content.length ? '…' : '';
   return `${prefix}${content.slice(start, end).trim()}${suffix}`;
+}
+
+function findBestMultiTermSnippetStart(
+  content: string,
+  query: string,
+  snippetLength: number,
+): number {
+  const normalizedContent = normalizeSnippetText(content);
+  const terms = extractSnippetTerms(query);
+  if (terms.length === 0) return 0;
+
+  const termIndexes = new Map(terms.map((candidate, index) => [candidate, index] as const));
+  const occurrenceCounts = new Array<number>(terms.length).fill(0);
+  const occurrences: SnippetOccurrence[] = [];
+  for (const match of normalizedContent.value.matchAll(/[\p{L}\p{N}]+/gu)) {
+    const matchedToken = match[0];
+    const termIndex = termIndexes.get(matchedToken);
+    if (termIndex === undefined) continue;
+    if (occurrenceCounts[termIndex]! >= MAX_SNIPPET_OCCURRENCES_PER_TERM) continue;
+
+    const normalizedStart = match.index;
+    const normalizedEnd = normalizedStart + matchedToken.length;
+    const originalStart = normalizedContent.originalStarts[normalizedStart];
+    const originalEnd = normalizedContent.originalEnds[normalizedEnd - 1];
+    if (originalStart === undefined || originalEnd === undefined) continue;
+    occurrences.push({ termIndex, originalStart, originalEnd });
+    occurrenceCounts[termIndex]! += 1;
+  }
+  if (occurrences.length === 0) return 0;
+
+  let bestStart = 0;
+  let bestMatchedTerms = -1;
+  let bestSpan = Number.POSITIVE_INFINITY;
+  for (const anchor of occurrences) {
+    const start = snippetWindowStart(anchor.originalStart, content.length, snippetLength);
+    const end = Math.min(content.length, start + snippetLength);
+    const matchedTermIndexes = new Set<number>();
+    let firstMatch = end;
+    let lastMatch = start;
+    for (const occurrence of occurrences) {
+      if (occurrence.originalStart < start || occurrence.originalStart >= end) continue;
+      matchedTermIndexes.add(occurrence.termIndex);
+      firstMatch = Math.min(firstMatch, occurrence.originalStart);
+      lastMatch = Math.max(lastMatch, Math.min(end, occurrence.originalEnd));
+    }
+    const matchedTerms = matchedTermIndexes.size;
+    const span = matchedTerms === 0 ? Number.POSITIVE_INFINITY : lastMatch - firstMatch;
+    if (
+      matchedTerms > bestMatchedTerms ||
+      (matchedTerms === bestMatchedTerms && span < bestSpan) ||
+      (matchedTerms === bestMatchedTerms && span === bestSpan && start < bestStart)
+    ) {
+      bestStart = start;
+      bestMatchedTerms = matchedTerms;
+      bestSpan = span;
+    }
+  }
+  return bestStart;
+}
+
+interface NormalizedSnippetText {
+  readonly value: string;
+  readonly originalStarts: readonly number[];
+  readonly originalEnds: readonly number[];
+}
+
+interface SnippetOccurrence {
+  readonly termIndex: number;
+  readonly originalStart: number;
+  readonly originalEnd: number;
+}
+
+function normalizeSnippetText(value: string): NormalizedSnippetText {
+  let normalizedValue = '';
+  const originalStarts: number[] = [];
+  const originalEnds: number[] = [];
+  let originalStart = 0;
+
+  for (const character of value) {
+    const originalEnd = originalStart + character.length;
+    const normalizedCharacter = character
+      .normalize('NFD')
+      .toLowerCase()
+      .replace(/\p{M}/gu, '');
+    normalizedValue += normalizedCharacter;
+    for (let index = 0; index < normalizedCharacter.length; index += 1) {
+      originalStarts.push(originalStart);
+      originalEnds.push(originalEnd);
+    }
+    originalStart = originalEnd;
+  }
+
+  return { value: normalizedValue, originalStarts, originalEnds };
+}
+
+function extractSnippetTerms(query: string): readonly string[] {
+  const normalizedQuery = normalizeSnippetText(query).value;
+  const terms = new Set<string>();
+  for (const match of normalizedQuery.matchAll(/[\p{L}\p{N}]+/gu)) {
+    terms.add(match[0]);
+    if (terms.size >= MAX_SNIPPET_TERMS) break;
+  }
+  return [...terms];
+}
+
+function snippetWindowStart(
+  position: number,
+  contentLength: number,
+  snippetLength: number,
+): number {
+  return Math.min(
+    Math.max(0, position - SEARCH_SNIPPET_RADIUS),
+    Math.max(0, contentLength - snippetLength),
+  );
 }

@@ -31,10 +31,10 @@ describe.runIf(live)('live provider services', () => {
 
   it('renders prepared raw HTML through the authenticated Crawl4AI endpoint', () => {
     const script = [
-      'import json, requests',
+      'import json, os, requests',
       "html='<html><body><h1>Integration proof</h1><p>Real Crawl4AI endpoint.</p></body></html>'",
       "payload={'urls':['raw://'+html],'browser_config':{'text_mode':True,'light_mode':True},'crawler_config':{'check_robots_txt':False,'page_timeout':20000}}",
-      "response=requests.post('http://127.0.0.1:11235/crawl',json=payload,headers={'Authorization':'Bearer mcp-search-local-development-token'},timeout=60)",
+      "response=requests.post('http://127.0.0.1:11235/crawl',json=payload,headers={'Authorization':'Bearer '+os.environ['CRAWL4AI_API_TOKEN']},timeout=60)",
       'response.raise_for_status()',
       'print(response.text)',
     ].join(';');
@@ -62,7 +62,7 @@ describe.runIf(live)('live provider services', () => {
     } as unknown as SecureHttpGateway;
     const fetcher = new Crawl4aiContentFetcher(
       'http://127.0.0.1:11235',
-      'mcp-search-local-development-token',
+      requireCrawl4aiToken(),
       gateway,
     );
     await expect(
@@ -78,6 +78,14 @@ describe.runIf(live)('live provider services', () => {
     });
   });
 });
+
+function requireCrawl4aiToken(): string {
+  const token = process.env['CRAWL4AI_API_TOKEN'];
+  if (token === undefined || token.trim() === '') {
+    throw new Error('CRAWL4AI_API_TOKEN is required for live provider tests');
+  }
+  return token;
+}
 
 async function crawl4aiHealth(): Promise<number> {
   try {

@@ -6,15 +6,20 @@ import type {
   ContentFetcher,
 } from '../../src/application/ports/content-fetcher.js';
 import { SyncCatalogDocuments } from '../../src/application/use-cases/sync-catalog-documents.js';
-import { HttpError } from '../../src/domain/errors/domain-errors.js';
+import {
+  ContentProviderUnavailableError,
+  HttpError,
+} from '../../src/domain/errors/domain-errors.js';
 import type {
   CatalogDocument,
   CatalogDocumentInput,
+  CatalogDocumentObservationInput,
   CatalogDocumentRevision,
   CatalogDocumentRevisionInput,
   CatalogSource,
   CatalogSyncRun,
-  CatalogSyncRunInput,
+  CatalogSyncRunCompletionInput,
+  CatalogSyncRunStartInput,
   DocumentSection,
   DocumentSectionInput,
   DocumentVersion,
@@ -26,9 +31,14 @@ class CatalogSyncRepositoryStub {
   private nextDocumentId = 1;
   private nextVersionId = 1;
   private nextRunId = 1;
+  private readonly runs = new Map<number, CatalogSyncRun>();
   public readonly versions: DocumentVersionInput[] = [];
   public readonly sections: DocumentSectionInput[][] = [];
   public readonly upserts: CatalogDocumentInput[] = [];
+  public readonly observations: CatalogDocumentObservationInput[] = [];
+  public readonly touches: number[] = [];
+  public readonly startedRuns: CatalogSyncRunStartInput[] = [];
+  public readonly completedRuns: CatalogSyncRunCompletionInput[] = [];
 
   public constructor(
     private readonly sources: readonly CatalogSource[],
@@ -51,8 +61,9 @@ class CatalogSyncRepositoryStub {
 
   public async commitDocumentRevision(
     input: CatalogDocumentRevisionInput,
+    observation?: CatalogDocumentObservationInput,
   ): Promise<CatalogDocumentRevision> {
-    const document = await this.upsertDocument(input.document);
+    const document = await this.upsertDocument(input.document, observation);
     const version = await this.addDocumentVersion({
       ...input.version,
       documentId: document.id,
@@ -66,8 +77,12 @@ class CatalogSyncRepositoryStub {
     };
   }
 
-  public async upsertDocument(input: CatalogDocumentInput): Promise<CatalogDocument> {
+  public async upsertDocument(
+    input: CatalogDocumentInput,
+    observation?: CatalogDocumentObservationInput,
+  ): Promise<CatalogDocument> {
     this.upserts.push(input);
+    if (observation !== undefined) this.observations.push(observation);
     if (this.existingDocument !== undefined) {
       return {
         ...this.existingDocument,
@@ -88,6 +103,24 @@ class CatalogSyncRepositoryStub {
     };
     this.nextDocumentId += 1;
     return document;
+  }
+
+  public async touchDocumentObservation(
+    documentId: number,
+    observation?: CatalogDocumentObservationInput,
+  ): Promise<CatalogDocument> {
+    this.touches.push(documentId);
+    if (observation !== undefined) this.observations.push(observation);
+    if (this.existingDocument === undefined) throw new Error('DOCUMENT_NOT_FOUND');
+    return { ...this.existingDocument, lastSeenAt: now };
+  }
+
+  public async recordDocumentObservation(
+    documentId: number,
+    observation: CatalogDocumentObservationInput,
+  ): Promise<void> {
+    void documentId;
+    this.observations.push(observation);
   }
 
   public async addDocumentVersion(input: DocumentVersionInput): Promise<DocumentVersion> {
@@ -113,12 +146,32 @@ class CatalogSyncRepositoryStub {
     }));
   }
 
-  public async addCatalogSyncRun(input: CatalogSyncRunInput): Promise<CatalogSyncRun> {
+  public async startCatalogSyncRun(input: CatalogSyncRunStartInput): Promise<CatalogSyncRun> {
+    this.startedRuns.push(input);
     const syncRun: CatalogSyncRun = {
       id: this.nextRunId,
       ...input,
+      status: 'RUNNING',
+      documentsChecked: 0,
+      documentsAdded: 0,
+      documentsUpdated: 0,
+      documentsUnchanged: 0,
+      documentsFailed: 0,
     };
+    this.runs.set(syncRun.id, syncRun);
     this.nextRunId += 1;
+    return syncRun;
+  }
+
+  public async completeCatalogSyncRun(
+    syncRunId: number,
+    input: CatalogSyncRunCompletionInput,
+  ): Promise<CatalogSyncRun> {
+    this.completedRuns.push(input);
+    const running = this.runs.get(syncRunId);
+    if (running === undefined) throw new Error('RUN_NOT_FOUND');
+    const syncRun = { ...running, ...input };
+    this.runs.set(syncRunId, syncRun);
     return syncRun;
   }
 }
@@ -148,6 +201,92 @@ class ContentFetcherStub implements ContentFetcher {
 }
 
 describe('SyncCatalogDocuments', () => {
+  it('starts the sync before work and completes it later with terminal counters', async () => {
+    const repository = new CatalogSyncRepositoryStub([enabledSource]);
+    const fetcher = new ContentFetcherStub();
+    const timestamps = [new Date(1_000), new Date(2_000)];
+    const advancingClock = {
+      now: () => {
+        const timestamp = timestamps.shift();
+        if (timestamp === undefined) throw new Error('CLOCK_EXHAUSTED');
+        return timestamp;
+      },
+    };
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, advancingClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument],
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(repository.startedRuns).toEqual([
+      { sourceId: enabledSource.id, startedAt: new Date(1_000) },
+    ]);
+    expect(repository.completedRuns).toEqual([
+      {
+        completedAt: new Date(2_000),
+        status: 'SUCCESS',
+        documentsChecked: 1,
+        documentsAdded: 1,
+        documentsUpdated: 0,
+        documentsUnchanged: 0,
+        documentsFailed: 0,
+      },
+    ]);
+    expect(result.syncRun).toMatchObject({
+      startedAt: new Date(1_000),
+      completedAt: new Date(2_000),
+      status: 'SUCCESS',
+    });
+  });
+
+  it('completes a running sync as failed when processing aborts unexpectedly', async () => {
+    const repository = new CatalogSyncRepositoryStub([enabledSource]);
+    const fetcher = new ContentFetcherStub([
+      fetchedContent({ contentHash: 'guide-hash' }),
+      fetchedContent({ contentHash: 'api-hash' }),
+    ]);
+    const timestamps = [new Date(1_000), new Date(2_000)];
+    const advancingClock = {
+      now: () => {
+        const timestamp = timestamps.shift();
+        if (timestamp === undefined) throw new Error('CLOCK_EXHAUSTED');
+        return timestamp;
+      },
+    };
+    const abortingDelay = () => Promise.reject(new Error('RATE_LIMIT_ABORTED'));
+    const synchronization = new SyncCatalogDocuments(
+      repository,
+      fetcher,
+      advancingClock,
+      abortingDelay,
+    ).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument, secondDeclaredDocument],
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+      rateLimitMs: 1,
+    });
+
+    await expect(synchronization).rejects.toThrow('RATE_LIMIT_ABORTED');
+    expect(fetcher.requests).toHaveLength(1);
+    expect(repository.completedRuns).toEqual([
+      {
+        completedAt: new Date(2_000),
+        status: 'FAILED',
+        documentsChecked: 1,
+        documentsAdded: 1,
+        documentsUpdated: 0,
+        documentsUnchanged: 0,
+        documentsFailed: 0,
+        errorSummary: 'Synchronization aborted before completion',
+      },
+    ]);
+  });
+
   it('fetches one declared document, stores extracted sections and records a successful run', async () => {
     const repository = new CatalogSyncRepositoryStub([enabledSource]);
     const fetcher = new ContentFetcherStub();
@@ -318,6 +457,7 @@ describe('SyncCatalogDocuments', () => {
         finalUrl: 'https://docs.example/new-guide.html',
         canonicalUrl: 'https://docs.example/new-guide.html',
         contentHash: 'redirected-content-hash',
+        redirectChain,
         metadata: { redirectChain, redirectedPermanently: true },
       }),
     );
@@ -350,6 +490,68 @@ describe('SyncCatalogDocuments', () => {
     };
     expect(metadata.redirectedPermanently).toBe(true);
     expect(metadata.redirectChain).toEqual(redirectChain);
+    expect(repository.observations).toEqual([
+      {
+        syncRunId: 1,
+        aliases: [{ url: 'https://docs.example/guide.html', aliasType: 'REDIRECT' }],
+        events: [
+          {
+            eventType: 'PERMANENT_REDIRECT',
+            detailsJson: JSON.stringify({ redirectChain }),
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('records canonical and content hash changes with deduplicated aliases', async () => {
+    const repository = new CatalogSyncRepositoryStub(
+      [enabledSource],
+      existingDocument,
+      currentVersion,
+    );
+    const fetcher = new ContentFetcherStub(
+      fetchedContent({
+        finalUrl: 'https://docs.example/served-guide.html',
+        canonicalUrl: 'https://docs.example/canonical-guide.html',
+        contentHash: 'content-hash-v2',
+      }),
+    );
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument],
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(result.documents[0]).toMatchObject({ status: 'updated' });
+    expect(repository.observations).toEqual([
+      {
+        syncRunId: 1,
+        aliases: [
+          { url: existingDocument.canonicalUrl, aliasType: 'OLD_URL' },
+          { url: 'https://docs.example/served-guide.html', aliasType: 'CANONICAL' },
+        ],
+        events: [
+          {
+            eventType: 'CANONICAL_CHANGED',
+            detailsJson: JSON.stringify({
+              previousCanonicalUrl: existingDocument.canonicalUrl,
+              canonicalUrl: 'https://docs.example/canonical-guide.html',
+            }),
+          },
+          {
+            eventType: 'CONTENT_HASH_CHANGED',
+            detailsJson: JSON.stringify({
+              previousContentHash: currentVersion.contentHash,
+              contentHash: 'content-hash-v2',
+            }),
+          },
+        ],
+      },
+    ]);
   });
 
   it('passes current version validators and does not duplicate identical content', async () => {
@@ -403,7 +605,12 @@ describe('SyncCatalogDocuments', () => {
       existingDocument,
       currentVersion,
     );
-    const fetcher = new ContentFetcherStub({ notModified: true });
+    const fetcher = new ContentFetcherStub({
+      notModified: true,
+      requestedUrl: declaredDocument.url,
+      finalUrl: declaredDocument.url,
+      redirectChain: [],
+    });
 
     const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
       sourceKey: 'enabled-docs',
@@ -435,6 +642,75 @@ describe('SyncCatalogDocuments', () => {
       ],
     });
     expect(repository.upserts).toHaveLength(0);
+    expect(repository.touches).toEqual([existingDocument.id]);
+    expect(repository.versions).toHaveLength(0);
+    expect(repository.sections).toHaveLength(0);
+  });
+
+  it('preserves a permanent redirect observed with 304 without creating content churn', async () => {
+    const repository = new CatalogSyncRepositoryStub(
+      [enabledSource],
+      existingDocument,
+      currentVersion,
+    );
+    const redirectChain = [
+      {
+        fromUrl: existingDocument.canonicalUrl,
+        toUrl: 'https://docs.example/new-guide.html',
+        status: 301,
+        permanent: true,
+      },
+    ];
+    const fetcher = new ContentFetcherStub({
+      notModified: true,
+      requestedUrl: declaredDocument.url,
+      finalUrl: 'https://docs.example/new-guide.html',
+      redirectChain,
+    });
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument],
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(result.documents[0]).toMatchObject({
+      status: 'unchanged',
+      document: {
+        stableKey: existingDocument.stableKey,
+        canonicalUrl: 'https://docs.example/new-guide.html',
+        status: 'REDIRECTED',
+      },
+    });
+    expect(repository.upserts).toEqual([
+      expect.objectContaining({
+        stableKey: existingDocument.stableKey,
+        canonicalUrl: 'https://docs.example/new-guide.html',
+        status: 'REDIRECTED',
+      }),
+    ]);
+    expect(repository.observations).toEqual([
+      {
+        syncRunId: 1,
+        aliases: [{ url: existingDocument.canonicalUrl, aliasType: 'REDIRECT' }],
+        events: [
+          {
+            eventType: 'PERMANENT_REDIRECT',
+            detailsJson: JSON.stringify({ redirectChain }),
+          },
+          {
+            eventType: 'CANONICAL_CHANGED',
+            detailsJson: JSON.stringify({
+              previousCanonicalUrl: existingDocument.canonicalUrl,
+              canonicalUrl: 'https://docs.example/new-guide.html',
+            }),
+          },
+        ],
+      },
+    ]);
+    expect(repository.touches).toHaveLength(0);
     expect(repository.versions).toHaveLength(0);
     expect(repository.sections).toHaveLength(0);
   });
@@ -486,6 +762,17 @@ describe('SyncCatalogDocuments', () => {
       canonicalUrl: existingDocument.canonicalUrl,
       status: 'STALE',
     });
+    expect(repository.observations).toEqual([
+      {
+        syncRunId: 1,
+        events: [
+          {
+            eventType: 'HTTP_404',
+            detailsJson: JSON.stringify({ status: 404, requestedUrl: declaredDocument.url }),
+          },
+        ],
+      },
+    ]);
     expect(repository.versions).toHaveLength(0);
     expect(repository.sections).toHaveLength(0);
   });
@@ -537,8 +824,66 @@ describe('SyncCatalogDocuments', () => {
       canonicalUrl: existingDocument.canonicalUrl,
       status: 'REMOVED',
     });
+    expect(repository.observations).toEqual([
+      {
+        syncRunId: 1,
+        events: [
+          {
+            eventType: 'HTTP_410',
+            detailsJson: JSON.stringify({ status: 410, requestedUrl: declaredDocument.url }),
+          },
+        ],
+      },
+    ]);
     expect(repository.versions).toHaveLength(0);
     expect(repository.sections).toHaveLength(0);
+  });
+
+  it('records source unavailability and completes a failed run with counters', async () => {
+    const repository = new CatalogSyncRepositoryStub(
+      [enabledSource],
+      existingDocument,
+      currentVersion,
+    );
+    const fetcher = new ContentFetcherStub(
+      new ContentProviderUnavailableError('Content provider unavailable'),
+    );
+
+    const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument],
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(result).toMatchObject({
+      checkedCount: 1,
+      failedCount: 1,
+      syncRun: {
+        status: 'FAILED',
+        documentsChecked: 1,
+        documentsFailed: 1,
+        errorSummary: '1 document(s) failed',
+      },
+      documents: [{ status: 'failed', error: 'Content provider unavailable' }],
+    });
+    expect(repository.observations).toEqual([
+      {
+        syncRunId: 1,
+        events: [
+          {
+            eventType: 'SOURCE_UNAVAILABLE',
+            detailsJson: JSON.stringify({ code: 'CONTENT_PROVIDER_UNAVAILABLE' }),
+          },
+        ],
+      },
+    ]);
+    expect(repository.completedRuns[0]).toMatchObject({
+      status: 'FAILED',
+      documentsChecked: 1,
+      documentsFailed: 1,
+    });
   });
 });
 
@@ -625,6 +970,7 @@ function fetchedContent(overrides: Partial<FetchedContent> = {}): FetchedContent
     extractionMode: 'static',
     statusCode: 200,
     contentHash: 'content-hash',
+    redirectChain: [],
     metadata: {},
     links: [],
     ...overrides,

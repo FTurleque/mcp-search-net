@@ -20,6 +20,7 @@ const KNOWN_DEVELOPMENT_TOKEN_HASHES = new Set([
 
 export interface LoadedConfiguration {
   readonly application: ApplicationConfig;
+  readonly catalogPath: string;
   readonly officialSources: OfficialSourceRegistry;
   readonly crawl4aiApiToken?: string;
 }
@@ -31,8 +32,15 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
   const application = applicationConfigSchema.parse(
     applyEnvironmentOverrides(yamlApplication, environment),
   );
+  const configurationDirectory = dirname(absoluteConfigPath);
+  const cachePath = resolve(configurationDirectory, application.cache.path);
+  const catalogPath =
+    environment.MCP_CATALOG_PATH === undefined
+      ? resolve(dirname(cachePath), 'catalog.db')
+      : resolve(configurationDirectory, environment.MCP_CATALOG_PATH);
+  assertDistinctDatabasePaths(cachePath, catalogPath);
   const officialPath = resolve(
-    dirname(absoluteConfigPath),
+    configurationDirectory,
     environment.MCP_OFFICIAL_SOURCES_PATH ??
       firstEnvironment('MCP_SEARCH_OFFICIAL_SOURCES_PATH') ??
       application.officialSourcesPath,
@@ -54,13 +62,22 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
       ...application,
       cache: {
         ...application.cache,
-        path: resolve(dirname(absoluteConfigPath), application.cache.path),
+        path: cachePath,
       },
       officialSourcesPath: officialPath,
     },
+    catalogPath,
     officialSources: new OfficialSourceYamlRegistry(officialFile),
     ...(crawl4aiApiToken === undefined ? {} : { crawl4aiApiToken }),
   };
+}
+
+function assertDistinctDatabasePaths(cachePath: string, catalogPath: string): void {
+  const normalizeForComparison = (path: string): string =>
+    process.platform === 'win32' ? path.toLowerCase() : path;
+  if (normalizeForComparison(cachePath) === normalizeForComparison(catalogPath)) {
+    throw new ConfigurationError('Cache and catalog paths must be different');
+  }
 }
 
 function applyEnvironmentOverrides(

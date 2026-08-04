@@ -24,6 +24,26 @@ afterEach(() => {
 describe('SqliteCatalogMaintenance', () => {
   it('runs retention, WAL checkpoint and releases its lease files', async () => {
     const fixture = createFixture();
+    const source = await fixture.repository.addSource({
+      sourceKey: 'retention-docs',
+      displayName: 'Retention docs',
+      baseUrl: 'https://example.test/',
+      sourceType: 'documentation',
+      language: 'en',
+      freshnessPolicy: 'manual',
+      syncStrategy: 'manual',
+      enabled: true,
+    });
+    const document = await fixture.repository.upsertDocument({
+      publicId: 'retention-guide',
+      sourceId: source.id,
+      canonicalUrl: 'https://example.test/guide',
+      stableKey: 'guide',
+      title: 'Retention guide',
+      mimeType: 'text/html',
+      language: 'en',
+      status: 'STALE',
+    });
     closeFixtureRepository(fixture.repository);
     const database = new Database(fixture.path);
     const insert = database.prepare(
@@ -36,6 +56,13 @@ describe('SqliteCatalogMaintenance', () => {
     insert.run(1, 1_000, 2_000);
     insert.run(2, 2_000, 3_000);
     insert.run(3, 3_000, 4_000);
+    database
+      .prepare(
+        `INSERT INTO staleness_events (
+          document_id, sync_run_id, event_type, observed_at, details_json
+        ) VALUES (?, ?, 'HTTP_404', ?, '{}')`,
+      )
+      .run(document.id, 1, 2_000);
     database.close();
 
     const result = await new SqliteCatalogMaintenance(fixture.path, fixture.clock).run({
@@ -52,6 +79,11 @@ describe('SqliteCatalogMaintenance', () => {
     });
     expect(existsSync(`${fixture.path}.maintenance.lock`)).toBe(false);
     expect(existsSync(`${fixture.path}.maintenance.lock.heartbeat`)).toBe(false);
+    const retained = new Database(fixture.path, { readonly: true });
+    expect(retained.prepare('SELECT sync_run_id FROM staleness_events').get()).toEqual({
+      sync_run_id: null,
+    });
+    retained.close();
   });
 
   it('fails rather than reporting success when an active reader blocks the TRUNCATE checkpoint', async () => {

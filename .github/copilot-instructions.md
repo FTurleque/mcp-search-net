@@ -2,7 +2,7 @@
 
 ## Mission
 
-Maintain a local, read-only TypeScript MCP server for GitHub Copilot. V1 exposes exactly `search_web` and `fetch_url`, backed by SearXNG, Crawl4AI, SQLite cache, and an official-source registry. It uses no internal LLM and no mandatory paid API.
+Maintain a local, read-only TypeScript MCP server for GitHub Copilot. The V1 contract retains `search_web` and `fetch_url`, backed by SearXNG, Crawl4AI, `cache.sqlite`, and an official-source registry. V2 adds `search_docs`, `list_docs`, `read_doc_section`, MCP resources, and the isolated persistent `catalog.db`. It uses no internal LLM and no mandatory paid API.
 
 For maintenance workflows, load `.github/skills/maintain-mcp-search-net/SKILL.md` and only the references relevant to the task.
 
@@ -24,12 +24,13 @@ For maintenance workflows, load `.github/skills/maintain-mcp-search-net/SKILL.md
 - `bootstrap` composes dependencies and manages STDIO lifecycle only.
 - Handlers contain no business logic. External components remain replaceable through ports.
 
-## Non-negotiable V1 invariants
+## Non-negotiable V1/V2 boundaries
 
-- Expose only `search_web` and `fetch_url`.
+- The V1 sub-contract exposes only `search_web` and `fetch_url`; the complete server also exposes exactly the three documented read-only V2 tools.
 - `search_web` discovers URLs and never downloads result pages.
 - `fetch_url` reads one known public URL; it never searches, follows links autonomously, authenticates, fills forms, or accepts caller JavaScript/hooks/cookies/proxies/files.
-- SQLite remains a cache, not a permanent index or V2 catalogue.
+- `cache.sqlite` remains a Web cache; `catalog.db` is the separate persistent V2 catalogue and its FTS5 table is a rebuildable derived index.
+- Catalogue tools never download content and expose no MCP mutation.
 - Keep absolute result, section, character, timeout, redirect, and download limits server-side.
 - Preserve source URLs, request IDs, cache status, warnings, and stable public error codes.
 - Never invent source dates or claim a score is a probability of truth.
@@ -47,6 +48,7 @@ For maintenance workflows, load `.github/skills/maintain-mcp-search-net/SKILL.md
 - Node.js 24 is mandatory. Start with `npm run check:runtime` when the environment is uncertain.
 - Run focused Vitest files during iteration and `npm run typecheck` after type changes.
 - Before completing a cross-layer change, run `npm run check`.
+- Keep `npm run docs:check` green; it is part of the release gate.
 - Run live SearXNG/Crawl4AI tests only when their services and network are available; report them separately from deterministic tests.
 - Never state that an unexecuted or skipped check passed.
 
