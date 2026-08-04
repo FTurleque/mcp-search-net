@@ -5,7 +5,7 @@ param(
     [switch] $Uninstall,
     # Set by the Inno Setup wizard; disables auto-detect in favour of the explicit list.
     [switch] $FromInstaller,
-    # Comma-separated list of targets to configure: docker,copilot-jetbrains,claude-desktop,claude-code
+    # Comma-separated list of targets to configure: docker,copilot-jetbrains,copilot-cli,claude-desktop,claude-code,codex
     [string] $Clients = ''
 )
 
@@ -89,7 +89,7 @@ if ($SmokeMode) { exit 0 }
 # ── Client selection ───────────────────────────────────────────────────────────
 # -FromInstaller: honour explicit wizard selection; empty list = nothing to configure.
 # Otherwise (ZIP install.ps1): attempt all targets, skip if not detected.
-$AllClients = @('docker', 'copilot-jetbrains', 'claude-desktop', 'claude-code')
+$AllClients = @('docker', 'copilot-jetbrains', 'copilot-cli', 'claude-desktop', 'claude-code', 'codex')
 if ($FromInstaller) {
     $clientList = if ($Clients) { @($Clients -split ',' | ForEach-Object { $_.Trim() }) } else { @() }
 } else {
@@ -97,8 +97,10 @@ if ($FromInstaller) {
 }
 $DoDocker        = -not $Uninstall -and ($clientList -contains 'docker')
 $DoCopilotJB     = $clientList -contains 'copilot-jetbrains'
+$DoCopilotCli    = $clientList -contains 'copilot-cli'
 $DoClaudeDesktop = $clientList -contains 'claude-desktop'
 $DoClaudeCode    = $clientList -contains 'claude-code'
+$DoCodex         = $clientList -contains 'codex'
 
 # ── Compose normalization (distribution layout: docker\ → root) ────────────────
 # CMD launchers reference %MCP_SEARCH_HOME%\compose.yaml; copy from docker\ if needed
@@ -389,6 +391,140 @@ if ($Uninstall) {
         }
     } else {
         Write-Host '  Claude Code : CLI non détecté (claude absent du PATH et %APPDATA%\Claude\claude-code absent).' -ForegroundColor Yellow
+    }
+}
+
+# ── GitHub Copilot CLI ─────────────────────────────────────────────────────────
+
+$CopilotExe = $null
+$copilotCmd = Get-Command copilot -ErrorAction SilentlyContinue
+if ($copilotCmd -and $copilotCmd.CommandType -eq 'Application') {
+    $p = $copilotCmd.Source.ToLowerInvariant()
+    if (-not ($p -like '*microsoft vs code*') -and -not ($p -like '*code\bin*') -and -not ($p -like '*vscode*\bin*')) {
+        $CopilotExe = $copilotCmd.Source
+    }
+}
+
+$integKeyCopilotCli = 'copilot-cli:mcp-search-net'
+if ($Uninstall) {
+    if ($integrations.ContainsKey($integKeyCopilotCli) -and $integrations[$integKeyCopilotCli].ownership -eq 'managed') {
+        if ($CopilotExe) {
+            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            & $CopilotExe mcp remove mcp-search-net 2>&1 | Out-Null
+            $ErrorActionPreference = $prev
+            Write-Host '  Copilot CLI : mcp-search-net retiré.' -ForegroundColor Green
+        }
+        $integrations.Remove($integKeyCopilotCli)
+    }
+} elseif ($DoCopilotCli) {
+    if ($CopilotExe) {
+        Write-Host ''
+        Write-Host 'GitHub Copilot CLI détecté.'
+        $alreadyManaged = $integrations.ContainsKey($integKeyCopilotCli) -and $integrations[$integKeyCopilotCli].ownership -eq 'managed'
+        $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+        $listOut = & $CopilotExe mcp list 2>&1 | Out-String
+        $ErrorActionPreference = $prev
+        if ($listOut -match 'mcp-search-net' -and -not $alreadyManaged) {
+            Write-Host "  Copilot CLI : entrée 'mcp-search-net' existante non gérée — préservée." -ForegroundColor Cyan
+            $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
+                ownership    = 'preexisting'
+                configuredAt = [datetime]::UtcNow.ToString('o')
+            }
+        } else {
+            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            & $CopilotExe mcp add -e "MCP_SEARCH_HOME=$InstallRoot" mcp-search-net -- cmd.exe /d /s /c $BinLauncher 2>&1 | Out-Null
+            $cliExit = $LASTEXITCODE
+            $ErrorActionPreference = $prev
+            if ($cliExit -eq 0) {
+                Write-Host "  Copilot CLI : 'mcp-search-net' configuré" -ForegroundColor Green
+                $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
+                    ownership    = 'managed'
+                    configuredAt = [datetime]::UtcNow.ToString('o')
+                }
+            } else {
+                Write-Host "  Copilot CLI : configuration échouée (code $cliExit)" -ForegroundColor Yellow
+            }
+        }
+    } else {
+        Write-Host '  Copilot CLI : non détecté. Configuration ignorée.' -ForegroundColor Yellow
+    }
+}
+
+# ── Codex Desktop ──────────────────────────────────────────────────────────────
+
+$CodexConfigPath = Join-Path $env:USERPROFILE '.codex\config.toml'
+$CodexBeginMark  = '# BEGIN MCP-SEARCH-NET'
+$CodexEndMark    = '# END MCP-SEARCH-NET'
+$integKeyCodex   = 'codex:mcp-search-net'
+
+function New-CodexMcpBlock {
+    $cmd  = 'command = "cmd.exe"'
+    $args = 'args = ["/d", "/s", "/c", "' + $BinLauncher.Replace('\', '\\') + '"]'
+    $home = 'MCP_SEARCH_HOME = "' + $InstallRoot.Replace('\', '\\') + '"'
+    return ($CodexBeginMark,
+            '[mcp_servers.mcp-search-net]',
+            $cmd, $args, 'enabled = true', '',
+            '[mcp_servers.mcp-search-net.env]',
+            $home,
+            $CodexEndMark) -join [Environment]::NewLine
+}
+
+function Read-CodexConfig {
+    if (Test-Path -LiteralPath $CodexConfigPath -PathType Leaf) {
+        return [System.IO.File]::ReadAllText($CodexConfigPath, [System.Text.Encoding]::UTF8)
+    }
+    return ''
+}
+
+function Write-CodexConfig([string] $Content) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $CodexConfigPath -Parent) | Out-Null
+    [System.IO.File]::WriteAllText($CodexConfigPath, $Content, $Utf8NoBom)
+}
+
+function Remove-CodexBlock([string] $Text) {
+    $pat = '(?s)' + [regex]::Escape($CodexBeginMark) + '.*?' + [regex]::Escape($CodexEndMark)
+    return [regex]::Replace($Text, $pat, '').Trim()
+}
+
+if ($Uninstall) {
+    if ($integrations.ContainsKey($integKeyCodex) -and $integrations[$integKeyCodex].ownership -eq 'managed') {
+        $text = Read-CodexConfig
+        if ($text -match [regex]::Escape($CodexBeginMark)) {
+            Backup-ConfigFile $CodexConfigPath
+            $cleaned = Remove-CodexBlock $text
+            Write-CodexConfig (if ($cleaned) { $cleaned + [Environment]::NewLine } else { '' })
+            Write-Host '  Codex Desktop : mcp-search-net retiré de config.toml' -ForegroundColor Green
+        }
+        $integrations.Remove($integKeyCodex)
+    }
+} elseif ($DoCodex) {
+    Write-Host ''
+    Write-Host 'Codex Desktop : configuration de mcp-search-net...'
+    $text  = Read-CodexConfig
+    $block = New-CodexMcpBlock
+    if ($text -match [regex]::Escape($CodexBeginMark)) {
+        $cleaned = Remove-CodexBlock $text
+        $newText = if ($cleaned) { $cleaned + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }
+        if ($newText -ne $text) {
+            Backup-ConfigFile $CodexConfigPath
+            Write-CodexConfig $newText
+            Write-Host '  Codex Desktop : mcp-search-net mis à jour dans config.toml' -ForegroundColor Green
+        } else {
+            Write-Host '  Codex Desktop : configuration déjà à jour.' -ForegroundColor Cyan
+        }
+    } else {
+        $prefix  = $text.TrimEnd()
+        $newText = if ($prefix) { $prefix + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }
+        Backup-ConfigFile $CodexConfigPath
+        Write-CodexConfig $newText
+        Write-Host '  Codex Desktop : mcp-search-net configuré dans config.toml' -ForegroundColor Green
+    }
+    if (-not $integrations.ContainsKey($integKeyCodex)) {
+        $integrations[$integKeyCodex] = [PSCustomObject]@{
+            ownership    = 'managed'
+            configPath   = $CodexConfigPath
+            configuredAt = [datetime]::UtcNow.ToString('o')
+        }
     }
 }
 
