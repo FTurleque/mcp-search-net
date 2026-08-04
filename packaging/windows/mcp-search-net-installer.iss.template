@@ -124,25 +124,37 @@ begin
   RegDeleteValue(HKCU, InstallerRegistryPath(), 'ManagedPath');
 end;
 
-procedure RunConfigureInstall;
+function RunConfigureScript(ExtraParams: String): Boolean;
 var
   PowerShell: String;
   ScriptPath: String;
-  InstallRoot: String;
   Parameters: String;
   ResultCode: Integer;
 begin
   PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   ScriptPath := ExpandConstant('{app}\scripts\configure-install.ps1');
-  InstallRoot := ExpandConstant('{app}');
-  Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" -InstallRoot "' + InstallRoot + '"';
-  if IsSmokeBuild() then Parameters := Parameters + ' -SmokeMode';
-  if not Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+  Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" -InstallRoot "' + ExpandConstant('{app}') + '"';
+  if ExtraParams <> '' then Parameters := Parameters + ' ' + ExtraParams;
+  Result := Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+procedure RunConfigureInstall;
+var
+  ExtraParams: String;
+begin
+  ExtraParams := '';
+  if IsSmokeBuild() then ExtraParams := '-SmokeMode';
+  if not RunConfigureScript(ExtraParams) then
     MsgBox(
       'La configuration post-installation n''a pas pu être complétée.' + #13#10 +
       'mcp-search-net est installé mais .env et mcp.json.example sont absents.' + #13#10 +
-      'Relancez scripts\configure-install.ps1 -InstallRoot "' + InstallRoot + '" manuellement.',
+      'Relancez scripts\configure-install.ps1 -InstallRoot "' + ExpandConstant('{app}') + '" manuellement.',
       mbError, MB_OK);
+end;
+
+procedure RunConfigureUninstall;
+begin
+  RunConfigureScript('-Uninstall');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -192,6 +204,7 @@ begin
   begin
     if not IsSmokeBuild() then
     begin
+      RunConfigureUninstall;
       RemoveBinFromUserPath;
       PromptForUserDataRemoval;
     end;
