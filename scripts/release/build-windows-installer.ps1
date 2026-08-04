@@ -35,7 +35,7 @@ if (-not (Test-Path -LiteralPath $DistributionRoot -PathType Container)) {
 
 foreach ($Required in @(
     'app\build\bootstrap\main.js',
-    "runtime\node-v24.17.0-win-x64\node.exe",
+    "runtime\node-v24.18.0-win-x64\node.exe",
     'bin\mcp-search-net.cmd',
     'config\application.yml',
     'scripts\configure-install.ps1',

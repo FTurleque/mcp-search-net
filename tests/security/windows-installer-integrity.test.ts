@@ -20,7 +20,7 @@ describe('Windows installer runtime integrity', () => {
   const compose = readFileSync('compose.yaml', 'utf8');
 
   it('pins the official Node archive hash and verifies before extracting', () => {
-    expect(installer).toContain('f2aa33b35b75aca5f3f7b85675a6f6423201053e9381911e64961f3bda2528ab');
+    expect(installer).toContain('0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821');
     expect(installer.indexOf('verify-file-sha256.ps1')).toBeGreaterThan(0);
     expect(installer.indexOf('verify-file-sha256.ps1')).toBeLessThan(
       installer.indexOf('Expand-Archive'),
@@ -129,7 +129,7 @@ describe('Windows installer runtime integrity', () => {
 
     const root = mkdtempSync(join(tmpdir(), 'mcp-launcher-token-'));
     const installRoot = join(root, 'Installed Root With Spaces');
-    const nodePath = join(installRoot, 'runtime', 'node-v24.17.0-win-x64', 'node.exe');
+    const nodePath = join(installRoot, 'runtime', 'node-v24.18.0-win-x64', 'node.exe');
     const serverPath = join(installRoot, 'app', 'build', 'bootstrap', 'main.js');
     const token = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     try {

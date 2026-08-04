@@ -111,7 +111,7 @@ $ZipHash = Verify-Sha256 $Zip $ZipChecksum
 $SetupHash = Verify-Sha256 $Setup $SetupChecksum
 if (-not (Test-Path -LiteralPath $SmokeSetup -PathType Leaf)) { throw "Smoke setup manquant : $SmokeSetup" }
 
-$NodeExe = Join-Path $DistRoot "runtime\node-v24.17.0-win-x64\node.exe"
+$NodeExe = Join-Path $DistRoot "runtime\node-v24.18.0-win-x64\node.exe"
 
 $ZipSmokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("msn-release-zip-" + [Guid]::NewGuid())
 $ZipExtract = Join-Path $ZipSmokeRoot 'package'
@@ -139,7 +139,7 @@ try {
     }
 
     $ProbeScript = Join-Path $ZipInstallRoot 'app\probe-installed-mcp.mjs'
-    $ZipNodeExe = Join-Path $ZipInstallRoot "runtime\node-v24.17.0-win-x64\node.exe"
+    $ZipNodeExe = Join-Path $ZipInstallRoot "runtime\node-v24.18.0-win-x64\node.exe"
     Invoke-NativeChecked -File $ZipNodeExe `
         -Arguments @($ProbeScript, (Join-Path $ZipInstallRoot 'bin\mcp-search-net.cmd'), $ZipInstallRoot) `
         -Failure 'Sonde MCP STDIO (ZIP) échouée'
@@ -165,7 +165,7 @@ try {
     }
 
     $ProbeScript = Join-Path $SetupInstallRoot 'app\probe-installed-mcp.mjs'
-    $SetupNodeExe = Join-Path $SetupInstallRoot "runtime\node-v24.17.0-win-x64\node.exe"
+    $SetupNodeExe = Join-Path $SetupInstallRoot "runtime\node-v24.18.0-win-x64\node.exe"
     Invoke-NativeChecked -File $SetupNodeExe `
         -Arguments @($ProbeScript, (Join-Path $SetupInstallRoot 'bin\mcp-search-net.cmd'), $SetupInstallRoot) `
         -Failure 'Sonde MCP STDIO (setup smoke) échouée'

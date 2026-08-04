@@ -89,14 +89,14 @@ catalogue acceptent aussi `MCP_CATALOG_PATH` et leurs options `--path` document�
 
 ## Surfaces et qualification
 
-| Surface                          | État courant                                              | Preuve exigée avant GO                                                                                   |
-| -------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Node.js 24 / STDIO Windows       | **PASS** — SHA 912df9f, 2026-08-04                        | `npm run check` (264+), Gate A STDIO, audits npm 0 vulnérabilité                                        |
-| IntelliJ IDEA + GitHub Copilot   | **PASS AVEC RÉSERVE** — recette fournie, non exécutée     | Exécuter recette `validation-v2-14-client-contracts.md` §Gate B (config mcp.json + vérification)        |
-| Claude Desktop / Codex           | **NON DISPONIBLE** — non configuré dans mcpServers        | Configurer `mcpServers` dans claude_desktop_config.json si requis ; recette fournie                      |
-| Docker/Linux                     | **PASS** — SHA de769ee, 2026-08-04                        | Phase F : `docker compose build`, OCI labels, user/caps/fs, E2E live 7/7 PASS, shutdown propre          |
+| Surface                          | État courant                                              | Preuve exigée avant GO                                                                                                                                                                                                     |
+| -------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Node.js 24 / STDIO Windows       | **PASS** — SHA 912df9f, 2026-08-04                        | `npm run check` (264+), Gate A STDIO, audits npm 0 vulnérabilité                                                                                                                                                           |
+| IntelliJ IDEA + GitHub Copilot   | **PASS AVEC RÉSERVE** — recette fournie, non exécutée     | Exécuter recette `validation-v2-14-client-contracts.md` §Gate B (config mcp.json + vérification)                                                                                                                           |
+| Claude Desktop / Codex           | **NON DISPONIBLE** — non configuré dans mcpServers        | Configurer `mcpServers` dans claude_desktop_config.json si requis ; recette fournie                                                                                                                                        |
+| Docker/Linux                     | **PASS** — SHA de769ee, 2026-08-04                        | Phase F : `docker compose build`, OCI labels, user/caps/fs, E2E live 7/7 PASS, shutdown propre                                                                                                                             |
 | Installation utilisateur Windows | **PASS** — SHA b1072d5, 2026-08-04                        | Phase G : test-installation.ps1 INSTALLATION_LIFECYCLE_VALID ; signature Node.js OpenJS Foundation ✓ ; probe MCP STDIO ✓ ; rollback ✓ ; upgrade (préserve config/données) ✓ ; uninstall -KeepData ✓ ; désinstall complet ✓ |
-| GitHub Actions                   | **BLOQUÉ — facturation** — `account payments have failed`     | Résoudre le problème de facturation dans Billing & plans ; CI ne peut pas valider le SHA 7d6b43e     |
+| GitHub Actions                   | **BLOQUÉ — facturation** — `account payments have failed` | Résoudre le problème de facturation dans Billing & plans ; CI ne peut pas valider le SHA 7d6b43e                                                                                                                           |
 
 ## Gates de livraison
 
@@ -107,11 +107,11 @@ capacité non observée est notée `NON DISPONIBLE` ou `NON PROUVÉE`, jamais co
 
 ## Progrès gates V2.14 — 2026-08-04 SHA 912df9f
 
-| Gate | Verdict | Preuve |
-|---|---|---|
-| A — STDIO de référence | **PASS** | probe SDK MCP inline : 5 outils, 4 resources, 9 templates, schemaVersion=1.0 |
-| B — IntelliJ/Copilot | **PASS AVEC RÉSERVE** | recette fournie, non exécutée — mcp.json absent |
-| C — Claude Desktop | **NON DISPONIBLE** | mcpServers inspecté : seul minos configuré |
-| D — Logiciel exact-head | **PASS** | 264/113/6/74/25/2/42/2 tests, 0 npm vuln, 85.38% functions |
-| F — Docker/Linux | **PASS** | image `mcp-search-net:1.1.0` construite SHA de769ee ; OCI labels vérifiés ; user node uid=1000 ; CapEff=0 ; read_only + tmpfs ; catalog.db persisté ; E2E live 7/7 PASS (searxng + crawl4ai + stdio) ; shutdown propre |
-| G — Installation Windows | **PASS** | `test-installation.ps1 INSTALLATION_LIFECYCLE_VALID` sur SHA b1072d5 ; signature Authenticode Node.js valide (OpenJS Foundation) ; probe MCP STDIO ✓ ; rollback ✓ ; upgrade préserve config/données ✓ ; uninstall -KeepData ✓ ; désinstall complet ✓ |
+| Gate                     | Verdict               | Preuve                                                                                                                                                                                                                                               |
+| ------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A — STDIO de référence   | **PASS**              | probe SDK MCP inline : 5 outils, 4 resources, 9 templates, schemaVersion=1.0                                                                                                                                                                         |
+| B — IntelliJ/Copilot     | **PASS AVEC RÉSERVE** | recette fournie, non exécutée — mcp.json absent                                                                                                                                                                                                      |
+| C — Claude Desktop       | **NON DISPONIBLE**    | mcpServers inspecté : seul minos configuré                                                                                                                                                                                                           |
+| D — Logiciel exact-head  | **PASS**              | 264/113/6/74/25/2/42/2 tests, 0 npm vuln, 85.38% functions                                                                                                                                                                                           |
+| F — Docker/Linux         | **PASS**              | image `mcp-search-net:1.1.0` construite SHA de769ee ; OCI labels vérifiés ; user node uid=1000 ; CapEff=0 ; read_only + tmpfs ; catalog.db persisté ; E2E live 7/7 PASS (searxng + crawl4ai + stdio) ; shutdown propre                               |
+| G — Installation Windows | **PASS**              | `test-installation.ps1 INSTALLATION_LIFECYCLE_VALID` sur SHA b1072d5 ; signature Authenticode Node.js valide (OpenJS Foundation) ; probe MCP STDIO ✓ ; rollback ✓ ; upgrade préserve config/données ✓ ; uninstall -KeepData ✓ ; désinstall complet ✓ |

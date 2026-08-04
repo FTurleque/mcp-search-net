@@ -25,9 +25,9 @@ if (-not (Test-Path -LiteralPath $NodeZipPath -PathType Leaf)) {
     throw "Archive Node.js introuvable : $NodeZipPath"
 }
 
-$NodeVersion = '24.17.0'
+$NodeVersion = '24.18.0'
 $NodeFolderName = "node-v$NodeVersion-win-x64"
-$NodeArchiveSha256 = 'f2aa33b35b75aca5f3f7b85675a6f6423201053e9381911e64961f3bda2528ab'
+$NodeArchiveSha256 = '0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821'
 
 $ActualSha256 = (Get-FileHash -LiteralPath $NodeZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($ActualSha256 -ne $NodeArchiveSha256) {

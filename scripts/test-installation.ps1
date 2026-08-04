@@ -12,7 +12,7 @@ $SourceRoot = Join-Path $TestRoot 'source'
 $OriginalLocalAppData = $env:LOCALAPPDATA
 $env:LOCALAPPDATA = Join-Path $TestRoot 'Local App Data'
 $InstallRoot = Join-Path $env:LOCALAPPDATA 'mcp-search-net'
-$RuntimeRoot = Join-Path $InstallRoot 'runtime\node-v24.17.0-win-x64'
+$RuntimeRoot = Join-Path $InstallRoot 'runtime\node-v24.18.0-win-x64'
 
 try {
     New-Item -ItemType Directory -Force -Path $SourceRoot | Out-Null
@@ -56,7 +56,7 @@ try {
     $BuildManifest = Get-Content -LiteralPath (Join-Path $InstallRoot 'BUILD-MANIFEST.json') -Raw | ConvertFrom-Json
     $ExpectedVersion = (Get-Content -LiteralPath (Join-Path $SourceRoot 'package.json') -Raw | ConvertFrom-Json).version
     if ($BuildManifest.version -ne $ExpectedVersion -or
-        $BuildManifest.nodeVersion -ne '24.17.0' -or
+        $BuildManifest.nodeVersion -ne '24.18.0' -or
         $BuildManifest.sourceRevision -notmatch '^(?:[a-f0-9]{40}|UNAVAILABLE)$' -or
         $BuildManifest.sourceState -notin @('CLEAN', 'DIRTY', 'REVISION_UNVERIFIED', 'CI_UNVERIFIED', 'UNAVAILABLE')) {
         throw 'BUILD-MANIFEST.json ne décrit pas la version et la révision source.'
