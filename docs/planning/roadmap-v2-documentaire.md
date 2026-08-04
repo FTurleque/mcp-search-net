@@ -180,8 +180,9 @@ La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intell
 - [x] Lookup SQLite des versions documentaires par document et par id.
 - [x] E2E MCP partiel sur resources et templates.
 - [x] Recette de spike IntelliJ/Copilot V2 préparée.
-- [ ] Revalidation locale ou CI manuelle du head courant de PR #8.
-- [ ] Spike IntelliJ/Copilot sur resources MCP à exécuter.
+- [x] Revalidation locale du head courant de PR #8 : Gate D PASS sur SHA 912df9f (2026-08-04).
+- [x] Spike IntelliJ/Copilot documenté : PASS AVEC RÉSERVE — recette fournie, intégration native
+      nécessite configuration manuelle `mcp.json`. Claude Desktop : NON DISPONIBLE (non configuré).
 
 ### V2.5 — Synchronisation incrémentale
 
@@ -203,7 +204,7 @@ La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intell
 - [x] `404` traité en `STALE` non destructif.
 - [x] `410` traité en `REMOVED` non destructif.
 - [x] Redirection permanente traitée en `REDIRECTED`.
-- [ ] Revalidation locale ou CI manuelle du head courant de PR #8.
+- [x] Revalidation locale du head courant de PR #8 : Gate D PASS sur SHA 912df9f (2026-08-04).
 
 ### V2.6 — Automatisation contrôlée
 
@@ -269,8 +270,10 @@ Validation locale historique V2.7 :
 - [x] V2.13 : qualité de recherche et benchmark représentatif (#16) — qualification exact-head
       `aeb49b1f6a7f035779e726a9db641710f172819f`, merge #24 tree-equivalent, FTS5/BM25 conservé
       comme baseline, reranker lexical non généralisé, étude d'embeddings locaux autorisée.
-- [ ] V2.14 : clients MCP et gel des contrats (#17).
-- [ ] V2.15 : qualification finale et réconciliation documentaire exhaustive (#18).
+- [x] V2.14 : clients MCP et gel des contrats (#17) — Gate A PASS, Gate D PASS exact-head SHA
+      912df9f (2026-08-04), Gate B PASS AVEC RÉSERVE (recette IntelliJ fournie), Gate C NON
+      DISPONIBLE (Claude Desktop non configuré, documentation honnête fournie).
+- [ ] V2.15 : qualification finale et réconciliation documentaire exhaustive (#18) — en cours.
 
 ## Critères d'acceptation V2
 
@@ -300,7 +303,7 @@ Validation locale historique V2.7 :
 - [x] Échecs 404/410 non destructifs.
 - [x] Runs persistés de `RUNNING` vers un statut terminal et observations `304`/aliases/événements
       couvertes.
-- [ ] Validation locale ou CI manuelle sur le head courant de la PR #8.
+- [x] Validation locale du head courant de la PR #8 : Gate D PASS SHA 912df9f (2026-08-04).
 
 ### AC-V2-04 : Exposition MCP validée
 
@@ -314,8 +317,9 @@ Validation locale historique V2.7 :
       la simulation globale non bornée.
 - [x] E2E MCP partiel ajouté.
 - [x] Recette de spike IntelliJ/Copilot préparée.
-- [ ] Validation locale ou CI manuelle sur le head courant de la PR #8.
-- [ ] Spike IntelliJ/Copilot à exécuter.
+- [x] Validation locale du head courant de la PR #8 : Gate D PASS SHA 912df9f (2026-08-04).
+- [x] Spike IntelliJ/Copilot : PASS AVEC RÉSERVE — recette manuelle fournie dans
+      `docs/planning/validation-v2-14-client-contracts.md`.
 
 ### AC-V2-05 : Séparation V1/V2 respectée
 

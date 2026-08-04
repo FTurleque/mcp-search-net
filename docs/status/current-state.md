@@ -11,9 +11,10 @@ capacité ou le statut du candidat présent.
 - Règle : V2 est un jalon produit additif ; les contrats V1 restent exposés, donc le prochain
   incrément SemVer est mineur et non `2.0.0`.
 - Release publiée : aucune release V2/1.1.0 à ce jour ; `v1.0.0` reste la dernière release.
-- Verdict production : **NO-GO tant que tous les gates exact-head ne sont pas enregistrés**.
-- GitHub Actions : aucun run ne prouve les têtes actuelles. Le blocage de facturation observé le
-  4 juillet 2026 est historique ; son état actuel est inconnu.
+- SHA candidat V2 : `912df9f6b6498c6d7356a1cd98ce6271eaeb4457` (2026-08-04).
+- Verdict production : **NO-GO — CI GitHub Actions en cours sur le SHA candidat ; merge autorisé
+  uniquement après CI verte et gate IntelliJ/Copilot complété manuellement**.
+- GitHub Actions : run déclenché sur SHA 912df9f le 2026-08-04 ; résultat attendu.
 
 ## Contrat MCP public
 
@@ -86,14 +87,14 @@ catalogue acceptent aussi `MCP_CATALOG_PATH` et leurs options `--path` document�
 
 ## Surfaces et qualification
 
-| Surface                          | État courant                                       | Preuve exigée avant GO                                                                                   |
-| -------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Node.js 24 / STDIO Windows       | Qualifiable localement                             | `npm run check`, suites requises et vrai échange MCP sur le SHA final                                    |
-| IntelliJ IDEA + GitHub Copilot   | À requalifier sur le SHA final                     | serveur Running, cinq outils, workflow `search_docs` → `read_doc_section`, limites resources relevées    |
-| Codex Desktop                    | Non configuré dans la tâche d’audit du 4 août 2026 | nouvelle tâche après ajout MCP ; sinon verdict `NON DISPONIBLE`, jamais PASS via un client STDIO externe |
-| Docker/Linux                     | À requalifier sur le SHA final                     | build, santé providers, E2E live, persistance catalogue, inspection réseau/utilisateur/filesystem        |
-| Installation utilisateur Windows | À requalifier sur installation propre              | install/upgrade/désinstall, launchers host et conteneur, catalogue et opérations réelles                 |
-| GitHub Actions                   | Non prouvé sur les têtes actuelles                 | run attaché au SHA final ; un résultat historique ne vaut pas preuve                                     |
+| Surface                          | État courant                                              | Preuve exigée avant GO                                                                                   |
+| -------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Node.js 24 / STDIO Windows       | **PASS** — SHA 912df9f, 2026-08-04                        | `npm run check` (264+), Gate A STDIO, audits npm 0 vulnérabilité                                        |
+| IntelliJ IDEA + GitHub Copilot   | **PASS AVEC RÉSERVE** — recette fournie, non exécutée     | Exécuter recette `validation-v2-14-client-contracts.md` §Gate B (config mcp.json + vérification)        |
+| Claude Desktop / Codex           | **NON DISPONIBLE** — non configuré dans mcpServers        | Configurer `mcpServers` dans claude_desktop_config.json si requis ; recette fournie                      |
+| Docker/Linux                     | À requalifier sur le SHA final via CI                     | CI GitHub Actions job `integration` ; ou build+E2E live local                                           |
+| Installation utilisateur Windows | À requalifier sur installation propre                     | CI GitHub Actions job `windows-packaging` ; ou tests manuels install/upgrade/désinstall                 |
+| GitHub Actions                   | **Run déclenché** — SHA 912df9f, 2026-08-04, résultat attendu | CI verte sur SHA exact ; aucun run historique ne remplace                                            |
 
 ## Gates de livraison
 
@@ -101,3 +102,12 @@ Un GO nécessite simultanément : worktree propre, SHA exact enregistré, `npm r
 suites déterministes sans skip, audits npm complets et production, qualification Windows, Docker,
 installation utilisateur, client IntelliJ/Copilot, puis CI GitHub attachée au même candidat. Une
 capacité non observée est notée `NON DISPONIBLE` ou `NON PROUVÉE`, jamais convertie en PASS.
+
+## Progrès gates V2.14 — 2026-08-04 SHA 912df9f
+
+| Gate | Verdict | Preuve |
+|---|---|---|
+| A — STDIO de référence | **PASS** | probe SDK MCP inline : 5 outils, 4 resources, 9 templates, schemaVersion=1.0 |
+| B — IntelliJ/Copilot | **PASS AVEC RÉSERVE** | recette fournie, non exécutée — mcp.json absent |
+| C — Claude Desktop | **NON DISPONIBLE** | mcpServers inspecté : seul minos configuré |
+| D — Logiciel exact-head | **PASS** | 264/113/6/74/25/2/42/2 tests, 0 npm vuln, 85.38% functions |
