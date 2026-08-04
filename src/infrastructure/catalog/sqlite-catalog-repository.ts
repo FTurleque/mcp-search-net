@@ -1109,7 +1109,7 @@ function findBestMultiTermSnippetStart(
     const matchedToken = match[0];
     const termIndex = termIndexes.get(matchedToken);
     if (termIndex === undefined) continue;
-    if (occurrenceCounts[termIndex]! >= MAX_SNIPPET_OCCURRENCES_PER_TERM) continue;
+    if ((occurrenceCounts[termIndex] ?? 0) >= MAX_SNIPPET_OCCURRENCES_PER_TERM) continue;
 
     const normalizedStart = match.index;
     const normalizedEnd = normalizedStart + matchedToken.length;
@@ -1117,7 +1117,7 @@ function findBestMultiTermSnippetStart(
     const originalEnd = normalizedContent.originalEnds[normalizedEnd - 1];
     if (originalStart === undefined || originalEnd === undefined) continue;
     occurrences.push({ termIndex, originalStart, originalEnd });
-    occurrenceCounts[termIndex]! += 1;
+    occurrenceCounts[termIndex] = (occurrenceCounts[termIndex] ?? 0) + 1;
   }
   if (occurrences.length === 0) return 0;
 
@@ -1171,12 +1171,9 @@ function normalizeSnippetText(value: string): NormalizedSnippetText {
 
   for (const character of value) {
     const originalEnd = originalStart + character.length;
-    const normalizedCharacter = character
-      .normalize('NFD')
-      .toLowerCase()
-      .replace(/\p{M}/gu, '');
+    const normalizedCharacter = character.normalize('NFD').toLowerCase().replace(/\p{M}/gu, '');
     normalizedValue += normalizedCharacter;
-    for (let index = 0; index < normalizedCharacter.length; index += 1) {
+    for (const _ of normalizedCharacter) {
       originalStarts.push(originalStart);
       originalEnds.push(originalEnd);
     }

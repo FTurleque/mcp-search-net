@@ -104,13 +104,13 @@ Recherche dans le catalogue documentaire local V2. L'outil est read-only, idempo
 
 Entrées :
 
-| Champ             | Défaut               | Contraintes                                                   |
-| ----------------- | -------------------- | ------------------------------------------------------------- |
-| `query`           | —                    | 1 à 500 caractères, sans caractère de contrôle                |
-| `sourceKey`       | absente              | clé de source catalogue optionnelle                           |
-| `language`        | absente              | filtre langue BCP-47 simplifié, exemple `fr`                  |
-| `maxResults`      | limite par défaut V2 | de 1 à la limite applicative, 10 au maximum                   |
-| `maxSnippetChars` | `500`                | budget borné appliqué à chaque extrait                        |
+| Champ             | Défaut               | Contraintes                                                  |
+| ----------------- | -------------------- | ------------------------------------------------------------ |
+| `query`           | —                    | 1 à 500 caractères, sans caractère de contrôle               |
+| `sourceKey`       | absente              | clé de source catalogue optionnelle                          |
+| `language`        | absente              | filtre langue BCP-47 simplifié, exemple `fr`                 |
+| `maxResults`      | limite par défaut V2 | de 1 à la limite applicative, 10 au maximum                  |
+| `maxSnippetChars` | `500`                | budget borné appliqué à chaque extrait                       |
 | `compact`         | `false`              | réduit encore les extraits pour un usage agent à faible coût |
 
 Sortie `data` :

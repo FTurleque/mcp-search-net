@@ -20,7 +20,6 @@ export async function extractPdfText(body: Uint8Array): Promise<string> {
       disableFontFace: true,
       disableRange: true,
       disableStream: true,
-      isEvalSupported: false,
       stopAtErrors: true,
       useSystemFonts: false,
       useWasm: false,

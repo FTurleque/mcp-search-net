@@ -3,6 +3,11 @@
 # the Docker build context.
 *
 
+# Explicitly protect user data and runtime directories (redundant with * but
+# documents intent: these directories must never enter the Docker build context).
+data
+runtime
+
 !Dockerfile
 !.dockerignore
 !package.json

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Crawl4aiContentFetcher } from '../../src/infrastructure/fetch/crawl4ai-content-fetcher.js';
 import {
   ExtractionError,
+  OcrRequiredNotSupportedError,
   UnsupportedContentTypeError,
 } from '../../src/domain/errors/domain-errors.js';
 import type { SecureHttpGateway } from '../../src/infrastructure/fetch/secure-http-gateway.js';
@@ -220,6 +221,49 @@ describe('Crawl4aiContentFetcher', () => {
         fetchRequest('https://example.com/file.pdf', 'static'),
       ),
     ).rejects.toBeInstanceOf(ExtractionError);
+  });
+
+  it('converts HTML pre, code and list elements to markdown', async () => {
+    const gateway = {
+      download: async () => ({
+        requestedUrl: 'https://example.com/ref',
+        finalUrl: 'https://example.com/ref',
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+        body: new TextEncoder().encode(
+          '<html><body>' +
+            '<h2>Reference</h2>' +
+            '<ul><li>Item one</li><li>Item two</li></ul>' +
+            '<pre><code>npm install mcp-search-net</code></pre>' +
+            '<code>inline snippet</code>' +
+            '<p>Additional documentation paragraph with sufficient words.</p>' +
+            '</body></html>',
+        ),
+      }),
+    } as unknown as SecureHttpGateway;
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
+    const result = await fetcher.fetch(fetchRequest('https://example.com/ref', 'static'));
+    if ('notModified' in result) throw new Error('Expected fetched content');
+    expect(result.markdown).toContain('## Reference');
+    expect(result.markdown).toContain('- Item one');
+    expect(result.markdown).toContain('`inline snippet`');
+    expect(result.markdown).toContain('npm install');
+  });
+
+  it('rejects image content with OcrRequiredNotSupportedError', async () => {
+    const gateway = {
+      download: async () => ({
+        requestedUrl: 'https://example.com/diagram.png',
+        finalUrl: 'https://example.com/diagram.png',
+        status: 200,
+        headers: { 'content-type': 'image/png' },
+        body: new Uint8Array([137, 80, 78, 71]),
+      }),
+    } as unknown as SecureHttpGateway;
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
+    await expect(
+      fetcher.fetch(fetchRequest('https://example.com/diagram.png', 'static')),
+    ).rejects.toBeInstanceOf(OcrRequiredNotSupportedError);
   });
 
   it('extracts text from a standard textual PDF', async () => {
