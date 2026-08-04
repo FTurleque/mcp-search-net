@@ -48,6 +48,16 @@ Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "MCP_SEARCH_H
 [Code]
 var
   DeleteUserDataOnUninstall: Boolean;
+  IntegPage: TWizardPage;
+  IntegList: TNewCheckListBox;
+
+const
+  IDX_DOCKER         = 0;
+  IDX_COPILOT_JB     = 1;
+  IDX_CLAUDE_DESKTOP = 2;
+  IDX_CLAUDE_CODE    = 3;
+
+{ ── Smoke build guard ───────────────────────────────────────────────────────── }
 
 function IsSmokeBuild(): Boolean;
 begin
@@ -59,10 +69,14 @@ begin
   Result := not IsSmokeBuild();
 end;
 
+{ ── Registry helpers ────────────────────────────────────────────────────────── }
+
 function InstallerRegistryPath(): String;
 begin
   Result := 'Software\FTurleque\mcp-search-net';
 end;
+
+{ ── PATH helpers ────────────────────────────────────────────────────────────── }
 
 function TrimTrailingBackslash(Value: String): String;
 begin
@@ -124,6 +138,63 @@ begin
   RegDeleteValue(HKCU, InstallerRegistryPath(), 'ManagedPath');
 end;
 
+{ ── Intégration wizard page ─────────────────────────────────────────────────── }
+
+procedure InitializeWizard;
+var
+  Lbl: TNewStaticText;
+begin
+  if IsSmokeBuild() then Exit;
+
+  IntegPage := CreateCustomPage(
+    wpSelectDir,
+    'Intégrations MCP',
+    'Sélectionnez les services et clients IA à configurer après l''installation.');
+
+  Lbl := TNewStaticText.Create(IntegPage);
+  Lbl.Parent    := IntegPage.Surface;
+  Lbl.AutoSize  := False;
+  Lbl.WordWrap  := True;
+  Lbl.SetBounds(0, 0, IntegPage.SurfaceWidth, ScaleY(32));
+  Lbl.Caption   :=
+    'Les intégrations cochées seront configurées automatiquement. ' +
+    'Décochez ce que vous préférez configurer manuellement.';
+
+  IntegList := TNewCheckListBox.Create(IntegPage);
+  IntegList.Parent := IntegPage.Surface;
+  IntegList.SetBounds(0, ScaleY(38), IntegPage.SurfaceWidth, ScaleY(168));
+  IntegList.Flat := True;
+
+  IntegList.AddCheckBox(
+    'SearXNG + Crawl4AI  (Docker)',
+    'Lance les services de recherche et scraping web — nécessite Docker Desktop démarré',
+    0, True, True, False, True, nil);
+
+  IntegList.AddCheckBox(
+    'GitHub Copilot — JetBrains / IntelliJ',
+    'Écrit l''entrée mcp-search-net dans %LOCALAPPDATA%\github-copilot\intellij\mcp.json',
+    0, True, True, False, True, nil);
+
+  IntegList.AddCheckBox(
+    'Claude Desktop',
+    'Fusionne l''entrée dans claude_desktop_config.json (détection automatique MSIX ou %APPDATA%\Claude)',
+    0, True, True, False, True, nil);
+
+  IntegList.AddCheckBox(
+    'Claude Code  (CLI)',
+    'Exécute : claude mcp add --scope user mcp-search-net',
+    0, True, True, False, True, nil);
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if (IntegPage <> nil) and (PageID = IntegPage.ID) then
+    Result := IsSmokeBuild();
+end;
+
+{ ── Configure-install invocation ────────────────────────────────────────────── }
+
 function RunConfigureScript(ExtraParams: String): Boolean;
 var
   PowerShell: String;
@@ -133,17 +204,47 @@ var
 begin
   PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   ScriptPath := ExpandConstant('{app}\scripts\configure-install.ps1');
-  Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath + '" -InstallRoot "' + ExpandConstant('{app}') + '"';
+  Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath +
+                '" -InstallRoot "' + ExpandConstant('{app}') + '"';
   if ExtraParams <> '' then Parameters := Parameters + ' ' + ExtraParams;
-  Result := Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+  Result := Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+            and (ResultCode = 0);
+end;
+
+function BuildClientsParam: String;
+var
+  Clients: String;
+begin
+  Clients := '';
+  if IntegList.Checked[IDX_DOCKER]         then Clients := Clients + 'docker,';
+  if IntegList.Checked[IDX_COPILOT_JB]     then Clients := Clients + 'copilot-jetbrains,';
+  if IntegList.Checked[IDX_CLAUDE_DESKTOP] then Clients := Clients + 'claude-desktop,';
+  if IntegList.Checked[IDX_CLAUDE_CODE]    then Clients := Clients + 'claude-code,';
+  if (Length(Clients) > 0) and (Clients[Length(Clients)] = ',') then
+    Delete(Clients, Length(Clients), 1);
+  Result := Clients;
 end;
 
 procedure RunConfigureInstall;
 var
   ExtraParams: String;
+  Clients: String;
 begin
-  ExtraParams := '';
-  if IsSmokeBuild() then ExtraParams := '-SmokeMode';
+  if IsSmokeBuild() then
+  begin
+    RunConfigureScript('-SmokeMode');
+    Exit;
+  end;
+  { Mode silencieux (/VERYSILENT) : pas de page wizard → auto-detect }
+  if WizardSilent() then
+  begin
+    RunConfigureScript('');
+    Exit;
+  end;
+  Clients := BuildClientsParam;
+  ExtraParams := '-FromInstaller';
+  if Clients <> '' then
+    ExtraParams := ExtraParams + ' -Clients "' + Clients + '"';
   if not RunConfigureScript(ExtraParams) then
     MsgBox(
       'La configuration post-installation n''a pas pu être complétée.' + #13#10 +
@@ -157,6 +258,8 @@ begin
   RunConfigureScript('-Uninstall');
 end;
 
+{ ── Install lifecycle ───────────────────────────────────────────────────────── }
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
@@ -167,6 +270,8 @@ begin
       RegWriteStringValue(HKCU, InstallerRegistryPath(), 'InstallRoot', ExpandConstant('{app}'));
   end;
 end;
+
+{ ── Uninstall lifecycle ─────────────────────────────────────────────────────── }
 
 procedure PromptForUserDataRemoval;
 var
@@ -192,7 +297,7 @@ var
 begin
   if IsSmokeBuild() or (not DeleteUserDataOnUninstall) then exit;
   DataRoot := ExpandConstant('{app}\data');
-  EnvFile := ExpandConstant('{app}\.env');
+  EnvFile  := ExpandConstant('{app}\.env');
   if DirExists(DataRoot) then DelTree(DataRoot, True, True, True);
   if FileExists(EnvFile) then DeleteFile(EnvFile);
   RegDeleteKeyIncludingSubkeys(HKCU, InstallerRegistryPath());

@@ -2,7 +2,11 @@
 param(
     [Parameter(Mandatory)] [string] $InstallRoot,
     [switch] $SmokeMode,
-    [switch] $Uninstall
+    [switch] $Uninstall,
+    # Set by the Inno Setup wizard; disables auto-detect in favour of the explicit list.
+    [switch] $FromInstaller,
+    # Comma-separated list of targets to configure: docker,copilot-jetbrains,claude-desktop,claude-code
+    [string] $Clients = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,6 +86,20 @@ if (-not $Uninstall -and -not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) 
 
 if ($SmokeMode) { exit 0 }
 
+# ── Client selection ───────────────────────────────────────────────────────────
+# -FromInstaller: honour explicit wizard selection; empty list = nothing to configure.
+# Otherwise (ZIP install.ps1): attempt all targets, skip if not detected.
+$AllClients = @('docker', 'copilot-jetbrains', 'claude-desktop', 'claude-code')
+if ($FromInstaller) {
+    $clientList = if ($Clients) { @($Clients -split ',' | ForEach-Object { $_.Trim() }) } else { @() }
+} else {
+    $clientList = $AllClients
+}
+$DoDocker        = -not $Uninstall -and ($clientList -contains 'docker')
+$DoCopilotJB     = $clientList -contains 'copilot-jetbrains'
+$DoClaudeDesktop = $clientList -contains 'claude-desktop'
+$DoClaudeCode    = $clientList -contains 'claude-code'
+
 # ── Compose normalization (distribution layout: docker\ → root) ────────────────
 # CMD launchers reference %MCP_SEARCH_HOME%\compose.yaml; copy from docker\ if needed
 if (-not $Uninstall) {
@@ -129,7 +147,7 @@ if (-not $Uninstall) {
 
 # ── Docker service startup ──────────────────────────────────────────────────────
 
-if (-not $Uninstall) {
+if ($DoDocker) {
     $ComposePath = $null
     foreach ($c in @((Join-Path $InstallRoot 'compose.yaml'), (Join-Path $InstallRoot 'docker\compose.yaml'))) {
         if (Test-Path -LiteralPath $c -PathType Leaf) { $ComposePath = $c; break }
@@ -260,16 +278,18 @@ function Remove-JsonMcpClient {
 $CopilotJBDir = Join-Path $env:LOCALAPPDATA 'github-copilot\intellij'
 if ($Uninstall) {
     Remove-JsonMcpClient 'copilot-jetbrains'
-} elseif (Test-Path -LiteralPath $CopilotJBDir -PathType Container) {
-    Write-Host ''
-    Write-Host 'Copilot JetBrains détecté.'
-    Install-JsonMcpClient `
-        -ClientKey  'copilot-jetbrains' `
-        -ConfigPath (Join-Path $CopilotJBDir 'mcp.json') `
-        -Entry      $LocalEntry `
-        -RootKey    'mcpServers'
-} else {
-    Write-Host '  Copilot JetBrains : non détecté (github-copilot\intellij absent).' -ForegroundColor Gray
+} elseif ($DoCopilotJB) {
+    if (Test-Path -LiteralPath $CopilotJBDir -PathType Container) {
+        Write-Host ''
+        Write-Host 'Copilot JetBrains détecté.'
+        Install-JsonMcpClient `
+            -ClientKey  'copilot-jetbrains' `
+            -ConfigPath (Join-Path $CopilotJBDir 'mcp.json') `
+            -Entry      $LocalEntry `
+            -RootKey    'mcpServers'
+    } else {
+        Write-Host '  Copilot JetBrains : non détecté (github-copilot\intellij absent). Configuration ignorée.' -ForegroundColor Yellow
+    }
 }
 
 # ── Claude Desktop ─────────────────────────────────────────────────────────────
@@ -295,16 +315,18 @@ if (-not $ClaudeDesktopConfig) {
 
 if ($Uninstall) {
     Remove-JsonMcpClient 'claude-desktop'
-} elseif ($ClaudeDesktopConfig) {
-    Write-Host ''
-    Write-Host 'Claude Desktop détecté.'
-    Install-JsonMcpClient `
-        -ClientKey  'claude-desktop' `
-        -ConfigPath $ClaudeDesktopConfig `
-        -Entry      $DesktopEntry `
-        -RootKey    'mcpServers'
-} else {
-    Write-Host '  Claude Desktop : non détecté (%APPDATA%\Claude absent).' -ForegroundColor Gray
+} elseif ($DoClaudeDesktop) {
+    if ($ClaudeDesktopConfig) {
+        Write-Host ''
+        Write-Host 'Claude Desktop détecté.'
+        Install-JsonMcpClient `
+            -ClientKey  'claude-desktop' `
+            -ConfigPath $ClaudeDesktopConfig `
+            -Entry      $DesktopEntry `
+            -RootKey    'mcpServers'
+    } else {
+        Write-Host '  Claude Desktop : non détecté (%APPDATA%\Claude absent). Configuration ignorée.' -ForegroundColor Yellow
+    }
 }
 
 # ── Claude Code (CLI) ──────────────────────────────────────────────────────────
@@ -333,39 +355,41 @@ if ($Uninstall) {
         }
         $integrations.Remove($integKeyCC)
     }
-} elseif ($ClaudeExe) {
-    Write-Host ''
-    Write-Host 'Claude Code détecté.'
-    $alreadyManaged = $integrations.ContainsKey($integKeyCC) -and $integrations[$integKeyCC].ownership -eq 'managed'
+} elseif ($DoClaudeCode) {
+    if ($ClaudeExe) {
+        Write-Host ''
+        Write-Host 'Claude Code détecté.'
+        $alreadyManaged = $integrations.ContainsKey($integKeyCC) -and $integrations[$integKeyCC].ownership -eq 'managed'
 
-    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    $listOut = & $ClaudeExe mcp list 2>&1 | Out-String
-    $ErrorActionPreference = $prev
-
-    if ($listOut -match 'mcp-search-net' -and -not $alreadyManaged) {
-        Write-Host "  Claude Code : entrée 'mcp-search-net' existante non gérée — préservée." -ForegroundColor Cyan
-        $integrations[$integKeyCC] = [PSCustomObject]@{
-            ownership    = 'preexisting'
-            configuredAt = [datetime]::UtcNow.ToString('o')
-        }
-    } else {
         $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        & $ClaudeExe mcp add --scope user -e "MCP_SEARCH_HOME=$InstallRoot" mcp-search-net -- cmd.exe /d /s /c $BinLauncher 2>&1 | Out-Null
-        $ccExit = $LASTEXITCODE
+        $listOut = & $ClaudeExe mcp list 2>&1 | Out-String
         $ErrorActionPreference = $prev
 
-        if ($ccExit -eq 0) {
-            Write-Host "  Claude Code : 'mcp-search-net' configuré (scope=user)" -ForegroundColor Green
+        if ($listOut -match 'mcp-search-net' -and -not $alreadyManaged) {
+            Write-Host "  Claude Code : entrée 'mcp-search-net' existante non gérée — préservée." -ForegroundColor Cyan
             $integrations[$integKeyCC] = [PSCustomObject]@{
-                ownership    = 'managed'
+                ownership    = 'preexisting'
                 configuredAt = [datetime]::UtcNow.ToString('o')
             }
         } else {
-            Write-Host "  Claude Code : configuration échouée (code $ccExit)" -ForegroundColor Yellow
+            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            & $ClaudeExe mcp add --scope user -e "MCP_SEARCH_HOME=$InstallRoot" mcp-search-net -- cmd.exe /d /s /c $BinLauncher 2>&1 | Out-Null
+            $ccExit = $LASTEXITCODE
+            $ErrorActionPreference = $prev
+
+            if ($ccExit -eq 0) {
+                Write-Host "  Claude Code : 'mcp-search-net' configuré (scope=user)" -ForegroundColor Green
+                $integrations[$integKeyCC] = [PSCustomObject]@{
+                    ownership    = 'managed'
+                    configuredAt = [datetime]::UtcNow.ToString('o')
+                }
+            } else {
+                Write-Host "  Claude Code : configuration échouée (code $ccExit)" -ForegroundColor Yellow
+            }
         }
+    } else {
+        Write-Host '  Claude Code : CLI non détecté (claude absent du PATH et %APPDATA%\Claude\claude-code absent).' -ForegroundColor Yellow
     }
-} else {
-    Write-Host '  Claude Code : CLI non détecté (claude absent du PATH et %APPDATA%\Claude\claude-code absent).' -ForegroundColor Gray
 }
 
 # ── Persist integrations ───────────────────────────────────────────────────────
