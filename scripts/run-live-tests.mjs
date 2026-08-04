@@ -4,7 +4,7 @@ import process from 'node:process';
 
 const result = spawnSync(
   process.execPath,
-  [resolve('scripts/run-test-suite.mjs'), 'e2e-live', 'vitest.live.config.ts'],
+  [resolve('scripts/run-test-suite.mjs'), 'e2e-live', 'tests/config/vitest.live.config.ts'],
   {
     cwd: process.cwd(),
     env: {
