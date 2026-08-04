@@ -41,12 +41,16 @@ services:
     shm_size: 1gb
     volumes:
       - crawl4ai-data:/home/appuser/.cache
-    read_only: true
+    # read_only not set: Playwright Chromium crashes (SIGTRAP) in read-only containers
+    # because Chrome's crash reporter initialisation writes to /home/appuser/ before
+    # any tmpfs can cover it. cap_drop:ALL + no-new-privileges remain in force.
     tmpfs:
-      - /tmp:size=256m,noexec,nosuid,nodev
-      - /var/lib/redis:size=64m,noexec,nosuid,nodev
-      - /var/log/redis:size=16m,noexec,nosuid,nodev
-      - /var/lib/crawl4ai:size=64m,noexec,nosuid,nodev
+      - /tmp:size=256m,nosuid,nodev,uid=999,gid=999
+      - /var/lib/redis:size=64m,noexec,nosuid,nodev,uid=999,gid=999
+      - /var/log/redis:size=16m,noexec,nosuid,nodev,uid=999,gid=999
+      - /var/lib/crawl4ai:size=64m,noexec,nosuid,nodev,uid=999,gid=999
+      - /home/appuser/.crawl4ai:size=128m,noexec,nosuid,nodev,uid=999,gid=999
+      - /home/appuser/.gunicorn:size=8m,noexec,nosuid,nodev,uid=999,gid=999
     cap_drop:
       - ALL
     security_opt:
@@ -63,6 +67,7 @@ services:
       start_period: 60s
     networks:
       - backend
+      - egress
 
   # mcp-search-net est un serveur MCP STDIO pur et n'expose pas
   # d'endpoint HTTP de santé. Les conditions service_healthy garantissent

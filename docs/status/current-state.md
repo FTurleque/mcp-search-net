@@ -11,7 +11,8 @@ capacité ou le statut du candidat présent.
 - Règle : V2 est un jalon produit additif ; les contrats V1 restent exposés, donc le prochain
   incrément SemVer est mineur et non `2.0.0`.
 - Release publiée : aucune release V2/1.1.0 à ce jour ; `v1.0.0` reste la dernière release.
-- SHA candidat V2 : `7d6b43eff234f9a8d28ee52ce7721c626b95b72d` (2026-08-04).
+- SHA candidat V2 : `de769ee5f0eed1f6fd7829a21496e69817e6d096` (2026-08-04), branche
+  `codex/v2-production-readiness`.
 - Verdict production : **NO-GO tant que le gate IntelliJ/Copilot n'est pas exécuté manuellement.
   La CI GitHub Actions est bloquée par facturation et ne peut pas valider le SHA courant.**
 - GitHub Actions : blocage facturation confirmé le 2026-08-04 (`account payments have failed`).
@@ -93,7 +94,7 @@ catalogue acceptent aussi `MCP_CATALOG_PATH` et leurs options `--path` document�
 | Node.js 24 / STDIO Windows       | **PASS** — SHA 912df9f, 2026-08-04                        | `npm run check` (264+), Gate A STDIO, audits npm 0 vulnérabilité                                        |
 | IntelliJ IDEA + GitHub Copilot   | **PASS AVEC RÉSERVE** — recette fournie, non exécutée     | Exécuter recette `validation-v2-14-client-contracts.md` §Gate B (config mcp.json + vérification)        |
 | Claude Desktop / Codex           | **NON DISPONIBLE** — non configuré dans mcpServers        | Configurer `mcpServers` dans claude_desktop_config.json si requis ; recette fournie                      |
-| Docker/Linux                     | À requalifier sur le SHA final via CI                     | CI GitHub Actions job `integration` ; ou build+E2E live local                                           |
+| Docker/Linux                     | **PASS** — SHA de769ee, 2026-08-04                        | Phase F : `docker compose build`, OCI labels, user/caps/fs, E2E live 7/7 PASS, shutdown propre          |
 | Installation utilisateur Windows | À requalifier sur installation propre                     | CI GitHub Actions job `windows-packaging` ; ou tests manuels install/upgrade/désinstall                 |
 | GitHub Actions                   | **BLOQUÉ — facturation** — `account payments have failed`     | Résoudre le problème de facturation dans Billing & plans ; CI ne peut pas valider le SHA 7d6b43e     |
 
@@ -112,3 +113,4 @@ capacité non observée est notée `NON DISPONIBLE` ou `NON PROUVÉE`, jamais co
 | B — IntelliJ/Copilot | **PASS AVEC RÉSERVE** | recette fournie, non exécutée — mcp.json absent |
 | C — Claude Desktop | **NON DISPONIBLE** | mcpServers inspecté : seul minos configuré |
 | D — Logiciel exact-head | **PASS** | 264/113/6/74/25/2/42/2 tests, 0 npm vuln, 85.38% functions |
+| F — Docker/Linux | **PASS** | image `mcp-search-net:1.1.0` construite SHA de769ee ; OCI labels vérifiés ; user node uid=1000 ; CapEff=0 ; read_only + tmpfs ; catalog.db persisté ; E2E live 7/7 PASS (searxng + crawl4ai + stdio) ; shutdown propre |
