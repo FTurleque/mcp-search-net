@@ -51,7 +51,7 @@ function Write-JsonFile([string] $Path, [object] $Data) {
             $tmp = [System.IO.Path]::GetTempFileName()
             $compressed = $Data | ConvertTo-Json -Depth 10 -Compress
             [System.IO.File]::WriteAllText($tmp, $compressed, $Utf8NoBom)
-            $jsCode = "const d=require('fs').readFileSync(process.argv[2],'utf8');process.stdout.write(JSON.stringify(JSON.parse(d),null,2))"
+            $jsCode = "const d=require('fs').readFileSync(process.argv[1],'utf8');process.stdout.write(JSON.stringify(JSON.parse(d),null,2))"
             $r = Invoke-ExternalProcess $node @('-e', $jsCode, $tmp) 10
             if ($r.Done -and $r.ExitCode -eq 0 -and $r.Stdout) {
                 [System.IO.File]::WriteAllText($Path, ($r.Stdout + "`r`n"), $Utf8NoBom)

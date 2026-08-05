@@ -35,7 +35,7 @@ function Write-Json2Spaces {
 
             $psi                        = New-Object System.Diagnostics.ProcessStartInfo
             $psi.FileName               = $NodeExe
-            $psi.Arguments              = "-e `"const d=require('fs').readFileSync(process.argv[2],'utf8');process.stdout.write(JSON.stringify(JSON.parse(d),null,2))`" `"$tmp`""
+            $psi.Arguments              = "-e `"const d=require('fs').readFileSync(process.argv[1],'utf8');process.stdout.write(JSON.stringify(JSON.parse(d),null,2))`" `"$tmp`""
             $psi.UseShellExecute        = $false
             $psi.RedirectStandardOutput = $true
             $psi.RedirectStandardError  = $true
