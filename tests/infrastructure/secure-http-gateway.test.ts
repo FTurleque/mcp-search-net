@@ -151,11 +151,11 @@ describe('SecureHttpGateway', () => {
     await expect(gateway.download(`${server.url}/private/a/download`)).rejects.toMatchObject({
       code: 'BLOCKED_ADDRESS',
     });
-    await expect(
-      gateway.download(`${server.url}/private/a/download/extra`),
-    ).resolves.toMatchObject({
-      status: 200,
-    });
+    await expect(gateway.download(`${server.url}/private/a/download/extra`)).resolves.toMatchObject(
+      {
+        status: 200,
+      },
+    );
     await expect(gateway.download(`${server.url}/same`)).resolves.toMatchObject({ status: 200 });
     expect(paths.filter((path) => path === '/robots.txt')).toHaveLength(3);
   });
