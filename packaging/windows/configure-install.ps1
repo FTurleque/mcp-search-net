@@ -41,8 +41,31 @@ function Write-JsonFile([string] $Path, [object] $Data) {
     if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
     }
+
+    # Use bundled Node.js for standard 2-space JSON (avoids PS5.1 deep-alignment quirks)
+    # Invoke-ExternalProcess is defined later in this script but resolved at call time, not definition time
+    $node = Join-Path $InstallRoot 'runtime\node-v24.18.0-win-x64\node.exe'
+    if (Test-Path -LiteralPath $node -PathType Leaf) {
+        $tmp = $null
+        try {
+            $tmp = [System.IO.Path]::GetTempFileName()
+            $compressed = $Data | ConvertTo-Json -Depth 10 -Compress
+            [System.IO.File]::WriteAllText($tmp, $compressed, $Utf8NoBom)
+            $jsCode = "const d=require('fs').readFileSync(process.argv[2],'utf8');process.stdout.write(JSON.stringify(JSON.parse(d),null,2))"
+            $r = Invoke-ExternalProcess $node @('-e', $jsCode, $tmp) 10
+            if ($r.Done -and $r.ExitCode -eq 0 -and $r.Stdout) {
+                [System.IO.File]::WriteAllText($Path, ($r.Stdout + "`r`n"), $Utf8NoBom)
+                return
+            }
+        } finally {
+            if ($tmp -and (Test-Path -LiteralPath $tmp -PathType Leaf)) {
+                Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    # Fallback: PS5.1 ConvertTo-Json with double-space normalization
     $raw  = $Data | ConvertTo-Json -Depth 10
-    # Normalize PS5.1 double-space after colon (":  value") to standard JSON (": value")
     $json = [regex]::Replace($raw, '":\s{2,}', '": ')
     [System.IO.File]::WriteAllText($Path, ($json + "`r`n"), $Utf8NoBom)
 }
@@ -104,13 +127,13 @@ function Invoke-ExternalProcess {
         $finished = $proc.WaitForExit($Sec * 1000)
         if (-not $finished) { try { $proc.Kill() } catch {} }
         [System.Threading.Tasks.Task]::WhenAll($outTask, $errTask).Wait(3000) | Out-Null
-        $out      = (if ($outTask.IsCompleted) { $outTask.Result } else { '' }) +
-                    (if ($errTask.IsCompleted) { $errTask.Result } else { '' })
+        $stdout   = if ($outTask.IsCompleted) { $outTask.Result } else { '' }
+        $stderr   = if ($errTask.IsCompleted) { $errTask.Result } else { '' }
         $exitCode = if ($finished) { try { $proc.ExitCode } catch { -1 } } else { -1 }
         $proc.Dispose()
-        return [PSCustomObject]@{ Out = $out; Done = $finished; ExitCode = $exitCode }
+        return [PSCustomObject]@{ Stdout = $stdout; Stderr = $stderr; Out = ($stdout + $stderr); Done = $finished; ExitCode = $exitCode }
     } catch {
-        return [PSCustomObject]@{ Out = ''; Done = $false; ExitCode = -1 }
+        return [PSCustomObject]@{ Stdout = ''; Stderr = ''; Out = ''; Done = $false; ExitCode = -1 }
     }
 }
 
@@ -265,29 +288,18 @@ function Install-JsonMcpClient {
     )
 
     $integKey = "${ClientKey}:${ServerKey}"
-    $alreadyManaged = $integrations.ContainsKey($integKey) -and
-                      $integrations[$integKey].ownership -eq 'managed'
-
     $data = Read-JsonFile $ConfigPath
     if (-not (Get-PropertyExists $data $RootKey)) {
         $data | Add-Member -NotePropertyName $RootKey -NotePropertyValue ([PSCustomObject]@{}) -Force
     }
-    $root = $data.$RootKey
-
-    if ((Get-PropertyExists $root $ServerKey) -and -not $alreadyManaged) {
-        Write-Host "  $ClientKey : entrée '$ServerKey' existante non gérée — préservée." -ForegroundColor Cyan
-        $integrations[$integKey] = [PSCustomObject]@{
-            ownership    = 'preexisting'
-            configPath   = $ConfigPath
-            configuredAt = [datetime]::UtcNow.ToString('o')
-        }
-        return
-    }
+    $root    = $data.$RootKey
+    $existed = Get-PropertyExists $root $ServerKey
 
     Backup-ConfigFile $ConfigPath
     $root | Add-Member -NotePropertyName $ServerKey -NotePropertyValue $Entry -Force
     Write-JsonFile $ConfigPath $data
-    Write-Host "  $ClientKey : '$ServerKey' configuré → $ConfigPath" -ForegroundColor Green
+    $verb = if ($existed) { 'mis a jour' } else { 'configure' }
+    Write-Host "  $ClientKey : '$ServerKey' $verb -> $ConfigPath" -ForegroundColor Green
     $integrations[$integKey] = [PSCustomObject]@{
         ownership    = 'managed'
         configPath   = $ConfigPath
@@ -298,27 +310,29 @@ function Install-JsonMcpClient {
 function Remove-JsonMcpClient {
     param(
         [string] $ClientKey,
+        [string] $ConfigPath = '',   # If empty, falls back to the tracked configPath
         [string] $ServerKey = 'mcp-search-net'
     )
     $integKey = "${ClientKey}:${ServerKey}"
-    if (-not $integrations.ContainsKey($integKey)) { return }
-    $rec = $integrations[$integKey]
-    if ($rec.ownership -ne 'managed') {
-        Write-Host "  $ClientKey : entrée non gérée par cet installeur — non touchée." -ForegroundColor Cyan
-        return
-    }
-    $configPath = $rec.configPath
-    if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) { return }
 
-    $data = Read-JsonFile $configPath
-    $rootKeys = @('mcpServers', 'servers')
-    foreach ($rk in $rootKeys) {
-        if ((Get-PropertyExists $data $rk) -and (Get-PropertyExists $data.$rk $ServerKey)) {
-            Backup-ConfigFile $configPath
-            $data.$rk.PSObject.Properties.Remove($ServerKey)
-            Write-JsonFile $configPath $data
-            Write-Host "  $ClientKey : '$ServerKey' retiré de $configPath" -ForegroundColor Green
-            break
+    # Resolve config path: explicit > tracked (handles orphans from previous installs)
+    $resolvedPath = $ConfigPath
+    if (-not $resolvedPath -and $integrations.ContainsKey($integKey)) {
+        $rec = $integrations[$integKey]
+        if (Get-PropertyExists $rec 'configPath') { $resolvedPath = $rec.configPath }
+    }
+
+    if ($resolvedPath -and (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
+        $data     = Read-JsonFile $resolvedPath
+        $rootKeys = @('mcpServers', 'servers')
+        foreach ($rk in $rootKeys) {
+            if ((Get-PropertyExists $data $rk) -and (Get-PropertyExists $data.$rk $ServerKey)) {
+                Backup-ConfigFile $resolvedPath
+                $data.$rk.PSObject.Properties.Remove($ServerKey)
+                Write-JsonFile $resolvedPath $data
+                Write-Host "  $ClientKey : '$ServerKey' retire de $resolvedPath" -ForegroundColor Green
+                break
+            }
         }
     }
     $integrations.Remove($integKey)
@@ -329,7 +343,7 @@ function Remove-JsonMcpClient {
 $CopilotJBDir    = Join-Path $env:LOCALAPPDATA 'github-copilot\intellij'
 $CopilotJBConfig = Join-Path $CopilotJBDir 'mcp.json'
 if ($Uninstall) {
-    try { Remove-JsonMcpClient 'copilot-jetbrains' } catch {
+    try { Remove-JsonMcpClient 'copilot-jetbrains' $CopilotJBConfig } catch {
         Write-Host "  Copilot JetBrains : erreur lors de la suppression: $($_.Exception.Message)" -ForegroundColor Yellow
     }
 } elseif ($DoCopilotJB) {
@@ -387,7 +401,7 @@ try {
 }
 
 if ($Uninstall) {
-    try { Remove-JsonMcpClient 'claude-desktop' } catch {
+    try { Remove-JsonMcpClient 'claude-desktop' $ClaudeDesktopConfig } catch {
         Write-Host "  Claude Desktop : erreur lors de la suppression: $($_.Exception.Message)" -ForegroundColor Yellow
     }
 } elseif ($DoClaudeDesktop) {
