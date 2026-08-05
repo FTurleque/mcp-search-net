@@ -288,12 +288,18 @@ export class SecureHttpGateway {
 async function withDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new RequestTimeoutError();
-  return Promise.race([
-    operation,
-    new Promise<never>((_resolve, reject) =>
-      setTimeout(() => reject(new RequestTimeoutError()), remaining),
-    ),
-  ]);
+
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new RequestTimeoutError()), remaining);
+    timer.unref();
+  });
+
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function flattenHeaders(headers: IncomingHttpHeaders): Record<string, string> {
@@ -323,14 +329,30 @@ function isAllowedByRobots(content: string, path: string, userAgent: string): bo
   for (const group of rules) {
     for (const match of group.matchAll(/^\s*(allow|disallow)\s*:\s*(.*)$/gimu)) {
       const rule = match[2]?.trim() ?? '';
+      if (rule === '' || !robotsRuleMatches(rule, path)) continue;
+      const allowed = match[1]?.toLowerCase() === 'allow';
+      const specificity = robotsRuleSpecificity(rule);
       if (
-        rule !== '' &&
-        path.startsWith(rule) &&
-        (best === undefined || rule.length >= best.length)
+        best === undefined ||
+        specificity > best.length ||
+        (specificity === best.length && allowed && !best.allowed)
       ) {
-        best = { allowed: match[1]?.toLowerCase() === 'allow', length: rule.length };
+        best = { allowed, length: specificity };
       }
     }
   }
   return best?.allowed ?? true;
+}
+
+function robotsRuleMatches(rule: string, path: string): boolean {
+  const anchored = rule.endsWith('$');
+  const withoutAnchor = anchored ? rule.slice(0, -1) : rule;
+  const pattern = withoutAnchor
+    .replace(/[.+?^${}()|[\]\\]/gu, '\\$&')
+    .replace(/\*/gu, '.*');
+  return new RegExp(`^${pattern}${anchored ? '$' : ''}`, 'u').test(path);
+}
+
+function robotsRuleSpecificity(rule: string): number {
+  return rule.replace(/\*/gu, '').replace(/\$$/u, '').length;
 }
