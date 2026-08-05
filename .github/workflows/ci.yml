@@ -231,6 +231,30 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check:runtime
+      - name: Parse Windows packaging PowerShell with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $files = @(
+            Get-ChildItem -LiteralPath 'packaging\windows' -Filter '*.ps1' -File
+            Get-ChildItem -LiteralPath 'scripts\release' -Filter '*.ps1' -File
+            Get-Item 'scripts\install-user.ps1'
+            Get-Item 'scripts\uninstall-user.ps1'
+            Get-Item 'scripts\test-installation.ps1'
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $file.FullName,
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $details = ($parseErrors | ForEach-Object { $_.Message }) -join '; '
+              throw "PowerShell parse failed for $($file.FullName): $details"
+            }
+          }
+          Write-Host "POWERSHELL_PACKAGING_PARSE_VALID files=$($files.Count)"
       - run: npm run build
       - run: npm run test:e2e:deterministic
       - name: Validate clean install, upgrade, rollback and uninstall
