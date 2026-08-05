@@ -77,7 +77,7 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
       ...summarizeData(execution.data),
     });
     return {
-      content: [{ type: 'text', text: options.formatText(validated) }],
+      content: [{ type: 'text', text: formatExternalContentText(options.formatText(validated)) }],
       structuredContent: validated as unknown as Record<string, unknown>,
     };
   } catch (error) {
@@ -107,6 +107,10 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
       isError: true,
     };
   }
+}
+
+function formatExternalContentText(text: string): string {
+  return `[${EXTERNAL_CONTENT_TRUST}] ${EXTERNAL_CONTENT_SAFETY_NOTICE}\n\n${text}`;
 }
 
 function isRetryable(code: ToolErrorCode): boolean {
