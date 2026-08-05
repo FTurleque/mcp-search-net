@@ -93,19 +93,19 @@ function Remove-McpEntry {
             }
         }
 
-        if ($found) {
-            # Backup
-            $stamp   = [datetime]::UtcNow.ToString('yyyyMMddHHmmss')
-            $bakDir  = Join-Path $env:TEMP 'mcp-search-net-cleanup-backups'
-            New-Item -ItemType Directory -Force -Path $bakDir | Out-Null
-            [System.IO.File]::WriteAllText(
-                (Join-Path $bakDir "$stamp-$(Split-Path $FilePath -Leaf)"), $raw, $Utf8NoBom)
+        # Backup toujours (on va reformater meme si l entree est absente)
+        $stamp   = [datetime]::UtcNow.ToString('yyyyMMddHHmmss')
+        $bakDir  = Join-Path $env:TEMP 'mcp-search-net-cleanup-backups'
+        New-Item -ItemType Directory -Force -Path $bakDir | Out-Null
+        [System.IO.File]::WriteAllText(
+            (Join-Path $bakDir "$stamp-$(Split-Path $FilePath -Leaf)"), $raw, $Utf8NoBom)
 
-            $method = Write-Json2Spaces $FilePath $data $NodeExe
-            $tag = if ($method -eq 'node') { '(2 espaces, Node.js)' } else { '(PS5.1)' }
-            Write-Host "  $ClientName : '$ServerKey' supprime $tag" -ForegroundColor Green
+        $method = Write-Json2Spaces $FilePath $data $NodeExe
+        $tag = if ($method -eq 'node') { '2 espaces Node.js' } else { 'PS5.1' }
+        if ($found) {
+            Write-Host "  $ClientName : '$ServerKey' supprime + reformate ($tag)" -ForegroundColor Green
         } else {
-            Write-Host "  $ClientName : entree '$ServerKey' absente." -ForegroundColor Cyan
+            Write-Host "  $ClientName : reformate ($tag) - entree '$ServerKey' absente" -ForegroundColor Cyan
         }
     } catch {
         Write-Host "  $ClientName : ERREUR - $($_.Exception.Message)" -ForegroundColor Red
