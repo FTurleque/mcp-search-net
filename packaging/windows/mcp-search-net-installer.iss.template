@@ -379,7 +379,8 @@ begin
   DeleteUserDataOnUninstall := False;
   if IsSmokeBuild() or UninstallSilent() then exit;
   DataRoot := ExpandConstant('{app}\data');
-  if not DirExists(DataRoot) then exit;
+  { .env est toujours créé à l'installation ; montrer le prompt même si le serveur n'a jamais tourné }
+  if not DirExists(DataRoot) and not FileExists(ExpandConstant('{app}\.env')) then exit;
   MessageText :=
     'Supprimer également les données locales (cache, catalogue, configuration) ?' + #13#10 + #13#10 +
     DataRoot + #13#10 + #13#10 +

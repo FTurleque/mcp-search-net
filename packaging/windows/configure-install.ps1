@@ -260,6 +260,44 @@ if ($DoDocker) {
     }
 }
 
+# ── Docker service shutdown (uninstall) ────────────────────────────────────────
+
+if ($Uninstall) {
+    try {
+        $ComposePath = $null
+        foreach ($c in @((Join-Path $InstallRoot 'compose.yaml'), (Join-Path $InstallRoot 'docker\compose.yaml'))) {
+            if (Test-Path -LiteralPath $c -PathType Leaf) { $ComposePath = $c; break }
+        }
+        $DockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+        if ($DockerCmd -and $ComposePath) {
+            Write-Host ''
+            Write-Host 'Arrêt des services Docker (SearXNG + Crawl4AI)...'
+            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            $null = & $DockerCmd.Source info 2>&1
+            $isRunning = $LASTEXITCODE -eq 0
+            $ErrorActionPreference = $prev
+            if ($isRunning) {
+                $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+                & $DockerCmd.Source compose -p mcp-search-net down --remove-orphans 2>&1 |
+                    ForEach-Object { Write-Host "  $_" }
+                $dockerExit = $LASTEXITCODE
+                $ErrorActionPreference = $prev
+                if ($dockerExit -eq 0) {
+                    Write-Host 'Services Docker arrêtés et supprimés.' -ForegroundColor Green
+                } else {
+                    Write-Host "Docker down incomplet (code $dockerExit) — arrêtez manuellement si nécessaire." -ForegroundColor Yellow
+                }
+            } else {
+                Write-Host 'Docker non démarré — aucun service à arrêter.' -ForegroundColor Cyan
+            }
+        } elseif (-not $DockerCmd) {
+            Write-Host 'Docker absent du PATH — services déjà arrêtés ou jamais démarrés.' -ForegroundColor Cyan
+        }
+    } catch {
+        Write-Host "  Docker : erreur lors de l'arrêt: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 # ── MCP client wiring ──────────────────────────────────────────────────────────
 
 $integrations = Load-Integrations
