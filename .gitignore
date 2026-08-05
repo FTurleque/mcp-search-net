@@ -8,3 +8,6 @@ coverage/
 .idea/
 !.idea/.gitkeep
 *.iml
+target/
+node-runtime.zip
+innosetup*.exe
