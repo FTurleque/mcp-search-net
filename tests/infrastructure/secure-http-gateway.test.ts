@@ -119,6 +119,36 @@ describe('SecureHttpGateway', () => {
     await expect(gateway.download(server.url)).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
   });
 
+  it('serializes queued downloads when maxConcurrency is one', async () => {
+    let activeRequests = 0;
+    let maximumActiveRequests = 0;
+    let requests = 0;
+    const server = await listen((_request, response) => {
+      requests += 1;
+      activeRequests += 1;
+      maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
+      setTimeout(() => {
+        activeRequests -= 1;
+        response.writeHead(200, { 'content-type': 'text/plain' });
+        response.end('ok');
+      }, 30);
+    });
+    const gateway = createGateway(policyFor(server.port), {
+      maxConcurrency: 1,
+      timeoutMs: 1_000,
+    });
+
+    const [first, second] = await Promise.all([
+      gateway.download(`${server.url}/first`),
+      gateway.download(`${server.url}/second`),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(requests).toBe(2);
+    expect(maximumActiveRequests).toBe(1);
+  });
+
   it('enforces robots.txt before downloading a disallowed page', async () => {
     const paths: string[] = [];
     const server = await listen((request, response) => {
@@ -131,6 +161,33 @@ describe('SecureHttpGateway', () => {
       code: 'BLOCKED_ADDRESS',
     });
     expect(paths).toEqual(['/robots.txt']);
+  });
+
+  it('supports robots wildcards, end anchors and allow precedence on equal specificity', async () => {
+    const paths: string[] = [];
+    const robots = [
+      'User-agent: *',
+      'Disallow: /private/*/download$',
+      'Disallow: /same',
+      'Allow: /same',
+    ].join('\n');
+    const server = await listen((request, response) => {
+      paths.push(request.url ?? '');
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end(request.url === '/robots.txt' ? robots : 'ok');
+    });
+    const gateway = createGateway(policyFor(server.port), { respectRobotsTxt: true });
+
+    await expect(gateway.download(`${server.url}/private/a/download`)).rejects.toMatchObject({
+      code: 'BLOCKED_ADDRESS',
+    });
+    await expect(gateway.download(`${server.url}/private/a/download/extra`)).resolves.toMatchObject(
+      {
+        status: 200,
+      },
+    );
+    await expect(gateway.download(`${server.url}/same`)).resolves.toMatchObject({ status: 200 });
+    expect(paths.filter((path) => path === '/robots.txt')).toHaveLength(3);
   });
 });
 
