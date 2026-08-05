@@ -6,12 +6,10 @@ on:
     branches:
       - master
       - develop
-      - feat/v2-catalog-storage
   push:
     branches:
       - master
       - develop
-      - feat/v2-catalog-storage
 
 permissions:
   contents: read
