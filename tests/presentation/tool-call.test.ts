@@ -89,9 +89,7 @@ describe('executeToolCall', () => {
       formatText: (response) => response.data.markdown,
     });
 
-    expect(result.content).toEqual([
-      { type: 'text', text: `${externalPrefix}\n\n${hostile}` },
-    ]);
+    expect(result.content).toEqual([{ type: 'text', text: `${externalPrefix}\n\n${hostile}` }]);
     expect(result.structuredContent).toMatchObject({
       metadata: {
         contentTrust: EXTERNAL_CONTENT_TRUST,
@@ -133,9 +131,7 @@ describe('executeToolCall', () => {
     });
 
     expect(result.isError).not.toBe(true);
-    expect(result.content).toEqual([
-      { type: 'text', text: `${externalPrefix}\n\nsearch_web: 0` },
-    ]);
+    expect(result.content).toEqual([{ type: 'text', text: `${externalPrefix}\n\nsearch_web: 0` }]);
     expect(result.structuredContent).toMatchObject({
       schemaVersion: '1.0',
       requestId: '00000000-0000-4000-8000-000000000001',
