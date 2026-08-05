@@ -31,9 +31,11 @@ function Read-JsonFile([string] $Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return [PSCustomObject]@{} }
     try {
         $raw = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
-        if ($raw.Trim()) { return ($raw | ConvertFrom-Json) }
-    } catch {}
-    return [PSCustomObject]@{}
+        if (-not $raw.Trim()) { throw 'le fichier est vide' }
+        return ($raw | ConvertFrom-Json)
+    } catch {
+        throw "Configuration JSON invalide '$Path' : $($_.Exception.Message)"
+    }
 }
 
 function Write-JsonFile([string] $Path, [object] $Data) {
@@ -326,18 +328,29 @@ function Install-JsonMcpClient {
     )
 
     $integKey = "${ClientKey}:${ServerKey}"
+    $alreadyManaged = $integrations.ContainsKey($integKey) -and
+                      $integrations[$integKey].ownership -eq 'managed'
+
     $data = Read-JsonFile $ConfigPath
     if (-not (Get-PropertyExists $data $RootKey)) {
         $data | Add-Member -NotePropertyName $RootKey -NotePropertyValue ([PSCustomObject]@{}) -Force
     }
-    $root    = $data.$RootKey
-    $existed = Get-PropertyExists $root $ServerKey
+    $root = $data.$RootKey
+
+    if ((Get-PropertyExists $root $ServerKey) -and -not $alreadyManaged) {
+        Write-Host "  $ClientKey : entrée '$ServerKey' existante non gérée — préservée." -ForegroundColor Cyan
+        $integrations[$integKey] = [PSCustomObject]@{
+            ownership    = 'preexisting'
+            configPath   = $ConfigPath
+            configuredAt = [datetime]::UtcNow.ToString('o')
+        }
+        return
+    }
 
     Backup-ConfigFile $ConfigPath
     $root | Add-Member -NotePropertyName $ServerKey -NotePropertyValue $Entry -Force
     Write-JsonFile $ConfigPath $data
-    $verb = if ($existed) { 'mis a jour' } else { 'configure' }
-    Write-Host "  $ClientKey : '$ServerKey' $verb -> $ConfigPath" -ForegroundColor Green
+    Write-Host "  $ClientKey : '$ServerKey' configuré -> $ConfigPath" -ForegroundColor Green
     $integrations[$integKey] = [PSCustomObject]@{
         ownership    = 'managed'
         configPath   = $ConfigPath
@@ -348,18 +361,24 @@ function Install-JsonMcpClient {
 function Remove-JsonMcpClient {
     param(
         [string] $ClientKey,
-        [string] $ConfigPath = '',   # If empty, falls back to the tracked configPath
+        [string] $ConfigPath = '',
         [string] $ServerKey = 'mcp-search-net'
     )
     $integKey = "${ClientKey}:${ServerKey}"
-
-    # Resolve config path: explicit > tracked (handles orphans from previous installs)
-    $resolvedPath = $ConfigPath
-    if (-not $resolvedPath -and $integrations.ContainsKey($integKey)) {
-        $rec = $integrations[$integKey]
-        if (Get-PropertyExists $rec 'configPath') { $resolvedPath = $rec.configPath }
+    if (-not $integrations.ContainsKey($integKey)) {
+        Write-Host "  $ClientKey : entrée non suivie par cet installateur — préservée." -ForegroundColor Cyan
+        return
     }
 
+    $rec = $integrations[$integKey]
+    if ($rec.ownership -ne 'managed') {
+        Write-Host "  $ClientKey : entrée préexistante/non gérée — préservée." -ForegroundColor Cyan
+        $integrations.Remove($integKey)
+        return
+    }
+
+    $resolvedPath = $ConfigPath
+    if (Get-PropertyExists $rec 'configPath') { $resolvedPath = $rec.configPath }
     if ($resolvedPath -and (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
         $data     = Read-JsonFile $resolvedPath
         $rootKeys = @('mcpServers', 'servers')
@@ -368,7 +387,7 @@ function Remove-JsonMcpClient {
                 Backup-ConfigFile $resolvedPath
                 $data.$rk.PSObject.Properties.Remove($ServerKey)
                 Write-JsonFile $resolvedPath $data
-                Write-Host "  $ClientKey : '$ServerKey' retire de $resolvedPath" -ForegroundColor Green
+                Write-Host "  $ClientKey : '$ServerKey' retiré de $resolvedPath" -ForegroundColor Green
                 break
             }
         }
@@ -394,16 +413,31 @@ if ($Uninstall) {
                 -ConfigPath $CopilotJBConfig `
                 -Entry      $JetBrainsEntry `
                 -RootKey    'servers'
-            # Nettoyer toute entrée résiduelle sous mcpServers (clé incorrecte d'une ancienne version)
+            # Nettoyer uniquement une ancienne entrée incorrecte qui pointe clairement vers cette installation.
             $jbData = Read-JsonFile $CopilotJBConfig
             if ((Get-PropertyExists $jbData 'mcpServers') -and (Get-PropertyExists $jbData.mcpServers 'mcp-search-net')) {
-                $jbData.mcpServers.PSObject.Properties.Remove('mcp-search-net')
-                $hasOtherKeys = [bool]($jbData.mcpServers.PSObject.Properties | Select-Object -First 1)
-                if (-not $hasOtherKeys) {
-                    $jbData.PSObject.Properties.Remove('mcpServers')
+                $legacyEntry = $jbData.mcpServers.'mcp-search-net'
+                $legacyOwned = $false
+                if ((Get-PropertyExists $legacyEntry 'env') -and
+                    (Get-PropertyExists $legacyEntry.env 'MCP_SEARCH_HOME') -and
+                    $legacyEntry.env.MCP_SEARCH_HOME -eq $InstallRoot) {
+                    $legacyOwned = $true
                 }
-                Write-JsonFile $CopilotJBConfig $jbData
-                Write-Host '  Copilot JetBrains : ancienne entrée mcpServers supprimée.' -ForegroundColor Cyan
+                if ((Get-PropertyExists $legacyEntry 'args') -and (($legacyEntry.args -join ' ') -like "*$BinLauncher*")) {
+                    $legacyOwned = $true
+                }
+                if ($legacyOwned) {
+                    Backup-ConfigFile $CopilotJBConfig
+                    $jbData.mcpServers.PSObject.Properties.Remove('mcp-search-net')
+                    $hasOtherKeys = [bool]($jbData.mcpServers.PSObject.Properties | Select-Object -First 1)
+                    if (-not $hasOtherKeys) {
+                        $jbData.PSObject.Properties.Remove('mcpServers')
+                    }
+                    Write-JsonFile $CopilotJBConfig $jbData
+                    Write-Host '  Copilot JetBrains : ancienne entrée mcpServers gérée supprimée.' -ForegroundColor Cyan
+                } else {
+                    Write-Host '  Copilot JetBrains : ancienne entrée mcpServers non gérée — préservée.' -ForegroundColor Cyan
+                }
             }
         } else {
             Write-Host '  Copilot JetBrains : non détecté (github-copilot\intellij absent). Configuration ignorée.' -ForegroundColor Yellow
