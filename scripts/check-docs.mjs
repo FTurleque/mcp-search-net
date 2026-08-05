@@ -237,9 +237,21 @@ function validatePostMergeTruth() {
   const ci = readText('.github/workflows/ci.yml');
   const windowsGuide = readText('docs/getting-started/installation-windows.md');
 
-  requireText(currentState, 'Intégration V2 : PR #8 mergée', `${currentStatePath}: merge PR #8 absent`);
-  requireText(currentState, 'Branche de référence : `master`', `${currentStatePath}: master absent`);
-  requireText(readme, 'La V2 documentaire est intégrée dans `master`', 'README.md: V2 merge absent');
+  requireText(
+    currentState,
+    'Intégration V2 : PR #8 mergée',
+    `${currentStatePath}: merge PR #8 absent`,
+  );
+  requireText(
+    currentState,
+    'Branche de référence : `master`',
+    `${currentStatePath}: master absent`,
+  );
+  requireText(
+    readme,
+    'La V2 documentaire est intégrée dans `master`',
+    'README.md: V2 merge absent',
+  );
 
   for (const stale of [
     'La PR #8 ajoute',
@@ -272,7 +284,11 @@ function validateReleaseAndInstallerHardening() {
     'Configuration JSON invalide',
     'ancienne entrée mcpServers non gérée — préservée',
   ]) {
-    requireText(configureInstall, needle, `configure-install.ps1: invariant ownership absent: ${needle}`);
+    requireText(
+      configureInstall,
+      needle,
+      `configure-install.ps1: invariant ownership absent: ${needle}`,
+    );
   }
 
   for (const needle of [
@@ -280,7 +296,11 @@ function validateReleaseAndInstallerHardening() {
     '$PackageLock.version -ne $Version',
     '$PackagedPackage.version -ne $Version',
   ]) {
-    requireText(publisher, needle, `publish-windows-release.ps1: invariant version absent: ${needle}`);
+    requireText(
+      publisher,
+      needle,
+      `publish-windows-release.ps1: invariant version absent: ${needle}`,
+    );
   }
   requireText(
     releaseWorkflow,
