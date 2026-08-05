@@ -6,7 +6,8 @@
 npm run check
 ```
 
-Cette commande enchaîne typecheck, ESLint, contrôle Prettier, compilation et Vitest. Elle doit réussir avant une installation ou une contribution.
+Cette commande enchaîne typecheck, ESLint, contrôle Prettier, compilation, tests déterministes et
+couverture V8 avec seuils. Elle doit réussir avant une installation ou une contribution.
 
 Elle commence par `npm run check:runtime` et s'arrête immédiatement avec un message explicite si le runtime actif n'est pas Node.js 24. La CI exécute `npm ci` puis cette même commande sous Node 24.
 
@@ -15,6 +16,7 @@ Elle commence par `npm run check:runtime` et s'arrête immédiatement avec un me
 | Commande                         | Portée                                                          |    Réseau requis     |
 | -------------------------------- | --------------------------------------------------------------- | :------------------: |
 | `npm run check`                  | TypeScript, lint, format, build et tests déterministes          |         non          |
+| `npm run test:coverage`          | Tests déterministes, rapport V8 et seuils globaux/critiques     |         non          |
 | `npm run test:required`          | Tous les tests requis hors réseau, avec refus des tests ignorés |         non          |
 | `npm run test:unit`              | Domaine, application et présentation                            |         non          |
 | `npm run test:contract`          | Contrats SearXNG et Crawl4AI sur fixtures                       |         non          |
@@ -27,14 +29,24 @@ Elle commence par `npm run check:runtime` et s'arrête immédiatement avec un me
 | `npm run test:e2e`               | Alias officiel de `test:e2e:live`                               | oui, Compose démarré |
 | `npm run test:release`           | Toutes les suites précédentes                                   |         oui          |
 
-Les rapports JSON sont écrits dans `.data/test-reports/`. Le lanceur échoue si une
-suite requise ne contient aucun test, échoue ou ignore un test. La CI publie ces
-rapports comme artefacts.
+Les rapports JSON sont écrits dans `.data/test-reports/` et la couverture dans `coverage/`
+(`coverage-summary.json`, HTML et LCOV). Le lanceur échoue si une suite requise ne contient aucun
+test, échoue ou ignore un test. `test:coverage` produit aussi `coverage.json` et refuse les tests
+ignorés. Le workflow CI manuel publie ces rapports comme artefacts.
+
+## Politique de couverture
+
+`test:coverage` inclut tout `src/**/*.ts`, y compris les entrypoints exécutés surtout en
+sous-processus. Les seuils globaux restent donc volontairement réalistes : 70 % statements, 58 %
+branches, 75 % fonctions et 72 % lignes. Des seuils plus élevés s'appliquent aux frontières de
+risque : politique URL/SSRF, gateway HTTP, fetcher Crawl4AI, migrations, intégrité/repository
+catalogue, synchronisation, serveur MCP V2, resources catalogue et enveloppes MCP. Les tests
+contractuels et E2E restent des gates séparés ; la couverture ne les remplace pas.
 
 Pour les suites réelles :
 
 ```powershell
-docker compose up -d searxng crawl4ai
+docker compose -f compose.yaml -f compose.hybrid.yaml up -d searxng crawl4ai
 npm run test:e2e:live
 ```
 
@@ -52,9 +64,15 @@ La suite déterministe valide le contrat MCP et les règles de sécurité sans
 service externe. La suite live valide la chaîne complète avec SearXNG et
 Crawl4AI démarrés par Docker Compose.
 
-`test:e2e:deterministic` lance le binaire Node local sans aucun service externe. Il est inclus dans la CI principale (job `check`) afin d'être exécuté à chaque push. `test:e2e:live` et `test:e2e` requièrent Docker Compose démarré et s'exécutent dans le job `integration` de la CI.
+`test:e2e:deterministic` lance le binaire Node local sans aucun service externe. Son fichier est
+inclus une seule fois dans le gate de couverture du job CI `check`; les suites déterministes ne sont
+pas relancées sous plusieurs alias dans le workflow. Le workflow reste toutefois
+`workflow_dispatch` uniquement pendant la
+restriction de quota GitHub Actions : une absence de run n'est jamais un PASS. `test:e2e:live` et
+`test:e2e` requièrent Docker Compose démarré et appartiennent au job `integration`.
 
-La double exécution de `mcp-stdio.test.ts` (via `test:required` puis `test:e2e:deterministic`) est volontaire : elle apporte une preuve nommée et traçable dans la CI sans modifier `vitest.required.config.ts`.
+Les commandes nommées restent disponibles pour la qualification locale ciblée et la preuve finale,
+mais la CI consolidée exécute chaque fichier déterministe une seule fois via `test:coverage`.
 
 ## Niveaux
 

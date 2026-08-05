@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod/v4';
 
-import { TOOL_ERROR_CODES, TOOL_WARNING_CODES } from '../../src/domain/models/tool-response.js';
+import {
+  EXTERNAL_CONTENT_SAFETY_NOTICE,
+  EXTERNAL_CONTENT_TRUST,
+  TOOL_ERROR_CODES,
+  TOOL_WARNING_CODES,
+} from '../../src/domain/models/tool-response.js';
 import { createSearchWebSchemas } from '../../src/presentation/mcp/schemas/search-web-schema.js';
 import { isInvalidToolInput } from '../../src/presentation/mcp/schemas/invalid-tool-input.js';
 import {
@@ -45,11 +50,19 @@ describe('tool response schemas', () => {
         durationMs: 1.25,
         cacheStatus: 'MISS',
         provider: 'searxng',
+        contentTrust: EXTERNAL_CONTENT_TRUST,
+        contentSafetyNotice: EXTERNAL_CONTENT_SAFETY_NOTICE,
       },
       data: {
         query: 'mcp',
         results: [],
-        metadata: { total: 0, returned: 0, unresponsiveEngines: [] },
+        metadata: {
+          total: 0,
+          returned: 0,
+          unresponsiveEngines: [],
+          sourceProvider: 'searxng',
+          retrievedAt: '2026-07-29T12:00:00.000Z',
+        },
       },
     };
 

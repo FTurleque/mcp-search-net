@@ -5,10 +5,12 @@ export default defineConfig({
     environment: 'node',
     include: [
       'tests/contract/provider-contract.test.ts',
+      'tests/integration/catalog-operations-cli.test.ts',
       'tests/infrastructure/application-config.test.ts',
       'tests/infrastructure/crawl4ai-content-fetcher.test.ts',
       'tests/infrastructure/searxng-search-provider.test.ts',
       'tests/infrastructure/sqlite-cache-repository.test.ts',
+      'tests/infrastructure/sqlite-catalog-fts-index.test.ts',
     ],
     testTimeout: 20_000,
     hookTimeout: 20_000,

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1.0",
+  "generatedAt": "2026-07-05T19:41:05.717Z",
+  "catalogSourcePath": "N:\\workspace-dev\\mcp-search-net\\.data\\catalog-spike.db",
+  "benchmarkCatalogPath": "N:\\workspace-dev\\mcp-search-net\\.data\\benchmark-mcp-response-size\\catalog.db",
+  "serverEntrypoint": "N:\\workspace-dev\\mcp-search-net\\build\\bootstrap\\main.js",
+  "cases": [
+    {
+      "name": "search_docs compact maxResults=3 maxSnippetChars=160",
+      "characters": 3427,
+      "estimatedTokens": 857
+    },
+    {
+      "name": "list_docs",
+      "characters": 3868,
+      "estimatedTokens": 967
+    },
+    {
+      "name": "resource mcp-search-net://sections",
+      "characters": 117585,
+      "estimatedTokens": 29397
+    },
+    {
+      "name": "read_doc_section sectionId=121",
+      "characters": 1420,
+      "estimatedTokens": 355
+    }
+  ]
+}

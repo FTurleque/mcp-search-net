@@ -1,333 +1,435 @@
 # Roadmap V2 — Catalogue documentaire et recherche avancée
 
-> **Statut** : Étude V2 démarrée — V2 BUILD GO documentaire, implémentation runtime à lancer après clôture de l'issue #5
+> **Statut courant** : candidat `1.1.0` en qualification finale, non publié. Le verdict et les gates
+> du checkout sont centralisés dans [`docs/status/current-state.md`](../status/current-state.md).
 >
-> **Dernière mise à jour** : 2026-07-03
+> **Dernière preuve historique** : 2026-07-29 — V2.13 qualifiée exact-head, mergée dans
+> `feat/v2-catalog-storage` via PR #24 et réconciliée post-merge ; prochain jalon : V2.14 / #17.
+>
+> **Contexte de planification historique** : la PR #8, la branche `feat/v2-catalog-storage`,
+> l'issue #19 et la séquence #12 à #18 décrivent le pilotage de cette roadmap à l'époque. Ils ne
+> constituent pas le statut GitHub courant. Les validations datées restent attachées à leurs
+> propres SHA.
+>
+> **GitHub Actions** : le blocage de facturation observé le 4 juillet 2026 est historique. Son état
+> actuel n'est pas observable avec les permissions disponibles ; aucun run ne valide les têtes
+> actuelles. Le candidat rétablit les triggers PR, sans transformer l'absence de run en PASS.
 
-## Pré-requis obligatoires
+## État synthétique
 
-La V2 peut être étudiée et cadrée. L'implémentation runtime V2 ne doit démarrer qu'après validation des ADR, du schéma catalogue, du benchmark et du contrat MCP V2.
+Le candidat présent couvre le stockage catalogue, l'ingestion, la recherche, la synchronisation
+contrôlée, la purge, la maintenance opérationnelle, le reranking lexical optionnel et l'exposition
+MCP read-only. Cette phrase décrit le checkout ; les références aux anciennes PR ci-dessous restent
+des jalons historiques.
+
+Avancement :
+
+- V2.0 cadrage : terminé.
+- V2.1 stockage catalogue : implémenté.
+- V2.2 ingestion CLI : implémenté pour texte/Markdown et configuration YAML.
+- V2.3 recherche lexicale : implémentée sur sections courantes.
+- V2.4 exposition MCP : implémentée avec exactement cinq outils — les deux outils V1 et
+  `search_docs`, `list_docs`, `read_doc_section` — plus resources read-only, versions documentaires
+  et recette de spike IntelliJ/Copilot préparée.
+- V2.5 synchronisation incrémentale : implémentée avec cycle persistant `RUNNING` vers un statut
+  terminal, sync contrôlée/exhaustive, rate limiting, reprise, validateurs, touch sur `304`, aliases,
+  événements de staleness et redirections permanentes.
+- V2.11 scalabilité : lectures par identifiant, filtres SQL, pagination stable, resources bornées et
+  benchmark jusqu'à 10 000 sections qualifiés localement sans skip.
+- V2.6 automatisation contrôlée : implémentée et validée localement sur la tranche maintenance contrôlée.
+- V2.7 reranking lexical historique : prototype local optionnel, initialement nommé « hybrid/semantic » alors qu'il n'utilise aucun embedding.
+- V2.12 sécurité/exploitation : corrections post-audit qualifiées sous Windows sur le head exact
+  `4651ccae3315e4b64e1bd42e1274fa9eed34a83f`, SonarQube Cloud vert avec 0 Security Hotspots,
+  puis merge tree-equivalent `64622e6e40f3ad18bc5c2a867a5600f19bf2d25c` dans la branche d'agrégation.
+- V2.13 qualité de recherche : nomenclature corrigée, benchmark 10 sources / 100 documents / 10 000
+  sections / 50 requêtes, qualification exacte sur `aeb49b1f6a7f035779e726a9db641710f172819f`,
+  merge #24 tree-equivalent `c9ba09345cebb1a9f9dfa63f98e0352c33dcefd2`. FTS5/BM25 reste la baseline,
+  le reranker lexical hashé n'est pas généralisé et une étude séparée d'embeddings locaux est justifiée.
+
+Les validations historiques restent attachées à leurs SHA respectifs. Les preuves V2.12 et V2.13
+archivent chacune la qualification exact-head et la vérification que leur merge n'a introduit aucun
+changement de contenu.
+
+Le hardening post-audit suit V2.9 à V2.15. V2.9 remplace les écritures fractionnées par une primitive
+de révision atomique, réconcilie ADR-015 via C007, protège les migrations par checksum et étend
+`catalog verify`. Les tranches V2.9 à V2.13 sont maintenant intégrées et qualifiées. Aucun item
+ultérieur ni le merge de #8 ne peut contourner son gate.
+
+## Pré-requis V2
 
 ### PR-01 : V1 officiellement close
 
-- [x] Tous les critères d'acceptation AC-01 à AC-15 validés avec preuve.
-- [x] Checklist finale de livraison complétée.
-- [x] Recette IntelliJ/Copilot : serveur `mcp-search-net` Running et exactement deux outils visibles, `search_web` et `fetch_url`.
-- [x] CI verte sur le run GitHub Actions `28391318969`.
+- [x] Critères d'acceptation V1 validés.
+- [x] Recette IntelliJ/Copilot V1 réalisée avec `search_web` et `fetch_url`.
 - [x] Rapport de validation finale archivé dans `docs/planning/validation-v1-recette-finale-2026-06-27.md`.
-
-**Condition de déblocage** : satisfaite pour l'étude V2. Toute phase d'implémentation doit continuer à exécuter la suite V1.
 
 ### PR-02 : Contrats V1 gelés
 
 - [x] ADR-011 publié : frontière V1/V2 définie.
 - [x] Outils publics V1 gelés : `search_web` et `fetch_url`.
-- [x] Enveloppes de réponse, codes d'erreur et invariants de sécurité gelés.
 - [x] Cache V1 confirmé opportuniste et supprimable.
 
-**Condition de déblocage** : aucune modification incompatible des contrats publics V1 pendant V2.
+### PR-03 : Décisions architecture V2
 
-### PR-03 : Décision SDK MCP au démarrage V2
-
-- [x] ADR-012 créé : planification migration SDK v2.
-- [x] ADR-013 créé : conserver `@modelcontextprotocol/sdk@1.29.0` au démarrage V2.
-- [ ] Spike SDK/resources à réévaluer avant exposition MCP V2.
-
-**Condition de déblocage** : satisfaite pour V2.0 à V2.3. À réviser avant la phase d'exposition MCP V2.
-
-### PR-04 : Architecture V2 validée
-
-- [x] ADR-010 publié : SQLite FTS5 et BM25 comme socle lexical.
-- [x] ADR-014 publié : séparation `cache.db` / `catalog.db`.
-- [x] ADR-015 publié : index FTS5 `contentless-delete`.
-- [x] ADR-016 publié : exposition mixte outil + resources MCP, avec spike IntelliJ/Copilot.
-- [x] Schéma catalogue V2 documenté dans `docs/reference/catalog-schema-v2.md`.
-- [x] Synchronisation V2 documentée dans `docs/reference/catalog-sync-v2.md`.
-- [x] Benchmark V2 documenté dans `docs/planning/benchmark-v2.md`.
-
-**Condition de déblocage** : satisfaite pour préparer l'implémentation V2.1. Les migrations runtime ne sont pas encore créées.
+- [x] ADR-010 : SQLite FTS5 et BM25.
+- [x] ADR-013 : conserver le SDK MCP actuel au démarrage V2.
+- [x] ADR-014 : séparation `cache.sqlite` / `catalog.db`.
+- [x] ADR-015 : FTS5 `contentless-delete`.
+- [x] ADR-016 : exposition mixte outil + resources MCP.
+- [x] ADR-017 : stratégie de recherche décidée sur benchmark V2.13.
+- [x] Schéma catalogue V2 documenté.
+- [x] Synchronisation V2 documentée.
+- [x] Benchmark V2 documenté et exécuté.
 
 ## Vision V2
 
-La V2 transforme `mcp-search-net` en un **gestionnaire de catalogue documentaire local** avec recherche multi-document, versioning, synchronisation contrôlée et recherche lexicale avancée.
+La V2 transforme `mcp-search-net` en gestionnaire de catalogue documentaire local avec recherche multi-document, versioning, synchronisation contrôlée et recherche lexicale avancée.
 
-La V2 reste local-first : SQLite, FTS5, BM25, CLI/worker et MCP STDIO. Aucun LLM interne et aucune API payante ne sont requis.
+La V2 reste local-first : SQLite, FTS, BM25, CLI/worker et MCP STDIO. Aucun LLM interne et aucune API payante ne sont requis.
 
-### Objectifs métier
+## Architecture cible
 
-- **Catalogue local** : indexer une bibliothèque de documentation technique officielle.
-- **Recherche multi-document** : retrouver des informations dans plusieurs documents simultanément.
-- **Versioning** : conserver les versions documentaires importantes.
-- **Synchronisation contrôlée** : mettre à jour les sources explicitement via CLI ou worker.
-- **Recherche avancée** : FTS5/BM25 d'abord, embeddings optionnels seulement après benchmark.
+- Cache V1 : `.data/cache.sqlite`, supprimable.
+- Catalogue V2 : `.data/catalog.db`, durable.
+- Migrations catalogue : `C001` à `C008` sous `catalog-migrations/`, immuables après application.
+- Tables principales : `catalog_sources`, `documents`, `document_versions`, `document_sections`,
+  `document_aliases`, `sync_runs`, `staleness_events`, `document_section_fts`.
+- Recherche : FTS5/BM25 avec fallback LIKE et snippets ; baseline produit actuelle confirmée par V2.13.
+- Synchronisation : CLI contrôlée, ETag, Last-Modified, hash des octets HTTP en V2, lifecycle de
+  run, observations et staleness non destructif, sync exhaustive, rate limiting et reprise par
+  curseur. Un éventuel hash du contenu normalisé est reporté à V3.
+- Maintenance contrôlée locale : cycle `catalog:maintain`, verrou inter-processus, rétention opérationnelle, analyse/optimisation SQLite, checkpoint WAL et vacuum optionnel.
+- Reranking lexical hashé : expérimental et non généralisé après gain qualité V2.13 mesuré à zéro.
+- Embeddings locaux : étude autorisée uniquement dans une tranche distincte avec benchmark comparatif ; aucune API commerciale obligatoire.
+- MCP : outils V1 conservés, outils V2 `search_docs`, `list_docs` et `read_doc_section`, resources
+  read-only.
 
-### Non-objectifs V2 initiale
+## Exposition MCP V2
 
-- Crawl autonome de domaines entiers.
-- Authentification Web ou accès à des ressources privées.
-- LLM interne ou génération de contenu.
-- Modification ou annotation de documents upstream.
-- Interface graphique utilisateur.
-- Exposition de `sync`, `purge` ou `rebuild-index` comme outils MCP librement appelables.
-- Embeddings sans benchmark.
+État implémenté dans le candidat `1.1.0` de la PR #8 :
 
-## Architecture V2
-
-### Composants principaux
-
-```text
-Catalogue V2
-├── Stockage SQLite séparé
-│   ├── .data/cache.db      (cache V1 supprimable)
-│   └── .data/catalog.db    (catalogue V2 durable)
-├── Tables catalogue
-│   ├── catalog_sources
-│   ├── documents
-│   ├── document_versions
-│   ├── document_sections
-│   ├── document_aliases
-│   ├── sync_runs
-│   ├── staleness_events
-│   └── document_sections_fts
-├── Synchronisation hors MCP
-│   ├── CLI catalog
-│   ├── worker optionnel
-│   ├── ETag / Last-Modified / hash
-│   └── non-suppression après un seul échec
-├── Recherche avancée
-│   ├── FTS5 contentless-delete
-│   ├── BM25 scoring
-│   ├── filtres source/document/version/langue
-│   └── snippets et budgets de contexte
-└── Exposition MCP
-    ├── outil candidat search_docs
-    └── resources catalogue/sources/documents/sections
-```
-
-### Séparation cache V1 / catalogue V2
-
-Selon ADR-011 et ADR-014 :
-
-- **Cache V1** : `search_cache` et `content_cache`, TTL, supprimable.
-- **Catalogue V2** : `catalog.db`, tables métier, durable.
-- **Aucune fusion** : le catalogue ne dépend pas du cache.
-- **Migrations distinctes** : conventions `C001__...` pour le catalogue.
-- **Index FTS5** : dérivé, reconstructible, jamais source de vérité.
-
-### Exposition MCP V2
-
-Décision de cadrage :
-
-- outil principal candidat : `search_docs` ;
-- alias encore à arbitrer : `search_catalog` ;
-- resources candidates :
+- cinq outils read-only : `search_web`, `fetch_url`, `search_docs`, `list_docs`,
+  `read_doc_section` ;
+- resources statiques :
   - `mcp-search-net://catalog` ;
   - `mcp-search-net://sources` ;
+  - `mcp-search-net://documents` ;
+  - `mcp-search-net://sections` ;
+- templates read-only :
+  - `mcp-search-net://sources/page/{offset}` ;
   - `mcp-search-net://sources/{sourceId}` ;
+  - `mcp-search-net://documents/page/{offset}` ;
   - `mcp-search-net://documents/{documentId}` ;
   - `mcp-search-net://documents/{documentId}/versions` ;
+  - `mcp-search-net://documents/{documentId}/versions/page/{offset}` ;
   - `mcp-search-net://documents/{documentId}/versions/{versionId}` ;
+  - `mcp-search-net://sections/page/{offset}` ;
   - `mcp-search-net://sections/{sectionId}`.
 
-Un spike IntelliJ/Copilot est obligatoire avant gel du contrat final resources/tools.
+La recette de spike IntelliJ/Copilot est prête dans `docs/planning/spike-intellij-copilot-mcp-v2.md`. Son exécution manuelle reste obligatoire avant gel définitif du contrat utilisateur.
 
-## Phases de développement V2
+## Phases
 
-### Phase V2.0 — Étude et cadrage (P0)
+### V2.0 — Étude et cadrage
 
-**Objectif** : valider les décisions avant tout code runtime V2.
+- [x] ADR et documents de cadrage produits.
+- [x] Schéma catalogue documenté.
+- [x] Synchronisation documentée.
+- [x] Benchmark documenté.
 
-- [x] Mettre à jour la validation V1 avec CI et IntelliJ.
-- [x] Créer ADR-013 SDK MCP au démarrage V2.
-- [x] Créer ADR-014 séparation `cache.db` / `catalog.db`.
-- [x] Créer ADR-015 FTS5 `contentless-delete`.
-- [x] Créer ADR-016 tools/resources MCP V2.
-- [x] Documenter le schéma catalogue V2.
-- [x] Documenter la synchronisation V2.
-- [x] Documenter le benchmark FTS5/BM25.
-- [ ] Relire et valider l'issue #5.
-- [ ] Ouvrir une PR de cadrage.
+### V2.1 — Stockage catalogue et migrations
 
-**Condition de sortie** : `V2 STUDY COMPLETE` et `V2 IMPLEMENTATION READY`.
+- [x] `catalog.db` séparé de `cache.sqlite`.
+- [x] Migrations catalogue `C001` à `C008` sans réécriture rétroactive.
+- [x] Checksums SHA-256 et transition sûre du registre C001-C006.
+- [x] `CatalogRepository`.
+- [x] `SqliteCatalogRepository`.
+- [x] Ouverture runtime et fermeture propre au shutdown.
+- [x] Dockerfile corrigé pour embarquer les migrations catalogue.
 
-### Phase V2.1 — Stockage catalogue et migrations (P0)
+### V2.2 — Ingestion manuelle et CLI
 
-**Objectif** : créer `catalog.db`, ses migrations et ses repositories sans MCP V2 public.
+- [x] CLI `catalog init`.
+- [x] CLI `catalog status`.
+- [x] CLI `catalog add-source`.
+- [x] CLI `catalog list-sources`.
+- [x] CLI `catalog load-sources`.
+- [x] CLI `catalog ingest-text`.
+- [x] Ingestion texte/Markdown.
+- [x] Hash contenu, version documentaire, sections et compteurs.
 
-- [ ] Créer `CatalogDatabase`.
-- [ ] Créer `CatalogMigrationRunner`.
-- [ ] Créer `catalog-migrations/C001__...`.
-- [ ] Créer modèles `CatalogSource`, `Document`, `DocumentVersion`, `DocumentSection`.
-- [ ] Créer port `CatalogRepository`.
-- [ ] Implémenter `SqliteCatalogRepository`.
-- [ ] Tester migrations sur base vide et base déjà migrée.
-- [ ] Tester absence de tables V2 dans `cache.db`.
-- [ ] Tester suppression de `cache.db` sans impact `catalog.db`.
+### V2.3 — Recherche lexicale
 
-**Condition de sortie** : catalogue durable initialisé, tests verts, V1 non régressée.
+- [x] Recherche locale sur sections courantes.
+- [x] Filtres `sourceKey`, `language`, `limit`.
+- [x] Snippets.
+- [x] CLI `catalog search`.
+- [x] CLI `catalog rebuild-index`.
+- [x] CLI `catalog verify`.
+- [x] Use-case `SearchCatalogDocuments`.
+- [x] Use-case `VerifyCatalog`.
 
-### Phase V2.2 — Ingestion manuelle et CLI (P0)
+### V2.4 — Exposition MCP V2
 
-**Objectif** : ajouter des documents au catalogue via CLI, sans nouvel outil MCP.
+- [x] Outil MCP `search_docs`.
+- [x] Outils MCP compacts `list_docs` et `read_doc_section`.
+- [x] Wrapper MCP V2 conservant `search_web` et `fetch_url`.
+- [x] Resources read-only catalogue/sources/documents/sections.
+- [x] Templates read-only sources/documents/sections.
+- [x] Templates read-only versions documentaires.
+- [x] Lookup SQLite des versions documentaires par document et par id.
+- [x] E2E MCP partiel sur resources et templates.
+- [x] Recette de spike IntelliJ/Copilot V2 préparée.
+- [x] Revalidation locale du head courant de PR #8 : Gate D PASS sur SHA 912df9f (2026-08-04).
+- [x] Spike IntelliJ/Copilot documenté : PASS AVEC RÉSERVE — recette fournie, intégration native
+      nécessite configuration manuelle `mcp.json`. Claude Desktop : NON DISPONIBLE (non configuré).
 
-- [ ] Créer `src/presentation/cli/`.
-- [ ] Créer `src/bootstrap/catalog-cli.ts`.
-- [ ] Implémenter `catalog init`.
-- [ ] Implémenter `catalog add-source`.
-- [ ] Implémenter import de documents seed.
-- [ ] Réutiliser les ports internes de sécurité/extraction sans appeler l'outil MCP `fetch_url`.
-- [ ] Créer `sync_runs` et rapports structurés.
-- [ ] Tester SSRF, hash, version inchangée, nouvelle version.
+### V2.5 — Synchronisation incrémentale
 
-**Condition de sortie** : documents ajoutables et versionnés via CLI.
+- [x] `catalog sync --dry-run`.
+- [x] `catalog sync` contrôlé par `--config`, `--file`, `--source-key`, `--limit`.
+- [x] Sync exhaustive quand `--limit` est absent.
+- [x] Option `--rate-limit-ms` et délai applicatif entre documents.
+- [x] Option `--resume-after` pour reprendre après un document déjà traité.
+- [x] Sync réseau via `Crawl4aiContentFetcher`.
+- [x] `CatalogSyncRun` créé en `RUNNING`, puis clôturé une fois en `SUCCESS`, `PARTIAL` ou
+      `FAILED` ; `CANCELLED` reste un état de schéma non émis par les use cases actuels.
+- [x] Reconstruction de l'index après sync réel.
+- [x] Validateurs `contentHash`, `ETag`, `Last-Modified`.
+- [x] `notModified` traité en `unchanged` avec mise à jour de `last_seen_at`, sans nouvelle version ;
+      hash identique traité en `unchanged`.
+- [x] Aliases `OLD_URL`, `REDIRECT`, `CANONICAL` et événements réellement observés persistés avec
+      leur `sync_run`.
+- [x] Hash V2 défini sur le payload HTTP brut ; hash du contenu normalisé reporté à V3.
+- [x] `404` traité en `STALE` non destructif.
+- [x] `410` traité en `REMOVED` non destructif.
+- [x] Redirection permanente traitée en `REDIRECTED`.
+- [x] Revalidation locale du head courant de PR #8 : Gate D PASS sur SHA 912df9f (2026-08-04).
 
-### Phase V2.3 — Recherche lexicale FTS5 (P0)
+### V2.6 — Automatisation contrôlée
 
-**Objectif** : indexer les sections et rechercher localement.
+- [x] Worker/scheduler externe.
+- [x] Lock inter-processus robuste.
+- [x] Observabilité structurée par événement.
+- [x] Politique de rétention opérationnelle.
+- [x] Maintenance SQLite.
 
-- [ ] Créer `document_sections_fts`.
-- [ ] Implémenter `CatalogIndexer`.
-- [ ] Implémenter `SearchDocsUseCase` interne.
-- [ ] Appliquer BM25 et filtres.
-- [ ] Ajouter snippets et budget de contexte.
-- [ ] Créer benchmark initial.
-- [ ] Tester rebuild et verify.
+Validation locale V2.6 :
 
-**Condition de sortie** : recherche locale fonctionnelle via use case/CLI, sans exposition MCP publique si le contrat n'est pas gelé.
+- `npm run lint` : OK.
+- `npm run typecheck` : OK.
+- `npm run build` : OK.
+- `npm run test` : OK.
+- 35 fichiers de tests passés.
+- 180 tests passés.
+- `npm run catalog:maintain -- --path .data/catalog-spike.db` : OK sur le catalogue de spike.
+- Statut archivé dans [`status-v2-6.md`](status-v2-6.md).
+- Validation archivée dans [`validation-v2-6-local-success-2026-07-05.md`](validation-v2-6-local-success-2026-07-05.md).
 
-### Phase V2.4 — Exposition MCP V2 (P1)
+### V2.7 — Prototype de reranking lexical local
 
-**Objectif** : exposer la recherche documentaire à Copilot.
+État historique V2.7 :
 
-- [ ] Réaliser spike resources IntelliJ/Copilot.
-- [ ] Choisir définitivement `search_docs` ou `search_catalog`.
-- [ ] Créer schémas Zod.
-- [ ] Enregistrer l'outil MCP V2.
-- [ ] Exposer resources read-only si compatibles.
-- [ ] Ajouter E2E tools/resources.
-- [ ] Vérifier que `search_web` et `fetch_url` restent compatibles.
+- [x] Prototype local sans API payante.
+- [x] Vectorisation locale déterministe par feature hashing.
+- [x] Prototype initialement exposé sous les noms `HybridSearchCatalogDocuments`, `catalog-hybrid-search` et `lexical-semantic-hybrid`.
+- [x] Validation locale historique typecheck/build/tests/reranking.
 
-**Condition de sortie** : recherche catalogue visible et utilisable dans IntelliJ/Copilot.
+Réconciliation V2.13 :
 
-### Phase V2.5 — Synchronisation incrémentale et obsolescence (P1)
+- [x] Nomenclature corrigée : `HashedLexicalVectorizer`, `RerankedSearchCatalogDocuments`, `rerankScore`, `combinedScore`, `fts5-hashed-lexical-rerank`.
+- [x] Anciens symboles `semantic`/`hybrid` trompeurs retirés du build courant.
+- [x] Benchmark comparatif exécuté sur 10 000 sections et 50 requêtes annotées.
+- [x] Gain qualité du reranker mesuré à 0 : aucune généralisation.
+- [x] Étude séparée d'embeddings locaux autorisée par ADR-017, sans intégration automatique.
 
-**Objectif** : mettre à jour les documents depuis leurs sources.
+Validation locale historique V2.7 :
 
-- [ ] Implémenter `catalog sync`.
-- [ ] Gérer ETag, Last-Modified, hash.
-- [ ] Gérer redirections permanentes.
-- [ ] Gérer 404/410 et staleness.
-- [ ] Implémenter rate limiting.
-- [ ] Implémenter reprise après interruption.
-- [ ] Ajouter tests d'intégration.
+- `npm run typecheck` : OK.
+- `npm run build` : OK.
+- `npm run test` : OK, 36 fichiers de tests passés, 182 tests passés.
+- Recherche hybride historique : OK sur le catalogue de spike.
+- Résultats retournés : 10.
+- Ancienne stratégie : `lexical-semantic-hybrid`.
+- Statut archivé dans [`status-v2-7.md`](status-v2-7.md).
+- Validation archivée dans [`validation-v2-7-local-success-2026-07-05.md`](validation-v2-7-local-success-2026-07-05.md).
 
-**Condition de sortie** : synchronisation manuelle fiable, non destructive.
+### V2.8 à V2.15 — Hardening post-audit
 
-### Phase V2.6 — Automatisation contrôlée (P2)
-
-**Objectif** : automatiser la synchronisation sans exposer de mutation au LLM.
-
-- [ ] Worker/scheduler externe.
-- [ ] Lock exclusif de synchronisation.
-- [ ] Observabilité.
-- [ ] Politique de rétention.
-- [ ] Maintenance SQLite.
-
-### Phase V2.7 — Recherche sémantique optionnelle (P3)
-
-**Objectif** : évaluer uniquement si le benchmark lexical le justifie.
-
-- [ ] Benchmark lexical insuffisant documenté.
-- [ ] Prototype local sans API payante.
-- [ ] Gain mesuré >= 15 % sur Recall@10 ou nDCG@10.
-- [ ] Latence acceptable.
+- [x] V2.8 : benchmark initial de taille MCP et nettoyage qualité incrémental (#9, #10, #11).
+- [x] V2.9 : intégrité transactionnelle, FTS et migrations (#12) — intégrée dans la branche
+      d'agrégation, qualifiée sur le head exact et clôturée.
+- [x] V2.10 : gates qualité, coverage et gouvernance (#13, #10) — runtime et tests V2
+      réintégrés dans ESLint/Prettier, couverture globale et ciblée mesurée, workflow alors manuel
+      dédupliqué, rapports publiables et gates locaux historiques qualifiés sans skip.
+- [x] V2.11 : scalabilité, pagination et budget contexte (#14, #9, #11) — implémentation,
+      benchmark et qualification locale terminés sans skip.
+- [x] V2.12 : sécurité, installation et exploitation (#15) — corrections post-audit qualifiées sur
+      head exact Windows/déterministe, runtime et rollback validés, audits npm à zéro, SonarQube
+      Cloud vert, merge #23 tree-equivalent intégré dans `feat/v2-catalog-storage`.
+- [x] V2.13 : qualité de recherche et benchmark représentatif (#16) — qualification exact-head
+      `aeb49b1f6a7f035779e726a9db641710f172819f`, merge #24 tree-equivalent, FTS5/BM25 conservé
+      comme baseline, reranker lexical non généralisé, étude d'embeddings locaux autorisée.
+- [x] V2.14 : clients MCP et gel des contrats (#17) — Gate A PASS, Gate D PASS exact-head SHA
+      912df9f (2026-08-04), Gate B PASS AVEC RÉSERVE (recette IntelliJ fournie), Gate C NON
+      DISPONIBLE (Claude Desktop non configuré, documentation honnête fournie).
+- [ ] V2.15 : qualification finale et réconciliation documentaire exhaustive (#18) — en cours.
 
 ## Critères d'acceptation V2
 
 ### AC-V2-01 : Catalogue local opérationnel
 
-- `catalog.db` existe et reste séparé de `cache.db`.
-- Documents ajoutables et récupérables via repository.
-- Migrations catalogue idempotentes.
-- Aucune table V2 dans le cache V1.
+- [x] `catalog.db` existe et reste séparé de `cache.sqlite`.
+- [x] Documents ajoutables et récupérables via repository.
+- [x] Migrations catalogue idempotentes.
+- [x] Runtime ouvert et fermé propre au shutdown.
 
-### AC-V2-02 : Recherche FTS5 fonctionnelle
+### AC-V2-02 : Recherche fonctionnelle
 
-- Recherche multi-document avec BM25.
-- Résultats classés par pertinence.
-- Filtres source/version/langue applicables.
-- Snippets utiles.
-- Benchmark minimal exécuté.
+- [x] Recherche multi-document sur sections courantes.
+- [x] Résultats filtrables.
+- [x] Snippets disponibles.
+- [x] Reranking lexical local disponible comme expérience mesurée.
+- [x] Benchmark représentatif exécuté : 10 sources, 100 documents, 10 000 sections, 50 requêtes.
+- [x] Décision V2.13 documentée dans ADR-017.
 
 ### AC-V2-03 : Synchronisation manuelle validée
 
-- CLI `catalog sync` fonctionnelle.
-- Détection changements via ETag/Last-Modified/hash.
-- Nouvelles versions créées sans duplication.
-- Index FTS5 réindexé après mise à jour.
-- Échecs réseau non destructifs.
+- [x] CLI `catalog sync` fonctionnelle en mode contrôlé.
+- [x] Sync exhaustive sans `--limit`.
+- [x] Rate limiting applicatif.
+- [x] Reprise après interruption via `--resume-after`.
+- [x] Détection changements via ETag, Last-Modified et hash.
+- [x] Échecs 404/410 non destructifs.
+- [x] Runs persistés de `RUNNING` vers un statut terminal et observations `304`/aliases/événements
+      couvertes.
+- [x] Validation locale du head courant de la PR #8 : Gate D PASS SHA 912df9f (2026-08-04).
 
 ### AC-V2-04 : Exposition MCP validée
 
-- Outil V2 détecté dans IntelliJ/Copilot.
-- Resources ou outils read-only disponibles selon décision ADR-016.
-- Budgets de contexte respectés.
-- Tests E2E STDIO verts.
+- [x] `search_docs` implémenté.
+- [x] `list_docs` et `read_doc_section` implémentés avec réponses compactes.
+- [x] Resources read-only implémentées côté serveur.
+- [x] Templates dynamiques sources, documents, versions et sections implémentés côté serveur.
+- [x] Collections MCP paginées par 20, lectures par identifiant ciblées et réponses bornées à
+      24 000 caractères.
+- [x] Benchmark de budget contexte exécuté jusqu'à 10 000 sections : réduction de 99,67 % face à
+      la simulation globale non bornée.
+- [x] E2E MCP partiel ajouté.
+- [x] Recette de spike IntelliJ/Copilot préparée.
+- [x] Validation locale du head courant de la PR #8 : Gate D PASS SHA 912df9f (2026-08-04).
+- [x] Spike IntelliJ/Copilot : PASS AVEC RÉSERVE — recette manuelle fournie dans
+      `docs/planning/validation-v2-14-client-contracts.md`.
 
 ### AC-V2-05 : Séparation V1/V2 respectée
 
-- `search_web` et `fetch_url` inchangés.
-- Enveloppes de réponse V1 inchangées.
-- Cache V1 non réutilisé comme catalogue.
-- Suites V1 toujours vertes.
+- [x] `search_web` et `fetch_url` conservés.
+- [x] Cache V1 non réutilisé comme catalogue.
+- [x] Catalogue séparé dans `catalog.db`.
+- [x] Suites V1/V2 revalidées localement sur le head exact V2.13.
+- [x] Merge V2.13 vérifié tree-equivalent au head qualifié.
+- [ ] Revalidation exact-head après intégration des tranches V2.14 à V2.15.
+
+### AC-V2-06 : Exploitation contrôlée V2.6 validée
+
+- [x] Cycle `catalog:maintain` disponible hors MCP.
+- [x] Verrou inter-processus robuste.
+- [x] Observabilité structurée par événement.
+- [x] Rétention opérationnelle des runs de synchronisation.
+- [x] Maintenance SQLite locale documentée et testée.
+- [x] Validation locale sur `.data/catalog-spike.db`.
+
+### AC-V2-07 : Reranking lexical V2.7/V2.13 validé
+
+- [x] Prototype historique local sans dépendance payante.
+- [x] Nomenclature corrigée pour refléter le feature hashing lexical réel.
+- [x] Benchmark lexical/reranker exécuté sur corpus représentatif reproductible.
+- [x] Reranker non généralisé après gain qualité mesuré à zéro.
+- [x] FTS5/BM25 conservé comme baseline actuelle.
+- [x] Étude d'embeddings locaux autorisée uniquement comme tranche distincte.
+
+### AC-V2-08 : Sécurité et exploitation V2.12 validées
+
+- [x] Réponses et resources marquées `EXTERNAL_UNTRUSTED_CONTENT`.
+- [x] Provenance publique explicite et dates réelles uniquement.
+- [x] Archive Node vérifiée par SHA-256 avant extraction et signature OpenJS vérifiée avant
+      exécution du runtime.
+- [x] Secrets locaux générés, profils non développement durcis et logs expurgés.
+- [x] Lease PID/hostname/token/heartbeat validé avec tests multi-processus.
+- [x] Santé bornée, backup WAL cohérent et confiné, checkpoint concurrent et restauration couverts.
+- [x] Supply chain durcie : licences, versions/digests et chemins de manifests contrôlés.
+- [x] Quality Gate SonarQube Cloud vert avec 0 Security Hotspots sur la PR #23.
+- [x] Gates locaux exact-head PASS : 216 required, 95 unit, 6 contract, 68 security, 25 resilience,
+      2 performance, 35 integration et 2 E2E déterministes, tous sans skip dans les suites contrôlées.
+- [x] Runtime Windows `NODE_RUNTIME_INTEGRITY_VALID`.
+- [x] Installation/upgrade/rollback/désinstallation `INSTALLATION_LIFECYCLE_VALID`.
+- [x] Audits npm complet et production : 0 vulnérabilité.
+- [x] Preuve finale archivée dans
+      [`validation-v2-12-security-operations-2026-07-29.md`](validation-v2-12-security-operations-2026-07-29.md).
+
+### AC-V2-09 : Qualité de recherche V2.13 validée
+
+- [x] Benchmark exact-head exécuté sur 10 000 sections et 50 requêtes annotées.
+- [x] `npm run check` complet PASS sur `aeb49b1f6a7f035779e726a9db641710f172819f`.
+- [x] 221 required, 100 unit, 6 contract, 68 security, 25 resilience, 2 performance, 35 integration
+      et 2 E2E déterministes PASS sans skip.
+- [x] Audits npm complet et production : 0 vulnérabilité.
+- [x] Merge #24 sous garde exact-head vérifié tree-equivalent.
+- [x] Preuve finale archivée dans
+      [`validation-v2-13-search-quality-2026-07-29.md`](validation-v2-13-search-quality-2026-07-29.md).
 
 ## Ordre de réalisation recommandé
 
-1. Clôturer l'issue #5 et merger le cadrage V2.0.
-2. Implémenter V2.1 stockage catalogue.
-3. Implémenter V2.2 ingestion CLI.
-4. Implémenter V2.3 recherche FTS5.
-5. Réaliser spike MCP resources.
-6. Implémenter V2.4 exposition MCP.
-7. Implémenter V2.5 synchronisation.
-8. Évaluer V2.7 embeddings seulement si nécessaire.
+1. V2.9 à V2.13 (#12 à #16) sont intégrées et qualifiées localement.
+2. Exécuter maintenant #17 / V2.14 puis #18 / V2.15.
+3. Conserver #8 en draft et déclencher la CI du candidat seulement quand son SHA est stabilisé.
+4. Qualifier exact-head localement, Docker/Linux et clients selon #18.
+5. Merger #8 sous garde expected-head uniquement après tous les gates, puis revalider `master`.
+
+## Validation locale recommandée
+
+```bash
+npm run format:check
+npm run lint
+npm run build
+npm run test:unit
+npm run test:integration
+npm run test:e2e:deterministic
+```
+
+Validation Docker/live à exécuter sur le SHA final du candidat :
+
+```bash
+docker compose build mcp-search-net
+docker compose up -d --wait searxng crawl4ai
+npm run test:e2e
+docker compose down
+```
 
 ## Risques et mitigation
 
-### R-01 : Corruption ou confusion cache/catalogue
+- **Corruption cache/catalogue** : bases distinctes, runners distincts, tests de séparation.
+- **Qualité de rappel insuffisante** : FTS5/BM25 reste la baseline ; étude d'embeddings locaux autorisée uniquement sur benchmark dédié.
+- **Synchronisation trop agressive** : seeds explicites, rate limiting, profondeur zéro, CLI contrôlée.
+- **Incompatibilité resources IntelliJ/Copilot** : spike avant gel du contrat, outil `search_docs` comme fallback read-only si nécessaire.
+- **Régression V1** : validation locale et CI attachées au même SHA final.
+- **Explosion du nombre de versions** : rétention configurable et purge explicite.
+- **Preuve GitHub Actions** : conserver les validations locales exact-head et exiger un run GitHub
+  attaché au candidat avant merge final ; aucune preuve datée ne vaut pour un autre SHA.
 
-**Mitigation** : bases distinctes, runners distincts, tests de séparation.
+## Définition de V2 opérationnelle
 
-### R-02 : Performance FTS5 insuffisante
+La V2 sera considérée opérationnelle lorsque :
 
-**Mitigation** : benchmark, corpus borné, pondérations mesurées.
-
-### R-03 : Synchronisation trop agressive
-
-**Mitigation** : seeds explicites, rate limiting, profondeur zéro, CLI contrôlée.
-
-### R-04 : Incompatibilité resources IntelliJ/Copilot
-
-**Mitigation** : spike avant gel du contrat, outils read-only de secours si nécessaire.
-
-### R-05 : Régression V1
-
-**Mitigation** : `npm run check`, `npm run test:e2e:deterministic`, puis E2E live à chaque phase majeure.
-
-### R-06 : Explosion du nombre de versions
-
-**Mitigation** : rétention configurable, purge explicite via CLI, jamais automatique en V2 initiale.
-
-## Définition de « V2 opérationnelle »
-
-La V2 est considérée opérationnelle lorsque :
-
-- les critères AC-V2-01 à AC-V2-05 sont validés avec preuves ;
-- le catalogue contient au moins 10 documents de test indexés ;
-- la recherche FTS5 retourne des résultats pertinents classés ;
-- IntelliJ/Copilot détecte l'outil V2 ou les resources validées ;
-- la synchronisation manuelle via CLI est documentée et testée ;
-- aucune régression V1 n'est introduite.
+- les critères AC-V2-01 à AC-V2-09 seront validés avec preuves sur un head courant ;
+- le catalogue contiendra au moins 10 documents de test indexés ;
+- la recherche retournera des résultats pertinents classés ;
+- IntelliJ/Copilot détectera et exploitera `search_docs` ou les resources validées ;
+- la synchronisation manuelle via CLI sera documentée et testée ;
+- la maintenance contrôlée sera documentée et testée ;
+- le reranker lexical hashé ne sera pas généralisé sans nouveau gain mesuré ;
+- toute alternative par embeddings restera locale et devra gagner un benchmark comparatif dédié ;
+- aucune régression V1 ne sera introduite.
 
 ## Références
 
@@ -338,6 +440,15 @@ La V2 est considérée opérationnelle lorsque :
 - [ADR-014 — Isoler le catalogue V2 dans catalog.db](../adr/ADR-014-catalog-db-isolation.md)
 - [ADR-015 — Utiliser FTS5 contentless-delete](../adr/ADR-015-fts5-contentless-delete.md)
 - [ADR-016 — Exposer la V2 avec outil et resources MCP](../adr/ADR-016-mcp-v2-tools-resources.md)
+- [ADR-017 — Choisir la stratégie de recherche V2](../adr/ADR-017-search-quality-strategy-v2.md)
 - [Schéma catalogue V2](../reference/catalog-schema-v2.md)
 - [Synchronisation catalogue V2](../reference/catalog-sync-v2.md)
+- [Exploitation catalogue V2.12](../reference/catalog-operations-v2.md)
+- [Recherche documentaire V2.13 — FTS5 et reranking lexical](../reference/catalog-semantic-search-v2.md)
+- [Spike IntelliJ/Copilot — MCP V2 documentaire](spike-intellij-copilot-mcp-v2.md)
 - [Benchmark V2](benchmark-v2.md)
+- [Validation V2.13](validation-v2-13-search-quality-2026-07-29.md)
+- [Statut V2.6](status-v2-6.md)
+- [Validation locale V2.6](validation-v2-6-local-success-2026-07-05.md)
+- [Statut V2.7](status-v2-7.md)
+- [Validation locale V2.7](validation-v2-7-local-success-2026-07-05.md)

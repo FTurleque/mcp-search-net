@@ -5,10 +5,9 @@ services:
     # SearXNG 2026.6.20-fd42d4fda, validated on 2026-06-21.
     image: docker.io/searxng/searxng@sha256:d0f6ccf9d3faab5bba07bb6bbeb533c47dd4ace648ed5a0f8830e10eb96b7082
     restart: unless-stopped
-    ports:
-      - '127.0.0.1:8888:8080'
+    user: '977:977'
     environment:
-      SEARXNG_SECRET: ${SEARXNG_SECRET:-local-development-secret-change-me}
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Set SEARXNG_SECRET in a local .env file}
     volumes:
       - ./config/searxng/settings.yml:/etc/searxng/settings.yml:ro
       - searxng-cache:/var/cache/searxng
@@ -36,13 +35,22 @@ services:
   crawl4ai:
     image: unclecode/crawl4ai@sha256:385042cba2a216c257ccb77b0135dec5228ee25bf675edbc7487eb155bd5e644
     restart: unless-stopped
-    ports:
-      - '127.0.0.1:11235:11235'
+    user: appuser
     environment:
-      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-mcp-search-local-development-token}
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in a local .env file}
     shm_size: 1gb
     volumes:
       - crawl4ai-data:/home/appuser/.cache
+    # read_only not set: Playwright Chromium crashes (SIGTRAP) in read-only containers
+    # because Chrome's crash reporter initialisation writes to /home/appuser/ before
+    # any tmpfs can cover it. cap_drop:ALL + no-new-privileges remain in force.
+    tmpfs:
+      - /tmp:size=256m,nosuid,nodev,uid=999,gid=999
+      - /var/lib/redis:size=64m,noexec,nosuid,nodev,uid=999,gid=999
+      - /var/log/redis:size=16m,noexec,nosuid,nodev,uid=999,gid=999
+      - /var/lib/crawl4ai:size=64m,noexec,nosuid,nodev,uid=999,gid=999
+      - /home/appuser/.crawl4ai:size=128m,noexec,nosuid,nodev,uid=999,gid=999
+      - /home/appuser/.gunicorn:size=8m,noexec,nosuid,nodev,uid=999,gid=999
     cap_drop:
       - ALL
     security_opt:
@@ -68,15 +76,20 @@ services:
   # test:e2e:deterministic et test:e2e:live : démarrage STDIO, tools/list
   # et appels réels des outils.
   mcp-search-net:
+    profiles:
+      - stdio
     build:
       context: .
       dockerfile: Dockerfile
-    image: mcp-search-net:1.0.0
+      args:
+        SOURCE_REVISION: ${MCP_BUILD_REVISION:-UNAVAILABLE}
+    image: mcp-search-net:1.1.0
+    user: node
     stdin_open: true
     tty: false
     environment:
       MCP_CONFIG_PATH: /app/config/application.docker.yml
-      MCP_CRAWL4AI_TOKEN: ${CRAWL4AI_API_TOKEN:-mcp-search-local-development-token}
+      MCP_CRAWL4AI_TOKEN: ${CRAWL4AI_API_TOKEN:?Set CRAWL4AI_API_TOKEN in a local .env file}
     volumes:
       - ./config/application.docker.yml:/app/config/application.docker.yml:ro
       - ./config/official-sources.yml:/app/config/official-sources.yml:ro

@@ -2,272 +2,236 @@
 
 ## Statut
 
-- **Phase** : V2.0 — étude et cadrage
-- **Portée** : conception, aucune implémentation runtime dans cette phase
-- **Décisions liées** : ADR-011, ADR-014, ADR-016
+- **Couverture fonctionnelle** : V2.5 — synchronisation incrémentale et obsolescence.
+- **Statut courant** : comportement implémenté dans le candidat `1.1.0`, encore soumis aux gates de
+  livraison décrits dans [`docs/status/current-state.md`](../status/current-state.md).
+- **Décisions liées** : ADR-011, ADR-014, ADR-016.
 
 ## Objectif
 
-Définir une stratégie de synchronisation documentaire locale, sûre et non destructive, sans exposer les opérations de mutation comme outils MCP librement appelables par le LLM.
+La synchronisation V2 alimente `catalog.db`, versionne les documents, maintient l'index documentaire
+dans chaque transaction de révision et reste strictement hors des outils MCP mutables.
 
-La synchronisation V2 doit alimenter `catalog.db`, versionner les documents et reconstruire l'index FTS5 sans modifier les contrats V1.
+Elle est déclenchée par CLI ou worker dédié, jamais par un outil MCP librement appelable par le LLM.
 
 ## Principes
 
-1. La synchronisation est déclenchée par CLI ou worker dédié, pas par un outil MCP public libre.
+1. La synchronisation est déclenchée explicitement par CLI.
 2. Les URLs restent soumises aux politiques SSRF existantes.
 3. Aucune authentification Web, cookie, proxy ou script utilisateur n'est accepté.
 4. Un échec réseau n'efface pas le dernier contenu valide.
-5. Les versions sont créées uniquement quand le contenu normalisé change.
-6. Le cache V1 peut être utilisé comme optimisation interne uniquement si cela ne devient jamais une dépendance métier.
-7. Le catalogue est la source de vérité V2.
+5. Les versions sont créées uniquement quand le SHA-256 du payload HTTP téléchargé change.
+6. Le catalogue est la source de vérité V2.
+7. Les opérations mutables restent hors MCP.
+8. Le traitement est séquentiel en V2 initiale pour faciliter le rate limiting et la reprise.
+9. Une révision documentaire est atomique : document, version, sections, FTS et pointeur courant.
 
-## Pipeline cible
-
-```text
-CatalogSource
-   ↓
-SyncPlanner
-   ↓
-UrlSecurityPolicy
-   ↓
-ContentFetcher / Crawl4AI
-   ↓
-DocumentNormalizer
-   ↓
-VersionDetectionService
-   ↓
-CatalogRepository
-   ↓
-CatalogIndexer
-   ↓
-SyncReport
-```
-
-## Réutilisation V1 autorisée
-
-La V2 peut réutiliser des services internes V1 :
+## Pipeline implémenté
 
 ```text
-UrlSecurityPolicy
-DnsResolver
-ContentFetcher
-Content parser / Markdown section parser
-Logger
-Clock
-Telemetry
+catalog-sources.yml
+   ↓
+PlanCatalogSync / SyncCatalogDocuments
+   ↓
+PublicUrlSecurityPolicy + SecureHttpGateway
+   ↓
+Crawl4aiContentFetcher
+   ↓
+CatalogRepository.commitDocumentRevision
+   ↓
+document + version + sections + FTS + current_version_id (transaction unique)
+   ↓
+aliases + staleness_events liés au sync_run
+   ↓
+SyncReport JSON
 ```
 
-Elle ne doit pas appeler l'outil MCP public `fetch_url` depuis le pipeline de synchronisation.
+## CLI `catalog sync`
 
-Motif : un outil MCP est une interface externe. La V2 doit appeler les services applicatifs ou ports internes pour garder la synchronisation testable, transactionnelle et indépendante du protocole MCP.
+### Dry-run
 
-## Sources catalogue
+```bash
+catalog sync --dry-run --file config/catalog-sources.yml
+```
 
-Les sources synchronisables sont définies dans :
+Options :
 
 ```text
-config/catalog-sources.yml
+--source-key <key>     limite le plan à une source
 ```
 
-Exemple conceptuel :
+Le dry-run planifie les sources/documents configurés sans fetch réseau. Il persiste néanmoins un
+`sync_run` créé en `RUNNING`, puis clôturé en `SUCCESS` avec les compteurs du plan.
 
-```yaml
-schema_version: 1
+### Sync réel
 
-sources:
-  nodejs-docs:
-    display_name: Node.js Documentation
-    base_url: https://nodejs.org/api/
-    language: en-US
-    freshness_policy: weekly
-    sync_strategy: manual
-    seeds:
-      - https://nodejs.org/api/fs.html
-      - https://nodejs.org/api/path.html
+```bash
+catalog sync --file config/catalog-sources.yml --config config/application.yml
 ```
 
-`official-sources.yml` reste le registre de confiance. `catalog-sources.yml` décrit l'exploitation documentaire.
-
-## Découverte des documents
-
-V2.0 ne valide pas de crawl autonome.
-
-Stratégies autorisées en V2 initiale :
-
-1. seeds explicites ;
-2. fichiers manifestes officiels si disponibles ;
-3. liste maintenue dans `catalog-sources.yml` ;
-4. ajout manuel par CLI.
-
-Stratégies hors périmètre initial :
-
-- crawl complet de domaine ;
-- profondeur automatique ;
-- découverte par navigation JavaScript ;
-- authentification ;
-- formulaires.
-
-## CLI cible
+Options :
 
 ```text
-mcp-search-net catalog init
-mcp-search-net catalog add-source
-mcp-search-net catalog sync
-mcp-search-net catalog status
-mcp-search-net catalog rebuild-index
-mcp-search-net catalog verify
-mcp-search-net catalog purge-versions
+--source-key <key>       limite la synchronisation à une source
+--limit <n>              limite volontairement le nombre de documents traités
+--rate-limit-ms <ms>     délai applicatif entre deux documents
+--resume-after <cursor>  reprend après un document déjà traité
 ```
 
-### `catalog init`
+`--limit` est désormais optionnel. Sans `--limit`, la synchronisation traite tous les documents activés du périmètre sélectionné.
 
-- crée `catalog.db` si absent ;
-- applique les migrations catalogue ;
-- vérifie l'absence de tables V2 dans `cache.db`.
+### Curseur de reprise
 
-### `catalog add-source`
-
-- valide une entrée de source ;
-- n'effectue pas de fetch automatique sauf option explicite future ;
-- refuse les URLs privées.
-
-### `catalog sync`
-
-Options à cadrer :
+Format global :
 
 ```text
---source <sourceKey>
---document <documentPublicId>
---all
---dry-run
---max-documents <n>
---timeout-ms <n>
+--resume-after <sourceKey>:<stableKey>
 ```
 
-Règles :
-
-- un seul writer catalogue à la fois ;
-- lock applicatif ;
-- rapport `sync_runs` ;
-- transaction par document ;
-- reprise possible après interruption.
-
-### `catalog status`
-
-- liste sources ;
-- nombre de documents ;
-- dernière synchronisation ;
-- documents stale ;
-- taille index.
-
-### `catalog rebuild-index`
-
-- reconstruit `document_sections_fts` depuis `document_sections` ;
-- ne refetch aucun document ;
-- produit un rapport de cohérence.
-
-### `catalog verify`
-
-- vérifie intégrité SQLite ;
-- vérifie cohérence documents/versions/sections ;
-- vérifie cohérence FTS ;
-- vérifie séparation cache/catalogue.
-
-## Détection de changement
-
-Ordre de décision :
-
-1. URL finale/canonique changée ;
-2. HTTP status durable `404` ou `410` ;
-3. ETag différent ;
-4. Last-Modified différent ;
-5. hash du contenu normalisé différent ;
-6. version explicite upstream différente.
-
-Une nouvelle `document_version` est créée si le contenu normalisé change.
-
-Une redirection permanente peut créer ou mettre à jour `document_aliases`.
-
-Un échec temporaire crée un `staleness_event` sans supprimer les sections existantes.
-
-## Politique de non-suppression
-
-Un document ne passe pas directement à `REMOVED` après un seul échec.
-
-Proposition :
+Format raccourci possible quand `--source-key` est fourni :
 
 ```text
-1er échec temporaire   -> STALE + staleness_event
-3 échecs consécutifs   -> UNAVAILABLE
-HTTP 410 confirmé      -> REMOVED après confirmation ou délai de grâce
-redirection permanente -> REDIRECTED puis ACTIVE sur canonical_url mise à jour
+--source-key nodejs-docs --resume-after fs
 ```
 
-Les seuils exacts seront configurables.
+La reprise saute tous les documents jusqu'au curseur inclus et reprend au document suivant dans l'ordre du fichier `catalog-sources.yml`.
+
+Si le curseur n'existe pas dans le périmètre sélectionné, la commande échoue explicitement pour éviter une resynchronisation silencieuse depuis le début.
 
 ## Rate limiting
 
-Valeurs initiales proposées :
+La synchronisation V2 applique deux protections :
+
+1. `SecureHttpGateway` conserve les protections réseau existantes : timeout, taille maximale, redirections, concurrence et délai minimum configuré.
+2. `SyncCatalogDocuments` applique un délai applicatif séquentiel entre deux documents via `rateLimitMs`.
+
+Priorité du délai applicatif :
 
 ```text
-maxDocumentsPerRun = 100
-minDelayBetweenRequestsMs = 1000
-maxConcurrentFetches = 1 en V2 initiale
-timeoutPerDocumentMs = 20000
-maxDocumentBytes = limite V1 existante ou plus stricte
+--rate-limit-ms <ms> > application.security.minimumDelayMs > 0
 ```
 
-La V2 initiale privilégie la politesse réseau et la reproductibilité plutôt que la vitesse.
+Le résultat JSON expose `rateLimitMs` pour rendre le comportement visible.
 
-## Observabilité
+## Détection de changement
 
-Événements structurés :
+Le fetcher reçoit les validateurs de la version courante quand ils existent :
+
+- `contentHash` ;
+- `ETag` ;
+- `Last-Modified`.
+
+Décisions :
+
+- réponse `notModified`/HTTP `304` => document `unchanged`, `last_seen_at` actualisé, aucune nouvelle
+  version ni section ; une redirection permanente observée peut aussi actualiser l'URL canonique,
+  le statut `REDIRECTED`, les aliases et les événements associés ;
+- hash identique au contenu courant => document `unchanged`, aucune nouvelle version ;
+- hash différent => révision atomique, immédiatement recherchable sans rebuild manuel ;
+- redirection permanente => document `REDIRECTED`, `stableKey` conservé, chaîne de redirection
+  stockée en métadonnées, aliases et événements persistés ;
+- 404 sur document existant => document `STALE`, version courante conservée ;
+- 410 sur document existant => document `REMOVED`, version courante conservée ;
+- indisponibilité fournisseur sur un document existant => événement `SOURCE_UNAVAILABLE`, sans
+  mutation destructive ni passage automatique en `UNAVAILABLE` ;
+- autre erreur => entrée `failed`, run `FAILED` ou `PARTIAL` selon les autres documents.
+
+Les observations écrites par la synchronisation sont :
+
+- aliases `OLD_URL`, `REDIRECT` et `CANONICAL`, dédupliqués par document et URL ;
+- événements `HTTP_404`, `HTTP_410`, `PERMANENT_REDIRECT`, `CANONICAL_CHANGED`,
+  `SOURCE_UNAVAILABLE` et `CONTENT_HASH_CHANGED`.
+
+Chaque observation référence le `sync_run` courant. Une réobservation d'alias conserve sa première
+date et actualise sa dernière date.
+
+Le `content_hash` V2 caractérise volontairement les octets HTTP, avant extraction. Cette sémantique
+est compatible avec les versions déjà stockées et détecte toute modification upstream, mais elle
+peut créer du churn lorsqu'un wrapper HTML change sans changement documentaire. Passer à un hash
+du Markdown normalisé exige une stratégie de migration/double-hash pour les catalogues existants ;
+ce changement est donc reporté explicitement à V3 et devra être comparé sur un corpus réel avant
+adoption.
+
+## Sortie JSON
+
+Le sync réel retourne notamment :
 
 ```text
-catalog_sync_started
-catalog_sync_completed
-catalog_sync_failed
-catalog_document_checked
-catalog_document_added
-catalog_document_updated
-catalog_document_unchanged
-catalog_document_failed
-catalog_index_rebuilt
-catalog_verify_completed
+schemaVersion
+dryRun
+syncRun
+checkedCount
+addedCount
+updatedCount
+unchangedCount
+failedCount
+skippedCount
+documents
+rateLimitMs
+limited
+resumeAfter
+index
 ```
 
-Chaque run a un `syncRunId`.
+`limited` vaut `true` quand `--limit` a empêché de traiter tous les documents restants. Le champ
+`index.indexedSections` provient de la vérification post-sync ; le CLI ne masque plus une
+incohérence en reconstruisant automatiquement tout l'index.
 
-Ne jamais logger :
+## Reprise après interruption
 
-- corps documentaire complet ;
-- token ;
-- variables d'environnement complètes ;
-- stack trace brute dans les réponses utilisateur.
+La reprise opérationnelle repose sur l'ordre déterministe de `catalog-sources.yml` et sur le dernier document visible dans le rapport JSON.
 
-## Tests à prévoir
+Exemple : si le dernier document traité est `nodejs-docs:fs`, relancer :
 
-- sync dry-run ;
-- ajout source valide ;
-- refus URL privée ;
-- document inchangé ;
-- document changé ;
+```bash
+catalog sync --file config/catalog-sources.yml --resume-after nodejs-docs:fs
+```
+
+La commande reprend au document suivant.
+
+## Politique de non-suppression
+
+Un document existant ne perd jamais sa version courante à cause d'un échec réseau.
+
+- `404` : document marqué `STALE`, sections conservées.
+- `410` : document marqué `REMOVED`, sections conservées.
+- erreurs temporaires : échec dans le rapport, pas de mutation destructive.
+
+## Lifecycle et observabilité
+
+Chaque dry-run ou sync réel écrit d'abord un `sync_run` en `RUNNING` avec compteurs nuls, puis le
+clôt une seule fois avec :
+
+- source ciblée si applicable ;
+- date de début et de fin ;
+- statut `SUCCESS`, `FAILED` ou `PARTIAL` ;
+- compteurs ajoutés, mis à jour, inchangés et échoués ;
+- résumé d'erreur si nécessaire.
+
+Une exception qui interrompt la boucle clôt le run en `FAILED` avant d'être propagée. Le schéma
+autorise aussi `CANCELLED`, mais aucun use case du candidat ne produit actuellement cet état.
+
+## Tests couverts
+
+- fetch et stockage d'un document ;
+- sync exhaustive sans `--limit` ;
+- rate limiting applicatif ;
+- reprise via curseur ;
+- validateurs de version courante ;
+- contenu inchangé ;
+- réponse `notModified` avec touch `last_seen_at` et absence de nouvelle version ;
 - redirection permanente ;
-- 404 temporaire ;
-- 410 confirmé ;
-- interruption au milieu d'un run ;
-- reprise ;
-- rebuild index ;
-- verify ;
-- zéro régression V1.
+- 404 non destructif ;
+- 410 non destructif ;
+- aliases dédupliqués et six types d'événements liés au run ;
+- transition `RUNNING` vers un seul statut terminal ;
+- index FTS mis à jour dans la transaction de chaque révision ;
+- rollback des écritures si sections ou indexation échouent ;
+- vérification post-sync sans rebuild correctif implicite.
 
-## Sorties de phase attendues
+## Limites courantes
 
-La phase d'implémentation V2.3 sera considérée prête si :
-
-- le modèle de données est validé ;
-- le runner de migrations catalogue existe ;
-- le CLI skeleton est défini ;
-- les tests de sécurité SSRF peuvent être réutilisés ;
-- le pipeline n'appelle pas les outils MCP publics V1.
+- aucune découverte automatique ni crawl de domaine ;
+- aucune mutation de synchronisation exposée par MCP ;
+- aucun statut `CANCELLED` émis par les use cases actuels ;
+- aucun hash de contenu normalisé en V2 : cette évolution est reportée à V3.

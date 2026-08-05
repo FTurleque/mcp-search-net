@@ -53,5 +53,7 @@ export interface SearchResponse {
     readonly total: number;
     readonly returned: number;
     readonly unresponsiveEngines: readonly string[];
+    readonly sourceProvider: 'searxng';
+    readonly retrievedAt: string;
   };
 }

@@ -1,4 +1,9 @@
-# Conservé pour compatibilité avec les commandes historiques. Les publications
-# loopback sûres sont désormais dans compose.yaml afin que `docker compose up`
-# fonctionne directement depuis un clone propre.
-services: {}
+# Overlay hôte : publie uniquement les providers sur loopback pour le serveur
+# Node/IntelliJ. Le mode conteneur utilise compose.yaml seul et reste interne.
+services:
+  searxng:
+    ports:
+      - '127.0.0.1:8888:8080'
+  crawl4ai:
+    ports:
+      - '127.0.0.1:11235:11235'

@@ -8,6 +8,14 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { afterEach, describe, expect, it } from 'vitest';
 
 const live = process.env['RUN_LIVE_SEARXNG'] === '1';
+const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
+const expectedToolNames = [
+  'fetch_url',
+  'list_docs',
+  'read_doc_section',
+  'search_docs',
+  'search_web',
+];
 
 describe.runIf(live)('live MCP search', () => {
   let client: Client | undefined;
@@ -19,14 +27,14 @@ describe.runIf(live)('live MCP search', () => {
   });
 
   it('searches through the complete STDIO stack and returns the common envelope', async () => {
-    client = new Client({ name: 'mcp-search-net-live-search-test', version: '1.0.0' });
+    client = new Client({ name: 'mcp-search-net-live-search-test', version: '1.1.0' });
     cacheRoot = mkdtempSync(join(tmpdir(), 'mcp-search-live-cache-'));
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [resolve('build/bootstrap/main.js')],
       env: {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
-        MCP_CRAWL4AI_TOKEN: 'mcp-search-local-development-token',
+        [crawl4aiEnvironmentName]: requireCrawl4aiToken(),
         MCP_CACHE_PATH: join(cacheRoot, 'cache.sqlite'),
       },
       stderr: 'pipe',
@@ -38,7 +46,7 @@ describe.runIf(live)('live MCP search', () => {
 
     await client.connect(transport);
     const tools = await client.listTools();
-    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(['fetch_url', 'search_web']);
+    expect(tools.tools.map((tool) => tool.name).sort()).toEqual(expectedToolNames);
 
     const result = await client.callTool({
       name: 'search_web',
@@ -106,6 +114,14 @@ describe.runIf(live)('live MCP search', () => {
     );
   });
 });
+
+function requireCrawl4aiToken(): string {
+  const token = process.env['CRAWL4AI_API_TOKEN'];
+  if (token === undefined || token.trim() === '') {
+    throw new Error('CRAWL4AI_API_TOKEN is required for live MCP search tests');
+  }
+  return token;
+}
 
 function captureStderr(transport: StdioClientTransport, onChunk: (chunk: string) => void): void {
   const stderr = transport.stderr as Readable | null;

@@ -13,8 +13,8 @@
 
 ## Frontières stables
 
-- V1 expose exactement `search_web` et `fetch_url`.
-- SQLite est un cache, pas un index de documents permanent.
+- Le sous-contrat V1 expose exactement `search_web` et `fetch_url`; le serveur complet ajoute `search_docs`, `list_docs` et `read_doc_section` en lecture seule.
+- `cache.sqlite` est un cache Web ; `catalog.db` est le catalogue V2 persistant séparé et son FTS est dérivé.
 - Le serveur n'utilise aucun LLM interne ni API payante obligatoire.
 - `search_web` découvre des URLs et ne télécharge jamais les pages de résultats.
 - `fetch_url` lit une seule URL publique connue et n'effectue jamais de recherche ni de crawl autonome.
@@ -30,6 +30,7 @@ npm run format:check
 npm run build
 npm test
 npm run check
+npm run docs:check
 docker compose config --quiet
 docker compose ps
 ```

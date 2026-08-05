@@ -1,6 +1,6 @@
 # Contrats des outils MCP
 
-## Enveloppe commune V1
+## Enveloppe commune
 
 Tout succès, complet ou partiel, utilise la même enveloppe :
 
@@ -15,10 +15,12 @@ interface ToolResponse<T> {
     requestId: string;
   }>;
   metadata: {
-    tool: 'search_web' | 'fetch_url';
+    tool: 'search_web' | 'fetch_url' | 'search_docs' | 'list_docs' | 'read_doc_section';
     durationMs: number;
     cacheStatus: 'HIT' | 'MISS' | 'STALE_FALLBACK' | 'DISABLED';
     provider: string;
+    contentTrust: 'EXTERNAL_UNTRUSTED_CONTENT';
+    contentSafetyNotice: string;
   };
   data: T;
 }
@@ -26,9 +28,15 @@ interface ToolResponse<T> {
 
 `durationMs` est mesuré avec une horloge monotone. Le même `requestId` relie la réponse, les avertissements et les événements structurés écrits sur `stderr`.
 
-`cacheStatus` vaut `HIT` pour une entrée fraîche ou revalidée en HTTP 304, `MISS` après appel fournisseur, `STALE_FALLBACK` lorsqu'une entrée expirée remplace un fournisseur indisponible, et `DISABLED` lorsque le cache est désactivé ou que le mode dégradé poursuit après une panne SQLite. Le stale fallback ajoute `STALE_CACHE_USED` et force `status: partial`.
+`cacheStatus` vaut `HIT` pour une entrée fraîche ou revalidée en HTTP 304, `MISS` après appel fournisseur, `STALE_FALLBACK` lorsqu'une entrée expirée remplace un fournisseur indisponible, et `DISABLED` lorsque le cache est désactivé ou que le mode dégradé poursuit après une panne SQLite. Pour `search_docs`, le provider est `catalog` et le cache applicatif V1 est désactivé.
 
-Le champ textuel MCP est un résumé compact : liste numérotée avec URL pour `search_web`, ou source suivie du Markdown sélectionné pour `fetch_url`. Il ne s'agit plus d'une copie JSON de `structuredContent`.
+Le champ textuel MCP est volontairement compact. Il ne doit pas recopier tout `structuredContent` afin de limiter la consommation de contexte dans Copilot.
+
+Les titres, extraits, métadonnées et textes provenant du Web ou du catalogue sont
+des données hostiles potentielles. `contentTrust` et `contentSafetyNotice` sont
+présents sur toute réponse réussie ; les resources JSON portent les mêmes champs
+au premier niveau. Une instruction trouvée dans une page ne modifie jamais le
+contrôle du serveur ou de l'agent.
 
 ## `search_web`
 
@@ -52,7 +60,7 @@ Politiques :
 - `prefer` classe les sources officielles en premier et signale l'inclusion de sources non vérifiées ;
 - `any` ne filtre aucun statut, tout en conservant les filtres de domaines et le classement local.
 
-Chaque résultat contient `title`, `url`, `domain`, `snippet`, `sourceStatus`, `score`, les moteurs et, uniquement lorsqu'elles existent, les dates et la langue détectée. Les statuts possibles sont `VERIFIED_OFFICIAL`, `LIKELY_OFFICIAL`, `THIRD_PARTY` et `UNKNOWN`.
+Chaque résultat contient `title`, `url`, `domain`, `snippet`, `sourceStatus`, `score`, les moteurs et, uniquement lorsqu'elles existent, les dates et la langue détectée. Les statuts possibles sont `VERIFIED_OFFICIAL`, `LIKELY_OFFICIAL`, `THIRD_PARTY` et `UNKNOWN`. La métadonnée de données expose aussi `sourceProvider: searxng` et le vrai instant `retrievedAt`; une réponse de cache conserve l'instant de récupération initial.
 
 Les URL sont normalisées avant déduplication : fragment et paramètres de suivi connus supprimés, port implicite et slash final harmonisés, paramètres fonctionnels conservés et triés. `search_web` ne télécharge jamais les pages trouvées.
 
@@ -82,13 +90,121 @@ Entrées :
 | `maxSections`   | `5`      | de 1 à 10                                                   |
 | `renderMode`    | `static` | `static` ou `auto`                                          |
 
-La sortie contient `requestedUrl`, `finalUrl`, `canonicalUrl`, `domain`, `contentType`, `sourceStatus`, `fetchedAt`, `extractionMode`, `truncated`, `sectionCount`, `sections`, le Markdown assemblé et les liens publics validés. Chaque section expose son titre, son Markdown, son score local et son état de troncature.
+La sortie contient `requestedUrl`, `finalUrl`, `canonicalUrl`, `domain`, `contentType`, `sourceStatus`, `fetchedAt`, `extractionMode`, `truncated`, `sectionCount`, `sections`, le Markdown assemblé et les liens publics validés. L'enveloppe identifie le provider effectif. Chaque section expose son titre, son Markdown, son score local et son état de troncature.
 
 Le sélecteur local utilise une pertinence lexicale déterministe bornée entre 0 et 1, renforce les correspondances dans les titres, les blocs de code et les versions demandées, limite chaque section à 5 000 caractères, puis applique les budgets globaux. Une requête sans correspondance renvoie une liste vide et `NO_RELEVANT_SECTION`, jamais les premières sections arbitraires.
 
 Les formats V1 sont HTML, Markdown/README, texte, JSON, XML, YAML, `robots.txt`, `sitemap.xml`, `llms.txt` et PDF textuel. Un PDF sans couche texte produit `OCR_REQUIRED_NOT_SUPPORTED`; un autre format non textuel produit `UNSUPPORTED_CONTENT_TYPE`.
 
 En mode `auto`, le rendu natif n'est tenté qu'après une extraction statique insuffisante. Crawl4AI reçoit alors un document `raw://` contenant le HTML déjà téléchargé et neutralisé, jamais l'URL publique. Ce transport natif ne déclenche aucune requête réseau. L'avertissement `JAVASCRIPT_FALLBACK_USED` rend ce chemin visible.
+
+## `search_docs`
+
+Recherche dans le catalogue documentaire local V2. L'outil est read-only, idempotent et n'appelle ni Web, ni Crawl4AI, ni API payante.
+
+Entrées :
+
+| Champ             | Défaut               | Contraintes                                                  |
+| ----------------- | -------------------- | ------------------------------------------------------------ |
+| `query`           | —                    | 1 à 500 caractères, sans caractère de contrôle               |
+| `sourceKey`       | absente              | clé de source catalogue optionnelle                          |
+| `language`        | absente              | filtre langue BCP-47 simplifié, exemple `fr`                 |
+| `maxResults`      | limite par défaut V2 | de 1 à la limite applicative, 10 au maximum                  |
+| `maxSnippetChars` | `500`                | budget borné appliqué à chaque extrait                       |
+| `compact`         | `false`              | réduit encore les extraits pour un usage agent à faible coût |
+
+Sortie `data` :
+
+| Champ         | Description                                |
+| ------------- | ------------------------------------------ |
+| `query`       | requête normalisée                         |
+| `resultCount` | nombre de résultats retournés              |
+| `results`     | sections documentaires classées localement |
+
+Chaque résultat contient `sourceKey`, `sourceName`, `documentPublicId`, `title`, `url`, `language`, `heading`, `headingPath`, `anchor`, `snippet` et `score`.
+
+Le texte MCP de fallback reste compact : nombre de résultats, requestId, cache, puis pour chaque résultat le titre, la section, l'URL et le snippet. Le contenu complet des sections n'est pas renvoyé par `search_docs`.
+
+Bonnes pratiques Copilot :
+
+- utiliser `maxResults: 3` pour une question ciblée ;
+- utiliser `maxResults: 5` pour une recherche exploratoire ;
+- éviter `maxResults: 10` sauf diagnostic ;
+- filtrer par `sourceKey` si possible ;
+- utiliser les resources MCP uniquement après avoir identifié un document ou une section pertinente.
+
+Exemple compact :
+
+```text
+search_docs success: 3 result(s)
+requestId=… cache=DISABLED
+1. Roadmap V2 — V2.4 — Exposition MCP V2
+   https://local.mcp-search-net/docs/planning/roadmap-v2-documentaire
+   Outil MCP search_docs, resources read-only catalogue/sources/documents/sections…
+```
+
+## `list_docs`
+
+Liste les documents sans contenu de section. La sélection, les filtres et la pagination sont
+exécutés en SQL avec un ordre stable par identifiant.
+
+| Champ       | Défaut | Contraintes                                                 |
+| ----------- | ------ | ----------------------------------------------------------- |
+| `sourceKey` | absent | clé source optionnelle                                      |
+| `language`  | absent | langue optionnelle                                          |
+| `status`    | absent | `ACTIVE`, `STALE`, `REDIRECTED`, `REMOVED` ou `UNAVAILABLE` |
+| `limit`     | `20`   | de 1 à 50                                                   |
+| `offset`    | `0`    | entier positif ou nul                                       |
+
+La sortie expose `count`, `total`, `offset`, `limit`, `nextOffset`, `truncated` et une liste de
+documents compacts. Le champ `data` sérialisé est limité à 20 000 caractères, indépendamment de
+`limit`. Si ce budget coupe une page, `nextOffset` reprend exactement au premier document non
+retourné ; aucun identifiant, titre ou URL n'est tronqué silencieusement.
+
+## `read_doc_section`
+
+Lit directement une section courante par `sectionId`, sans charger toutes les sections du
+catalogue. `maxCharacters` vaut 3 000 par défaut et accepte de 200 à 8 000 caractères. La sortie
+signale explicitement `found` et `truncated`.
+
+## Resources MCP V2 et budget contexte
+
+Les resources V2 sont read-only. Les collections de sources, documents, versions et sections
+retournent 20 éléments au maximum et fournissent `nextOffset` et `nextUri`. Les templates paginés
+sont :
+
+```text
+mcp-search-net://sources/page/{offset}
+mcp-search-net://documents/page/{offset}
+mcp-search-net://documents/{documentId}/versions/page/{offset}
+mcp-search-net://sections/page/{offset}
+```
+
+Les resources ciblées par identifiant utilisent des requêtes SQL dédiées. Une réponse resource est
+limitée à 24 000 caractères, une section détaillée à 8 000 caractères et les métadonnées de version
+à 2 000 caractères ; `contentTruncated` ou `metadataTruncated` rendent toute réduction explicite.
+
+Pour Copilot, la stratégie recommandée est :
+
+```text
+search_docs -> choisir le résultat utile -> lire uniquement la resource ciblée si le client MCP le permet
+```
+
+Éviter :
+
+```text
+Lis toutes les sections du catalogue.
+```
+
+Préférer :
+
+```text
+Utilise search_docs avec maxResults 3 pour trouver les sections sur la synchronisation V2.
+```
+
+Le benchmark V2.11 à 10 000 sections mesure la page de sections à 15 636 caractères au p95
+(~3 909 tokens), contre 4 733 639 caractères (~1 183 410 tokens) pour la simulation historique non
+bornée.
 
 ## Annotations et erreurs
 

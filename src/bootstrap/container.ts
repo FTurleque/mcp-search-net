@@ -1,10 +1,13 @@
 import { FetchUrl } from '../application/use-cases/fetch-url.js';
+import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
 import { SearchWeb } from '../application/use-cases/search-web.js';
 import { DisabledCacheRepository } from '../application/ports/cache-repository.js';
 import type { CacheRepository } from '../application/ports/cache-repository.js';
+import type { CatalogRepository } from '../application/ports/catalog-repository.js';
 import { CacheUnavailableError } from '../domain/errors/domain-errors.js';
 import { SafeCacheRepository } from '../infrastructure/cache/safe-cache-repository.js';
 import { SqliteCacheRepository } from '../infrastructure/cache/sqlite-cache-repository.js';
+import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
 import type { LoadedConfiguration } from '../infrastructure/config/load-configuration.js';
 import { Crawl4aiContentFetcher } from '../infrastructure/fetch/crawl4ai-content-fetcher.js';
 import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.js';
@@ -12,13 +15,14 @@ import { StructuredLogger } from '../infrastructure/logging/structured-logger.js
 import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-security-policy.js';
 import { SearxngSearchProvider } from '../infrastructure/search/searxng-search-provider.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
-import { createMcpServer } from '../presentation/mcp/mcp-server.js';
+import { createMcpServer } from '../presentation/mcp/mcp-server-v2.js';
 
 export function createContainer(loaded: LoadedConfiguration) {
   const config = loaded.application;
   const logger = new StructuredLogger(config.logging.level);
   const clock = new SystemClock();
   const cache = createCache(loaded, clock, logger);
+  const catalog = createCatalog(loaded, clock);
   const securityPolicy = new PublicUrlSecurityPolicy(config.security, undefined, logger);
   const secureGateway = new SecureHttpGateway(securityPolicy, {
     timeoutMs: config.crawl4ai.timeoutMs,
@@ -65,9 +69,17 @@ export function createContainer(loaded: LoadedConfiguration) {
     },
     logger,
   );
-  const mcpServer = createMcpServer({ searchWeb, fetchUrl, config, logger });
+  const searchCatalogDocuments = new SearchCatalogDocuments(catalog);
+  const mcpServer = createMcpServer({
+    searchWeb,
+    fetchUrl,
+    catalogRepository: catalog,
+    searchCatalogDocuments,
+    config,
+    logger,
+  });
 
-  return { cache, logger, mcpServer } as const;
+  return { cache, catalog, logger, mcpServer } as const;
 }
 
 function createCache(
@@ -92,4 +104,8 @@ function createCache(
       throw new CacheUnavailableError('The cache cannot be opened', { cause: error });
     return new DisabledCacheRepository();
   }
+}
+
+function createCatalog(loaded: LoadedConfiguration, clock: SystemClock): CatalogRepository {
+  return new SqliteCatalogRepository(loaded.catalogPath, clock);
 }

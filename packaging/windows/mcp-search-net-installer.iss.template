@@ -1,0 +1,425 @@
+#define AppName "mcp-search-net"
+#define AppVersion "@@VERSION@@"
+#define AppNumericVersion "@@APP_VERSION@@"
+#define AppId "@@APP_ID@@"
+#define SmokeMode @@SMOKE_MODE@@
+#define SourceDir "@@SOURCE_DIR@@"
+#define OutputDir "@@OUTPUT_DIR@@"
+#define OutputBaseFilename "@@OUTPUT_BASENAME@@"
+
+[Setup]
+AppId={#AppId}
+AppName={#AppName}
+AppVersion={#AppVersion}
+AppPublisher=FTurleque
+DefaultDirName={localappdata}\Programs\{#AppName}
+DefaultGroupName={#AppName}
+DisableProgramGroupPage=yes
+PrivilegesRequired=lowest
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+OutputDir={#OutputDir}
+OutputBaseFilename={#OutputBaseFilename}
+Compression=lzma2/ultra64
+SolidCompression=yes
+WizardStyle=modern
+ChangesEnvironment=yes
+SetupLogging=yes
+UninstallDisplayName={#AppName} {#AppVersion}
+VersionInfoVersion={#AppNumericVersion}
+VersionInfoCompany=FTurleque
+VersionInfoDescription={#AppName} Windows installer
+VersionInfoProductName={#AppName}
+VersionInfoProductVersion={#AppNumericVersion}
+VersionInfoProductTextVersion={#AppVersion}
+
+[Tasks]
+Name: "addtopath"; Description: "Ajouter {#AppName}\bin au PATH utilisateur"; GroupDescription: "Intégration Windows :"; Flags: checkedonce
+
+[Files]
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourceDir}\scripts\detect-integrations.ps1"; Flags: dontcopy
+
+[Icons]
+Name: "{userprograms}\{#AppName}\Dossier d'installation {#AppName}"; Filename: "{app}"
+
+[Registry]
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "MCP_SEARCH_HOME"; ValueData: "{app}"; Flags: uninsdeletevalue; Check: NotSmokeBuild
+
+[Code]
+var
+  DeleteUserDataOnUninstall: Boolean;
+  IntegPage:        TWizardPage;
+  ChkCopilotJB:    TNewCheckBox;
+  LblCopilotStatus: TNewStaticText;
+  ChkCopilotCli:   TNewCheckBox;
+  LblCliStatus:    TNewStaticText;
+  ChkClaudeDesktop: TNewCheckBox;
+  LblDesktopStatus: TNewStaticText;
+  ChkClaudeCode:    TNewCheckBox;
+  LblCodeStatus:    TNewStaticText;
+  ChkCodex:        TNewCheckBox;
+  LblCodexStatus:  TNewStaticText;
+  IntegPreflightIni:  String;
+  IntegPreflightDone: Boolean;
+
+{ ── Smoke build guard ───────────────────────────────────────────────────────── }
+
+function IsSmokeBuild(): Boolean;
+begin
+  Result := {#SmokeMode} = 1;
+end;
+
+function NotSmokeBuild(): Boolean;
+begin
+  Result := not IsSmokeBuild();
+end;
+
+{ ── Registry helpers ────────────────────────────────────────────────────────── }
+
+function InstallerRegistryPath(): String;
+begin
+  Result := 'Software\FTurleque\mcp-search-net';
+end;
+
+{ ── PATH helpers ────────────────────────────────────────────────────────────── }
+
+function TrimTrailingBackslash(Value: String): String;
+begin
+  Result := Value;
+  while (Length(Result) > 3) and (Result[Length(Result)] = '\') do
+    Delete(Result, Length(Result), 1);
+end;
+
+function PathContainsEntry(PathValue: String; Entry: String): Boolean;
+var
+  Haystack: String;
+  Needle: String;
+begin
+  Haystack := ';' + Lowercase(PathValue) + ';';
+  Needle := ';' + Lowercase(TrimTrailingBackslash(Entry)) + ';';
+  Result := Pos(Needle, Haystack) > 0;
+end;
+
+procedure AddBinToUserPath;
+var
+  CurrentPath: String;
+  BinPath: String;
+begin
+  if IsSmokeBuild() then exit;
+  BinPath := TrimTrailingBackslash(ExpandConstant('{app}\bin'));
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', CurrentPath) then CurrentPath := '';
+  if not PathContainsEntry(CurrentPath, BinPath) then
+  begin
+    if (CurrentPath <> '') and (CurrentPath[Length(CurrentPath)] <> ';') then
+      CurrentPath := CurrentPath + ';';
+    CurrentPath := CurrentPath + BinPath;
+    RegWriteExpandStringValue(HKCU, 'Environment', 'Path', CurrentPath);
+    RegWriteStringValue(HKCU, InstallerRegistryPath(), 'ManagedPath', BinPath);
+  end;
+end;
+
+procedure RemoveBinFromUserPath;
+var
+  CurrentPath: String;
+  BinPath: String;
+  PaddedPath: String;
+  Needle: String;
+  ManagedPath: String;
+begin
+  if IsSmokeBuild() then exit;
+  if not RegQueryStringValue(HKCU, InstallerRegistryPath(), 'ManagedPath', ManagedPath) then exit;
+  if not RegQueryStringValue(HKCU, 'Environment', 'Path', CurrentPath) then
+  begin
+    RegDeleteValue(HKCU, InstallerRegistryPath(), 'ManagedPath');
+    exit;
+  end;
+  BinPath := TrimTrailingBackslash(ManagedPath);
+  PaddedPath := ';' + CurrentPath + ';';
+  Needle := ';' + BinPath + ';';
+  StringChangeEx(PaddedPath, Needle, ';', True);
+  while (Length(PaddedPath) > 0) and (PaddedPath[1] = ';') do Delete(PaddedPath, 1, 1);
+  while (Length(PaddedPath) > 0) and (PaddedPath[Length(PaddedPath)] = ';') do Delete(PaddedPath, Length(PaddedPath), 1);
+  RegWriteExpandStringValue(HKCU, 'Environment', 'Path', PaddedPath);
+  RegDeleteValue(HKCU, InstallerRegistryPath(), 'ManagedPath');
+end;
+
+{ ── Intégration wizard page — layout (modèle MINOS) ────────────────────────── }
+
+procedure ConfigureIntegRow(
+  CheckBox: TNewCheckBox; Status: TNewStaticText; Top: Integer; Caption: String);
+begin
+  CheckBox.Parent  := IntegPage.Surface;
+  CheckBox.Left    := 0;
+  CheckBox.Top     := Top;
+  CheckBox.Width   := IntegPage.SurfaceWidth;
+  CheckBox.Caption := Caption;
+  CheckBox.Checked := False;
+  Status.Parent    := IntegPage.Surface;
+  Status.Left      := ScaleX(13);
+  Status.Top       := Top + ScaleY(21);
+  Status.Width     := IntegPage.SurfaceWidth - ScaleX(13);
+  Status.AutoSize  := False;
+  Status.Height    := ScaleY(28);
+  Status.WordWrap  := True;
+end;
+
+procedure SetIntegAvailability(
+  CheckBox: TNewCheckBox; Status: TNewStaticText; Section: String);
+var
+  Available: Boolean;
+  Reason: String;
+begin
+  Available := GetIniString(Section, 'Available', '0', IntegPreflightIni) = '1';
+  Reason    := GetIniString(Section, 'Reason', 'Détection non disponible', IntegPreflightIni);
+  CheckBox.Enabled := Available;
+  CheckBox.Checked := Available;
+  Status.Caption   := Reason;
+end;
+
+procedure DisableAllIntegRows(Reason: String);
+begin
+  ChkCopilotJB.Enabled     := False; ChkCopilotJB.Checked     := False; LblCopilotStatus.Caption := Reason;
+  ChkCopilotCli.Enabled    := False; ChkCopilotCli.Checked    := False; LblCliStatus.Caption     := Reason;
+  ChkClaudeDesktop.Enabled := False; ChkClaudeDesktop.Checked := False; LblDesktopStatus.Caption := Reason;
+  ChkClaudeCode.Enabled    := False; ChkClaudeCode.Checked    := False; LblCodeStatus.Caption    := Reason;
+  ChkCodex.Enabled         := False; ChkCodex.Checked         := False; LblCodexStatus.Caption   := Reason;
+end;
+
+{ ── Preflight detection ─────────────────────────────────────────────────────── }
+
+procedure RunIntegPreflight;
+var
+  PS: String;
+  TmpPs1: String;
+  ResultCode: Integer;
+begin
+  IntegPreflightIni := ExpandConstant('{tmp}\mcp-search-preflight.ini');
+  TmpPs1 := ExpandConstant('{tmp}\detect-integrations.ps1');
+  DeleteFile(IntegPreflightIni);
+  DeleteFile(TmpPs1);
+
+  ExtractTemporaryFile('detect-integrations.ps1');
+  if not FileExists(TmpPs1) then
+  begin
+    DisableAllIntegRows('Détection indisponible');
+    exit;
+  end;
+
+  PS := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  if (not Exec(PS,
+        '-NoProfile -ExecutionPolicy Bypass -File "' + TmpPs1 + '" -Out "' + IntegPreflightIni + '"',
+        '', SW_HIDE, ewWaitUntilTerminated, ResultCode)) or
+     (ResultCode <> 0) or (not FileExists(IntegPreflightIni)) then
+  begin
+    DisableAllIntegRows('Détection indisponible');
+    exit;
+  end;
+
+  SetIntegAvailability(ChkCopilotJB,     LblCopilotStatus, 'CopilotJetBrains');
+  SetIntegAvailability(ChkCopilotCli,    LblCliStatus,     'CopilotCli');
+  SetIntegAvailability(ChkClaudeDesktop, LblDesktopStatus, 'ClaudeDesktop');
+  SetIntegAvailability(ChkClaudeCode,    LblCodeStatus,    'ClaudeCode');
+  SetIntegAvailability(ChkCodex,         LblCodexStatus,   'CodexDesktop');
+end;
+
+{ ── Wizard lifecycle ────────────────────────────────────────────────────────── }
+
+procedure InitializeWizard;
+begin
+  if IsSmokeBuild() then Exit;
+
+  IntegPreflightDone := False;
+
+  IntegPage := CreateCustomPage(
+    wpSelectDir,
+    'Clients IA à configurer',
+    'SearXNG + Crawl4AI (Docker) démarrent automatiquement.' + #13#10 +
+    'Cochez les clients IA dans lesquels enregistrer mcp-search-net.');
+
+  ChkCopilotJB := TNewCheckBox.Create(IntegPage);
+  LblCopilotStatus := TNewStaticText.Create(IntegPage);
+  ConfigureIntegRow(ChkCopilotJB, LblCopilotStatus, ScaleY(8), 'GitHub Copilot — JetBrains / IntelliJ');
+
+  ChkCopilotCli := TNewCheckBox.Create(IntegPage);
+  LblCliStatus := TNewStaticText.Create(IntegPage);
+  ConfigureIntegRow(ChkCopilotCli, LblCliStatus, ScaleY(62), 'GitHub Copilot CLI');
+
+  ChkClaudeDesktop := TNewCheckBox.Create(IntegPage);
+  LblDesktopStatus := TNewStaticText.Create(IntegPage);
+  ConfigureIntegRow(ChkClaudeDesktop, LblDesktopStatus, ScaleY(116), 'Claude Desktop');
+
+  ChkClaudeCode := TNewCheckBox.Create(IntegPage);
+  LblCodeStatus := TNewStaticText.Create(IntegPage);
+  ConfigureIntegRow(ChkClaudeCode, LblCodeStatus, ScaleY(170), 'Claude Code  (CLI)');
+
+  ChkCodex := TNewCheckBox.Create(IntegPage);
+  LblCodexStatus := TNewStaticText.Create(IntegPage);
+  ConfigureIntegRow(ChkCodex, LblCodexStatus, ScaleY(224), 'Codex Desktop');
+
+  DisableAllIntegRows('Détection en attente...');
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if (IntegPage <> nil) and (PageID = IntegPage.ID) then
+    Result := IsSmokeBuild() or WizardSilent();
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (IntegPage <> nil) and (CurPageID = wpSelectDir) and (not IntegPreflightDone) then
+  begin
+    RunIntegPreflight;
+    IntegPreflightDone := True;
+  end;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  { Fallback : si la détection n'a pas encore tourné (page wpSelectDir skippée
+    ou Back/Forward inhabituel), la lancer maintenant sur IntegPage elle-même. }
+  if (IntegPage <> nil) and (CurPageID = IntegPage.ID) and (not IntegPreflightDone) then
+  begin
+    RunIntegPreflight;
+    IntegPreflightDone := True;
+  end;
+end;
+
+{ ── Configure-install invocation ────────────────────────────────────────────── }
+
+function RunConfigureScript(ExtraParams: String): Boolean;
+var
+  PowerShell: String;
+  ScriptPath: String;
+  Parameters: String;
+  ResultCode: Integer;
+begin
+  PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  ScriptPath := ExpandConstant('{app}\scripts\configure-install.ps1');
+  Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath +
+                '" -InstallRoot "' + ExpandConstant('{app}') + '"';
+  if ExtraParams <> '' then Parameters := Parameters + ' ' + ExtraParams;
+  Result := Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+            and (ResultCode = 0);
+end;
+
+function BuildClientsParam: String;
+var
+  Clients: String;
+begin
+  Clients := '';
+  if IntegPage = nil then begin Result := Clients; exit; end;
+  if ChkCopilotJB.Enabled     and ChkCopilotJB.Checked     then Clients := Clients + 'copilot-jetbrains,';
+  if ChkCopilotCli.Enabled    and ChkCopilotCli.Checked    then Clients := Clients + 'copilot-cli,';
+  if ChkClaudeDesktop.Enabled and ChkClaudeDesktop.Checked then Clients := Clients + 'claude-desktop,';
+  if ChkClaudeCode.Enabled    and ChkClaudeCode.Checked    then Clients := Clients + 'claude-code,';
+  if ChkCodex.Enabled         and ChkCodex.Checked         then Clients := Clients + 'codex,';
+  if (Length(Clients) > 0) and (Clients[Length(Clients)] = ',') then
+    Delete(Clients, Length(Clients), 1);
+  Result := Clients;
+end;
+
+procedure RunConfigureInstall;
+var
+  ExtraParams: String;
+  Clients: String;
+begin
+  if IsSmokeBuild() then
+  begin
+    RunConfigureScript('-SmokeMode');
+    Exit;
+  end;
+  { Mode silencieux (/VERYSILENT) : pas de page wizard → auto-detect }
+  if WizardSilent() then
+  begin
+    RunConfigureScript('');
+    Exit;
+  end;
+  { Docker toujours obligatoire — sans lui les outils MCP ne fonctionnent pas }
+  Clients := 'docker';
+  ExtraParams := BuildClientsParam;
+  if ExtraParams <> '' then Clients := Clients + ',' + ExtraParams;
+  ExtraParams := '-FromInstaller -Clients "' + Clients + '"';
+  if not RunConfigureScript(ExtraParams) then
+    MsgBox(
+      'La configuration post-installation n''a pas pu être complétée.' + #13#10 +
+      'mcp-search-net est installé mais .env et mcp.json.example sont absents.' + #13#10 +
+      'Relancez scripts\configure-install.ps1 -InstallRoot "' + ExpandConstant('{app}') + '" manuellement.',
+      mbError, MB_OK);
+end;
+
+procedure RunConfigureUninstall;
+begin
+  RunConfigureScript('-Uninstall');
+end;
+
+{ ── Install lifecycle ───────────────────────────────────────────────────────── }
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    RunConfigureInstall;
+    if WizardIsTaskSelected('addtopath') then AddBinToUserPath;
+    if not IsSmokeBuild() then
+      RegWriteStringValue(HKCU, InstallerRegistryPath(), 'InstallRoot', ExpandConstant('{app}'));
+  end;
+end;
+
+{ ── Uninstall lifecycle ─────────────────────────────────────────────────────── }
+
+procedure PromptForUserDataRemoval;
+var
+  DataRoot: String;
+  MessageText: String;
+begin
+  DeleteUserDataOnUninstall := False;
+  if IsSmokeBuild() or UninstallSilent() then exit;
+  DataRoot := ExpandConstant('{app}\data');
+  if not DirExists(DataRoot) then exit;
+  MessageText :=
+    'Supprimer également les données locales (cache, catalogue, configuration) ?' + #13#10 + #13#10 +
+    DataRoot + #13#10 + #13#10 +
+    'Oui supprime cache.sqlite, catalog.db et les configurations personnalisées.' + #13#10 +
+    'Cette opération est irréversible. Choisissez Non pour conserver les données.';
+  DeleteUserDataOnUninstall := MsgBox(MessageText, mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
+end;
+
+procedure DeleteUserData;
+var
+  DataRoot: String;
+  EnvFile: String;
+begin
+  if IsSmokeBuild() or (not DeleteUserDataOnUninstall) then exit;
+  DataRoot := ExpandConstant('{app}\data');
+  EnvFile  := ExpandConstant('{app}\.env');
+  if DirExists(DataRoot) then DelTree(DataRoot, True, True, True);
+  if FileExists(EnvFile) then DeleteFile(EnvFile);
+  RegDeleteKeyIncludingSubkeys(HKCU, InstallerRegistryPath());
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    if not IsSmokeBuild() then
+    begin
+      RunConfigureUninstall;
+      RemoveBinFromUserPath;
+      PromptForUserDataRemoval;
+    end;
+  end
+  else if CurUninstallStep = usPostUninstall then
+  begin
+    DeleteUserData;
+    { Force-remove remaining app directory (user-generated files: .env, integrations, backups) }
+    if DirExists(ExpandConstant('{app}')) then
+      DelTree(ExpandConstant('{app}'), True, True, True);
+    { Remove legacy installation directory (default path from ZIP install.ps1) }
+    if DirExists(ExpandConstant('{localappdata}\mcp-search-net')) then
+      DelTree(ExpandConstant('{localappdata}\mcp-search-net'), True, True, True);
+  end;
+end;

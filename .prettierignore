@@ -2,16 +2,16 @@ node_modules
 dist
 coverage
 .data
+
+# Generated dependency lockfile; formatted and verified by npm itself.
 package-lock.json
 
-# Documents de cadrage V2 longs : tableaux, blocs SQL/YAML/JSON et mise en page relue manuellement.
-docs/adr/ADR-013-sdk-mcp-v2-start-decision.md
-docs/adr/ADR-014-catalog-db-isolation.md
-docs/adr/ADR-015-fts5-contentless-delete.md
-docs/adr/ADR-016-mcp-v2-tools-resources.md
-docs/adr/README.md
-docs/planning/benchmark-v2.md
-docs/planning/roadmap-v2-documentaire.md
-docs/planning/validation-v1-recette-finale-2026-06-27.md
-docs/reference/catalog-schema-v2.md
-docs/reference/catalog-sync-v2.md
+# Prettier has no SQL parser in this project.
+catalog-migrations/*.sql
+
+# Historical evidence stays byte-stable; current documentation is formatted.
+docs/planning/validation-*.md
+docs/planning/status-v2-7.md
+
+# Versioned benchmark fixtures are machine-readable and validated structurally by tests.
+benchmarks/v2-search-quality/*.json

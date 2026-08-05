@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 
 import type { OfficialSourceRegistry } from '../../application/ports/official-source-registry.js';
@@ -9,9 +10,17 @@ import {
 import type { ApplicationConfig, ApplicationEnvironment } from './application-config.js';
 import { loadYaml } from './yaml-loader.js';
 import { OfficialSourceYamlRegistry } from './official-source-yaml-registry.js';
+import { ConfigurationError } from '../../domain/errors/domain-errors.js';
+
+const KNOWN_DEVELOPMENT_TOKEN_HASHES = new Set([
+  '2c996270398ba9479c876ad40555684a7638564acc76103d2b1322e40103ea23',
+  '28e149e2458d26cc3ac7bd52bf257b26107df159cfe3cca78d14d2e0917079d4',
+  '13403f17ba8f70ff7ec2e214abb8c948e9d9a69dac59b218fb60be6c5304effb',
+]);
 
 export interface LoadedConfiguration {
   readonly application: ApplicationConfig;
+  readonly catalogPath: string;
   readonly officialSources: OfficialSourceRegistry;
   readonly crawl4aiApiToken?: string;
 }
@@ -23,8 +32,15 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
   const application = applicationConfigSchema.parse(
     applyEnvironmentOverrides(yamlApplication, environment),
   );
+  const configurationDirectory = dirname(absoluteConfigPath);
+  const cachePath = resolve(configurationDirectory, application.cache.path);
+  const catalogPath =
+    environment.MCP_CATALOG_PATH === undefined
+      ? resolve(dirname(cachePath), 'catalog.db')
+      : resolve(configurationDirectory, environment.MCP_CATALOG_PATH);
+  assertDistinctDatabasePaths(cachePath, catalogPath);
   const officialPath = resolve(
-    dirname(absoluteConfigPath),
+    configurationDirectory,
     environment.MCP_OFFICIAL_SOURCES_PATH ??
       firstEnvironment('MCP_SEARCH_OFFICIAL_SOURCES_PATH') ??
       application.officialSourcesPath,
@@ -39,19 +55,29 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
     firstEnvironment('CRAWL4AI_API_TOKEN') ??
     tokenFromEnvironment ??
     application.crawl4ai.apiToken;
+  assertSafeSecretProfile(application.application.profile, crawl4aiApiToken);
 
   return {
     application: {
       ...application,
       cache: {
         ...application.cache,
-        path: resolve(dirname(absoluteConfigPath), application.cache.path),
+        path: cachePath,
       },
       officialSourcesPath: officialPath,
     },
+    catalogPath,
     officialSources: new OfficialSourceYamlRegistry(officialFile),
     ...(crawl4aiApiToken === undefined ? {} : { crawl4aiApiToken }),
   };
+}
+
+function assertDistinctDatabasePaths(cachePath: string, catalogPath: string): void {
+  const normalizeForComparison = (path: string): string =>
+    process.platform === 'win32' ? path.toLowerCase() : path;
+  if (normalizeForComparison(cachePath) === normalizeForComparison(catalogPath)) {
+    throw new ConfigurationError('Cache and catalog paths must be different');
+  }
 }
 
 function applyEnvironmentOverrides(
@@ -66,6 +92,10 @@ function applyEnvironmentOverrides(
   const continueOnError = environmentBoolean('MCP_SEARCH_CACHE_CONTINUE_ON_ERROR');
   return {
     ...application,
+    application: {
+      ...application.application,
+      ...(environment.MCP_PROFILE === undefined ? {} : { profile: environment.MCP_PROFILE }),
+    },
     searxng: {
       ...application.searxng,
       ...(searxngUrl === undefined ? {} : { baseUrl: searxngUrl }),
@@ -93,6 +123,22 @@ function applyEnvironmentOverrides(
   };
 }
 
+function assertSafeSecretProfile(
+  profile: ApplicationConfig['application']['profile'],
+  token: string | undefined,
+): void {
+  if (profile === 'development' || token === undefined) return;
+  if (KNOWN_DEVELOPMENT_TOKEN_HASHES.has(hashSecret(token))) {
+    throw new ConfigurationError(
+      `A known development Crawl4AI token is forbidden in the ${profile} profile`,
+    );
+  }
+}
+
+function hashSecret(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
 function firstEnvironment(...names: readonly string[]): string | undefined {
   for (const name of names) {
     const value = process.env[name];
@@ -106,5 +152,5 @@ function environmentBoolean(name: string): boolean | undefined {
   if (value === undefined) return undefined;
   if (value === '1' || value.toLowerCase() === 'true') return true;
   if (value === '0' || value.toLowerCase() === 'false') return false;
-  return value as unknown as boolean;
+  throw new Error(`Environment variable ${name} must be a boolean`);
 }

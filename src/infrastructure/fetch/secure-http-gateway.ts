@@ -24,9 +24,23 @@ export interface SecureHttpGatewayOptions {
   readonly userAgent: string;
 }
 
+export interface DownloadRedirect {
+  readonly fromUrl: string;
+  readonly toUrl: string;
+  readonly status: number;
+  readonly permanent: boolean;
+}
+
 export interface DownloadedResource {
   readonly requestedUrl: string;
   readonly finalUrl: string;
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly body: Uint8Array;
+  readonly redirectChain?: readonly DownloadRedirect[];
+}
+
+interface PinnedResponse {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
   readonly body: Uint8Array;
@@ -61,7 +75,7 @@ export class SecureHttpGateway {
       if (this.options.respectRobotsTxt && !new URL(value).pathname.endsWith('/robots.txt')) {
         await this.assertRobotsAllowed(value, deadline, context, limits);
       }
-      return await this.follow(value, value, 0, deadline, conditionalHeaders, context, limits);
+      return await this.follow(value, value, 0, deadline, conditionalHeaders, context, limits, []);
     } finally {
       this.release();
     }
@@ -75,6 +89,7 @@ export class SecureHttpGateway {
     conditionalHeaders: Readonly<Record<string, string>>,
     context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
     limits: SecureDownloadLimits,
+    redirectChain: readonly DownloadRedirect[],
   ): Promise<DownloadedResource> {
     if (redirects > limits.maxRedirects) throw new TooManyRedirectsError();
     const approved = await withDeadline(
@@ -89,11 +104,17 @@ export class SecureHttpGateway {
       sameOrigin ? conditionalHeaders : {},
       limits.maxBytes,
     );
-    if (response.status >= 300 && response.status < 400) {
+    if (response.status >= 300 && response.status < 400 && response.status !== 304) {
       const location = response.headers['location'];
       if (location === undefined)
         throw new HttpError('Redirect response has no Location header', response.status);
       const target = new URL(location, approved.value).toString();
+      const redirect: DownloadRedirect = {
+        fromUrl: approved.value,
+        toUrl: target,
+        status: response.status,
+        permanent: isPermanentRedirect(response.status),
+      };
       // The next URL is validated at the start of follow, before any connection is opened.
       return this.follow(
         requestedUrl,
@@ -103,12 +124,13 @@ export class SecureHttpGateway {
         conditionalHeaders,
         context,
         limits,
+        [...redirectChain, redirect],
       );
     }
     if (response.status !== 304 && (response.status < 200 || response.status >= 300)) {
       throw new HttpError(`Remote server returned HTTP ${response.status}`, response.status);
     }
-    return { requestedUrl, finalUrl: approved.value, ...response };
+    return { requestedUrl, finalUrl: approved.value, redirectChain, ...response };
   }
 
   private async assertRobotsAllowed(
@@ -121,7 +143,7 @@ export class SecureHttpGateway {
     const robotsUrl = new URL('/robots.txt', url.origin).toString();
     let resource: DownloadedResource;
     try {
-      resource = await this.follow(robotsUrl, robotsUrl, 0, deadline, {}, context, limits);
+      resource = await this.follow(robotsUrl, robotsUrl, 0, deadline, {}, context, limits, []);
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) return;
       // A temporarily unavailable robots file does not grant access silently.
@@ -138,7 +160,7 @@ export class SecureHttpGateway {
     deadline: number,
     conditionalHeaders: Readonly<Record<string, string>>,
     maxBytes: number,
-  ): Promise<Omit<DownloadedResource, 'requestedUrl' | 'finalUrl'>> {
+  ): Promise<PinnedResponse> {
     const url = new URL(approved.value);
     const address = approved.addresses[0];
     if (address === undefined) throw new UrlSecurityError('No approved address is available');
@@ -282,6 +304,10 @@ function flattenHeaders(headers: IncomingHttpHeaders): Record<string, string> {
         : [[key.toLowerCase(), Array.isArray(value) ? value.join(', ') : value]],
     ),
   );
+}
+
+function isPermanentRedirect(status: number): boolean {
+  return status === 301 || status === 308;
 }
 
 function isAllowedByRobots(content: string, path: string, userAgent: string): boolean {

@@ -5,6 +5,19 @@ if not exist "%MCP_SEARCH_HOME%\compose.yaml" (
   1>&2 echo mcp-search-net: compose.yaml absent. Relancez scripts\install-user.ps1.
   exit /b 2
 )
+if not exist "%MCP_SEARCH_HOME%\compose.hybrid.yaml" (
+  1>&2 echo mcp-search-net: compose.hybrid.yaml absent. Relancez scripts\install-user.ps1.
+  exit /b 3
+)
+if not exist "%MCP_SEARCH_HOME%\.env" (
+  1>&2 echo mcp-search-net: fichier .env absent. Relancez scripts\install-user.ps1.
+  exit /b 4
+)
+where docker >nul 2>&1
+if errorlevel 1 (
+  1>&2 echo mcp-search-net: Docker est absent du PATH.
+  exit /b 5
+)
 if not defined MCP_SEARCH_COMPOSE_PROJECT set "MCP_SEARCH_COMPOSE_PROJECT=mcp-search-net"
-docker compose -p "%MCP_SEARCH_COMPOSE_PROJECT%" -f "%MCP_SEARCH_HOME%\compose.yaml" -f "%MCP_SEARCH_HOME%\compose.hybrid.yaml" %*
+docker compose --env-file "%MCP_SEARCH_HOME%\.env" -p "%MCP_SEARCH_COMPOSE_PROJECT%" -f "%MCP_SEARCH_HOME%\compose.yaml" -f "%MCP_SEARCH_HOME%\compose.hybrid.yaml" %*
 exit /b %ERRORLEVEL%

@@ -1,13 +1,15 @@
 # ADR-012 — Planifier la migration SDK MCP v2 hors périmètre V1
 
-- **Statut** : Planifié pour post-V1
+- **Statut** : Historique — gel V1 exécuté, suivi par ADR-013
 - **Date** : 27 juin 2026
+- **Réconciliation courante** : candidat `1.1.0` sur `@modelcontextprotocol/sdk@1.30.0`
 
 ## Contexte
 
-Le projet mcp-search-net utilise `@modelcontextprotocol/sdk@1.29.0`, dernière release stable de la génération V1 du SDK MCP TypeScript, vérifiée le 22 juin 2026 dans l'ADR-002.
+Au moment de cette décision, le projet utilisait `@modelcontextprotocol/sdk@1.29.0`, version de la
+génération 1.x du SDK MCP TypeScript vérifiée le 22 juin 2026 dans l'ADR-002.
 
-Cette version fournit les primitives STDIO stables nécessaires :
+Cette version fournissait les primitives STDIO nécessaires :
 
 - `McpServer` pour créer le serveur
 - `StdioServerTransport` pour le transport local
@@ -49,6 +51,19 @@ Au 27 juin 2026, la V1 de mcp-search-net est officiellement close avec tous les 
    - Valider que les deux outils V1 restent fonctionnels
    - Mettre à jour ADR-002 avec la nouvelle version
    - Re-exécuter la suite complète `npm run check` et `npm run test:e2e`
+
+## Réconciliation avec le candidat `1.1.0`
+
+Le gel `1.29.0` a protégé le cycle V1 comme prévu. Le candidat courant utilise désormais
+`@modelcontextprotocol/sdk@1.30.0`, toujours épinglé exactement dans `package.json` et
+`package-lock.json`. Cette mise à jour compatible de la génération 1.x ne constitue pas la migration
+architecturale vers une future génération SDK v2 envisagée par cette ADR.
+
+Le serveur candidat conserve le transport STDIO et expose les cinq outils read-only
+`search_web`, `fetch_url`, `search_docs`, `list_docs`, `read_doc_section`, ainsi que ses resources et
+templates. La décision applicable au démarrage V2 et à cette mise à jour reste ADR-013. Les
+validations datées de la V1 prouvent leurs SHA historiques, pas le candidat courant ; son verdict est
+maintenu séparément dans [`docs/status/current-state.md`](../status/current-state.md).
 
 ## Conséquences
 
@@ -98,4 +113,5 @@ Au 27 juin 2026, la V1 de mcp-search-net est officiellement close avec tous les 
 - [ADR-011 — Figer la frontière V1/V2](ADR-011-v1-v2-boundary.md)
 - [SDK MCP TypeScript](https://github.com/modelcontextprotocol/typescript-sdk)
 - [Release v1.29.0](https://github.com/modelcontextprotocol/typescript-sdk/releases/tag/v1.29.0)
+- [Release v1.30.0](https://github.com/modelcontextprotocol/typescript-sdk/releases/tag/v1.30.0)
 - [Documentation officielle MCP](https://modelcontextprotocol.io)

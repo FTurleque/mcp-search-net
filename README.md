@@ -1,16 +1,24 @@
 # mcp-search-net
 
 Serveur MCP Web local, en lecture seule, destiné à GitHub Copilot dans IntelliJ
-IDEA. La V1 expose exactement deux outils :
+IDEA. La V1 expose deux outils stables :
 
 - `search_web` découvre des pages avec SearXNG et privilégie les domaines du
   registre officiel ;
 - `fetch_url` récupère une URL publique connue, applique la protection SSRF,
   extrait du Markdown et limite les sections retournées.
 
-Le serveur utilise un cache SQLite local, n’embarque aucun LLM et ne requiert
-aucune API commerciale. La V2 documentaire (catalogue, synchronisation, FTS,
-embeddings et recherche multi-document) n’est pas implémentée.
+Le checkout courant est le candidat `1.1.0` du jalon V2 documentaire ; aucune
+release V2 n'est encore publiée. La PR #8 ajoute un
+catalogue local séparé dans `catalog.db`, l'ingestion texte/Markdown, la
+synchronisation contrôlée, la recherche documentaire locale et une exposition
+MCP read-only via `search_docs`, `list_docs`, `read_doc_section` et des resources
+catalogue. Le serveur n'embarque aucun LLM et ne requiert aucune API commerciale.
+
+> État CI au 4 août 2026 : aucun run ne prouve les têtes actuelles. Le blocage
+> de facturation observé le 4 juillet est historique et son état présent est
+> inconnu. Le candidat rétablit les triggers PR ; seul un run attaché au SHA
+> final vaut preuve. Voir [`docs/status/current-state.md`](docs/status/current-state.md).
 
 ## Architecture
 
@@ -25,7 +33,8 @@ src/bootstrap       assemblage et cycle de vie STDIO
 ```
 
 Le domaine ne dépend ni du SDK MCP, ni de Zod, YAML, SQLite, SearXNG ou
-Crawl4AI. SQLite reste uniquement un cache V1.
+Crawl4AI. Le cache V1 et le catalogue V2 sont séparés : `.data/cache.sqlite` reste
+supprimable, `.data/catalog.db` porte le catalogue durable.
 
 ## Prérequis
 
@@ -41,19 +50,20 @@ cp .env.example .env
 ```
 
 Sous Windows, copiez manuellement `.env.example` vers `.env`. Remplacez les
-jetons d’exemple par des valeurs aléatoires locales avant d’utiliser un poste
-partagé.
+deux valeurs `CRAWL4AI_API_TOKEN` et `SEARXNG_SECRET` par des valeurs aléatoires
+locales : Compose refuse désormais de démarrer si elles sont absentes. Un profil
+autre que `development` refuse aussi les jetons d'exemple connus.
 
 ## Développement
 
 ```bash
-docker compose up -d searxng crawl4ai
+docker compose -f compose.yaml -f compose.hybrid.yaml up -d searxng crawl4ai
 npm run dev
 ```
 
-SearXNG et Crawl4AI sont publiés uniquement sur `127.0.0.1`, respectivement sur
-les ports 8888 et 11235. Le serveur MCP écrit exclusivement le protocole JSON-RPC
-sur `stdout` et ses diagnostics JSON sur `stderr`.
+L'overlay `compose.hybrid.yaml` publie SearXNG et Crawl4AI uniquement sur
+`127.0.0.1`, respectivement sur les ports 8888 et 11235. Le serveur MCP écrit
+exclusivement le protocole JSON-RPC sur `stdout` et ses diagnostics JSON sur `stderr`.
 
 ## Build et exécution locale
 
@@ -62,17 +72,25 @@ npm run build
 npm start
 ```
 
-Le build nettoie `build/` et l'ancien dossier `dist/` avant compilation. TypeScript utilise `noEmitOnError`, puis `npm start` exécute `build/bootstrap/main.js`. Le processus utilise le transport MCP STDIO ; il n’ouvre aucun port applicatif.
+Le build nettoie `build/` et l'ancien dossier `dist/` avant compilation.
+TypeScript utilise `noEmitOnError`, puis `npm start` exécute
+`build/bootstrap/main.js`. Le processus utilise le transport MCP STDIO ; il
+n’ouvre aucun port applicatif.
 
 ## Validation
 
+Validation locale de référence du candidat :
+
 ```bash
-npm run format:check
-npm run lint
-npm run build
+npm run check
+npm run test:required
 npm run test:unit
+npm run test:contract
+npm run test:security
+npm run test:resilience
+npm run test:performance
 npm run test:integration
-npm test
+npm run test:e2e:deterministic
 ```
 
 La suite d’intégration est déterministe et n’exige ni Internet ni Docker. Avec
@@ -82,8 +100,10 @@ les fournisseurs démarrés :
 npm run test:e2e
 ```
 
-Les rapports JSON sont écrits dans `.data/test-reports`. Les lanceurs de release
-échouent si un test requis est ignoré.
+`npm run check` inclut les contrôles supply chain et documentation (`docs:check`), typecheck, lint, contrôle Prettier, build, tests
+déterministes et seuils de couverture V8. Les rapports JSON sont écrits dans
+`.data/test-reports`, et les rapports de couverture dans `coverage/`. Les
+lanceurs de release échouent si un test requis est ignoré.
 
 ## Docker
 
@@ -93,7 +113,6 @@ Construire les images et démarrer les fournisseurs :
 docker compose config
 docker compose build
 docker compose up -d searxng crawl4ai
-docker compose ps
 ```
 
 Exécuter le serveur MCP conteneurisé en STDIO :
@@ -109,8 +128,9 @@ docker compose down
 ```
 
 Le conteneur MCP s’exécute sans root, avec filesystem en lecture seule,
-capabilities supprimées et volume d’écriture limité au cache. Aucun socket Docker,
-mode privilégié ou réseau hôte n’est utilisé.
+capabilities supprimées et volume d’écriture limité au cache et au catalogue.
+Aucun socket Docker, mode privilégié ou réseau hôte n’est utilisé. Les deux
+stages Node.js et les deux fournisseurs sont figés par digest SHA-256.
 
 ## IntelliJ IDEA / GitHub Copilot
 
@@ -145,9 +165,12 @@ Exécution Docker :
 }
 ```
 
-Redémarrez la fenêtre IntelliJ après une modification et vérifiez que Copilot
-affiche uniquement `search_web` et `fetch_url`. Voir le
-[guide IntelliJ détaillé](docs/getting-started/intellij-copilot.md).
+Le serveur candidat expose exactement cinq outils : `search_web`, `fetch_url`,
+`search_docs`, `list_docs` et `read_doc_section`. Les resources catalogue sont un
+canal read-only complémentaire ; le spike final IntelliJ/Copilot reste à exécuter
+avant gel définitif de l'ergonomie V2. Voir le
+[guide IntelliJ détaillé](docs/getting-started/intellij-copilot.md) et la
+[recette de spike MCP V2](docs/planning/spike-intellij-copilot-mcp-v2.md).
 
 ## Configuration
 
@@ -155,8 +178,10 @@ Les variables principales sont :
 
 ```text
 MCP_CONFIG_PATH
+MCP_PROFILE
 MCP_LOG_LEVEL
 MCP_CACHE_PATH
+MCP_CATALOG_PATH
 MCP_OFFICIAL_SOURCES_PATH
 MCP_SEARXNG_URL
 MCP_CRAWL4AI_URL
@@ -168,6 +193,24 @@ La priorité est : valeurs internes sûres, YAML, environnement, puis paramètre
 d’outil dans les maxima absolus. Une configuration obligatoire invalide arrête le
 démarrage avec un diagnostic sur `stderr`.
 
+## Catalogue documentaire V2
+
+Fonctionnalités en cours de stabilisation dans la PR #8 :
+
+- catalogue durable séparé de `cache.sqlite` ;
+- migrations catalogue `C001` à `C008` avec checksums SHA-256 ;
+- CLI `catalog init`, `status`, `verify`, `add-source`, `list-sources`,
+  `load-sources`, `ingest-text`, `sync`, `search`, `rebuild-index`,
+  `purge-versions`, ainsi que `health` et `backup` pour l'exploitation locale ;
+- ingestion texte/Markdown avec versioning et sections ;
+- recherche documentaire locale ;
+- synchronisation contrôlée avec ETag, Last-Modified, hash du payload HTTP brut,
+  cycle `RUNNING` vers un statut terminal, observations `304`, aliases,
+  événements de staleness et redirections permanentes ;
+- outils MCP read-only `search_docs`, `list_docs` et `read_doc_section` ;
+- resources MCP read-only paginées pour catalogue, sources, documents, versions
+  et sections, avec lectures ciblées par identifiant et budgets de réponse fixes.
+
 ## Sécurité
 
 - seuls HTTP et HTTPS sont acceptés ;
@@ -178,28 +221,18 @@ démarrage avec un diagnostic sur `stderr`.
 - aucun JavaScript, hook, cookie, proxy, fichier ou identifiant fourni par
   l’appelant n’est accepté ;
 - Crawl4AI reçoit le HTML contrôlé via `raw://`, jamais l’URL publique ;
-- le contenu Web reste une donnée non fiable et n’est jamais exécuté ;
+- le contenu Web et documentaire reste une donnée non fiable et n’est jamais
+  exécuté ; toutes les réponses réussies et resources JSON le marquent
+  explicitement `EXTERNAL_UNTRUSTED_CONTENT` ;
+- l'installateur Windows vérifie le SHA-256 officiel et la signature OpenJS du
+  runtime Node avant de l'activer, puis écrit un manifeste de preuve local ;
 - secrets, chemins internes et stacks ne sont pas renvoyés.
 
 ## Diagnostic rapide
 
-| Symptôme                   | Vérification                                                               |
-| -------------------------- | -------------------------------------------------------------------------- |
-| `stdout` corrompu          | rechercher un `console.log` ; seuls les logs JSON sur `stderr` sont permis |
-| SearXNG répond 403         | vérifier que `json` est activé dans `config/searxng/settings.yml`          |
-| Crawl4AI répond 401/403    | aligner `MCP_CRAWL4AI_TOKEN` et `CRAWL4AI_API_TOKEN`                       |
-| healthcheck en échec       | `docker compose ps` puis `docker compose logs <service>`                   |
-| erreur better-sqlite3      | vérifier Node 24, l’installation npm et les droits sur `.data`             |
-| timeout                    | vérifier DNS, accès Internet et limites de configuration                   |
-| URL bloquée                | confirmer qu’elle ne résout vers aucune adresse privée ou réservée         |
-| Crawl4AI manque de mémoire | augmenter la mémoire Docker Desktop ; `shm_size` vaut 1 Go                 |
-
-La documentation complète est indexée dans [docs/README.md](docs/README.md), avec
-les contrats, l’installation Windows, la sécurité, les tests et le dépannage.
-
-## Limites V1
-
-Pas d’OCR, embeddings, base vectorielle, indexation persistante, catalogue,
-synchronisation, crawl de domaine, suivi autonome des liens, authentification Web,
-formulaires, CAPTCHA, captures d’écran, scripts utilisateur ou LLM interne. Un PDF
-sans couche textuelle retourne `OCR_REQUIRED_NOT_SUPPORTED`.
+| Symptôme                | Vérification                                                               |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `stdout` corrompu       | rechercher un `console.log` ; seuls les logs JSON sur `stderr` sont permis |
+| SearXNG répond 403      | vérifier que `json` est activé dans `config/searxng/settings.yml`          |
+| Crawl4AI répond 401/403 | aligner `MCP_CRAWL4AI_TOKEN` et `CRAWL4AI_API_TOKEN`                       |
+| healthcheck en échec    | `docker compose ps` puis `docker compose logs <service>`                   |

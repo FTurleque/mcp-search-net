@@ -7,7 +7,7 @@ Le projet cible Node.js 24 LTS, npm et TypeScript strict. L’installateur utili
 ```powershell
 npm ci
 npm run check
-docker compose up -d
+docker compose -f compose.yaml -f compose.hybrid.yaml up -d
 npm run dev
 ```
 
@@ -20,7 +20,7 @@ npm run dev
 - conserver tous les logs sur `stderr` ;
 - considérer URLs et contenu Web comme non fiables ;
 - ne jamais transmettre à Crawl4AI une configuration exécutable fournie par l’appelant ;
-- ne pas introduire les fonctions documentaires V2.
+- préserver la séparation entre outils Web V1, catalogue documentaire V2 et opérations mutables CLI ;
 
 ## Cycle de modification
 
@@ -45,4 +45,5 @@ Ne modifier jamais directement le contenu de `%LOCALAPPDATA%\mcp-search-net\app`
 | `npm run format`        | écriture Prettier          |
 | `npm run format:check`  | contrôle Prettier          |
 | `npm test`              | suite Vitest               |
+| `npm run test:coverage` | tests et seuils coverage   |
 | `npm run check`         | validation complète        |

@@ -1,22 +1,41 @@
 name: CI
 
 on:
-  push:
-    branches: ['**']
+  workflow_dispatch:
   pull_request:
+    branches:
+      - master
+      - develop
+      - feat/v2-catalog-storage
+  push:
+    branches:
+      - master
+      - develop
+      - feat/v2-catalog-storage
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  QUALIFIED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  MCP_BUILD_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   check:
     name: Node.js 24 validation
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.QUALIFIED_SHA }}
+          persist-credentials: false
 
       - name: Set up Node.js 24
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -27,66 +46,163 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check formatting
-        run: npm run format:check
+      - name: Run static, build, deterministic tests and coverage gates
+        run: npm run check
 
-      - name: Lint sources
-        run: npm run lint
+      - name: Run all deterministic release suites
+        run: |
+          npm run test:required
+          npm run test:unit
+          npm run test:contract
+          npm run test:security
+          npm run test:resilience
+          npm run test:performance
+          npm run test:integration
+          npm run test:e2e:deterministic
 
-      - name: Build TypeScript
-        run: npm run build
+      - name: Audit complete dependency tree
+        run: npm audit --audit-level=moderate
 
-      - name: Run unit tests
-        run: npm run test:unit
+      - name: Audit production dependency tree
+        run: npm audit --omit=dev --audit-level=moderate
 
-      - name: Run integration tests
-        run: npm run test:integration
-
-      - name: Run required suite without skips
-        run: npm run test:required
-
-      - name: Run deterministic MCP E2E
-        run: npm run test:e2e:deterministic
-
-      - name: Run security suite
-        run: npm run test:security
-
-      - name: Run unit and contract suites
-        run: npm run test:unit && npm run test:contract
-
-      - name: Run resilience suite
-        run: npm run test:resilience
-
-      - name: Run performance suite
-        run: npm run test:performance
+      - name: Record exact head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFIED_SHA"
+          mkdir -p .data/test-reports
+          printf '%s\n' "$QUALIFIED_SHA" > .data/test-reports/exact-head.txt
 
       - name: Upload deterministic reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: deterministic-test-reports
-          path: .data/test-reports
+          path: |
+            .data/test-reports
+            coverage
 
   integration:
     name: Docker integration and live E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+      - name: Check out exact candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.QUALIFIED_SHA }}
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 24
           cache: npm
+      - name: Generate ephemeral provider secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'SEARXNG_SECRET=%s\n' "$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          printf 'CRAWL4AI_API_TOKEN=%s\n' "$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - run: npm ci
+      - name: Validate Compose model
+        run: |
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.yaml --profile stdio config --quiet
+          docker compose -f compose.yaml -f compose.hybrid.yaml config --quiet
+      - name: Run deterministic integration suite
+        run: npm run test:integration
       - run: npm run build
       - name: Build MCP container
         run: docker compose build mcp-search-net
+      - name: Verify MCP image identity and runtime user
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_user="$(docker image inspect mcp-search-net:1.1.0 --format '{{.Config.User}}')"
+          image_version="$(docker image inspect mcp-search-net:1.1.0 --format '{{index .Config.Labels "org.opencontainers.image.version"}}')"
+          image_revision="$(docker image inspect mcp-search-net:1.1.0 --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          test "$image_user" = 'node'
+          test "$image_version" = '1.1.0'
+          test "$image_revision" = "$QUALIFIED_SHA"
+          mkdir -p .data/test-reports
+          {
+            printf 'user=%s\n' "$image_user"
+            printf 'version=%s\n' "$image_version"
+            printf 'revision=%s\n' "$image_revision"
+          } > .data/test-reports/mcp-image-posture.txt
       - name: Start real providers
-        run: docker compose up -d --wait searxng crawl4ai
-      - name: Run integration suite
-        run: npm run test:integration
+        run: docker compose -f compose.yaml -f compose.hybrid.yaml up -d --wait searxng crawl4ai
+      - name: Verify provider isolation posture
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose=(docker compose -f compose.yaml -f compose.hybrid.yaml)
+          crawl4ai_id="$("${compose[@]}" ps -q crawl4ai)"
+          searxng_id="$("${compose[@]}" ps -q searxng)"
+          test -n "$crawl4ai_id"
+          test -n "$searxng_id"
+          crawl4ai_user="$(docker inspect "$crawl4ai_id" --format '{{.Config.User}}')"
+          crawl4ai_read_only="$(docker inspect "$crawl4ai_id" --format '{{.HostConfig.ReadonlyRootfs}}')"
+          crawl4ai_network_count="$(docker inspect "$crawl4ai_id" --format '{{len .NetworkSettings.Networks}}')"
+          crawl4ai_cap_drop="$(docker inspect "$crawl4ai_id" --format '{{json .HostConfig.CapDrop}}')"
+          crawl4ai_security_opt="$(docker inspect "$crawl4ai_id" --format '{{json .HostConfig.SecurityOpt}}')"
+          crawl4ai_redis_tmpfs="$(docker inspect "$crawl4ai_id" --format '{{index .HostConfig.Tmpfs "/var/lib/redis"}}')"
+          searxng_user="$(docker inspect "$searxng_id" --format '{{.Config.User}}')"
+          searxng_read_only="$(docker inspect "$searxng_id" --format '{{.HostConfig.ReadonlyRootfs}}')"
+          searxng_network_count="$(docker inspect "$searxng_id" --format '{{len .NetworkSettings.Networks}}')"
+          searxng_cap_drop="$(docker inspect "$searxng_id" --format '{{json .HostConfig.CapDrop}}')"
+          searxng_security_opt="$(docker inspect "$searxng_id" --format '{{json .HostConfig.SecurityOpt}}')"
+          crawl4ai_port="$(docker port "$crawl4ai_id" 11235/tcp)"
+          searxng_port="$(docker port "$searxng_id" 8080/tcp)"
+          test "$crawl4ai_user" = 'appuser'
+          test "$crawl4ai_read_only" = 'false'
+          test "$crawl4ai_network_count" = '2'
+          test "$crawl4ai_cap_drop" = '["ALL"]'
+          test -n "$crawl4ai_redis_tmpfs"
+          [[ "$crawl4ai_security_opt" == *no-new-privileges* ]]
+          test "$searxng_user" = '977:977'
+          test "$searxng_read_only" = 'true'
+          test "$searxng_network_count" = '2'
+          test "$searxng_cap_drop" = '["ALL"]'
+          [[ "$searxng_security_opt" == *no-new-privileges* ]]
+          test "$crawl4ai_port" = '127.0.0.1:11235'
+          test "$searxng_port" = '127.0.0.1:8888'
+          {
+            printf 'crawl4ai.user=%s\n' "$crawl4ai_user"
+            printf 'crawl4ai.readOnly=%s\n' "$crawl4ai_read_only"
+            printf 'crawl4ai.networkCount=%s\n' "$crawl4ai_network_count"
+            printf 'crawl4ai.capDrop=%s\n' "$crawl4ai_cap_drop"
+            printf 'crawl4ai.noNewPrivileges=true\n'
+            printf 'crawl4ai.redisTmpfs=true\n'
+            printf 'crawl4ai.port=%s\n' "$crawl4ai_port"
+            printf 'searxng.user=%s\n' "$searxng_user"
+            printf 'searxng.readOnly=%s\n' "$searxng_read_only"
+            printf 'searxng.networkCount=%s\n' "$searxng_network_count"
+            printf 'searxng.capDrop=%s\n' "$searxng_cap_drop"
+            printf 'searxng.noNewPrivileges=true\n'
+            printf 'searxng.port=%s\n' "$searxng_port"
+          } > .data/test-reports/provider-posture.txt
       - name: Run live MCP E2E suite
         run: npm run test:e2e
+      - name: Verify catalog persistence and health after MCP exit
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose=(docker compose -f compose.yaml --profile stdio)
+          "${compose[@]}" run --rm --no-deps -T --entrypoint node mcp-search-net \
+            --input-type=module \
+            --eval "const {statSync}=await import('node:fs');const stat=statSync('/app/.data/catalog.db');if(!stat.isFile()||stat.size===0)process.exit(1)"
+          "${compose[@]}" run --rm --no-deps -T --entrypoint node mcp-search-net \
+            build/cli/catalog.js health --path /app/.data/catalog.db \
+            > .data/test-reports/catalog-volume-health.json
+          node --input-type=module --eval "const {readFileSync}=await import('node:fs');const report=JSON.parse(readFileSync('.data/test-reports/catalog-volume-health.json','utf8'));if(report.status!=='healthy'||report.verification?.status!=='OK')process.exit(1)"
+      - name: Record exact integration head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$QUALIFIED_SHA"
+          printf '%s\n' "$QUALIFIED_SHA" > .data/test-reports/exact-head.txt
       - name: Upload integration reports
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -95,7 +211,40 @@ jobs:
           path: .data/test-reports
       - name: Collect provider logs
         if: failure()
-        run: docker compose logs --no-color
+        run: docker compose -f compose.yaml -f compose.hybrid.yaml logs --no-color
       - name: Stop providers
         if: always()
-        run: docker compose down
+        run: docker compose -f compose.yaml -f compose.hybrid.yaml down
+
+  windows-packaging:
+    name: Windows installation and STDIO packaging
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.QUALIFIED_SHA }}
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check:runtime
+      - run: npm run build
+      - run: npm run test:e2e:deterministic
+      - name: Validate clean install, upgrade, rollback and uninstall
+        shell: pwsh
+        run: |
+          $nodeRoot = Split-Path (Get-Command node).Source
+          ./scripts/test-installation.ps1 -NodeRuntimeSource $nodeRoot
+      - name: Record exact head
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:QUALIFIED_SHA) {
+              throw "Head qualifié inattendu : $actual"
+          }
+          Write-Host "WINDOWS_QUALIFIED_SHA=$actual"

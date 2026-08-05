@@ -1,7 +1,8 @@
 # ADR-014 — Isoler le catalogue V2 dans `catalog.db`
 
-- **Statut** : Accepté pour V2.0
+- **Statut** : Accepté et implémenté dans le candidat `1.1.0`
 - **Date** : 2026-07-03
+- **Réconciliation courante** : 2026-08-04
 - **Décision liée** : ADR-006, ADR-011
 
 ## Contexte
@@ -17,7 +18,7 @@ Le mécanisme de migration V1 actuel applique les migrations du cache à la base
 La V2 utilise une base SQLite distincte :
 
 ```text
-.data/cache.db    -> cache opportuniste V1, supprimable
+.data/cache.sqlite -> cache opportuniste V1, supprimable
 .data/catalog.db  -> catalogue documentaire V2, durable
 ```
 
@@ -25,45 +26,51 @@ Le catalogue V2 dispose de son propre runner de migrations, de sa propre connexi
 
 Les migrations du catalogue ne sont pas placées dans le même flux d'exécution que les migrations du cache V1.
 
-## Structure cible
+## Structure implémentée
 
 ```text
 migrations/
-└── cache/
-    ├── V001__create_schema_migrations.sql
-    ├── V002__create_search_cache.sql
-    ├── V003__create_content_cache.sql
-    └── V004__remove_legacy_cache_tables.sql
+├── V001__create_schema_migrations.sql
+├── V002__create_search_cache.sql
+├── V003__create_content_cache.sql
+└── V004__remove_legacy_cache_tables.sql
 
 catalog-migrations/
-├── C001__create_catalog_schema.sql
-├── C002__create_document_versions.sql
-├── C003__create_document_sections.sql
-├── C004__create_sync_tracking.sql
-└── C005__create_fts_index.sql
+├── C001__create_catalog_sources.sql
+├── C002__create_documents.sql
+├── C003__create_document_versions.sql
+├── C004__create_document_sections.sql
+├── C005__create_sync_tracking.sql
+├── C006__create_document_section_fts.sql
+├── C007__harden_revision_integrity.sql
+└── C008__add_catalog_pagination_indexes.sql
 ```
 
-La migration physique des fichiers V1 vers `migrations/cache/` peut être réalisée dans une phase d'implémentation dédiée si elle ne casse pas le packaging existant. Pendant V2.0, la décision est documentaire.
+Les deux runners sont séparés. Le registre catalogue conserve le nom et le checksum SHA-256
+normalisé de chaque migration ; une migration appliquée n'est jamais réécrite.
 
-## Composants prévus
+## Composants implémentés
 
 ```text
-CatalogDatabase
+openCatalogDatabase
 CatalogMigrationRunner
 CatalogRepository
 SqliteCatalogRepository
-CatalogIndexRepository
-CatalogMaintenanceService
+SqliteCatalogMaintenance
 ```
+
+Le runtime ouvre les deux repositories et les ferme au shutdown. `MCP_CATALOG_PATH` permet de
+pointer le serveur vers un catalogue restauré ; le chargeur résout le chemin et refuse qu'il cible le
+même fichier que le cache.
 
 ## Règles
 
 1. Le cache V1 ne référence jamais le catalogue V2.
 2. Le catalogue V2 ne dépend jamais du contenu du cache V1.
-3. Les outils V1 continuent d'utiliser uniquement `cache.db`.
-4. Les futurs outils/resources V2 lisent uniquement `catalog.db`.
+3. Les outils V1 continuent d'utiliser uniquement `cache.sqlite`.
+4. Les outils/resources V2 lisent uniquement `catalog.db`.
 5. L'index FTS5 est dérivé du catalogue et peut être reconstruit.
-6. La suppression de `cache.db` ne doit jamais supprimer un document catalogue.
+6. La suppression de `cache.sqlite` ne doit jamais supprimer un document catalogue.
 7. La reconstruction de `catalog.db` doit être une opération explicite.
 
 ## Conséquences
@@ -84,14 +91,18 @@ CatalogMaintenanceService
 
 ### Neutralisation
 
-- Introduire un `CatalogDatabase` dédié.
-- Écrire des tests garantissant qu'aucune table V2 n'apparaît dans `cache.db`.
-- Écrire des tests garantissant qu'aucune table V1 n'est nécessaire dans `catalog.db`.
-- Ajouter une commande CLI `catalog verify` avant toute synchronisation.
+- Ouverture dédiée par `openCatalogDatabase` et runner catalogue séparé.
+- Tests garantissant qu'aucune table V2 n'apparaît dans `cache.sqlite` et qu'aucune table V1 n'est
+  nécessaire dans `catalog.db`.
+- Commande CLI `catalog verify` disponible pour le contrôle d'intégrité.
 
-## Critères d'acceptation avant implémentation
+## Réalisation et validation
 
-- Schéma catalogue validé dans `docs/reference/catalog-schema-v2.md`.
-- Runner de migration catalogue spécifié.
-- Conventions de nommage `C001__...` validées.
-- Tests de séparation cache/catalogue définis.
+- Schéma `C001` à `C008` décrit dans `docs/reference/catalog-schema-v2.md`.
+- Runner catalogue séparé, idempotent et protégé par checksum.
+- Tests de séparation physique cache/catalogue, y compris chemins configurés dans des répertoires
+  distincts.
+- Suppression du cache sans suppression du catalogue.
+
+Ces propriétés sont présentes dans le code candidat. Les validations historiques ne remplacent pas
+les gates exact-head listés dans [`docs/status/current-state.md`](../status/current-state.md).

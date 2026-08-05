@@ -11,7 +11,7 @@ if not exist "%TARGET%" (
 )
 
 pushd "%REPO_ROOT%" || exit /b 1
-call "%SCRIPT_DIR%run-powershell.cmd" "%TARGET%" -StartServices
+call "%SCRIPT_DIR%run-powershell.cmd" "%TARGET%" -StartServices %*
 set "EXITCODE=%ERRORLEVEL%"
 popd
 exit /b %EXITCODE%

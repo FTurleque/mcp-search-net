@@ -41,12 +41,16 @@ définir `MCP_SEARCH_COMPOSE_PROJECT`, mais ne pas le faire pour la recette V1.
 Les configurations locales du dépôt et l'installation utilisateur partagent ce
 nom canonique : utiliser une seule famille de lanceurs à la fois.
 
-Validation manuelle du 29 juin 2026 : `verify-live.cmd`,
+Preuve manuelle historique du 29 juin 2026 : `verify-live.cmd`,
 `verify-deterministic.cmd`, `run-local-mcp.cmd`, `providers-up.cmd`,
 `providers-down.cmd` et `install-and-run.cmd` ont été exécutés depuis le terminal
 IntelliJ/PowerShell. Les suites live et déterministe sont vertes, les providers
 passent `healthy`, et le serveur MCP émet `server_started` puis
 `server_stopped` lors de l'arrêt manuel.
+
+Cette preuve reste attachée au checkout testé le 29 juin. Elle ne qualifie pas le candidat `1.1.0`
+courant, qui doit être revalidé avec les versions IntelliJ/Copilot et le SHA exact consignés. Voir
+l'[état courant du produit et des gates](../status/current-state.md).
 
 La configuration de lancement serveur est utile pour observer le démarrage, mais
 la console Run d’IntelliJ n’est pas un client MCP. Pour un usage réel, GitHub
@@ -96,21 +100,26 @@ configurations IntelliJ partagées.
 
 ## Déclarer le serveur dans Copilot
 
-Après installation, ouvrir le fichier `%LOCALAPPDATA%\mcp-search-net\mcp.json.example`. Il contient le chemin absolu adapté à l’utilisateur courant. Copier l’entrée `mcp-search-net` dans la configuration MCP affichée par Copilot via **Configure MCP Servers**.
+Après installation, ouvrir le fichier `%LOCALAPPDATA%\mcp-search-net\mcp.json.example`. Il contient
+le chemin absolu adapté à l’utilisateur courant. Copier l’entrée `mcp-search-net` sous la racine
+`mcpServers` de `~/.copilot/mcp-config.json`, ou utiliser l'action **Configure MCP Servers** de
+Copilot pour modifier ce fichier.
 
 Forme attendue :
 
 ```json
 {
-  "servers": {
+  "mcpServers": {
     "mcp-search-net": {
+      "type": "local",
       "command": "cmd.exe",
       "args": [
         "/d",
         "/s",
         "/c",
         "C:\\Users\\<utilisateur>\\AppData\\Local\\mcp-search-net\\bin\\mcp-search-net.cmd"
-      ]
+      ],
+      "tools": ["*"]
     }
   }
 }
@@ -118,11 +127,54 @@ Forme attendue :
 
 Utiliser de préférence le fichier généré : il évite les erreurs d’échappement JSON et de nom d’utilisateur. Redémarrer le serveur MCP depuis l’interface Copilot après chaque réinstallation.
 
-## Vérification
+## Vérification du sous-contrat V1
+
+La vérification V1 sert à confirmer que la compatibilité historique n'a pas régressé.
 
 1. Exécuter `mcp-search-net-services.cmd ps` et vérifier que les deux services sont sains.
 2. Ouvrir Copilot Chat et afficher les outils MCP.
-3. Vérifier la présence de `search_web` et `fetch_url` uniquement.
+3. Vérifier la présence de `search_web` et `fetch_url`.
 4. Demander une recherche simple, puis la récupération d’une URL publique HTTPS.
 
 Les logs du serveur apparaissent sur `stderr`. Aucune sortie libre ne doit apparaître sur `stdout`, réservé au protocole MCP.
+
+## Vérification du contrat final V1/V2
+
+Le candidat `1.1.0` expose exactement cinq outils read-only :
+
+```text
+search_web
+fetch_url
+search_docs
+list_docs
+read_doc_section
+```
+
+La recette V2 ne remplace pas la vérification du sous-contrat V1 : elle la complète avec un corpus
+local, un catalogue dédié et des scénarios Copilot orientés documentation. Le workflow compact à
+observer pour une question documentaire est :
+
+```text
+search_docs -> sélectionner 1 à 3 résultats -> read_doc_section
+```
+
+`list_docs` sert à parcourir les métadonnées ; il ne remplace pas `search_docs` pour rechercher du
+contenu. `search_web` et `fetch_url` restent réservés au Web frais ou absent du catalogue.
+
+Suivre la recette dédiée : [Spike IntelliJ/Copilot — MCP V2 documentaire](../planning/spike-intellij-copilot-mcp-v2.md).
+
+La validation V2 attend au minimum :
+
+- les cinq outils visibles, avec aucune opération mutable ;
+- workflow `search_docs` puis `read_doc_section` effectif sur 1 à 3 résultats sélectionnés ;
+- recherche locale effective dans `catalog.db` ;
+- quatre resources statiques et neuf templates listés/lisibles si l'interface Copilot les expose ;
+- fallback par `search_docs`, `list_docs` et `read_doc_section` si le client n'affiche pas les
+  resources/templates ;
+- versions exactes d'IntelliJ, du plugin Copilot et SHA du serveur consignés dans la preuve ;
+- `stdout` réservé au JSON-RPC et contenu documentaire marqué non fiable.
+
+L'absence d'interface resources/templates côté client n'est pas un échec du serveur si le workflow
+compact par outils fonctionne ; elle doit être rapportée comme limitation du client. À ce jour, le
+candidat courant reste non qualifié sur IntelliJ/Copilot tant que cette recette exact-head n'est pas
+exécutée et archivée.

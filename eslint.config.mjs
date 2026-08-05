@@ -24,6 +24,10 @@ export default tseslint.config(
     },
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       '@typescript-eslint/no-unnecessary-type-parameters': 'off',
       '@typescript-eslint/no-confusing-void-expression': 'off',
       '@typescript-eslint/no-magic-numbers': 'off',

@@ -18,3 +18,26 @@ server:
 
 ui:
   static_use_hash: true
+
+# Engine configuration: only Bing responds reliably in this Docker Desktop/Windows
+# environment; other general engines (google, brave, ddg, startpage, qwant, mojeek,
+# yahoo) are rate-limited or blocked at the network level.
+engines:
+  - name: bing
+    disabled: false
+  - name: bing news
+    disabled: false
+  - name: google
+    disabled: true
+  - name: brave
+    disabled: true
+  - name: duckduckgo
+    disabled: true
+  - name: startpage
+    disabled: true
+  - name: yahoo
+    disabled: true
+  - name: qwant
+    disabled: true
+  - name: mojeek
+    disabled: true

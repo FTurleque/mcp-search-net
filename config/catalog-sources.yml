@@ -1,0 +1,17 @@
+schema_version: 1
+
+sources:
+  nodejs-docs:
+    display_name: Node.js Documentation
+    base_url: https://nodejs.org/api/
+    source_type: api
+    language: en-US
+    freshness_policy: weekly
+    sync_strategy: manual
+    enabled: true
+    documents:
+      - stable_key: fs
+        title: File system
+        url: https://nodejs.org/api/fs.html
+        mime_type: text/html
+        enabled: true

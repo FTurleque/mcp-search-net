@@ -23,6 +23,7 @@ async function main(): Promise<void> {
     container.logger.record('server_stopped', { reason, exitCode });
     await container.mcpServer.close().catch(() => undefined);
     container.cache.close();
+    container.catalog.close();
     process.exitCode = exitCode;
   };
   process.once('SIGINT', () => {
@@ -46,7 +47,10 @@ async function main(): Promise<void> {
       void shutdown('stdoutError', 1);
     }
   });
-  process.once('exit', () => container.cache.close());
+  process.once('exit', () => {
+    container.cache.close();
+    container.catalog.close();
+  });
 
   container.logger.record('server_started', {
     name: loaded.application.application.name,
