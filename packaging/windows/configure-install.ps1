@@ -191,15 +191,14 @@ if ($DoDocker) {
 
 $integrations = Load-Integrations
 
-# Entry for JSON-based clients (Copilot JetBrains, Claude Desktop)
-$LocalEntry = [PSCustomObject]@{
-    type    = 'local'
+# Entry for Copilot JetBrains: root key "servers", type "stdio", no tools field
+$JetBrainsEntry = [PSCustomObject]@{
+    type    = 'stdio'
     command = 'cmd.exe'
     args    = @('/d', '/s', '/c', $BinLauncher)
     env     = [PSCustomObject]@{ MCP_SEARCH_HOME = $InstallRoot }
-    tools   = @('*')
 }
-# Claude Desktop uses a simpler schema (no type/tools)
+# Claude Desktop uses mcpServers root, no type/tools fields
 $DesktopEntry = [PSCustomObject]@{
     command = 'cmd.exe'
     args    = @('/d', '/s', '/c', $BinLauncher)
@@ -277,7 +276,8 @@ function Remove-JsonMcpClient {
 
 # ── GitHub Copilot (JetBrains / IntelliJ) ─────────────────────────────────────
 
-$CopilotJBDir = Join-Path $env:LOCALAPPDATA 'github-copilot\intellij'
+$CopilotJBDir    = Join-Path $env:LOCALAPPDATA 'github-copilot\intellij'
+$CopilotJBConfig = Join-Path $CopilotJBDir 'mcp.json'
 if ($Uninstall) {
     Remove-JsonMcpClient 'copilot-jetbrains'
 } elseif ($DoCopilotJB) {
@@ -286,9 +286,19 @@ if ($Uninstall) {
         Write-Host 'Copilot JetBrains détecté.'
         Install-JsonMcpClient `
             -ClientKey  'copilot-jetbrains' `
-            -ConfigPath (Join-Path $CopilotJBDir 'mcp.json') `
-            -Entry      $LocalEntry `
-            -RootKey    'mcpServers'
+            -ConfigPath $CopilotJBConfig `
+            -Entry      $JetBrainsEntry `
+            -RootKey    'servers'
+        # Nettoyer toute entrée résiduelle sous mcpServers (clé incorrecte d'une ancienne version)
+        $jbData = Read-JsonFile $CopilotJBConfig
+        if ((Get-PropertyExists $jbData 'mcpServers') -and (Get-PropertyExists $jbData.mcpServers 'mcp-search-net')) {
+            $jbData.mcpServers.PSObject.Properties.Remove('mcp-search-net')
+            if (-not [bool]($jbData.mcpServers.PSObject.Properties | Select-Object -First 1)) {
+                $jbData.PSObject.Properties.Remove('mcpServers')
+            }
+            Write-JsonFile $CopilotJBConfig $jbData
+            Write-Host '  Copilot JetBrains : ancienne entrée mcpServers supprimée.' -ForegroundColor Cyan
+        }
     } else {
         Write-Host '  Copilot JetBrains : non détecté (github-copilot\intellij absent). Configuration ignorée.' -ForegroundColor Yellow
     }
@@ -396,6 +406,17 @@ if ($Uninstall) {
 
 # ── GitHub Copilot CLI ─────────────────────────────────────────────────────────
 
+# Helper : exécute un scriptblock avec timeout via Start-Job (évite les blocages interactifs)
+function Invoke-Timed([scriptblock] $Sb, [object[]] $ArgList, [int] $Sec = 15) {
+    $j = Start-Job -ScriptBlock $Sb -ArgumentList $ArgList
+    Wait-Job $j -Timeout $Sec | Out-Null
+    $done = $j.State -eq 'Completed'
+    $out  = if ($done) { @(Receive-Job $j 2>&1) } else { @() }
+    Stop-Job $j -ErrorAction SilentlyContinue
+    Remove-Job $j -Force -ErrorAction SilentlyContinue
+    return [PSCustomObject]@{ Out = $out; Done = $done }
+}
+
 $CopilotExe = $null
 $copilotCmd = Get-Command copilot -ErrorAction SilentlyContinue
 if ($copilotCmd -and $copilotCmd.CommandType -in @('Application', 'ExternalScript')) {
@@ -406,10 +427,9 @@ $integKeyCopilotCli = 'copilot-cli:mcp-search-net'
 if ($Uninstall) {
     if ($integrations.ContainsKey($integKeyCopilotCli) -and $integrations[$integKeyCopilotCli].ownership -eq 'managed') {
         if ($CopilotExe) {
-            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-            & $CopilotExe mcp remove mcp-search-net 2>&1 | Out-Null
-            $ErrorActionPreference = $prev
-            Write-Host '  Copilot CLI : mcp-search-net retiré.' -ForegroundColor Green
+            $r = Invoke-Timed { param($e) & $e mcp remove mcp-search-net 2>&1 } @($CopilotExe) 15
+            if ($r.Done) { Write-Host '  Copilot CLI : mcp-search-net retiré.' -ForegroundColor Green }
+            else          { Write-Host '  Copilot CLI : délai dépassé lors de la suppression — retirez manuellement.' -ForegroundColor Yellow }
         }
         $integrations.Remove($integKeyCopilotCli)
     }
@@ -418,9 +438,8 @@ if ($Uninstall) {
         Write-Host ''
         Write-Host 'GitHub Copilot CLI détecté.'
         $alreadyManaged = $integrations.ContainsKey($integKeyCopilotCli) -and $integrations[$integKeyCopilotCli].ownership -eq 'managed'
-        $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        $listOut = & $CopilotExe mcp list 2>&1 | Out-String
-        $ErrorActionPreference = $prev
+        $rList   = Invoke-Timed { param($e) & $e mcp list 2>&1 } @($CopilotExe) 10
+        $listOut = ($rList.Out) -join [Environment]::NewLine
         if ($listOut -match 'mcp-search-net' -and -not $alreadyManaged) {
             Write-Host "  Copilot CLI : entrée 'mcp-search-net' existante non gérée — préservée." -ForegroundColor Cyan
             $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
@@ -428,18 +447,24 @@ if ($Uninstall) {
                 configuredAt = [datetime]::UtcNow.ToString('o')
             }
         } else {
-            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-            & $CopilotExe mcp add -e "MCP_SEARCH_HOME=$InstallRoot" mcp-search-net -- cmd.exe /d /s /c $BinLauncher 2>&1 | Out-Null
-            $cliExit = $LASTEXITCODE
-            $ErrorActionPreference = $prev
-            if ($cliExit -eq 0) {
-                Write-Host "  Copilot CLI : 'mcp-search-net' configuré" -ForegroundColor Green
-                $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
-                    ownership    = 'managed'
-                    configuredAt = [datetime]::UtcNow.ToString('o')
-                }
+            $rAdd = Invoke-Timed {
+                param($e, $h, $b)
+                & $e mcp add -e "MCP_SEARCH_HOME=$h" mcp-search-net -- cmd.exe /d /s /c $b 2>&1 | Out-Null
+                $LASTEXITCODE
+            } @($CopilotExe, $InstallRoot, $BinLauncher) 20
+            if (-not $rAdd.Done) {
+                Write-Host '  Copilot CLI : délai dépassé lors de la configuration.' -ForegroundColor Yellow
             } else {
-                Write-Host "  Copilot CLI : configuration échouée (code $cliExit)" -ForegroundColor Yellow
+                $cliExit = [int]($rAdd.Out | Select-Object -Last 1)
+                if ($cliExit -eq 0) {
+                    Write-Host "  Copilot CLI : 'mcp-search-net' configuré" -ForegroundColor Green
+                    $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
+                        ownership    = 'managed'
+                        configuredAt = [datetime]::UtcNow.ToString('o')
+                    }
+                } else {
+                    Write-Host "  Copilot CLI : configuration échouée (code $cliExit)" -ForegroundColor Yellow
+                }
             }
         }
     } else {
