@@ -52,6 +52,17 @@ function Verify-Sha256([string]$Artifact, [string]$Checksum) {
     return $actual
 }
 
+$PackageJsonPath = Join-Path $RepoRoot 'package.json'
+$PackageLockPath = Join-Path $RepoRoot 'package-lock.json'
+$Package = Get-Content -LiteralPath $PackageJsonPath -Raw | ConvertFrom-Json
+$PackageLock = Get-Content -LiteralPath $PackageLockPath -Raw | ConvertFrom-Json
+if ($Package.version -ne $Version) {
+    throw "Version de release incohérente : paramètre=$Version package.json=$($Package.version). Mettez à jour la version du dépôt avant de publier."
+}
+if ($PackageLock.version -ne $Version -or $PackageLock.packages.''.version -ne $Version) {
+    throw "Version package-lock.json incohérente avec la release $Version."
+}
+
 $Git = Get-Command git -ErrorAction SilentlyContinue
 if (-not $Git) { throw 'git est requis pour publier une release.' }
 $Head = ((& $Git.Source -C $RepoRoot rev-parse HEAD) | Out-String).Trim()
@@ -127,6 +138,10 @@ try {
     $Manifest = Get-Content -LiteralPath $ManifestFile -Raw | ConvertFrom-Json
     if ($Manifest.version -ne $Version) { throw "Version ZIP incorrecte : attendu=$Version obtenu=$($Manifest.version)" }
     if ($Manifest.sourceRevision -ne $TargetCommit) { throw "Révision ZIP incorrecte : attendu=$TargetCommit obtenu=$($Manifest.sourceRevision)" }
+    $PackagedPackage = Get-Content -LiteralPath (Join-Path $PackagedRoot 'app\package.json') -Raw | ConvertFrom-Json
+    if ($PackagedPackage.version -ne $Version) {
+        throw "Version package.json embarquée incorrecte : attendu=$Version obtenu=$($PackagedPackage.version)"
+    }
 
     Invoke-PowerShellScriptChecked -Script $PackagedInstaller `
         -Parameters @{ InstallRoot=$ZipInstallRoot } `
