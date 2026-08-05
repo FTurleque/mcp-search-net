@@ -277,6 +277,17 @@ begin
   end;
 end;
 
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  { Fallback : si la détection n'a pas encore tourné (page wpSelectDir skippée
+    ou Back/Forward inhabituel), la lancer maintenant sur IntegPage elle-même. }
+  if (IntegPage <> nil) and (CurPageID = IntegPage.ID) and (not IntegPreflightDone) then
+  begin
+    RunIntegPreflight;
+    IntegPreflightDone := True;
+  end;
+end;
+
 { ── Configure-install invocation ────────────────────────────────────────────── }
 
 function RunConfigureScript(ExtraParams: String): Boolean;
