@@ -347,9 +347,7 @@ function isAllowedByRobots(content: string, path: string, userAgent: string): bo
 function robotsRuleMatches(rule: string, path: string): boolean {
   const anchored = rule.endsWith('$');
   const withoutAnchor = anchored ? rule.slice(0, -1) : rule;
-  const pattern = withoutAnchor
-    .replace(/[.+?^${}()|[\]\\]/gu, '\\$&')
-    .replace(/\*/gu, '.*');
+  const pattern = withoutAnchor.replace(/[.+?^${}()|[\]\\]/gu, '\\$&').replace(/\*/gu, '.*');
   return new RegExp(`^${pattern}${anchored ? '$' : ''}`, 'u').test(path);
 }
 
