@@ -10,8 +10,8 @@ pas ce document pour connaître l’état présent.
 - Version SemVer : `1.1.0`.
 - Branche de référence : `master`.
 - Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
-- Tranche de hardening post-merge : PR #31 `agent/hardening-reconciliation` tant qu’elle n’est pas
-  intégrée.
+- Hardening post-merge : PR #31 regroupe les corrections d’ownership Windows, de release, de
+  provenance MCP, de passerelle HTTP et de réconciliation documentaire issues de l’audit V2.
 - Release V2/1.1.0 : aucune publication n’est déclarée par ce document ; une publication doit
   passer la qualification exact-head et le workflow de release volontaire.
 - Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
@@ -131,8 +131,9 @@ npm audit --omit=dev --audit-level=moderate
 ```
 
 La CI ajoute la qualification Docker/live et le cycle Windows installation/upgrade/rollback/
-uninstall. Un résultat d’un ancien SHA est une preuve historique, pas une qualification du candidat
-présent.
+uninstall. Le job Windows parse aussi les scripts PowerShell de packaging/release avant de lancer
+le lifecycle. Un résultat d’un ancien SHA est une preuve historique, pas une qualification du
+candidat présent.
 
 Le workflow de publication Windows est manuel. Node.js win-x64 est vérifié par SHA-256 et la
 toolchain Inno Setup est figée sur la version `6.7.1`.
@@ -149,7 +150,7 @@ toolchain Inno Setup est figée sur la version `6.7.1`.
 
 ## Gouvernance Git post-V2
 
-`master` est la source de vérité. La PR #27 `develop -> master`, héritée de l’ancien historique V2,
-ne doit pas être mergée : son historique diverge du squash de la PR #8. Après qualification de la
-tranche de hardening, `develop` doit être réalignée explicitement sur le `master` qualifié et les
-branches V2 absorbées doivent être retirées lorsqu’aucun travail unique n’y subsiste.
+`master` est la source de vérité. L’historique squashé de la PR #8 ne doit jamais être réintégré via
+un merge brut de l’ancien `develop`. `develop` doit rester explicitement alignée sur le `master`
+qualifié. La PR #27 est supersédée par cette règle. Les branches V2 absorbées n’ont plus vocation à
+porter du travail unique et peuvent être retirées de la liste des branches actives.
