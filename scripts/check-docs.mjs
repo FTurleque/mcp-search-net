@@ -26,6 +26,8 @@ validatePublicContractInventory();
 validateMigrationInventory();
 validateVersionConsistency();
 validateEnvironmentInventory();
+validatePostMergeTruth();
+validateReleaseAndInstallerHardening();
 
 if (failures.length > 0) {
   process.stderr.write(`DOCS_CHECK_FAILED (${failures.length})\n`);
@@ -228,6 +230,68 @@ function validateEnvironmentInventory() {
       `${currentStatePath}: variable absente ${variable}`,
     );
   }
+}
+
+function validatePostMergeTruth() {
+  const readme = readText('README.md');
+  const ci = readText('.github/workflows/ci.yml');
+  const windowsGuide = readText('docs/getting-started/installation-windows.md');
+
+  requireText(currentState, 'Intégration V2 : PR #8 mergée', `${currentStatePath}: merge PR #8 absent`);
+  requireText(currentState, 'Branche de référence : `master`', `${currentStatePath}: master absent`);
+  requireText(readme, 'La V2 documentaire est intégrée dans `master`', 'README.md: V2 merge absent');
+
+  for (const stale of [
+    'La PR #8 ajoute',
+    'Fonctionnalités en cours de stabilisation dans la PR #8',
+    'SHA candidat V2 : `de769ee',
+  ]) {
+    if (readme.includes(stale) || currentState.includes(stale)) {
+      failures.push(`documentation courante: formulation V2 obsolète détectée: ${stale}`);
+    }
+  }
+
+  if (ci.includes('feat/v2-catalog-storage')) {
+    failures.push('.github/workflows/ci.yml: branche V2 intégration obsolète encore ciblée');
+  }
+  requireText(windowsGuide, 'Node.js 24.18.0', 'installation-windows.md: runtime 24.18.0 absent');
+  if (windowsGuide.includes('Node.js 24.17.0')) {
+    failures.push('installation-windows.md: runtime 24.17.0 obsolète');
+  }
+}
+
+function validateReleaseAndInstallerHardening() {
+  const configureInstall = readText('packaging/windows/configure-install.ps1');
+  const publisher = readText('scripts/release/publish-windows-release.ps1');
+  const releaseWorkflow = readText('.github/workflows/release-windows.yml');
+  const toolCall = readText('src/presentation/mcp/tool-call.ts');
+
+  for (const needle of [
+    "ownership    = 'preexisting'",
+    "if ($rec.ownership -ne 'managed')",
+    'Configuration JSON invalide',
+    'ancienne entrée mcpServers non gérée — préservée',
+  ]) {
+    requireText(configureInstall, needle, `configure-install.ps1: invariant ownership absent: ${needle}`);
+  }
+
+  for (const needle of [
+    '$Package.version -ne $Version',
+    '$PackageLock.version -ne $Version',
+    '$PackagedPackage.version -ne $Version',
+  ]) {
+    requireText(publisher, needle, `publish-windows-release.ps1: invariant version absent: ${needle}`);
+  }
+  requireText(
+    releaseWorkflow,
+    'choco install innosetup --version=6.7.1',
+    'release-windows.yml: Inno Setup non figé en 6.7.1',
+  );
+  requireText(
+    toolCall,
+    'formatExternalContentText(options.formatText(validated))',
+    'tool-call.ts: provenance texte externe absente',
+  );
 }
 
 function markdownAnchors(source) {
