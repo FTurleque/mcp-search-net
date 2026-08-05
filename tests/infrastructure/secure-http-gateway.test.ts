@@ -119,6 +119,36 @@ describe('SecureHttpGateway', () => {
     await expect(gateway.download(server.url)).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
   });
 
+  it('serializes queued downloads when maxConcurrency is one', async () => {
+    let activeRequests = 0;
+    let maximumActiveRequests = 0;
+    let requests = 0;
+    const server = await listen((_request, response) => {
+      requests += 1;
+      activeRequests += 1;
+      maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
+      setTimeout(() => {
+        activeRequests -= 1;
+        response.writeHead(200, { 'content-type': 'text/plain' });
+        response.end('ok');
+      }, 30);
+    });
+    const gateway = createGateway(policyFor(server.port), {
+      maxConcurrency: 1,
+      timeoutMs: 1_000,
+    });
+
+    const [first, second] = await Promise.all([
+      gateway.download(`${server.url}/first`),
+      gateway.download(`${server.url}/second`),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(requests).toBe(2);
+    expect(maximumActiveRequests).toBe(1);
+  });
+
   it('enforces robots.txt before downloading a disallowed page', async () => {
     const paths: string[] = [];
     const server = await listen((request, response) => {
