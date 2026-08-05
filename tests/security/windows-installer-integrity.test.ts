@@ -16,6 +16,9 @@ describe('Windows installer runtime integrity', () => {
   const containerLauncher = readFileSync('scripts/windows/mcp-search-net-container.cmd', 'utf8');
   const installedProbe = readFileSync('scripts/probe-installed-mcp.mjs', 'utf8');
   const installationRecipe = readFileSync('scripts/test-installation.ps1', 'utf8');
+  const configureInstall = readFileSync('packaging/windows/configure-install.ps1', 'utf8');
+  const releasePublisher = readFileSync('scripts/release/publish-windows-release.ps1', 'utf8');
+  const releaseWorkflow = readFileSync('.github/workflows/release-windows.yml', 'utf8');
   const dockerIgnore = readFileSync('.dockerignore', 'utf8');
   const compose = readFileSync('compose.yaml', 'utf8');
 
@@ -63,6 +66,28 @@ describe('Windows installer runtime integrity', () => {
     expect(installer).toContain('SEARXNG_SECRET=$SearxngLocalSecret');
     expect(launcher).toContain('findstr /b /l "CRAWL4AI_API_TOKEN="');
     expect(launcher).not.toContain('mcp-search-local-development-token');
+  });
+
+  it('preserves preexisting MCP JSON entries and removes only installer-owned entries', () => {
+    expect(configureInstall).toContain("throw \"Configuration JSON invalide '$Path'");
+    expect(configureInstall).toContain('$alreadyManaged = $integrations.ContainsKey($integKey)');
+    expect(configureInstall).toContain(
+      'if ((Get-PropertyExists $root $ServerKey) -and -not $alreadyManaged)',
+    );
+    expect(configureInstall).toContain("ownership    = 'preexisting'");
+    expect(configureInstall).toContain("if ($rec.ownership -ne 'managed')");
+    expect(configureInstall).toContain('entrée non suivie par cet installateur — préservée');
+    expect(configureInstall).toContain('$legacyOwned = $false');
+    expect(configureInstall).toContain('ancienne entrée mcpServers non gérée — préservée');
+    expect(configureInstall).not.toContain('$existed = Get-PropertyExists $root $ServerKey');
+  });
+
+  it('rejects release version drift and pins the Windows installer toolchain', () => {
+    expect(releasePublisher).toContain('$Package.version -ne $Version');
+    expect(releasePublisher).toContain('$PackageLock.version -ne $Version');
+    expect(releasePublisher).toContain("$PackageLock.packages.''.version -ne $Version");
+    expect(releasePublisher).toContain('$PackagedPackage.version -ne $Version');
+    expect(releaseWorkflow).toContain('choco install innosetup --version=6.7.1');
   });
 
   it('keeps installed Docker builds away from local data and preserves operator configuration', () => {
