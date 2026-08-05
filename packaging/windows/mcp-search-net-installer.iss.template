@@ -402,5 +402,13 @@ begin
     end;
   end
   else if CurUninstallStep = usPostUninstall then
+  begin
     DeleteUserData;
+    { Force-remove remaining app directory (user-generated files: .env, integrations, backups) }
+    if DirExists(ExpandConstant('{app}')) then
+      DelTree(ExpandConstant('{app}'), True, True, True);
+    { Remove legacy installation directory (default path from ZIP install.ps1) }
+    if DirExists(ExpandConstant('{localappdata}\mcp-search-net')) then
+      DelTree(ExpandConstant('{localappdata}\mcp-search-net'), True, True, True);
+  end;
 end;
