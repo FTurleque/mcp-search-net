@@ -703,3 +703,7 @@ if ($Uninstall) {
     Write-Host "  Exemple MCP Copilot  : $(Join-Path $InstallRoot 'mcp.json.example')"
     Write-Host "  Intégrations clients : $IntegrationsFile"
 }
+
+# exit 0 explicite : sans ca, $LASTEXITCODE d'une commande native precedente (ex. docker info)
+# reste visible pour l'appelant (install.ps1) et ferait croire a un echec.
+exit 0
