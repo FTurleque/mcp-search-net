@@ -1,22 +1,25 @@
 # État courant de `mcp-search-net`
 
-Ce document est l’état technique autoritatif du checkout courant. Les fichiers datés de
-`docs/planning/` restent des preuves historiques : ils ne décrivent pas automatiquement la
-capacité ou le statut du candidat présent.
+Ce document décrit l’état technique autoritatif du produit courant. Les fichiers datés sous
+`docs/planning/` sont des preuves historiques liées à leur date et à leur SHA ; ils ne remplacent
+pas ce document pour connaître l’état présent.
 
 ## Version et statut de livraison
 
-- Jalon produit : V2 documentaire.
+- Jalon produit : V2 documentaire intégrée.
 - Version SemVer : `1.1.0`.
-- Règle : V2 est un jalon produit additif ; les contrats V1 restent exposés, donc le prochain
-  incrément SemVer est mineur et non `2.0.0`.
-- Release publiée : aucune release V2/1.1.0 à ce jour ; `v1.0.0` reste la dernière release.
-- SHA candidat V2 : `de769ee5f0eed1f6fd7829a21496e69817e6d096` (2026-08-04), branche
-  `codex/v2-production-readiness`.
-- Verdict production : **NO-GO tant que le gate IntelliJ/Copilot n'est pas exécuté manuellement.
-  La CI GitHub Actions est bloquée par facturation et ne peut pas valider le SHA courant.**
-- GitHub Actions : blocage facturation confirmé le 2026-08-04 (`account payments have failed`).
-  Les gates locaux (Node.js 24, STDIO, tests déterministes, npm audit) sont la source de vérité.
+- Branche de référence : `master`.
+- Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
+- Tranche de hardening post-merge : PR #31 `agent/hardening-reconciliation` tant qu’elle n’est pas
+  intégrée.
+- Release V2/1.1.0 : aucune publication n’est déclarée par ce document ; une publication doit
+  passer la qualification exact-head et le workflow de release volontaire.
+- Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
+  et la version embarquée doivent être identiques. Toute dérive bloque la publication.
+
+La documentation courante ne transforme jamais un ancien résultat en PASS du head présent. La
+preuve d’un candidat est portée par les checks GitHub attachés à son SHA exact et, pour les
+surfaces manuelles, par une recette datée explicitement reliée à ce SHA.
 
 ## Contrat MCP public
 
@@ -47,15 +50,19 @@ Les neuf resource templates sont :
 - `mcp-search-net://sections/page/{offset}`
 - `mcp-search-net://sections/{sectionId}`
 
-Le workflow documentaire attendu est `search_docs` puis `read_doc_section`. `fetch_url` et
-`search_web` restent réservés au Web frais ou absent du catalogue. Les resources/templates sont
-un canal de lecture complémentaire ; leur rendu dépend du client MCP.
+Le workflow documentaire recommandé est `search_docs` puis `read_doc_section` sur une à trois
+sections utiles. `search_web` et `fetch_url` servent au Web frais ou absent du catalogue. Les
+resources/templates sont un canal read-only complémentaire dont l’ergonomie dépend du client MCP.
+
+Toutes les réponses issues du Web ou du catalogue sont marquées comme contenu externe non fiable ;
+le serveur n’exécute jamais le contenu récupéré comme instruction.
 
 ## Stockage et migrations catalogue
 
-`cache.sqlite` est le cache Web V1. `catalog.db` est le catalogue documentaire persistant V2 ;
-ils sont isolés et ont des cycles de sauvegarde/rétention distincts. Les migrations appliquées
-dans l’ordre sont :
+`cache.sqlite` est le cache Web V1. `catalog.db` est le catalogue documentaire persistant V2. Ces
+fichiers sont isolés et n’ont pas la même politique de rétention.
+
+Les migrations catalogue appliquées dans l’ordre sont :
 
 - `C001__create_catalog_sources.sql`
 - `C002__create_documents.sql`
@@ -66,7 +73,7 @@ dans l’ordre sont :
 - `C007__harden_revision_integrity.sql`
 - `C008__add_catalog_pagination_indexes.sql`
 
-Une migration appliquée n’est jamais réécrite : toute évolution crée le numéro suivant.
+Une migration appliquée est immuable. Toute évolution crée une nouvelle migration.
 
 ## Variables serveur supportées
 
@@ -83,35 +90,66 @@ Variables déclarées par le schéma runtime :
 - `MCP_CRAWL4AI_TOKEN`
 - `MCP_ALLOWED_PUBLIC_PORTS`
 
-Les anciens alias `MCP_SEARCH_*` sont uniquement des compatibilités transitoires déjà présentes
-dans le chargeur ; ils ne doivent pas être introduits dans une nouvelle installation. Les CLI
-catalogue acceptent aussi `MCP_CATALOG_PATH` et leurs options `--path` documentées.
+Les anciens alias `MCP_SEARCH_*` sont uniquement des compatibilités transitoires déjà présentes dans
+le chargeur ; ils ne doivent pas être introduits dans une nouvelle installation.
 
-## Surfaces et qualification
+## Installation Windows et ownership des clients
 
-| Surface                          | État courant                                              | Preuve exigée avant GO                                                                                                                                                                                                     |
-| -------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Node.js 24 / STDIO Windows       | **PASS** — SHA 912df9f, 2026-08-04                        | `npm run check` (264+), Gate A STDIO, audits npm 0 vulnérabilité                                                                                                                                                           |
-| IntelliJ IDEA + GitHub Copilot   | **PASS AVEC RÉSERVE** — recette fournie, non exécutée     | Exécuter recette `validation-v2-14-client-contracts.md` §Gate B (config mcp.json + vérification)                                                                                                                           |
-| Claude Desktop / Codex           | **NON DISPONIBLE** — non configuré dans mcpServers        | Configurer `mcpServers` dans claude_desktop_config.json si requis ; recette fournie                                                                                                                                        |
-| Docker/Linux                     | **PASS** — SHA de769ee, 2026-08-04                        | Phase F : `docker compose build`, OCI labels, user/caps/fs, E2E live 7/7 PASS, shutdown propre                                                                                                                             |
-| Installation utilisateur Windows | **PASS** — SHA b1072d5, 2026-08-04                        | Phase G : test-installation.ps1 INSTALLATION_LIFECYCLE_VALID ; signature Node.js OpenJS Foundation ✓ ; probe MCP STDIO ✓ ; rollback ✓ ; upgrade (préserve config/données) ✓ ; uninstall -KeepData ✓ ; désinstall complet ✓ |
-| GitHub Actions                   | **BLOQUÉ — facturation** — `account payments have failed` | Résoudre le problème de facturation dans Billing & plans ; CI ne peut pas valider le SHA 7d6b43e                                                                                                                           |
+L’installateur génère des secrets locaux, démarre les fournisseurs Docker lorsque Docker est
+opérationnel et peut configurer les clients détectés.
 
-## Gates de livraison
+Règles de sécurité de configuration :
 
-Un GO nécessite simultanément : worktree propre, SHA exact enregistré, `npm run check`, toutes les
-suites déterministes sans skip, audits npm complets et production, qualification Windows, Docker,
-installation utilisateur, client IntelliJ/Copilot, puis CI GitHub attachée au même candidat. Une
-capacité non observée est notée `NON DISPONIBLE` ou `NON PROUVÉE`, jamais convertie en PASS.
+- une entrée MCP JSON préexistante et non suivie par l’installateur est conservée ;
+- l’état `mcp-client-integrations.json` distingue `managed` et `preexisting` ;
+- la désinstallation supprime uniquement les entrées suivies comme `managed` ;
+- un JSON client existant mais invalide est traité en échec fermé : aucune réécriture silencieuse ;
+- les fichiers sont sauvegardés avant toute modification gérée ;
+- le nettoyage d’une ancienne clé JetBrains incorrecte n’est autorisé que lorsqu’elle pointe
+  explicitement vers l’installation courante.
 
-## Progrès gates V2.14 — 2026-08-04 SHA 912df9f
+## CI et qualification
 
-| Gate                     | Verdict               | Preuve                                                                                                                                                                                                                                               |
-| ------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A — STDIO de référence   | **PASS**              | probe SDK MCP inline : 5 outils, 4 resources, 9 templates, schemaVersion=1.0                                                                                                                                                                         |
-| B — IntelliJ/Copilot     | **PASS AVEC RÉSERVE** | recette fournie, non exécutée — mcp.json absent                                                                                                                                                                                                      |
-| C — Claude Desktop       | **NON DISPONIBLE**    | mcpServers inspecté : seul minos configuré                                                                                                                                                                                                           |
-| D — Logiciel exact-head  | **PASS**              | 264/113/6/74/25/2/42/2 tests, 0 npm vuln, 85.38% functions                                                                                                                                                                                           |
-| F — Docker/Linux         | **PASS**              | image `mcp-search-net:1.1.0` construite SHA de769ee ; OCI labels vérifiés ; user node uid=1000 ; CapEff=0 ; read_only + tmpfs ; catalog.db persisté ; E2E live 7/7 PASS (searxng + crawl4ai + stdio) ; shutdown propre                               |
-| G — Installation Windows | **PASS**              | `test-installation.ps1 INSTALLATION_LIFECYCLE_VALID` sur SHA b1072d5 ; signature Authenticode Node.js valide (OpenJS Foundation) ; probe MCP STDIO ✓ ; rollback ✓ ; upgrade préserve config/données ✓ ; uninstall -KeepData ✓ ; désinstall complet ✓ |
+La CI s’exécute sur les pull requests et pushes vers `master` et `develop`. L’ancienne branche
+d’intégration `feat/v2-catalog-storage` n’est plus une cible de workflow.
+
+Le candidat de release doit passer sur le SHA exact :
+
+```bash
+npm ci
+npm run check
+npm run test:required
+npm run test:unit
+npm run test:contract
+npm run test:security
+npm run test:resilience
+npm run test:performance
+npm run test:integration
+npm run test:e2e:deterministic
+npm audit --audit-level=moderate
+npm audit --omit=dev --audit-level=moderate
+```
+
+La CI ajoute la qualification Docker/live et le cycle Windows installation/upgrade/rollback/
+uninstall. Un résultat d’un ancien SHA est une preuve historique, pas une qualification du candidat
+présent.
+
+Le workflow de publication Windows est manuel. Node.js win-x64 est vérifié par SHA-256 et la
+toolchain Inno Setup est figée sur la version `6.7.1`.
+
+## Limites connues
+
+- la recherche locale de référence reste FTS5/BM25 ; le reranker lexical hashé n’apporte pas de
+  gain mesuré et n’est pas généralisé ;
+- le benchmark V2.13 montre une faiblesse forte sur les paraphrases et les questions multi-document ;
+  toute évolution vers des embeddings locaux doit gagner un benchmark comparatif dédié ;
+- l’affichage et l’usage direct des resources/templates dépendent du client MCP ; les cinq outils
+  restent le contrat portable principal ;
+- le serveur est un MCP STDIO local : il n’embarque aucun LLM et n’exige aucune API commerciale.
+
+## Gouvernance Git post-V2
+
+`master` est la source de vérité. La PR #27 `develop -> master`, héritée de l’ancien historique V2,
+ne doit pas être mergée : son historique diverge du squash de la PR #8. Après qualification de la
+tranche de hardening, `develop` doit être réalignée explicitement sur le `master` qualifié et les
+branches V2 absorbées doivent être retirées lorsqu’aucun travail unique n’y subsiste.
