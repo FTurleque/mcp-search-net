@@ -6,19 +6,26 @@ pas ce document pour connaître l’état présent.
 
 ## Version et statut de livraison
 
-- Jalon produit : V2 documentaire intégrée.
+- Jalon produit : V2 documentaire intégrée et hardening post-audit livré.
 - Version SemVer : `1.1.0`.
 - Branche de référence : `master`.
 - Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
-- Hardening post-merge : PR #31 regroupe les corrections d’ownership Windows, de release, de
-  provenance MCP, de passerelle HTTP et de réconciliation documentaire issues de l’audit V2.
+- Hardening post-merge initial : PR #31 regroupe les corrections d’ownership Windows, de release,
+  de provenance MCP, de passerelle HTTP et de réconciliation documentaire issues de l’audit V2.
+- Hardening post-audit complet : PR #37 mergée dans `master` le 6 août 2026. Elle livre le
+  durcissement réseau/Crawl4AI, l’alignement supply-chain Node 24.18.0, le découpage interne du
+  repository SQLite, le benchmark embeddings local et le gel déterministe du contrat client MCP.
+- Baseline qualifiée de la PR #37 : head fonctionnel
+  `cbc9b58d0c948da2ed840a8245c3aafa494e67b7`, qualification CI run `31126841127`. Le merge commit
+  `005bf913de75feeb78ae7c9d23d60e7b93d210c0` n’introduit aucun changement de contenu par rapport
+  à ce head.
 - Release V2/1.1.0 : aucune publication n’est déclarée par ce document ; une publication doit
   passer la qualification exact-head et le workflow de release volontaire.
 - Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
   et la version embarquée doivent être identiques. Toute dérive bloque la publication.
 
 La documentation courante ne transforme jamais un ancien résultat en PASS du head présent. La
-preuve d’un candidat est portée par les checks GitHub attachés à son SHA exact et, pour les
+preuve d’un nouveau candidat est portée par les checks GitHub attachés à son SHA exact et, pour les
 surfaces manuelles, par une recette datée explicitement reliée à ce SHA.
 
 ## Contrat MCP public
@@ -57,6 +64,11 @@ resources/templates sont un canal read-only complémentaire dont l’ergonomie d
 Toutes les réponses issues du Web ou du catalogue sont marquées comme contenu externe non fiable ;
 le serveur n’exécute jamais le contenu récupéré comme instruction.
 
+La sonde STDIO de référence gèle cinq tools, quatre resources et neuf templates avec
+`schemaVersion = 1.0`. La certification native IntelliJ/Copilot, Claude Desktop/Code, Copilot CLI et
+Codex reste séparée dans l’issue #34 : elle exige une observation réelle du client et ne peut pas
+être déduite de la seule sonde STDIO.
+
 ## Stockage et migrations catalogue
 
 `cache.sqlite` est le cache Web V1. `catalog.db` est le catalogue documentaire persistant V2. Ces
@@ -74,6 +86,38 @@ Les migrations catalogue appliquées dans l’ordre sont :
 - `C008__add_catalog_pagination_indexes.sql`
 
 Une migration appliquée est immuable. Toute évolution crée une nouvelle migration.
+
+`SqliteCatalogRepository` est une façade stable construite autour d’une connexion SQLite unique et
+sépare les responsabilités source/read-model/révision/recherche/synchronisation. Une révision
+courante reste une transaction atomique couvrant document, version, sections, FTS, pointeur courant
+et observations.
+
+## Recherche locale et décision embeddings
+
+FTS5/BM25 reste la stratégie de recherche du runtime produit. Le reranker lexical hashé historique
+n’apporte aucun gain mesuré et n’est pas généralisé.
+
+Le benchmark embeddings de #32 est terminé. Résultats officiels du run `31124100736`, SHA
+`72b65a12786081d4e1fbc795fd8764dd4c81fd51`, sur 10 sources / 100 documents / 10 000 sections /
+60 requêtes :
+
+| Métrique | Lexical | Embeddings locaux | Fusion RRF |
+| --- | ---: | ---: | ---: |
+| Recall@10 | 0.6167 | 0.8528 | 0.8528 |
+| MRR@10 | 0.6167 | 0.9500 | — |
+| nDCG@10 | 0.6167 | 0.8724 | — |
+| Paraphrase Recall@10 | 0 | 0.70 | 0.70 |
+| Multi-document Recall@10 | 0 | 0.4167 | 0.4167 |
+| p95 | ~17.3 ms | 2.756 ms | 28.216 ms |
+
+Décision ADR-018 : `prototype-local-vector-index`. Ces résultats justifient un prototype produit
+séparé mais **pas** l’intégration immédiate des embeddings dans le runtime :
+`adoptEmbeddingRuntimeNow: false`. Aucune dépendance Python, modèle ou index vectoriel n’est donc
+ajoutée au serveur courant.
+
+Le workflow GitHub Actions one-shot utilisé pour produire cette preuve n’est pas une capacité CI
+pérenne : une fois l’étude terminée, la preuve historique reste dans #32/#37 et le harness
+`scripts/benchmark-local-embeddings.py` peut être réutilisé explicitement pour un futur prototype.
 
 ## Variables serveur supportées
 
@@ -108,6 +152,19 @@ Règles de sécurité de configuration :
 - le nettoyage d’une ancienne clé JetBrains incorrecte n’est autorisé que lorsqu’elle pointe
   explicitement vers l’installation courante.
 
+## Sécurité Web et exploitation
+
+- chaque URL et chaque redirection est validée avant connexion ;
+- les adresses DNS publiques approuvées sont épinglées et peuvent être essayées successivement sans
+  nouvelle résolution DNS ;
+- les plages IPv4/IPv6 privées, réservées, de traduction, tunnel et documentation sont bloquées ;
+- Crawl4AI ne rejoint que le réseau Docker interne `backend` et n’expose aucun port hôte direct ;
+- le mode hybride passe par un relais Node loopback minimal et durci vers `crawl4ai:11235` ;
+- `robots.txt`, les budgets de taille/durée/redirections et les limites de concurrence restent
+  appliqués par la passerelle HTTP ;
+- l’historique de throttling par origine est borné afin qu’un processus long ne conserve pas une
+  entrée mémoire pour un nombre illimité d’origines visitées.
+
 ## CI et qualification
 
 La CI s’exécute sur les pull requests et pushes vers `master` et `develop`. L’ancienne branche
@@ -138,19 +195,20 @@ candidat présent.
 Le workflow de publication Windows est manuel. Node.js win-x64 est vérifié par SHA-256 et la
 toolchain Inno Setup est figée sur la version `6.7.1`.
 
-## Limites connues
+## Limites connues et suites autorisées
 
-- la recherche locale de référence reste FTS5/BM25 ; le reranker lexical hashé n’apporte pas de
-  gain mesuré et n’est pas généralisé ;
-- le benchmark V2.13 montre une faiblesse forte sur les paraphrases et les questions multi-document ;
-  toute évolution vers des embeddings locaux doit gagner un benchmark comparatif dédié ;
+- la recherche produit reste FTS5/BM25 jusqu’à qualification d’un prototype vectoriel séparé ;
+- les résultats #32 autorisent l’étude `prototype-local-vector-index`, mais le prototype doit encore
+  prouver persistance/rebuild, sync incrémentale, packaging Windows/Docker, redistribution du modèle,
+  fonctionnement hors ligne et budget mémoire produit avant toute décision d’intégration ;
 - l’affichage et l’usage direct des resources/templates dépendent du client MCP ; les cinq outils
   restent le contrat portable principal ;
+- la certification native des clients reste ouverte dans #34 ;
 - le serveur est un MCP STDIO local : il n’embarque aucun LLM et n’exige aucune API commerciale.
 
 ## Gouvernance Git post-V2
 
 `master` est la source de vérité. L’historique squashé de la PR #8 ne doit jamais être réintégré via
 un merge brut de l’ancien `develop`. `develop` doit rester explicitement alignée sur le `master`
-qualifié. La PR #27 est supersédée par cette règle. Les branches V2 absorbées n’ont plus vocation à
+qualifié. La PR #27 est supersédée par cette règle. Les branches absorbées n’ont plus vocation à
 porter du travail unique et peuvent être retirées de la liste des branches actives.
