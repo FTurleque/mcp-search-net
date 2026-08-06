@@ -43,6 +43,16 @@ describe('SecureHttpGateway', () => {
     ).rejects.toMatchObject({ code: 'TOO_MANY_REDIRECTS' });
   });
 
+  it('tries the next approved DNS address after a connection failure', async () => {
+    const server = await listen((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end('reachable');
+    });
+    const gateway = createGateway(policyForAddresses(server.port, ['127.0.0.2', '127.0.0.1']));
+
+    await expect(gateway.download(server.url)).resolves.toMatchObject({ status: 200 });
+  });
+
   it('records permanent and temporary redirects in the returned resource', async () => {
     const server = await listen((request, response) => {
       if (request.url === '/old') {
@@ -163,6 +173,44 @@ describe('SecureHttpGateway', () => {
     expect(paths).toEqual(['/robots.txt']);
   });
 
+  it('does not merge rules from an adjacent user-agent group', async () => {
+    const paths: string[] = [];
+    const robots = [
+      'User-agent: *',
+      'Disallow: /private',
+      'User-agent: googlebot',
+      'Allow: /private',
+    ].join('\n');
+    const server = await listen((request, response) => {
+      paths.push(request.url ?? '');
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end(request.url === '/robots.txt' ? robots : 'secret');
+    });
+    const gateway = createGateway(policyFor(server.port), { respectRobotsTxt: true });
+
+    await expect(gateway.download(`${server.url}/private`)).rejects.toMatchObject({
+      code: 'BLOCKED_ADDRESS',
+    });
+    expect(paths).toEqual(['/robots.txt']);
+  });
+
+  it('uses a matching specific user-agent group instead of wildcard rules', async () => {
+    const robots = [
+      'User-agent: *',
+      'Disallow: /private',
+      '',
+      'User-agent: mcp-search-net',
+      'Allow: /private',
+    ].join('\n');
+    const server = await listen((request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end(request.url === '/robots.txt' ? robots : 'allowed');
+    });
+    const gateway = createGateway(policyFor(server.port), { respectRobotsTxt: true });
+
+    await expect(gateway.download(`${server.url}/private`)).resolves.toMatchObject({ status: 200 });
+  });
+
   it('supports robots wildcards, end anchors and allow precedence on equal specificity', async () => {
     const paths: string[] = [];
     const robots = [
@@ -209,6 +257,16 @@ function policyFor(
       const url = new URL(value);
       url.port = String(port);
       return { value: url.toString(), hostname: url.hostname, addresses: ['127.0.0.1'] };
+    },
+  };
+}
+
+function policyForAddresses(port: number, addresses: readonly string[]): UrlSecurityPolicy {
+  return {
+    async assertAllowed(value) {
+      const url = new URL(value);
+      url.port = String(port);
+      return { value: url.toString(), hostname: url.hostname, addresses };
     },
   };
 }
