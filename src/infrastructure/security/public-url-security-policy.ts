@@ -157,15 +157,24 @@ function isPublicIpv6(address: string): boolean {
     return isPublicIpv4([24, 16, 8, 0].map((shift) => String((ipv4 >>> shift) & 0xff)).join('.'));
   }
 
-  const blocked: readonly [bigint, number][] = [
-    [0n, 128],
-    [1n, 128],
-    [0xfc00n << 112n, 7],
-    [0xfe80n << 112n, 10],
-    [0xff00n << 112n, 8],
-    [0x20010db8n << 96n, 32],
+  const blockedCidrs: readonly [string, number][] = [
+    ['::', 96],
+    ['64:ff9b::', 96],
+    ['64:ff9b:1::', 48],
+    ['100::', 64],
+    ['2001::', 23],
+    ['2001:db8::', 32],
+    ['2002::', 16],
+    ['3fff::', 20],
+    ['5f00::', 16],
+    ['fc00::', 7],
+    ['fe80::', 10],
+    ['ff00::', 8],
   ];
-  return !blocked.some(([network, bits]) => inIpv6Range(value, network, bits));
+  return !blockedCidrs.some(([network, bits]) => {
+    const networkValue = ipv6ToBigInt(network);
+    return networkValue === undefined || inIpv6Range(value, networkValue, bits);
+  });
 }
 
 function ipv6ToBigInt(input: string): bigint | undefined {
@@ -199,7 +208,7 @@ function ipv6ToBigInt(input: string): bigint | undefined {
   if (groups.length !== 8) return undefined;
 
   try {
-    return groups.reduce((value, group) => (value << 16n) | BigInt(`0x${group || '0'}`), 0n);
+    return groups.reduce((result, group) => (result << 16n) | BigInt(`0x${group || '0'}`), 0n);
   } catch {
     return undefined;
   }
