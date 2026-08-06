@@ -48,6 +48,7 @@ foreach ($Required in @(
     }
 }
 
+$ExpectedInnoVersion = '6.7.1'
 $IsccCandidates = @()
 $IsccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
 if ($IsccCommand) { $IsccCandidates += $IsccCommand.Source }
@@ -67,7 +68,11 @@ $Iscc = $IsccCandidates |
     Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
     Select-Object -First 1
 if ([string]::IsNullOrWhiteSpace($Iscc)) {
-    throw 'Inno Setup est requis. Installez Inno Setup 6/7 ou exposez ISCC.exe dans le PATH.'
+    throw "Inno Setup $ExpectedInnoVersion est requis. Installez cette version ou exposez son ISCC.exe dans le PATH."
+}
+$IsccVersion = (Get-Item -LiteralPath $Iscc).VersionInfo.ProductVersion
+if ([string]::IsNullOrWhiteSpace($IsccVersion) -or -not $IsccVersion.StartsWith($ExpectedInnoVersion, [System.StringComparison]::Ordinal)) {
+    throw "Version Inno Setup non qualifiée : attendu=$ExpectedInnoVersion obtenu=$IsccVersion binaire=$Iscc"
 }
 
 $Template = Join-Path $RepoRoot 'packaging\windows\mcp-search-net-installer.iss.template'
@@ -123,6 +128,7 @@ try {
     Write-Host "SHA-256  : $Hash"
     Write-Host "Mode     : $(if ($Smoke) { 'smoke' } else { 'production' })"
     Write-Host "Inno     : $Iscc"
+    Write-Host "Inno Ver : $IsccVersion"
 }
 finally {
     Remove-Item -LiteralPath $GeneratedIss -Force -ErrorAction SilentlyContinue
