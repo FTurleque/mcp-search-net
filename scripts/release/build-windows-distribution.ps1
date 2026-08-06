@@ -76,6 +76,7 @@ Copy-Item -LiteralPath (Join-Path $RepoRoot 'migrations') -Destination $AppDist 
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'catalog-migrations') -Destination $AppDist -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'package.json') -Destination $AppDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'package-lock.json') -Destination $AppDist -Force
+Copy-Item -LiteralPath (Join-Path $RepoRoot 'LICENSE') -Destination $AppDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'scripts\probe-installed-mcp.mjs') -Destination $AppDist -Force
 
 Write-Host 'Installation des dépendances de production...'
@@ -116,6 +117,7 @@ Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\configure-install
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\detect-integrations.ps1') -Destination $ScriptsDist -Force
 
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\install.ps1') -Destination $DistRoot -Force
+Copy-Item -LiteralPath (Join-Path $RepoRoot 'LICENSE') -Destination $DistRoot -Force
 
 $RuntimeDist = Join-Path $DistRoot 'runtime'
 New-Item -ItemType Directory -Force -Path $RuntimeDist | Out-Null
@@ -146,8 +148,9 @@ const deps = Object.keys(pkg.dependencies ?? {});
 const lines = [
   `THIRD-PARTY NOTICES - mcp-search-net ${pkg.version}`,
   '='.repeat(60),
-  'This distribution includes the following open source packages.',
-  'Each package is distributed under its own license.',
+  'mcp-search-net itself is proprietary software governed by the bundled LICENSE file.',
+  'This distribution also includes the following third-party open source packages.',
+  'Each third-party package is distributed under its own license.',
   ''
 ];
 for (const dep of deps.sort()) {
