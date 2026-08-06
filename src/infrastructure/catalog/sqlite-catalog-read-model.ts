@@ -109,7 +109,10 @@ export class SqliteCatalogReadModel {
   }
 
   public listDocuments(): readonly CatalogDocument[] {
-    return this.database.prepare<[], CatalogDocumentRow>(SELECT_DOCUMENTS_SQL).all().map(toCatalogDocument);
+    return this.database
+      .prepare<[], CatalogDocumentRow>(SELECT_DOCUMENTS_SQL)
+      .all()
+      .map(toCatalogDocument);
   }
 
   public listDocumentsPage(query: CatalogDocumentPageQuery): CatalogPage<CatalogDocumentEntry> {
@@ -141,9 +144,14 @@ export class SqliteCatalogReadModel {
       .map(toCatalogCurrentDocumentSection);
   }
 
-  public getCurrentDocumentSectionById(sectionId: number): CatalogCurrentDocumentSection | undefined {
+  public getCurrentDocumentSectionById(
+    sectionId: number,
+  ): CatalogCurrentDocumentSection | undefined {
     const row = this.database
-      .prepare<[number], CatalogCurrentDocumentSectionRow>(SELECT_CURRENT_DOCUMENT_SECTION_BY_ID_SQL)
+      .prepare<
+        [number],
+        CatalogCurrentDocumentSectionRow
+      >(SELECT_CURRENT_DOCUMENT_SECTION_BY_ID_SQL)
       .get(sectionId);
     return row === undefined ? undefined : toCatalogCurrentDocumentSection(row);
   }
