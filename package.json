@@ -8,6 +8,10 @@
   "engines": {
     "node": ">=24 <25"
   },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "esbuild@0.28.1": true
+  },
   "exports": "./build/bootstrap/main.js",
   "scripts": {
     "clean": "rimraf build dist",
