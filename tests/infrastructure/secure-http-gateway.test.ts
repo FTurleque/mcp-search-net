@@ -211,6 +211,59 @@ describe('SecureHttpGateway', () => {
     await expect(gateway.download(`${server.url}/private`)).resolves.toMatchObject({ status: 200 });
   });
 
+  it('keeps blank lines inside the current robots group', async () => {
+    const robots = [
+      'User-agent: *',
+      'Disallow: /private',
+      '',
+      'Allow: /private/public',
+    ].join('\n');
+    const server = await listen((request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end(request.url === '/robots.txt' ? robots : 'allowed');
+    });
+    const gateway = createGateway(policyFor(server.port), { respectRobotsTxt: true });
+
+    await expect(gateway.download(`${server.url}/private/public`)).resolves.toMatchObject({
+      status: 200,
+    });
+  });
+
+  it('matches robots rules against the query component', async () => {
+    const robots = 'User-agent: *\nDisallow: /search?secret=';
+    const paths: string[] = [];
+    const server = await listen((request, response) => {
+      paths.push(request.url ?? '');
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end(request.url === '/robots.txt' ? robots : 'secret');
+    });
+    const gateway = createGateway(policyFor(server.port), { respectRobotsTxt: true });
+
+    await expect(gateway.download(`${server.url}/search?secret=value`)).rejects.toMatchObject({
+      code: 'BLOCKED_ADDRESS',
+    });
+    expect(paths).toEqual(['/robots.txt']);
+  });
+
+  it('normalizes unreserved percent encodings and UTF-8 robots octets', async () => {
+    const robots = ['User-agent: *', 'Disallow: /foo/bar', 'Disallow: /café'].join('\n');
+    const paths: string[] = [];
+    const server = await listen((request, response) => {
+      paths.push(request.url ?? '');
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end(request.url === '/robots.txt' ? robots : 'secret');
+    });
+    const gateway = createGateway(policyFor(server.port), { respectRobotsTxt: true });
+
+    await expect(gateway.download(`${server.url}/foo/%62ar`)).rejects.toMatchObject({
+      code: 'BLOCKED_ADDRESS',
+    });
+    await expect(gateway.download(`${server.url}/caf%C3%A9`)).rejects.toMatchObject({
+      code: 'BLOCKED_ADDRESS',
+    });
+    expect(paths).toEqual(['/robots.txt', '/robots.txt']);
+  });
+
   it('supports robots wildcards, end anchors and allow precedence on equal specificity', async () => {
     const paths: string[] = [];
     const robots = [
