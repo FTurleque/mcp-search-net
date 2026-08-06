@@ -67,7 +67,6 @@ services:
       start_period: 60s
     networks:
       - backend
-      - egress
 
   # mcp-search-net est un serveur MCP STDIO pur et n'expose pas
   # d'endpoint HTTP de santé. Les conditions service_healthy garantissent
