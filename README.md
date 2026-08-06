@@ -1,5 +1,7 @@
 # mcp-search-net
 
+> **Licence propriétaire source-available — Tous droits réservés.** La visibilité publique du dépôt donne accès au code source mais ne transforme pas mcp-search-net en logiciel open source. Voir la section [Licence](#licence) et le fichier [`LICENSE`](LICENSE).
+
 Serveur MCP local, en lecture seule, destiné notamment à GitHub Copilot dans IntelliJ IDEA. La V1
 expose deux outils Web stables :
 
@@ -53,7 +55,8 @@ absentes. Un profil autre que `development` refuse aussi les jetons d’exemple 
 Le pipeline Windows produit également un ZIP portable et un setup Inno Setup. L’installateur
 préserve les entrées MCP client préexistantes qu’il ne gère pas, sauvegarde les fichiers avant
 modification et ne supprime à la désinstallation que les intégrations enregistrées comme `managed`.
-Un fichier JSON client existant mais invalide n’est jamais remplacé silencieusement.
+Un fichier JSON client existant mais invalide n’est jamais remplacé silencieusement. La distribution
+embarque le fichier `LICENSE` propriétaire et le setup le présente avant installation.
 
 ## Développement
 
@@ -97,9 +100,10 @@ La suite d’intégration déterministe n’exige ni Internet ni Docker. Avec le
 npm run test:e2e
 ```
 
-`npm run check` inclut les contrôles supply chain et documentation (`docs:check`), typecheck, lint,
-Prettier, build, tests déterministes et seuils de couverture V8. Les rapports JSON sont écrits dans
-`.data/test-reports`, et les rapports de couverture dans `coverage/`.
+`npm run check` inclut les contrôles de licence propriétaire (`check:license`), supply chain et
+documentation (`docs:check`), typecheck, lint, Prettier, build, tests déterministes et seuils de
+couverture V8. Les rapports JSON sont écrits dans `.data/test-reports`, et les rapports de couverture
+dans `coverage/`.
 
 ## Docker
 
@@ -125,7 +129,8 @@ docker compose down
 
 Le conteneur MCP s’exécute sans root, avec filesystem en lecture seule, capabilities supprimées et
 volume d’écriture limité au cache et au catalogue. Aucun socket Docker, mode privilégié ou réseau
-hôte n’est utilisé. Les images fournisseurs sont figées par digest SHA-256.
+hôte n’est utilisé. Les images fournisseurs sont figées par digest SHA-256. L’image du serveur porte
+le label OCI propriétaire `LicenseRef-mcp-search-net-Proprietary` et embarque `LICENSE`.
 
 ## IntelliJ IDEA / GitHub Copilot
 
@@ -220,3 +225,19 @@ hashé n’a pas montré de gain et n’est pas généralisé.
 | SearXNG répond 403      | vérifier que `json` est activé dans `config/searxng/settings.yml`          |
 | Crawl4AI répond 401/403 | aligner `MCP_CRAWL4AI_TOKEN` et `CRAWL4AI_API_TOKEN`                       |
 | healthcheck en échec    | `docker compose ps` puis `docker compose logs <service>`                   |
+
+## Licence
+
+mcp-search-net est un logiciel **propriétaire source-available**. Copyright © 2026 Fabrice Turleque.
+Tous droits réservés.
+
+La publication du dépôt sur GitHub permet de consulter le code source et d’utiliser les fonctions de
+la plateforme dans la mesure prévue par les conditions de GitHub ; elle ne constitue pas une licence
+open source et n’accorde pas, de la part du titulaire des droits, un droit général d’utiliser,
+d’exécuter, de déployer, de copier, de modifier, d’adapter, de redistribuer, de sous-licencier ou de
+commercialiser mcp-search-net. Toute autorisation de ce type nécessite un accord écrit préalable du
+titulaire des droits, sous réserve des droits qui ne peuvent légalement être exclus.
+
+Les conditions complètes figurent dans [`LICENSE`](LICENSE). Les composants tiers et dépendances
+restent soumis à leurs propres licences ; `THIRD-PARTY-NOTICES.txt` les distingue explicitement dans
+les distributions publiées. Les contributions externes sont régies par [`CONTRIBUTING.md`](CONTRIBUTING.md).
