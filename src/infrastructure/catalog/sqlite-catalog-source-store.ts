@@ -79,7 +79,10 @@ export class SqliteCatalogSourceStore {
   }
 
   public list(): readonly CatalogSource[] {
-    return this.database.prepare<[], CatalogSourceRow>(SELECT_CATALOG_SOURCES_SQL).all().map(toCatalogSource);
+    return this.database
+      .prepare<[], CatalogSourceRow>(SELECT_CATALOG_SOURCES_SQL)
+      .all()
+      .map(toCatalogSource);
   }
 
   public listPage(query: CatalogSourcePageQuery): CatalogPage<CatalogSource> {
