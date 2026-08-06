@@ -62,11 +62,11 @@ Le workflow de benchmark a été exécuté sur le SHA
 `72b65a12786081d4e1fbc795fd8764dd4c81fd51`, run `31124100736`, le 6 août 2026. Le corpus contient
 10 sources, 100 documents, 10 000 sections et 60 requêtes.
 
-| Méthode | Recall@10 | MRR@10 | nDCG@10 | Precision@5 |
-| --- | ---: | ---: | ---: | ---: |
-| FTS5/BM25 lexical | 0.6167 | 0.6167 | 0.6167 | 0.1233 |
-| Embeddings `potion-multilingual-128M` | 0.8528 | 0.9500 | 0.8724 | — |
-| Fusion RRF | 0.8528 | — | — | — |
+| Méthode                               | Recall@10 | MRR@10 | nDCG@10 | Precision@5 |
+| ------------------------------------- | --------: | -----: | ------: | ----------: |
+| FTS5/BM25 lexical                     |    0.6167 | 0.6167 |  0.6167 |      0.1233 |
+| Embeddings `potion-multilingual-128M` |    0.8528 | 0.9500 |  0.8724 |           — |
+| Fusion RRF                            |    0.8528 |      — |       — |           — |
 
 Résultats ciblés :
 
