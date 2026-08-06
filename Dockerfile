@@ -12,10 +12,10 @@ LABEL org.opencontainers.image.title="mcp-search-net" \
       org.opencontainers.image.description="Local read-only MCP Web search and documentation catalog server" \
       org.opencontainers.image.version="1.1.0" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="LicenseRef-mcp-search-net-Proprietary"
 ENV NODE_ENV=production
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json LICENSE ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/build ./build
 COPY config/application.docker.yml config/official-sources.yml ./config/
