@@ -35,7 +35,8 @@ jamais le contenu des pages trouvées.
 `fetch_url` valide l’URL et toutes ses adresses DNS, consulte le cache, télécharge via la passerelle
 sécurisée et épinglée sur une adresse approuvée, sélectionne les sections Markdown et limite la
 réponse. Si plusieurs adresses publiques ont été validées, un échec de connexion peut basculer sur
-l’adresse suivante sans nouvelle résolution DNS.
+l’adresse suivante sans nouvelle résolution DNS. L’historique de throttling par origine est conservé
+dans un cache LRU borné afin qu’un processus long ne retienne pas un nombre illimité d’origines.
 
 Le cache possède uniquement les tables `search_cache`, `content_cache` et `schema_migrations`. Les
 contenus conservent URL, type, Markdown nettoyé, sections, statut HTTP, date, ETag, Last-Modified et
@@ -78,7 +79,11 @@ migration `C008` ajoute les index de pagination mesurés pour la langue et les f
 ## Recherche locale
 
 FTS5/BM25 reste la baseline produit. Le benchmark historique du reranker lexical hashé n'a pas
-apporté de gain et ce chemin n'est pas généralisé. L'étude d'embeddings locaux est volontairement
-isolée du runtime : le benchmark peut télécharger et évaluer un modèle local figé, mais aucune
-dépendance Python, aucun modèle et aucun index vectoriel ne sont ajoutés au serveur tant que les
-gates comparatifs ne justifient pas un prototype produit séparé.
+apporté de gain et ce chemin n'est pas généralisé.
+
+L'étude d'embeddings locaux #32 est terminée. Le benchmark officiel autorise la recommandation
+`prototype-local-vector-index`, avec `adoptEmbeddingRuntimeNow: false` : les gains sémantiques
+justifient un prototype produit séparé, mais pas une intégration dans le runtime courant. Python,
+`model2vec`, le modèle et un index vectoriel restent donc hors des dépendances distribuées. Une
+intégration future exige une nouvelle preuve couvrant persistance/rebuild, sync incrémentale,
+packaging Windows/Docker, redistribution du modèle, fonctionnement hors ligne et budget mémoire.
