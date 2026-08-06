@@ -9,6 +9,7 @@ const packageLock = readJson('package-lock.json');
 const npmrc = readText('.npmrc');
 const dockerfile = readText('Dockerfile');
 const compose = readText('compose.yaml');
+const composeHybrid = readText('compose.hybrid.yaml');
 
 const expected = {
   sdk: '1.30.0',
@@ -66,6 +67,11 @@ const nodeImageLines = dockerfile
   .filter((line) => line.startsWith(`FROM ${expected.nodeImage} AS `));
 assert(nodeImageLines.length === 2, 'NODE_IMAGE_DIGEST_NOT_PINNED_IN_BOTH_STAGES');
 
+const relayImageLines = composeHybrid
+  .split(/\r?\n/u)
+  .filter((line) => line.trim() === `image: ${expected.nodeImage}`);
+assert(relayImageLines.length === 1, 'LOOPBACK_RELAY_IMAGE_DIGEST_NOT_PINNED');
+
 const providerImageLines = compose
   .split(/\r?\n/u)
   .filter((line) =>
@@ -114,7 +120,7 @@ process.stdout.write(
       strictAllowScripts: true,
       overrides: expected.overrides,
       developmentOverrides: expected.developmentOverrides,
-      dockerImageReferencesPinnedByDigest: 4,
+      dockerImageReferencesPinnedByDigest: 5,
       installedProductionPackages,
       licenses: Object.fromEntries(
         [...licenseCounts].sort(([left], [right]) => left.localeCompare(right)),
