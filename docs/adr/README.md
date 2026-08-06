@@ -7,8 +7,8 @@ Les ADR décrivent les décisions structurantes du projet. Leur statut `Accepté
 | [001](ADR-001-typescript-node.md)             | TypeScript et Node.js                                   |
 | [002](ADR-002-mcp-stdio.md)                   | Transport MCP STDIO                                     |
 | [003](ADR-003-architecture-hexagonale.md)     | Architecture hexagonale simplifiée                      |
-| [004](ADR-004-searxng.md)                    | SearXNG pour la recherche                               |
-| [005](ADR-005-crawl4ai.md)                   | Crawl4AI pour l'extraction                              |
+| [004](ADR-004-searxng.md)                     | SearXNG pour la recherche                               |
+| [005](ADR-005-crawl4ai.md)                    | Crawl4AI pour l'extraction                              |
 | [006](ADR-006-sqlite-cache.md)                | SQLite comme cache V1                                   |
 | [007](ADR-007-sans-llm-interne.md)            | Aucun LLM interne                                       |
 | [008](ADR-008-deux-outils-v1.md)              | Deux outils MCP en V1                                   |
