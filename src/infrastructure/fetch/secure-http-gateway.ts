@@ -193,8 +193,7 @@ export class SecureHttpGateway {
     }
 
     throw (
-      lastConnectionError ??
-      new HttpError('Secure HTTP request failed for every approved address')
+      lastConnectionError ?? new HttpError('Secure HTTP request failed for every approved address')
     );
   }
 
