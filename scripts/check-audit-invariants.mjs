@@ -7,6 +7,7 @@ const failures = [];
 
 const packageJson = readJson('package.json');
 const compose = readText('compose.yaml');
+const composeHybrid = readText('compose.hybrid.yaml');
 const ci = readText('.github/workflows/ci.yml');
 const releaseWorkflow = readText('.github/workflows/release-windows.yml');
 const dockerfile = readText('Dockerfile');
@@ -47,11 +48,35 @@ requireText(
 const crawl4aiBlock = serviceBlock(compose, 'crawl4ai', 'mcp-search-net');
 requireText(crawl4aiBlock, '- backend', 'Compose: Crawl4AI doit rester sur backend');
 assert(!crawl4aiBlock.includes('- egress'), 'Compose: Crawl4AI ne doit pas rejoindre egress');
+assert(!crawl4aiBlock.includes('ports:'), 'Compose: Crawl4AI ne doit publier aucun port directement');
 requireText(ci, 'test "$crawl4ai_network_count" = \'1\'', 'CI: gate réseau Crawl4AI = 1 absent');
+requireText(ci, 'test -z "$crawl4ai_port"', 'CI: absence de port direct Crawl4AI non contrôlée');
 requireText(
   security,
   'Crawl4AI reste uniquement sur le réseau interne `backend`',
   'Documentation sécurité: isolation Crawl4AI absente',
+);
+
+const relayBlock = serviceBlock(composeHybrid, 'crawl4ai-loopback', 'searxng');
+requireText(relayBlock, `image: ${expectedNodeImage}`, 'Overlay hybride: image relais Node figée absente');
+requireText(relayBlock, 'user: node', 'Overlay hybride: utilisateur node du relais absent');
+requireText(relayBlock, "host: 'crawl4ai'", 'Overlay hybride: destination Crawl4AI fixe absente');
+requireText(relayBlock, '- backend', 'Overlay hybride: relais absent de backend');
+requireText(relayBlock, '- egress', 'Overlay hybride: relais absent de egress');
+requireText(relayBlock, "- '127.0.0.1:11235:11235'", 'Overlay hybride: publication loopback absente');
+requireText(relayBlock, 'read_only: true', 'Overlay hybride: relais read-only absent');
+requireText(relayBlock, '- ALL', 'Overlay hybride: cap_drop du relais absent');
+requireText(relayBlock, '- no-new-privileges:true', 'Overlay hybride: no-new-privileges du relais absent');
+requireText(
+  ci,
+  'test "$relay_network_count" = \'2\'',
+  'CI: gate réseau du relais Crawl4AI = 2 absent',
+);
+requireText(ci, 'test "$relay_port" = \'127.0.0.1:11235\'', 'CI: gate port loopback du relais absent');
+requireText(
+  security,
+  'relais TCP Node minimal',
+  'Documentation sécurité: relais loopback Crawl4AI absent',
 );
 
 assert(
@@ -164,6 +189,7 @@ process.stdout.write(
       status: 'AUDIT_INVARIANTS_PASSED',
       node: expectedNode,
       crawl4aiNetworks: ['backend'],
+      crawl4aiLoopbackRelay: true,
       installScriptAllowlist: Object.keys(expectedAllowScripts),
       catalogComponents: 5,
       benchmarkQueries: querySet.queries.length,
