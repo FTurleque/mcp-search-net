@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
@@ -12,10 +12,13 @@ const ci = readText('.github/workflows/ci.yml');
 const releaseWorkflow = readText('.github/workflows/release-windows.yml');
 const dockerfile = readText('Dockerfile');
 const security = readText('docs/reference/security.md');
+const currentState = readText('docs/status/current-state.md');
+const adr018 = readText('docs/adr/ADR-018-local-embeddings-evaluation.md');
 const installerBuilder = readText('scripts/release/build-windows-installer.ps1');
 const runtimeGuard = readText('scripts/check-node-version.mjs');
 const repositoryFacade = readText('src/infrastructure/catalog/sqlite-catalog-repository.ts');
 const revisionWriter = readText('src/infrastructure/catalog/sqlite-catalog-revision-writer.ts');
+const secureHttpGateway = readText('src/infrastructure/fetch/secure-http-gateway.ts');
 const clientReporter = readText('scripts/generate-client-contract-report.mjs');
 const querySet = readJson('benchmarks/v2-search-quality/queries.json');
 
@@ -155,6 +158,19 @@ for (const invariant of [
   requireText(revisionWriter, invariant, `revision writer: invariant atomique absent ${invariant}`);
 }
 
+for (const invariant of [
+  'DEFAULT_MAX_TRACKED_ORIGINS = 1_024',
+  'readonly maxTrackedOrigins?: number',
+  'this.rememberOriginRequest(origin, Date.now())',
+  'while (this.lastRequestByOrigin.size > this.maxTrackedOrigins)',
+]) {
+  requireText(
+    secureHttpGateway,
+    invariant,
+    `secure HTTP gateway: historique origine non borné ou invariant absent: ${invariant}`,
+  );
+}
+
 assert(
   packageJson.scripts?.['client:contract-report'] ===
     'node scripts/generate-client-contract-report.mjs',
@@ -192,10 +208,26 @@ assert(
   (categories.get('multi-document') ?? 0) >= 10,
   'benchmark V2: 10 requêtes multi-document minimum attendues',
 );
-requireText(
-  readText('docs/adr/ADR-018-local-embeddings-evaluation.md'),
+for (const invariant of [
+  '**Statut** : Accepté',
   "l'intégration runtime reste `NON`",
-  'ADR-018: interdiction adoption runtime avant prototype absente',
+  'recommendation: prototype-local-vector-index',
+  'adoptEmbeddingRuntimeNow: false',
+  '31124100736',
+]) {
+  requireText(adr018, invariant, `ADR-018: décision embeddings non réconciliée: ${invariant}`);
+}
+for (const invariant of [
+  'Hardening post-audit complet : PR #37 mergée',
+  '31126841127',
+  'prototype-local-vector-index',
+  'adoptEmbeddingRuntimeNow: false',
+]) {
+  requireText(currentState, invariant, `current-state: état post-audit non réconcilié: ${invariant}`);
+}
+assert(
+  !existsSync(resolve(root, '.github/workflows/local-embeddings-benchmark.yml')),
+  'CI: workflow embeddings one-shot terminé encore présent',
 );
 
 if (failures.length > 0) {
@@ -216,6 +248,10 @@ process.stdout.write(
       benchmarkQueries: querySet.queries.length,
       paraphraseQueries: categories.get('paraphrase') ?? 0,
       multiDocumentQueries: categories.get('multi-document') ?? 0,
+      embeddingsDecision: 'prototype-local-vector-index',
+      adoptEmbeddingRuntimeNow: false,
+      oneShotBenchmarkWorkflowRemoved: true,
+      boundedOriginThrottle: true,
       clientContractReport: true,
     },
     null,
