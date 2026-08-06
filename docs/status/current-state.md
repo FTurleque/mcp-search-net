@@ -101,14 +101,14 @@ Le benchmark embeddings de #32 est terminé. Résultats officiels du run `311241
 `72b65a12786081d4e1fbc795fd8764dd4c81fd51`, sur 10 sources / 100 documents / 10 000 sections /
 60 requêtes :
 
-| Métrique | Lexical | Embeddings locaux | Fusion RRF |
-| --- | ---: | ---: | ---: |
-| Recall@10 | 0.6167 | 0.8528 | 0.8528 |
-| MRR@10 | 0.6167 | 0.9500 | — |
-| nDCG@10 | 0.6167 | 0.8724 | — |
-| Paraphrase Recall@10 | 0 | 0.70 | 0.70 |
-| Multi-document Recall@10 | 0 | 0.4167 | 0.4167 |
-| p95 | ~17.3 ms | 2.756 ms | 28.216 ms |
+| Métrique                 | Lexical  | Embeddings locaux | Fusion RRF |
+| ------------------------ | -------: | ----------------: | ---------: |
+| Recall@10                |   0.6167 |            0.8528 |     0.8528 |
+| MRR@10                   |   0.6167 |            0.9500 |          — |
+| nDCG@10                  |   0.6167 |            0.8724 |          — |
+| Paraphrase Recall@10     |        0 |              0.70 |       0.70 |
+| Multi-document Recall@10 |        0 |            0.4167 |     0.4167 |
+| p95                      | ~17.3 ms |          2.756 ms |  28.216 ms |
 
 Décision ADR-018 : `prototype-local-vector-index`. Ces résultats justifient un prototype produit
 séparé mais **pas** l’intégration immédiate des embeddings dans le runtime :
