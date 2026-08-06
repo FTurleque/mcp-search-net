@@ -9,6 +9,7 @@ const license = readText('LICENSE');
 const contributing = readText('CONTRIBUTING.md');
 const readme = readText('README.md');
 const packageJson = JSON.parse(readText('package.json'));
+const packageLock = JSON.parse(readText('package-lock.json'));
 const dockerfile = readText('Dockerfile');
 const dockerignore = readText('.dockerignore');
 const distribution = readText('scripts/release/build-windows-distribution.ps1');
@@ -28,6 +29,16 @@ for (const required of [
 assert(packageJson.license === 'SEE LICENSE IN LICENSE', 'PACKAGE_LICENSE_NOT_PROPRIETARY');
 assert(packageJson.author === 'Fabrice Turleque', 'PACKAGE_AUTHOR_MISMATCH');
 assert(packageJson.private === true, 'PACKAGE_MUST_REMAIN_PRIVATE_TO_NPM');
+
+const lockRootPackage = packageLock.packages?.[''];
+assert(lockRootPackage !== undefined, 'PACKAGE_LOCK_ROOT_METADATA_MISSING');
+assert(lockRootPackage?.name === packageJson.name, 'PACKAGE_LOCK_ROOT_NAME_MISMATCH');
+assert(lockRootPackage?.version === packageJson.version, 'PACKAGE_LOCK_ROOT_VERSION_MISMATCH');
+assert(lockRootPackage?.license === packageJson.license, 'PACKAGE_LOCK_ROOT_LICENSE_MISMATCH');
+assert(
+  lockRootPackage?.license === 'SEE LICENSE IN LICENSE',
+  'PACKAGE_LOCK_ROOT_LICENSE_NOT_PROPRIETARY',
+);
 
 for (const required of [
   'proprietary source-available software',
@@ -88,6 +99,7 @@ process.stdout.write(
       copyrightHolder: 'Fabrice Turleque',
       allRightsReserved: true,
       npmPublishingDisabled: packageJson.private === true,
+      rootLockfileLicenseReconciled: lockRootPackage?.license === packageJson.license,
       bundledInWindowsDistribution: true,
       displayedByWindowsInstaller: true,
       bundledInOciImage: true,
