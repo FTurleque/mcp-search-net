@@ -44,8 +44,13 @@ chargement de ressources sont supprimés avant ce rendu.
 
 Dans le Compose complet, Crawl4AI reste uniquement sur le réseau interne `backend` et n'a pas accès
 au bridge `egress`. SearXNG et le serveur MCP conservent l’egress nécessaire à leurs appels contrôlés.
-L'overlay hybride peut publier l’API Crawl4AI sur le loopback hôte pour le serveur Node ; elle reste
-protégée par token et n'est jamais exposée comme outil MCP.
+L'overlay hybride ne publie plus directement le port de Crawl4AI : un relais TCP Node minimal,
+figé sur le même runtime Node.js 24.18.0 par digest, rejoint `backend` et `egress`, puis transmet
+uniquement vers la destination fixe `crawl4ai:11235`. Ce relais s'exécute comme utilisateur `node`,
+en lecture seule, avec toutes les capacités Linux supprimées et `no-new-privileges`; seul son port
+`11235` est publié sur `127.0.0.1`. Le conteneur Crawl4AI reste donc sans egress et sans port hôte
+direct, tandis que le serveur Node natif conserve l'accès loopback requis. L’API reste protégée par
+token et n'est jamais exposée comme outil MCP.
 
 ## Contenu malveillant
 
@@ -78,7 +83,7 @@ de cette politique.
 
 Le SDK MCP est fixé exactement à `@modelcontextprotocol/sdk@1.30.0`, les transitives corrigées sont
 verrouillées et les images OCI sont référencées par digest. Le runtime de référence est Node.js
-`24.18.0` pour le développement qualifié, la CI, Docker et le bundle Windows.
+`24.18.0` pour le développement qualifié, la CI, Docker, le relais loopback et le bundle Windows.
 
 Les seuls scripts lifecycle npm approuvés sont les versions explicitement enregistrées dans
 `package.json`; `.npmrc` active `strict-allow-scripts=true`, de sorte qu’une nouvelle dépendance avec
