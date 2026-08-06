@@ -41,6 +41,7 @@ foreach ($Required in @(
     'scripts\configure-install.ps1',
     'install.ps1',
     'BUILD-MANIFEST.json',
+    'LICENSE',
     'THIRD-PARTY-NOTICES.txt'
 )) {
     if (-not (Test-Path -LiteralPath (Join-Path $DistributionRoot $Required))) {
@@ -108,8 +109,15 @@ $Iss = $Iss.Replace('@@SMOKE_MODE@@', $SmokeMode)
 $Iss = $Iss.Replace('@@SOURCE_DIR@@', (Escape-InnoString $DistributionRoot))
 $Iss = $Iss.Replace('@@OUTPUT_DIR@@', (Escape-InnoString $InstallerOutput))
 $Iss = $Iss.Replace('@@OUTPUT_BASENAME@@', (Escape-InnoString $OutputBaseName))
+if (-not $Iss.Contains('LicenseFile=')) {
+    $LicenseDirective = 'LicenseFile=' + (Escape-InnoString (Join-Path $DistributionRoot 'LICENSE'))
+    $Iss = $Iss.Replace('AppPublisher=FTurleque', "AppPublisher=FTurleque`r`n$LicenseDirective")
+}
 if ($Iss -match '@@[A-Z0-9_]+@@') {
     throw "Token non résolu dans le template Inno Setup : $($Matches[0])"
+}
+if (-not $Iss.Contains('LicenseFile=')) {
+    throw "La licence propriétaire n'est pas présentée par l'installateur Inno Setup."
 }
 [System.IO.File]::WriteAllText($GeneratedIss, $Iss, $Utf8)
 
