@@ -21,4 +21,4 @@ Les ADR décrivent les décisions structurantes du projet. Leur statut `Accepté
 | [015](ADR-015-fts5-contentless-delete.md)     | Utiliser FTS5 `contentless-delete` comme index dérivé   |
 | [016](ADR-016-mcp-v2-tools-resources.md)      | Exposer cinq outils et des resources MCP bornées        |
 | [017](ADR-017-search-quality-strategy-v2.md)  | Mesurer et améliorer la qualité de recherche locale V2  |
-| [018](ADR-018-local-embeddings-evaluation.md) | Évaluer des embeddings locaux avant toute intégration   |
+| [018](ADR-018-local-embeddings-evaluation.md) | Autoriser un prototype vectoriel local sans adoption runtime immédiate |
