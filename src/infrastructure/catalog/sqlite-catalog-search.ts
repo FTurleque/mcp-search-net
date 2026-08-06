@@ -61,9 +61,7 @@ export class SqliteCatalogSearch {
         ? []
         : this.searchWithFts(ftsQuery, pattern, sourceKey, language, limit);
     const rows =
-      ftsRows.length > 0
-        ? ftsRows
-        : this.searchWithLike(pattern, sourceKey, language, limit);
+      ftsRows.length > 0 ? ftsRows : this.searchWithLike(pattern, sourceKey, language, limit);
 
     return rows.map((row) => ({
       ...toCatalogCurrentDocumentSection(row),
@@ -80,9 +78,10 @@ export class SqliteCatalogSearch {
     limit: number,
   ): readonly CatalogDocumentSearchRow[] {
     return this.database
-      .prepare<SearchCurrentDocumentSectionsFtsParams, CatalogDocumentSearchRow>(
-        SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
-      )
+      .prepare<
+        SearchCurrentDocumentSectionsFtsParams,
+        CatalogDocumentSearchRow
+      >(SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL)
       .all(pattern, pattern, pattern, ftsQuery, sourceKey, sourceKey, language, language, limit);
   }
 
@@ -93,9 +92,10 @@ export class SqliteCatalogSearch {
     limit: number,
   ): readonly CatalogDocumentSearchRow[] {
     return this.database
-      .prepare<SearchCurrentDocumentSectionsParams, CatalogDocumentSearchRow>(
-        SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
-      )
+      .prepare<
+        SearchCurrentDocumentSectionsParams,
+        CatalogDocumentSearchRow
+      >(SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL)
       .all(
         pattern,
         pattern,
