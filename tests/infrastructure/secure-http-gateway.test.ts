@@ -159,6 +159,32 @@ describe('SecureHttpGateway', () => {
     expect(maximumActiveRequests).toBe(1);
   });
 
+  it('bounds origin throttling history and evicts the least recently used origin', async () => {
+    const server = await listen((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end('ok');
+    });
+    const gateway = createGateway(policyFor(server.port), { maxTrackedOrigins: 2 });
+    const firstOrigin = `http://one.invalid:${server.port}`;
+    const secondOrigin = `http://two.invalid:${server.port}`;
+    const thirdOrigin = `http://three.invalid:${server.port}`;
+
+    await gateway.download(`${firstOrigin}/first`);
+    await gateway.download(`${secondOrigin}/second`);
+    await gateway.download(`${firstOrigin}/again`);
+    await gateway.download(`${thirdOrigin}/third`);
+
+    const trackedOrigins = Reflect.get(gateway, 'lastRequestByOrigin') as Map<string, number>;
+    expect(trackedOrigins.size).toBe(2);
+    expect([...trackedOrigins.keys()]).toEqual([firstOrigin, thirdOrigin]);
+  });
+
+  it('rejects an invalid origin tracking bound', () => {
+    expect(() => createGateway(policyFor(80), { maxTrackedOrigins: 0 })).toThrow(
+      'maxTrackedOrigins must be a positive integer',
+    );
+  });
+
   it('enforces robots.txt before downloading a disallowed page', async () => {
     const paths: string[] = [];
     const server = await listen((request, response) => {

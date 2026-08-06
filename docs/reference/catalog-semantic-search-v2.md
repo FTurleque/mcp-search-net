@@ -15,7 +15,8 @@ technologie :
 
 Le benchmark V2.13 du 29 juillet 2026 montre que le reranker lexical hashé n'améliore aucune métrique
 qualité sur le corpus de référence. FTS5/BM25 reste donc la baseline opérationnelle. Une étude séparée
-d'embeddings locaux est autorisée pour améliorer le rappel, sans intégration automatique au produit.
+d'embeddings locaux a ensuite été menée dans #32 ; son résultat postérieur est réconcilié dans la
+section [Décision postérieure — benchmark embeddings #32](#décision-postérieure-benchmark-embeddings-32).
 
 ## Commande expérimentale
 
@@ -131,7 +132,7 @@ p95       <= 150 ms à 10 000 sections
 La baseline passe MRR@10 et la latence, mais manque Recall@10 et nDCG@10. Le reranker lexical ne
 ferme aucun écart et n'atteint pas le gain minimal de 0,02.
 
-Décision :
+Décision historique V2.13 :
 
 - conserver FTS5/BM25 comme baseline opérationnelle actuelle ;
 - ne pas généraliser le reranker lexical hashé ;
@@ -139,11 +140,36 @@ Décision :
 - ne pas ajouter d'embeddings au produit sans tranche dédiée et benchmark comparatif ;
 - ne pas introduire d'API commerciale obligatoire.
 
+## Décision postérieure — benchmark embeddings #32
+
+L'étude autorisée par V2.13 est terminée. Le run `31124100736` sur le SHA
+`72b65a12786081d4e1fbc795fd8764dd4c81fd51` a comparé FTS5/BM25, les embeddings locaux
+`minishlab/potion-multilingual-128M` et une fusion RRF sur 60 requêtes / 10 000 sections.
+
+Résultats déterminants :
+
+- Recall@10 : `0.6167` lexical → `0.8528` embeddings ;
+- nDCG@10 : `0.6167` lexical → `0.8724` embeddings ;
+- Paraphrase Recall@10 : `0` → `0.70` ;
+- Multi-document Recall@10 : `0` → `0.4167` ;
+- p95 embeddings : `2.756 ms` ; fusion RRF : `28.216 ms`.
+
+La décision ADR-018 est :
+
+```text
+recommendation: prototype-local-vector-index
+adoptEmbeddingRuntimeNow: false
+```
+
+Le prototype vectoriel local est donc autorisé comme chantier séparé. Le runtime livré reste
+FTS5/BM25 ; aucune dépendance Python, modèle ou base vectorielle n'est ajoutée automatiquement.
+
 ## Limites volontaires
 
-- Pas d'embeddings par défaut.
-- Pas de stockage vectoriel durable.
+- Pas d'embeddings par défaut dans le runtime courant.
+- Pas de stockage vectoriel durable avant prototype qualifié.
 - Pas de mutation du catalogue par la recherche.
 - Pas d'exposition MCP mutable.
 - Pas de généralisation du reranker lexical hashé après un gain mesuré nul.
-- Pas d'adoption d'une alternative sans nouveau benchmark versionné.
+- Pas d'intégration vectorielle sans nouvelle qualification produit couvrant persistance, packaging,
+  offline, licence et mémoire.
