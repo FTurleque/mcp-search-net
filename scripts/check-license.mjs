@@ -9,6 +9,7 @@ const license = readText('LICENSE');
 const contributing = readText('CONTRIBUTING.md');
 const readme = readText('README.md');
 const packageJson = JSON.parse(readText('package.json'));
+const packageLock = JSON.parse(readText('package-lock.json'));
 const dockerfile = readText('Dockerfile');
 const dockerignore = readText('.dockerignore');
 const distribution = readText('scripts/release/build-windows-distribution.ps1');
@@ -17,7 +18,7 @@ const installer = readText('scripts/release/build-windows-installer.ps1');
 for (const required of [
   'MCP-SEARCH-NET — PROPRIETARY SOURCE-AVAILABLE LICENSE',
   'Copyright (c) 2026 Fabrice Turleque. All rights reserved.',
-  'The public availability of the Software\'s source code does not make the Software',
+  "The public availability of the Software's source code does not make the Software",
   'PUBLIC GITHUB HOSTING',
   'NO GENERAL LICENSE GRANT',
   'THIRD-PARTY COMPONENTS',
@@ -28,6 +29,16 @@ for (const required of [
 assert(packageJson.license === 'SEE LICENSE IN LICENSE', 'PACKAGE_LICENSE_NOT_PROPRIETARY');
 assert(packageJson.author === 'Fabrice Turleque', 'PACKAGE_AUTHOR_MISMATCH');
 assert(packageJson.private === true, 'PACKAGE_MUST_REMAIN_PRIVATE_TO_NPM');
+
+const lockRootPackage = packageLock.packages?.[''];
+assert(lockRootPackage !== undefined, 'PACKAGE_LOCK_ROOT_METADATA_MISSING');
+assert(lockRootPackage?.name === packageJson.name, 'PACKAGE_LOCK_ROOT_NAME_MISMATCH');
+assert(lockRootPackage?.version === packageJson.version, 'PACKAGE_LOCK_ROOT_VERSION_MISMATCH');
+assert(lockRootPackage?.license === packageJson.license, 'PACKAGE_LOCK_ROOT_LICENSE_MISMATCH');
+assert(
+  lockRootPackage?.license === 'SEE LICENSE IN LICENSE',
+  'PACKAGE_LOCK_ROOT_LICENSE_NOT_PROPRIETARY',
+);
 
 for (const required of [
   'proprietary source-available software',
@@ -50,7 +61,11 @@ requireText(
   'org.opencontainers.image.licenses="LicenseRef-mcp-search-net-Proprietary"',
   'OCI_LICENSE_LABEL_MISSING',
 );
-requireText(dockerfile, 'COPY package.json package-lock.json LICENSE ./', 'OCI_LICENSE_FILE_MISSING');
+requireText(
+  dockerfile,
+  'COPY package.json package-lock.json LICENSE ./',
+  'OCI_LICENSE_FILE_MISSING',
+);
 requireText(dockerignore, '!LICENSE', 'DOCKER_CONTEXT_LICENSE_ALLOWLIST_MISSING');
 
 for (const required of [
@@ -65,7 +80,7 @@ for (const required of [
 for (const required of [
   "'LICENSE'",
   "if (-not $Iss.Contains('LicenseFile='))",
-  "throw \"La licence propriétaire n'est pas présentée par l'installateur Inno Setup.\"",
+  'throw "La licence propriétaire n\'est pas présentée par l\'installateur Inno Setup."',
 ]) {
   requireText(installer, required, `WINDOWS_INSTALLER_LICENSE_MISSING:${required}`);
 }
@@ -84,6 +99,7 @@ process.stdout.write(
       copyrightHolder: 'Fabrice Turleque',
       allRightsReserved: true,
       npmPublishingDisabled: packageJson.private === true,
+      rootLockfileLicenseReconciled: lockRootPackage?.license === packageJson.license,
       bundledInWindowsDistribution: true,
       displayedByWindowsInstaller: true,
       bundledInOciImage: true,
