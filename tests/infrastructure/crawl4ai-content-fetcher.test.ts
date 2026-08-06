@@ -107,7 +107,7 @@ describe('Crawl4aiContentFetcher', () => {
         status: 200,
         headers: { 'content-type': 'text/html' },
         body: new TextEncoder().encode(
-          '<html><head><meta http-equiv="refresh" content="0;url=http://127.0.0.1"><link rel="stylesheet" href="http://127.0.0.1/a.css"></head><body><img src="http://127.0.0.1/x"><div style="background:url(http://127.0.0.1/y)"></div></body></html>',
+          '<html><head><meta http-equiv="refresh" content="0;url=http://127.0.0.1"><link rel="stylesheet" href="http://127.0.0.1/a.css"></head><body><img src="http://127.0.0.1/x"><div style="background:url(http://127.0.0.1/y)"></div><svg><image href="http://127.0.0.1/svg.png" xlink:href="http://127.0.0.1/legacy.svg"></image></svg><a href="/safe" ping="http://127.0.0.1/ping">safe link</a></body></html>',
         ),
       }),
     } as unknown as SecureHttpGateway;
@@ -118,6 +118,9 @@ describe('Crawl4aiContentFetcher', () => {
       expect(payload.urls[0]).not.toContain('example.com');
       expect(payload.urls[0]).not.toContain('<link');
       expect(payload.urls[0]).not.toContain('<meta');
+      expect(payload.urls[0]).not.toContain('<svg');
+      expect(payload.urls[0]).not.toContain('xlink:href');
+      expect(payload.urls[0]).not.toContain(' ping=');
       expect(payload.urls[0]).not.toContain('127.0.0.1');
       return new Response(
         JSON.stringify({
