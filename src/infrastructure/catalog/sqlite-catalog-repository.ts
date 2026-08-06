@@ -132,7 +132,9 @@ export class SqliteCatalogRepository implements CatalogRepository {
     documentVersionId: number,
     sections: readonly DocumentSectionInput[],
   ): Promise<readonly DocumentSection[]> {
-    return this.asPromise(() => this.revisions.replaceDocumentSections(documentVersionId, sections));
+    return this.asPromise(() =>
+      this.revisions.replaceDocumentSections(documentVersionId, sections),
+    );
   }
 
   public getDocumentByPublicId(publicId: string): Promise<CatalogDocument | undefined> {
