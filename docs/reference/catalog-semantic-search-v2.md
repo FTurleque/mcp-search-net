@@ -16,7 +16,7 @@ technologie :
 Le benchmark V2.13 du 29 juillet 2026 montre que le reranker lexical hashé n'améliore aucune métrique
 qualité sur le corpus de référence. FTS5/BM25 reste donc la baseline opérationnelle. Une étude séparée
 d'embeddings locaux a ensuite été menée dans #32 ; son résultat postérieur est réconcilié dans la
-section [Décision postérieure — benchmark embeddings #32](#décision-postérieure--benchmark-embeddings-32).
+section [Décision postérieure — benchmark embeddings #32](#décision-postérieure-benchmark-embeddings-32).
 
 ## Commande expérimentale
 
