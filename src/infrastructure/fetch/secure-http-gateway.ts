@@ -14,6 +14,8 @@ import {
   UrlSecurityError,
 } from '../../domain/errors/domain-errors.js';
 
+const DEFAULT_MAX_TRACKED_ORIGINS = 1_024;
+
 export interface SecureHttpGatewayOptions {
   readonly timeoutMs: number;
   readonly maxBytes: number;
@@ -22,6 +24,7 @@ export interface SecureHttpGatewayOptions {
   readonly minimumDelayMs: number;
   readonly respectRobotsTxt: boolean;
   readonly userAgent: string;
+  readonly maxTrackedOrigins?: number;
 }
 
 export interface DownloadRedirect {
@@ -66,11 +69,18 @@ export class SecureHttpGateway {
   private active = 0;
   private readonly waiters: (() => void)[] = [];
   private readonly lastRequestByOrigin = new Map<string, number>();
+  private readonly maxTrackedOrigins: number;
 
   public constructor(
     private readonly securityPolicy: UrlSecurityPolicy,
     private readonly options: SecureHttpGatewayOptions,
-  ) {}
+  ) {
+    const maxTrackedOrigins = options.maxTrackedOrigins ?? DEFAULT_MAX_TRACKED_ORIGINS;
+    if (!Number.isInteger(maxTrackedOrigins) || maxTrackedOrigins <= 0) {
+      throw new ApplicationError('maxTrackedOrigins must be a positive integer', 'INTERNAL_ERROR');
+    }
+    this.maxTrackedOrigins = maxTrackedOrigins;
+  }
 
   public async download(
     value: string,
@@ -289,7 +299,17 @@ export class SecureHttpGateway {
     );
     if (Date.now() + wait >= deadline) throw new RequestTimeoutError();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    this.lastRequestByOrigin.set(origin, Date.now());
+    this.rememberOriginRequest(origin, Date.now());
+  }
+
+  private rememberOriginRequest(origin: string, timestamp: number): void {
+    this.lastRequestByOrigin.delete(origin);
+    this.lastRequestByOrigin.set(origin, timestamp);
+    while (this.lastRequestByOrigin.size > this.maxTrackedOrigins) {
+      const oldestOrigin = this.lastRequestByOrigin.keys().next().value;
+      if (oldestOrigin === undefined) break;
+      this.lastRequestByOrigin.delete(oldestOrigin);
+    }
   }
 
   private async acquire(deadline: number): Promise<void> {
