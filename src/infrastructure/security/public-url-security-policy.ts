@@ -157,19 +157,21 @@ function isPublicIpv6(address: string): boolean {
     return isPublicIpv4([24, 16, 8, 0].map((shift) => String((ipv4 >>> shift) & 0xff)).join('.'));
   }
 
+  // These are denylist CIDR prefixes, never outbound connection destinations.
+  // NOSONAR is intentionally scoped per literal because S1313 otherwise treats policy data as endpoints.
   const blockedCidrs: readonly [string, number][] = [
-    ['::', 96],
-    ['64:ff9b::', 96],
-    ['64:ff9b:1::', 48],
-    ['100::', 64],
-    ['2001::', 23],
-    ['2001:db8::', 32],
-    ['2002::', 16],
-    ['3fff::', 20],
-    ['5f00::', 16],
-    ['fc00::', 7],
-    ['fe80::', 10],
-    ['ff00::', 8],
+    ['::', 96], // NOSONAR
+    ['64:ff9b::', 96], // NOSONAR
+    ['64:ff9b:1::', 48], // NOSONAR
+    ['100::', 64], // NOSONAR
+    ['2001::', 23], // NOSONAR
+    ['2001:db8::', 32], // NOSONAR
+    ['2002::', 16], // NOSONAR
+    ['3fff::', 20], // NOSONAR
+    ['5f00::', 16], // NOSONAR
+    ['fc00::', 7], // NOSONAR
+    ['fe80::', 10], // NOSONAR
+    ['ff00::', 8], // NOSONAR
   ];
   return !blockedCidrs.some(([network, bits]) => {
     const networkValue = ipv6ToBigInt(network);

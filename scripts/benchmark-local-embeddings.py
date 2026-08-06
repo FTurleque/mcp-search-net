@@ -36,6 +36,27 @@ MODEL_DIMENSIONS = 256
 RESULT_LIMIT = 10
 CANDIDATE_LIMIT = 40
 RRF_K = 60
+MAX_SECTIONS_PER_DOCUMENT = 500
+MAX_REPETITIONS = 20
+MAX_WARMUP_ROUNDS = 5
+SECTION_INDEXES_BY_COUNT = {
+    count: range(count) for count in range(1, MAX_SECTIONS_PER_DOCUMENT + 1)
+}
+ITERATIONS_BY_COUNT = {
+    count: range(count) for count in range(MAX_REPETITIONS + 1)
+}
+
+
+def bounded_integer(minimum: int, maximum: int):
+    def parse(value: str) -> int:
+        parsed = int(value)
+        if parsed < minimum or parsed > maximum:
+            raise argparse.ArgumentTypeError(
+                f"value must be between {minimum} and {maximum}"
+            )
+        return parsed
+
+    return parse
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,9 +65,21 @@ def parse_args() -> argparse.Namespace:
         "--output",
         default=".data/test-reports/local-embeddings-benchmark.json",
     )
-    parser.add_argument("--sections-per-document", type=int, default=None)
-    parser.add_argument("--repetitions", type=int, default=5)
-    parser.add_argument("--warmup-rounds", type=int, default=1)
+    parser.add_argument(
+        "--sections-per-document",
+        type=bounded_integer(1, MAX_SECTIONS_PER_DOCUMENT),
+        default=None,
+    )
+    parser.add_argument(
+        "--repetitions",
+        type=bounded_integer(1, MAX_REPETITIONS),
+        default=5,
+    )
+    parser.add_argument(
+        "--warmup-rounds",
+        type=bounded_integer(0, MAX_WARMUP_ROUNDS),
+        default=1,
+    )
     return parser.parse_args()
 
 
@@ -66,6 +99,10 @@ def parse_topic(encoded: str) -> tuple[str, str]:
 
 
 def build_corpus(manifest: dict[str, Any], sections_per_document: int) -> list[dict[str, Any]]:
+    section_indexes = SECTION_INDEXES_BY_COUNT.get(sections_per_document)
+    if section_indexes is None:
+        raise ValueError("sections_per_document is outside the bounded benchmark range")
+
     sections: list[dict[str, Any]] = []
     section_id = 1
     for source in manifest["sources"]:
@@ -77,7 +114,7 @@ def build_corpus(manifest: dict[str, Any], sections_per_document: int) -> list[d
             topic_id, title = parse_topic(encoded_topic)
             public_id = f"{source_key}--{topic_id}"
             short_title = " ".join(title.split()[:5])
-            for zero_based_index in range(sections_per_document):
+            for zero_based_index in section_indexes:
                 ordinal = zero_based_index + 1
                 heading = f"{short_title} {ordinal}"
                 heading_path = f"{display_name} > {short_title}"
@@ -402,19 +439,28 @@ def decide(quality: dict[str, dict[str, Any]], performance: dict[str, Any]) -> d
     }
 
 
-def main() -> None:
-    args = parse_args()
+def load_benchmark_inputs(
+    args: argparse.Namespace,
+) -> tuple[dict[str, Any], list[dict[str, Any]], int, list[dict[str, Any]]]:
     manifest = read_json(MANIFEST_PATH)
     query_set = read_json(QUERIES_PATH)
     queries = query_set.get("queries", [])
-    if len(queries) < 60:
+    if not isinstance(queries, list) or len(queries) < 60:
         raise ValueError("The local-embedding benchmark requires the reinforced 60-query set")
-    sections_per_document = args.sections_per_document or int(manifest.get("defaultSectionsPerDocument", 100))
+    sections_per_document = (
+        args.sections_per_document
+        if args.sections_per_document is not None
+        else int(manifest.get("defaultSectionsPerDocument", 100))
+    )
+    if sections_per_document not in SECTION_INDEXES_BY_COUNT:
+        raise ValueError("The manifest sections-per-document value is outside the safe benchmark range")
     sections = build_corpus(manifest, sections_per_document)
     if len(sections) < 10_000:
         raise ValueError("The local-embedding benchmark requires at least 10,000 sections")
+    return manifest, queries, sections_per_document, sections
 
-    lexical_db = create_lexical_database(sections)
+
+def load_candidate_model() -> tuple[StaticModel, Path]:
     model_cache = Path(os.environ.get("HF_HOME", ROOT / ".data/huggingface"))
     model_path = Path(
         snapshot_download(
@@ -424,19 +470,43 @@ def main() -> None:
         )
     )
     model = StaticModel.from_pretrained(str(model_path))
+    return model, model_path
 
+
+def encode_sections(
+    model: StaticModel,
+    sections: list[dict[str, Any]],
+) -> tuple[list[str], np.ndarray, float]:
     texts = [str(section["embeddingText"]) for section in sections]
     encode_started = time.perf_counter()
     section_embeddings = np.asarray(model.encode(texts), dtype=np.float32)
     encode_duration_ms = (time.perf_counter() - encode_started) * 1000
     if section_embeddings.shape != (len(sections), MODEL_DIMENSIONS):
         raise ValueError(f"Unexpected embedding shape: {section_embeddings.shape}")
+    return texts, section_embeddings, encode_duration_ms
 
-    for _ in range(args.warmup_rounds):
+
+def warm_up_searches(
+    lexical_db: sqlite3.Connection,
+    model: StaticModel,
+    section_embeddings: np.ndarray,
+    sections: list[dict[str, Any]],
+    queries: list[dict[str, Any]],
+    warmup_rounds: int,
+) -> None:
+    for _ in ITERATIONS_BY_COUNT[warmup_rounds]:
         for query in queries:
             lexical_rank(lexical_db, query)
             embedding_rank(model, section_embeddings, sections, query)
 
+
+def evaluate_quality(
+    lexical_db: sqlite3.Connection,
+    model: StaticModel,
+    section_embeddings: np.ndarray,
+    sections: list[dict[str, Any]],
+    queries: list[dict[str, Any]],
+) -> dict[str, Any]:
     quality_cases: dict[str, list[dict[str, Any]]] = {"lexical": [], "embedding": [], "fusion": []}
     category_cases: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(
         lambda: {"lexical": [], "embedding": [], "fusion": []}
@@ -475,18 +545,38 @@ def main() -> None:
         for category, methods in sorted(category_cases.items())
     }
     quality["failures"] = failures
+    return quality
 
+
+def measure_search_durations(
+    lexical_db: sqlite3.Connection,
+    model: StaticModel,
+    section_embeddings: np.ndarray,
+    sections: list[dict[str, Any]],
+    queries: list[dict[str, Any]],
+    repetitions: int,
+) -> dict[str, list[float]]:
     durations: dict[str, list[float]] = {"lexical": [], "embedding": [], "fusion": []}
-    for repetition in range(args.repetitions):
+    for repetition in ITERATIONS_BY_COUNT[repetitions]:
         for query_index, query in enumerate(queries):
-            order = ("lexical", "embedding") if (repetition + query_index) % 2 == 0 else ("embedding", "lexical")
+            order = (
+                ("lexical", "embedding")
+                if (repetition + query_index) % 2 == 0
+                else ("embedding", "lexical")
+            )
             rankings: dict[str, list[dict[str, Any]]] = {}
             for method in order:
                 started = time.perf_counter()
                 if method == "lexical":
                     rankings[method] = lexical_rank(lexical_db, query, CANDIDATE_LIMIT)
                 else:
-                    rankings[method] = embedding_rank(model, section_embeddings, sections, query, CANDIDATE_LIMIT)
+                    rankings[method] = embedding_rank(
+                        model,
+                        section_embeddings,
+                        sections,
+                        query,
+                        CANDIDATE_LIMIT,
+                    )
                 durations[method].append((time.perf_counter() - started) * 1000)
             started = time.perf_counter()
             rrf_fusion(rankings["lexical"], rankings["embedding"], RESULT_LIMIT)
@@ -495,15 +585,23 @@ def main() -> None:
                 + durations["embedding"][-1]
                 + (time.perf_counter() - started) * 1000
             )
+    return durations
 
+
+def build_performance_report(
+    model: StaticModel,
+    model_path: Path,
+    texts: list[str],
+    section_embeddings: np.ndarray,
+    encode_duration_ms: float,
+    durations: dict[str, list[float]],
+) -> dict[str, Any]:
     incremental_sample = texts[:100]
     incremental_started = time.perf_counter()
     incremental_embeddings = np.asarray(model.encode(incremental_sample), dtype=np.float32)
     incremental_ms = (time.perf_counter() - incremental_started) * 1000
 
-    performance = {
-        method: latency_summary(values) for method, values in durations.items()
-    }
+    performance = {method: latency_summary(values) for method, values in durations.items()}
     performance.update(
         {
             "embeddingIndexBuildMs": rounded(encode_duration_ms, 2),
@@ -514,8 +612,19 @@ def main() -> None:
             "incremental100SectionsBytes": int(incremental_embeddings.nbytes),
         }
     )
+    return performance
 
-    report = {
+
+def build_report(
+    args: argparse.Namespace,
+    manifest: dict[str, Any],
+    queries: list[dict[str, Any]],
+    sections_per_document: int,
+    sections: list[dict[str, Any]],
+    quality: dict[str, Any],
+    performance: dict[str, Any],
+) -> dict[str, Any]:
+    return {
         "schemaVersion": "1.0",
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "runtime": {
@@ -552,6 +661,58 @@ def main() -> None:
         "quality": quality,
         "performance": performance,
     }
+
+
+def main() -> None:
+    args = parse_args()
+    manifest, queries, sections_per_document, sections = load_benchmark_inputs(args)
+    lexical_db = create_lexical_database(sections)
+    try:
+        model, model_path = load_candidate_model()
+        texts, section_embeddings, encode_duration_ms = encode_sections(model, sections)
+        warm_up_searches(
+            lexical_db,
+            model,
+            section_embeddings,
+            sections,
+            queries,
+            args.warmup_rounds,
+        )
+        quality = evaluate_quality(
+            lexical_db,
+            model,
+            section_embeddings,
+            sections,
+            queries,
+        )
+        durations = measure_search_durations(
+            lexical_db,
+            model,
+            section_embeddings,
+            sections,
+            queries,
+            args.repetitions,
+        )
+        performance = build_performance_report(
+            model,
+            model_path,
+            texts,
+            section_embeddings,
+            encode_duration_ms,
+            durations,
+        )
+        report = build_report(
+            args,
+            manifest,
+            queries,
+            sections_per_document,
+            sections,
+            quality,
+            performance,
+        )
+    finally:
+        lexical_db.close()
+
     report["decision"] = decide(quality, performance)
 
     output_path = ROOT / args.output
@@ -559,7 +720,6 @@ def main() -> None:
     output_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
     print(f"Benchmark written to {output_path}", file=sys.stderr)
-    lexical_db.close()
 
 
 if __name__ == "__main__":

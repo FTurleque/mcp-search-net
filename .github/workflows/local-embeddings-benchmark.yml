@@ -34,8 +34,11 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Install product dependencies
-        run: npm ci
+      - name: Install product dependencies with explicit lifecycle policy
+        run: |
+          npm ci --ignore-scripts
+          npm rebuild better-sqlite3 --foreground-scripts
+          npm run check:supply-chain
 
       - name: Build product
         run: npm run build

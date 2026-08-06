@@ -13,7 +13,8 @@ const composeHybrid = readText('compose.hybrid.yaml');
 
 const expected = {
   sdk: '1.30.0',
-  nodeImage:
+  nodeDockerImage: 'node@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
+  nodeRelayImage:
     'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
   allowScripts: {
     'better-sqlite3@12.11.1': true,
@@ -64,12 +65,12 @@ for (const [selector, version] of Object.entries(expected.developmentOverrides))
 
 const nodeImageLines = dockerfile
   .split(/\r?\n/u)
-  .filter((line) => line.startsWith(`FROM ${expected.nodeImage} AS `));
+  .filter((line) => line.startsWith(`FROM ${expected.nodeDockerImage} AS `));
 assert(nodeImageLines.length === 2, 'NODE_IMAGE_DIGEST_NOT_PINNED_IN_BOTH_STAGES');
 
 const relayImageLines = composeHybrid
   .split(/\r?\n/u)
-  .filter((line) => line.trim() === `image: ${expected.nodeImage}`);
+  .filter((line) => line.trim() === `image: ${expected.nodeRelayImage}`);
 assert(relayImageLines.length === 1, 'LOOPBACK_RELAY_IMAGE_DIGEST_NOT_PINNED');
 
 const providerImageLines = compose

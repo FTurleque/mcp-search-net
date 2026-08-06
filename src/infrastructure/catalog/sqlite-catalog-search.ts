@@ -119,7 +119,10 @@ function normalizeSearchLimit(limit: number | undefined): number {
 }
 
 function escapeLikePattern(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
+  return value
+    .replaceAll('\\', String.raw`\\`)
+    .replaceAll('%', String.raw`\%`)
+    .replaceAll('_', String.raw`\_`);
 }
 
 function createFtsQuery(value: string): string | undefined {
@@ -149,6 +152,15 @@ function findBestMultiTermSnippetStart(
   const terms = extractSnippetTerms(query);
   if (terms.length === 0) return 0;
 
+  const occurrences = collectSnippetOccurrences(normalizedContent, terms);
+  if (occurrences.length === 0) return 0;
+  return selectBestSnippetStart(occurrences, content.length, snippetLength);
+}
+
+function collectSnippetOccurrences(
+  normalizedContent: NormalizedSnippetText,
+  terms: readonly string[],
+): SnippetOccurrence[] {
   const termIndexes = new Map(terms.map((candidate, index) => [candidate, index] as const));
   const occurrenceCounts = new Array<number>(terms.length).fill(0);
   const occurrences: SnippetOccurrence[] = [];
@@ -157,7 +169,6 @@ function findBestMultiTermSnippetStart(
     const termIndex = termIndexes.get(matchedToken);
     if (termIndex === undefined) continue;
     if ((occurrenceCounts[termIndex] ?? 0) >= MAX_SNIPPET_OCCURRENCES_PER_TERM) continue;
-
     const normalizedStart = match.index;
     const normalizedEnd = normalizedStart + matchedToken.length;
     const originalStart = normalizedContent.originalStarts[normalizedStart];
@@ -166,36 +177,56 @@ function findBestMultiTermSnippetStart(
     occurrences.push({ termIndex, originalStart, originalEnd });
     occurrenceCounts[termIndex] = (occurrenceCounts[termIndex] ?? 0) + 1;
   }
-  if (occurrences.length === 0) return 0;
+  return occurrences;
+}
 
-  let bestStart = 0;
-  let bestMatchedTerms = -1;
-  let bestSpan = Number.POSITIVE_INFINITY;
+function selectBestSnippetStart(
+  occurrences: readonly SnippetOccurrence[],
+  contentLength: number,
+  snippetLength: number,
+): number {
+  let best: SnippetWindowScore | undefined;
   for (const anchor of occurrences) {
-    const start = snippetWindowStart(anchor.originalStart, content.length, snippetLength);
-    const end = Math.min(content.length, start + snippetLength);
-    const matchedTermIndexes = new Set<number>();
-    let firstMatch = end;
-    let lastMatch = start;
-    for (const occurrence of occurrences) {
-      if (occurrence.originalStart < start || occurrence.originalStart >= end) continue;
-      matchedTermIndexes.add(occurrence.termIndex);
-      firstMatch = Math.min(firstMatch, occurrence.originalStart);
-      lastMatch = Math.max(lastMatch, Math.min(end, occurrence.originalEnd));
-    }
-    const matchedTerms = matchedTermIndexes.size;
-    const span = matchedTerms === 0 ? Number.POSITIVE_INFINITY : lastMatch - firstMatch;
-    if (
-      matchedTerms > bestMatchedTerms ||
-      (matchedTerms === bestMatchedTerms && span < bestSpan) ||
-      (matchedTerms === bestMatchedTerms && span === bestSpan && start < bestStart)
-    ) {
-      bestStart = start;
-      bestMatchedTerms = matchedTerms;
-      bestSpan = span;
-    }
+    const start = snippetWindowStart(anchor.originalStart, contentLength, snippetLength);
+    const end = Math.min(contentLength, start + snippetLength);
+    const candidate = scoreSnippetWindow(occurrences, start, end);
+    if (isBetterSnippetWindow(candidate, best)) best = candidate;
   }
-  return bestStart;
+  return best?.start ?? 0;
+}
+
+function scoreSnippetWindow(
+  occurrences: readonly SnippetOccurrence[],
+  start: number,
+  end: number,
+): SnippetWindowScore {
+  const matchedTermIndexes = new Set<number>();
+  let firstMatch = end;
+  let lastMatch = start;
+  for (const occurrence of occurrences) {
+    if (occurrence.originalStart < start || occurrence.originalStart >= end) continue;
+    matchedTermIndexes.add(occurrence.termIndex);
+    firstMatch = Math.min(firstMatch, occurrence.originalStart);
+    lastMatch = Math.max(lastMatch, Math.min(end, occurrence.originalEnd));
+  }
+  const matchedTerms = matchedTermIndexes.size;
+  return {
+    start,
+    matchedTerms,
+    span: matchedTerms === 0 ? Number.POSITIVE_INFINITY : lastMatch - firstMatch,
+  };
+}
+
+function isBetterSnippetWindow(
+  candidate: SnippetWindowScore,
+  best: SnippetWindowScore | undefined,
+): boolean {
+  if (best === undefined) return true;
+  if (candidate.matchedTerms !== best.matchedTerms) {
+    return candidate.matchedTerms > best.matchedTerms;
+  }
+  if (candidate.span !== best.span) return candidate.span < best.span;
+  return candidate.start < best.start;
 }
 
 interface NormalizedSnippetText {
@@ -208,6 +239,12 @@ interface SnippetOccurrence {
   readonly termIndex: number;
   readonly originalStart: number;
   readonly originalEnd: number;
+}
+
+interface SnippetWindowScore {
+  readonly start: number;
+  readonly matchedTerms: number;
+  readonly span: number;
 }
 
 function normalizeSnippetText(value: string): NormalizedSnippetText {

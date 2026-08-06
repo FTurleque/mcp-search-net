@@ -388,6 +388,16 @@ function isAllowedByRobots(content: string, path: string, userAgent: string): bo
   return best?.allowed ?? true;
 }
 
+interface RobotsDirective {
+  readonly field: string;
+  readonly value: string;
+}
+
+interface NormalizedPercentOctet {
+  readonly value: string;
+  readonly nextIndex: number;
+}
+
 function parseRobotsGroups(content: string): readonly RobotsGroup[] {
   const groups: RobotsGroup[] = [];
   let agents: string[] = [];
@@ -399,23 +409,17 @@ function parseRobotsGroups(content: string): readonly RobotsGroup[] {
     rules = [];
   };
 
-  for (const rawLine of content.replace(/\r/gu, '').split('\n')) {
-    const line = rawLine.replace(/#.*$/u, '').trim();
-    if (line === '') continue;
-
-    const separator = line.indexOf(':');
-    if (separator < 0) continue;
-    const field = line.slice(0, separator).trim().toLowerCase();
-    const value = line.slice(separator + 1).trim();
-
-    if (field === 'user-agent') {
+  for (const rawLine of content.replaceAll('\r', '').split('\n')) {
+    const directive = parseRobotsDirective(rawLine);
+    if (directive === undefined) continue;
+    if (directive.field === 'user-agent') {
       if (rules.length > 0) flush();
-      if (value !== '') agents.push(value.toLowerCase());
+      if (directive.value !== '') agents.push(directive.value.toLowerCase());
       continue;
     }
-
-    if ((field === 'allow' || field === 'disallow') && agents.length > 0) {
-      rules.push({ allowed: field === 'allow', pattern: value });
+    const allowed = robotsRuleAllowed(directive.field);
+    if (allowed !== undefined && agents.length > 0) {
+      rules.push({ allowed, pattern: directive.value });
     }
   }
 
@@ -423,50 +427,105 @@ function parseRobotsGroups(content: string): readonly RobotsGroup[] {
   return groups;
 }
 
+function parseRobotsDirective(rawLine: string): RobotsDirective | undefined {
+  const commentIndex = rawLine.indexOf('#');
+  const line = (commentIndex >= 0 ? rawLine.slice(0, commentIndex) : rawLine).trim();
+  if (line === '') return undefined;
+  const separator = line.indexOf(':');
+  if (separator < 0) return undefined;
+  return {
+    field: line.slice(0, separator).trim().toLowerCase(),
+    value: line.slice(separator + 1).trim(),
+  };
+}
+
+function robotsRuleAllowed(field: string): boolean | undefined {
+  if (field === 'allow') return true;
+  if (field === 'disallow') return false;
+  return undefined;
+}
+
 function robotsRuleMatches(rule: string, path: string): boolean {
   const anchored = rule.endsWith('$');
   const withoutAnchor = anchored ? rule.slice(0, -1) : rule;
   const normalizedPattern = normalizeRobotsOctets(withoutAnchor, true);
   const normalizedPath = normalizeRobotsOctets(path, false);
-  const pattern = normalizedPattern.replace(/[.+?^${}()|[\]\\]/gu, '\\$&').replace(/\*/gu, '.*');
-  return new RegExp(`^${pattern}${anchored ? '$' : ''}`, 'u').test(normalizedPath);
+  return robotsWildcardMatches(normalizedPattern, normalizedPath, anchored);
+}
+
+function robotsWildcardMatches(pattern: string, path: string, anchored: boolean): boolean {
+  const segments = pattern.split('*');
+  let segmentIndex = 0;
+  let cursor = 0;
+
+  if (!pattern.startsWith('*')) {
+    const firstSegment = segments[0] ?? '';
+    if (!path.startsWith(firstSegment)) return false;
+    cursor = firstSegment.length;
+    segmentIndex = 1;
+  }
+
+  for (; segmentIndex < segments.length; segmentIndex += 1) {
+    const segment = segments[segmentIndex] ?? '';
+    if (segment === '') continue;
+    const found = path.indexOf(segment, cursor);
+    if (found < 0) return false;
+    cursor = found + segment.length;
+  }
+
+  return !anchored || pattern.endsWith('*') || cursor === path.length;
 }
 
 function robotsRuleSpecificity(rule: string): number {
   const anchored = rule.endsWith('$');
   const withoutAnchor = anchored ? rule.slice(0, -1) : rule;
   return normalizeRobotsOctets(withoutAnchor, true)
-    .replace(/\*/gu, '')
+    .replaceAll('*', '')
     .replace(/%[0-9A-F]{2}/gu, 'x').length;
 }
 
 function normalizeRobotsOctets(value: string, preserveWildcards: boolean): string {
   let result = '';
   for (let index = 0; index < value.length; ) {
-    if (value[index] === '%' && /^[0-9A-Fa-f]{2}$/u.test(value.slice(index + 1, index + 3))) {
-      const hex = value.slice(index + 1, index + 3).toUpperCase();
-      const byte = Number.parseInt(hex, 16);
-      const decoded = String.fromCharCode(byte);
-      result += isUnreservedAscii(decoded) ? decoded : `%${hex}`;
-      index += 3;
+    const encoded = normalizePercentOctet(value, index);
+    if (encoded !== undefined) {
+      result += encoded.value;
+      index = encoded.nextIndex;
       continue;
     }
 
     const codePoint = value.codePointAt(index);
-    if (codePoint === undefined) break;
+    if (codePoint === undefined) return result;
     const character = String.fromCodePoint(codePoint);
-    if (preserveWildcards && character === '*') {
-      result += character;
-    } else if (codePoint <= 0x7f) {
-      result += character;
-    } else {
-      for (const byte of new TextEncoder().encode(character)) {
-        result += `%${byte.toString(16).toUpperCase().padStart(2, '0')}`;
-      }
-    }
+    result += normalizeRobotsCharacter(character, codePoint, preserveWildcards);
     index += character.length;
   }
   return result;
+}
+
+function normalizePercentOctet(value: string, index: number): NormalizedPercentOctet | undefined {
+  if (value[index] !== '%') return undefined;
+  const hex = value.slice(index + 1, index + 3);
+  if (!/^[0-9A-Fa-f]{2}$/u.test(hex)) return undefined;
+  const normalizedHex = hex.toUpperCase();
+  const decoded = String.fromCodePoint(Number.parseInt(normalizedHex, 16));
+  return {
+    value: isUnreservedAscii(decoded) ? decoded : `%${normalizedHex}`,
+    nextIndex: index + 3,
+  };
+}
+
+function normalizeRobotsCharacter(
+  character: string,
+  codePoint: number,
+  preserveWildcards: boolean,
+): string {
+  if (preserveWildcards && character === '*') return character;
+  if (codePoint <= 0x7f) return character;
+  return Array.from(
+    new TextEncoder().encode(character),
+    (byte) => `%${byte.toString(16).toUpperCase().padStart(2, '0')}`,
+  ).join('');
 }
 
 function isUnreservedAscii(value: string): boolean {
