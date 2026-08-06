@@ -55,6 +55,24 @@ export default defineConfig({
           functions: 85,
           lines: 85,
         },
+        'src/infrastructure/catalog/sqlite-catalog-revision-writer.ts': {
+          statements: 80,
+          branches: 55,
+          functions: 85,
+          lines: 85,
+        },
+        'src/infrastructure/catalog/sqlite-catalog-search.ts': {
+          statements: 80,
+          branches: 60,
+          functions: 85,
+          lines: 85,
+        },
+        'src/infrastructure/catalog/sqlite-catalog-sync-store.ts': {
+          statements: 80,
+          branches: 55,
+          functions: 85,
+          lines: 85,
+        },
         'src/application/use-cases/sync-catalog-documents.ts': {
           statements: 88,
           branches: 65,

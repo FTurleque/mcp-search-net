@@ -15,14 +15,25 @@ describe('PublicUrlSecurityPolicy', () => {
     '192.168.1.1',
     '169.254.1.1',
     '::1',
+    '::127.0.0.1',
     'fc00::1',
     'fe80::1',
     '::ffff:127.0.0.1',
-  ])('rejects non-public address %s', (address) => {
+    '64:ff9b::7f00:1',
+    '64:ff9b:1::1',
+    '100::1',
+    '2001::1',
+    '2001:2::1',
+    '2001:20::1',
+    '2001:db8::1',
+    '2002:7f00:1::1',
+    '3fff::1',
+    '5f00::1',
+  ])('rejects non-public or special-purpose address %s', (address) => {
     expect(isPublicAddress(address)).toBe(false);
   });
 
-  it.each(['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111'])(
+  it.each(['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111', '2001:4860:4860::8888'])(
     'accepts public address %s',
     (address) => {
       expect(isPublicAddress(address)).toBe(true);

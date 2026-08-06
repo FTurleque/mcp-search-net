@@ -35,10 +35,10 @@ jobs:
           ref: ${{ env.QUALIFIED_SHA }}
           persist-credentials: false
 
-      - name: Set up Node.js 24
+      - name: Set up Node.js 24.18.0
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: npm
 
       - name: Install dependencies
@@ -91,10 +91,10 @@ jobs:
         with:
           ref: ${{ env.QUALIFIED_SHA }}
           persist-credentials: false
-      - name: Set up Node.js 24
+      - name: Set up Node.js 24.18.0
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: 24
+          node-version: 24.18.0
           cache: npm
       - name: Generate ephemeral provider secrets
         shell: bash
@@ -130,15 +130,17 @@ jobs:
             printf 'revision=%s\n' "$image_revision"
           } > .data/test-reports/mcp-image-posture.txt
       - name: Start real providers
-        run: docker compose -f compose.yaml -f compose.hybrid.yaml up -d --wait searxng crawl4ai
+        run: docker compose -f compose.yaml -f compose.hybrid.yaml up -d --wait searxng crawl4ai crawl4ai-loopback
       - name: Verify provider isolation posture
         shell: bash
         run: |
           set -euo pipefail
           compose=(docker compose -f compose.yaml -f compose.hybrid.yaml)
           crawl4ai_id="$("${compose[@]}" ps -q crawl4ai)"
+          relay_id="$("${compose[@]}" ps -q crawl4ai-loopback)"
           searxng_id="$("${compose[@]}" ps -q searxng)"
           test -n "$crawl4ai_id"
+          test -n "$relay_id"
           test -n "$searxng_id"
           crawl4ai_user="$(docker inspect "$crawl4ai_id" --format '{{.Config.User}}')"
           crawl4ai_read_only="$(docker inspect "$crawl4ai_id" --format '{{.HostConfig.ReadonlyRootfs}}')"
@@ -146,26 +148,39 @@ jobs:
           crawl4ai_cap_drop="$(docker inspect "$crawl4ai_id" --format '{{json .HostConfig.CapDrop}}')"
           crawl4ai_security_opt="$(docker inspect "$crawl4ai_id" --format '{{json .HostConfig.SecurityOpt}}')"
           crawl4ai_redis_tmpfs="$(docker inspect "$crawl4ai_id" --format '{{index .HostConfig.Tmpfs "/var/lib/redis"}}')"
+          relay_user="$(docker inspect "$relay_id" --format '{{.Config.User}}')"
+          relay_read_only="$(docker inspect "$relay_id" --format '{{.HostConfig.ReadonlyRootfs}}')"
+          relay_network_count="$(docker inspect "$relay_id" --format '{{len .NetworkSettings.Networks}}')"
+          relay_cap_drop="$(docker inspect "$relay_id" --format '{{json .HostConfig.CapDrop}}')"
+          relay_security_opt="$(docker inspect "$relay_id" --format '{{json .HostConfig.SecurityOpt}}')"
           searxng_user="$(docker inspect "$searxng_id" --format '{{.Config.User}}')"
           searxng_read_only="$(docker inspect "$searxng_id" --format '{{.HostConfig.ReadonlyRootfs}}')"
           searxng_network_count="$(docker inspect "$searxng_id" --format '{{len .NetworkSettings.Networks}}')"
           searxng_cap_drop="$(docker inspect "$searxng_id" --format '{{json .HostConfig.CapDrop}}')"
           searxng_security_opt="$(docker inspect "$searxng_id" --format '{{json .HostConfig.SecurityOpt}}')"
-          crawl4ai_port="$(docker port "$crawl4ai_id" 11235/tcp)"
+          crawl4ai_port="$(docker port "$crawl4ai_id" 11235/tcp || true)"
+          relay_port="$(docker port "$relay_id" 11235/tcp)"
           searxng_port="$(docker port "$searxng_id" 8080/tcp)"
           test "$crawl4ai_user" = 'appuser'
           test "$crawl4ai_read_only" = 'false'
-          test "$crawl4ai_network_count" = '2'
+          test "$crawl4ai_network_count" = '1'
           test "$crawl4ai_cap_drop" = '["ALL"]'
           test -n "$crawl4ai_redis_tmpfs"
           [[ "$crawl4ai_security_opt" == *no-new-privileges* ]]
+          test -z "$crawl4ai_port"
+          test "$relay_user" = 'node'
+          test "$relay_read_only" = 'true'
+          test "$relay_network_count" = '2'
+          test "$relay_cap_drop" = '["ALL"]'
+          [[ "$relay_security_opt" == *no-new-privileges* ]]
+          test "$relay_port" = '127.0.0.1:11235'
           test "$searxng_user" = '977:977'
           test "$searxng_read_only" = 'true'
           test "$searxng_network_count" = '2'
           test "$searxng_cap_drop" = '["ALL"]'
           [[ "$searxng_security_opt" == *no-new-privileges* ]]
-          test "$crawl4ai_port" = '127.0.0.1:11235'
           test "$searxng_port" = '127.0.0.1:8888'
+          curl --fail --silent --show-error http://127.0.0.1:11235/health >/dev/null
           {
             printf 'crawl4ai.user=%s\n' "$crawl4ai_user"
             printf 'crawl4ai.readOnly=%s\n' "$crawl4ai_read_only"
@@ -174,6 +189,12 @@ jobs:
             printf 'crawl4ai.noNewPrivileges=true\n'
             printf 'crawl4ai.redisTmpfs=true\n'
             printf 'crawl4ai.port=%s\n' "$crawl4ai_port"
+            printf 'relay.user=%s\n' "$relay_user"
+            printf 'relay.readOnly=%s\n' "$relay_read_only"
+            printf 'relay.networkCount=%s\n' "$relay_network_count"
+            printf 'relay.capDrop=%s\n' "$relay_cap_drop"
+            printf 'relay.noNewPrivileges=true\n'
+            printf 'relay.port=%s\n' "$relay_port"
             printf 'searxng.user=%s\n' "$searxng_user"
             printf 'searxng.readOnly=%s\n' "$searxng_read_only"
             printf 'searxng.networkCount=%s\n' "$searxng_network_count"

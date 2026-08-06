@@ -1,13 +1,13 @@
 import { resolve } from 'node:path';
 
 import { createContainer } from './container.js';
+import { assertSupportedNodeVersion } from './runtime-guard.js';
 import { loadConfiguration } from '../infrastructure/config/load-configuration.js';
 import { StructuredLogger } from '../infrastructure/logging/structured-logger.js';
 import { connectStdio } from '../presentation/mcp/mcp-server.js';
-import { ConfigurationError } from '../domain/errors/domain-errors.js';
 
 async function main(): Promise<void> {
-  assertSupportedNode();
+  assertSupportedNodeVersion(process.versions.node);
   loadLocalEnvironment();
   const configPath =
     process.env['MCP_CONFIG_PATH'] ??
@@ -64,15 +64,6 @@ function loadLocalEnvironment(): void {
     process.loadEnvFile(resolve('.env'));
   } catch (error) {
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
-  }
-}
-
-function assertSupportedNode(): void {
-  const major = Number.parseInt(process.versions.node.split('.')[0] ?? '0', 10);
-  if (major !== 24) {
-    throw new ConfigurationError(
-      `Node.js 24 LTS is required; current runtime is ${process.versions.node}`,
-    );
   }
 }
 

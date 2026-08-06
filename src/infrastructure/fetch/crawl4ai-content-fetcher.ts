@@ -130,7 +130,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     };
     if (this.apiToken !== undefined) headers['authorization'] = `Bearer ${this.apiToken}`;
     // Crawl4AI's raw:// transport renders caller-provided HTML without issuing a
-    // network request. Its server-side SSRF guard intentionally rejects data: URLs.
+    // public target request. The renderer receives only resource-neutralized HTML.
     const rawUrl = `raw://${html}`;
     const json = await fetchJson(
       'crawl4ai',
@@ -215,21 +215,50 @@ async function decodeResource(
   throw new UnsupportedContentTypeError(`Unsupported content type: ${contentType}`);
 }
 
+const UNSAFE_HTML_ATTRIBUTES = new Set([
+  'src',
+  'srcset',
+  'action',
+  'formaction',
+  'poster',
+  'data',
+  'background',
+  'ping',
+  'xlink:href',
+  'style',
+]);
+const HTML_START_TAG_PATTERN = /<[A-Za-z][^>]*>/gu;
+const HTML_ATTRIBUTE_ASSIGNMENT_PATTERN = /\s([^\s=/>]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gu;
+
+function stripUnsafeHtmlAttributes(html: string): string {
+  return html.replace(HTML_START_TAG_PATTERN, (tag) =>
+    tag.replace(HTML_ATTRIBUTE_ASSIGNMENT_PATTERN, (attribute, rawName: string) =>
+      isUnsafeHtmlAttribute(rawName) ? '' : attribute,
+    ),
+  );
+}
+
+function isUnsafeHtmlAttribute(rawName: string): boolean {
+  const name = rawName.toLowerCase();
+  return name.startsWith('on') || UNSAFE_HTML_ATTRIBUTES.has(name);
+}
+
 function decodeHtml(html: string, baseUrl: string): DecodedContent {
   const title =
     decodeEntities(/<title\b[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '').trim() || undefined;
   const canonical =
     /<link\b[^>]*rel=["'][^"']*canonical[^"']*["'][^>]*href=["']([^"']+)["']/iu.exec(html)?.[1] ??
     /<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["'][^"']*canonical[^"']*["']/iu.exec(html)?.[1];
-  const safeHtml = removeNoisyBlocks(html)
-    .replace(/<(script|style|noscript|iframe|form|nav|aside)\b[\s\S]*?<\/\1>/giu, ' ')
-    .replace(/<(object|embed|video|audio|source)\b[\s\S]*?<\/\1>/giu, ' ')
-    .replace(/<(link|meta|base)\b[^>]*>/giu, ' ')
-    .replace(/<!--([\s\S]*?)-->/gu, ' ')
-    .replace(
-      /\s(?:src|srcset|action|poster|data|style|on\w+)\s*=\s*(?:["'][^"']*["']|[^\s>]+)/giu,
-      '',
-    );
+  const safeHtml = stripUnsafeHtmlAttributes(
+    removeNoisyBlocks(html)
+      .replace(
+        /<(script|style|noscript|iframe|form|nav|aside|svg|math|canvas)\b[\s\S]*?<\/\1>/giu,
+        ' ',
+      )
+      .replace(/<(object|embed|video|audio|source)\b[\s\S]*?<\/\1>/giu, ' ')
+      .replace(/<(link|meta|base)\b[^>]*>/giu, ' ')
+      .replace(/<!--([\s\S]*?)-->/gu, ' '),
+  );
   const links = [...safeHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["']/giu)].flatMap((match) =>
     normalizeLink(match[1] ?? '', baseUrl),
   );

@@ -46,6 +46,16 @@ interface PinnedResponse {
   readonly body: Uint8Array;
 }
 
+interface RobotsRule {
+  readonly allowed: boolean;
+  readonly pattern: string;
+}
+
+interface RobotsGroup {
+  readonly agents: readonly string[];
+  readonly rules: readonly RobotsRule[];
+}
+
 export interface SecureDownloadLimits {
   readonly timeoutMs: number;
   readonly maxBytes: number;
@@ -150,20 +160,52 @@ export class SecureHttpGateway {
       throw error;
     }
     const rules = new TextDecoder().decode(resource.body);
-    if (!isAllowedByRobots(rules, url.pathname || '/', this.options.userAgent)) {
+    const path = `${url.pathname || '/'}${url.search}`;
+    if (!isAllowedByRobots(rules, path, this.options.userAgent)) {
       throw new UrlSecurityError('robots.txt disallows fetching this URL', 'BLOCKED_ADDRESS');
     }
   }
 
-  private requestPinned(
+  private async requestPinned(
     approved: Awaited<ReturnType<UrlSecurityPolicy['assertAllowed']>>,
     deadline: number,
     conditionalHeaders: Readonly<Record<string, string>>,
     maxBytes: number,
   ): Promise<PinnedResponse> {
-    const url = new URL(approved.value);
-    const address = approved.addresses[0];
-    if (address === undefined) throw new UrlSecurityError('No approved address is available');
+    if (approved.addresses.length === 0) {
+      throw new UrlSecurityError('No approved address is available');
+    }
+
+    let lastConnectionError: HttpError | undefined;
+    for (const address of approved.addresses) {
+      try {
+        return await this.requestPinnedAtAddress(
+          approved.value,
+          address,
+          deadline,
+          conditionalHeaders,
+          maxBytes,
+        );
+      } catch (error) {
+        if (!isRetryablePinnedConnectionError(error)) throw error;
+        lastConnectionError = error;
+        if (Date.now() >= deadline) throw new RequestTimeoutError();
+      }
+    }
+
+    throw (
+      lastConnectionError ?? new HttpError('Secure HTTP request failed for every approved address')
+    );
+  }
+
+  private requestPinnedAtAddress(
+    approvedUrl: string,
+    address: string,
+    deadline: number,
+    conditionalHeaders: Readonly<Record<string, string>>,
+    maxBytes: number,
+  ): Promise<PinnedResponse> {
+    const url = new URL(approvedUrl);
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new RequestTimeoutError();
     const request = url.protocol === 'https:' ? requestHttps : requestHttp;
@@ -212,17 +254,11 @@ export class SecureHttpGateway {
             chunks.push(chunk);
           });
           incoming.on('end', () => resolve({ status, headers, body: Buffer.concat(chunks) }));
-          incoming.on('error', reject);
+          incoming.on('error', (error) => reject(toPinnedRequestError(error)));
         },
       );
       outgoing.setTimeout(remaining, () => outgoing.destroy(new RequestTimeoutError()));
-      outgoing.on('error', (error) =>
-        reject(
-          error instanceof ApplicationError
-            ? error
-            : new HttpError('Secure HTTP request failed', undefined, { cause: error }),
-        ),
-      );
+      outgoing.on('error', (error) => reject(toPinnedRequestError(error)));
       outgoing.end();
     });
   }
@@ -302,6 +338,16 @@ async function withDeadline<T>(operation: Promise<T>, deadline: number): Promise
   }
 }
 
+function toPinnedRequestError(error: unknown): ApplicationError {
+  return error instanceof ApplicationError
+    ? error
+    : new HttpError('Secure HTTP request failed', undefined, { cause: error });
+}
+
+function isRetryablePinnedConnectionError(error: unknown): error is HttpError {
+  return error instanceof HttpError && error.status === undefined;
+}
+
 function flattenHeaders(headers: IncomingHttpHeaders): Record<string, string> {
   return Object.fromEntries(
     Object.entries(headers).flatMap(([key, value]) =>
@@ -317,40 +363,171 @@ function isPermanentRedirect(status: number): boolean {
 }
 
 function isAllowedByRobots(content: string, path: string, userAgent: string): boolean {
-  const groups = content.replace(/\r/gu, '').split(/\n\s*\n/gu);
-  const agent = userAgent.toLowerCase().split('/')[0] ?? userAgent.toLowerCase();
-  const rules = groups.filter((group) => {
-    const agents = [...group.matchAll(/^\s*user-agent\s*:\s*(.+)$/gimu)].map((match) =>
-      match[1]?.trim().toLowerCase(),
-    );
-    return agents.includes('*') || agents.includes(agent);
-  });
+  const groups = parseRobotsGroups(content);
+  const productToken = userAgent.toLowerCase().split('/')[0]?.trim() ?? userAgent.toLowerCase();
+  const specificGroups = groups.filter((group) => group.agents.includes(productToken));
+  const applicableGroups =
+    specificGroups.length > 0
+      ? specificGroups
+      : groups.filter((group) => group.agents.includes('*'));
+
   let best: { allowed: boolean; length: number } | undefined;
-  for (const group of rules) {
-    for (const match of group.matchAll(/^\s*(allow|disallow)\s*:\s*(.*)$/gimu)) {
-      const rule = match[2]?.trim() ?? '';
-      if (rule === '' || !robotsRuleMatches(rule, path)) continue;
-      const allowed = match[1]?.toLowerCase() === 'allow';
-      const specificity = robotsRuleSpecificity(rule);
+  for (const group of applicableGroups) {
+    for (const rule of group.rules) {
+      if (rule.pattern === '' || !robotsRuleMatches(rule.pattern, path)) continue;
+      const specificity = robotsRuleSpecificity(rule.pattern);
       if (
         best === undefined ||
         specificity > best.length ||
-        (specificity === best.length && allowed && !best.allowed)
+        (specificity === best.length && rule.allowed && !best.allowed)
       ) {
-        best = { allowed, length: specificity };
+        best = { allowed: rule.allowed, length: specificity };
       }
     }
   }
   return best?.allowed ?? true;
 }
 
+interface RobotsDirective {
+  readonly field: string;
+  readonly value: string;
+}
+
+interface NormalizedPercentOctet {
+  readonly value: string;
+  readonly nextIndex: number;
+}
+
+function parseRobotsGroups(content: string): readonly RobotsGroup[] {
+  const groups: RobotsGroup[] = [];
+  let agents: string[] = [];
+  let rules: RobotsRule[] = [];
+
+  const flush = (): void => {
+    if (agents.length > 0) groups.push({ agents: [...agents], rules: [...rules] });
+    agents = [];
+    rules = [];
+  };
+
+  for (const rawLine of content.replaceAll('\r', '').split('\n')) {
+    const directive = parseRobotsDirective(rawLine);
+    if (directive === undefined) continue;
+    if (directive.field === 'user-agent') {
+      if (rules.length > 0) flush();
+      if (directive.value !== '') agents.push(directive.value.toLowerCase());
+      continue;
+    }
+    const allowed = robotsRuleAllowed(directive.field);
+    if (allowed !== undefined && agents.length > 0) {
+      rules.push({ allowed, pattern: directive.value });
+    }
+  }
+
+  flush();
+  return groups;
+}
+
+function parseRobotsDirective(rawLine: string): RobotsDirective | undefined {
+  const commentIndex = rawLine.indexOf('#');
+  const line = (commentIndex >= 0 ? rawLine.slice(0, commentIndex) : rawLine).trim();
+  if (line === '') return undefined;
+  const separator = line.indexOf(':');
+  if (separator < 0) return undefined;
+  return {
+    field: line.slice(0, separator).trim().toLowerCase(),
+    value: line.slice(separator + 1).trim(),
+  };
+}
+
+function robotsRuleAllowed(field: string): boolean | undefined {
+  if (field === 'allow') return true;
+  if (field === 'disallow') return false;
+  return undefined;
+}
+
 function robotsRuleMatches(rule: string, path: string): boolean {
   const anchored = rule.endsWith('$');
   const withoutAnchor = anchored ? rule.slice(0, -1) : rule;
-  const pattern = withoutAnchor.replace(/[.+?^${}()|[\]\\]/gu, '\\$&').replace(/\*/gu, '.*');
-  return new RegExp(`^${pattern}${anchored ? '$' : ''}`, 'u').test(path);
+  const normalizedPattern = normalizeRobotsOctets(withoutAnchor, true);
+  const normalizedPath = normalizeRobotsOctets(path, false);
+  return robotsWildcardMatches(normalizedPattern, normalizedPath, anchored);
+}
+
+function robotsWildcardMatches(pattern: string, path: string, anchored: boolean): boolean {
+  const segments = pattern.split('*');
+  let segmentIndex = 0;
+  let cursor = 0;
+
+  if (!pattern.startsWith('*')) {
+    const firstSegment = segments[0] ?? '';
+    if (!path.startsWith(firstSegment)) return false;
+    cursor = firstSegment.length;
+    segmentIndex = 1;
+  }
+
+  for (; segmentIndex < segments.length; segmentIndex += 1) {
+    const segment = segments[segmentIndex] ?? '';
+    if (segment === '') continue;
+    const found = path.indexOf(segment, cursor);
+    if (found < 0) return false;
+    cursor = found + segment.length;
+  }
+
+  return !anchored || pattern.endsWith('*') || cursor === path.length;
 }
 
 function robotsRuleSpecificity(rule: string): number {
-  return rule.replace(/\*/gu, '').replace(/\$$/u, '').length;
+  const anchored = rule.endsWith('$');
+  const withoutAnchor = anchored ? rule.slice(0, -1) : rule;
+  return normalizeRobotsOctets(withoutAnchor, true)
+    .replaceAll('*', '')
+    .replace(/%[0-9A-F]{2}/gu, 'x').length;
+}
+
+function normalizeRobotsOctets(value: string, preserveWildcards: boolean): string {
+  let result = '';
+  for (let index = 0; index < value.length; ) {
+    const encoded = normalizePercentOctet(value, index);
+    if (encoded !== undefined) {
+      result += encoded.value;
+      index = encoded.nextIndex;
+      continue;
+    }
+
+    const codePoint = value.codePointAt(index);
+    if (codePoint === undefined) return result;
+    const character = String.fromCodePoint(codePoint);
+    result += normalizeRobotsCharacter(character, codePoint, preserveWildcards);
+    index += character.length;
+  }
+  return result;
+}
+
+function normalizePercentOctet(value: string, index: number): NormalizedPercentOctet | undefined {
+  if (value[index] !== '%') return undefined;
+  const hex = value.slice(index + 1, index + 3);
+  if (!/^[0-9A-Fa-f]{2}$/u.test(hex)) return undefined;
+  const normalizedHex = hex.toUpperCase();
+  const decoded = String.fromCodePoint(Number.parseInt(normalizedHex, 16));
+  return {
+    value: isUnreservedAscii(decoded) ? decoded : `%${normalizedHex}`,
+    nextIndex: index + 3,
+  };
+}
+
+function normalizeRobotsCharacter(
+  character: string,
+  codePoint: number,
+  preserveWildcards: boolean,
+): string {
+  if (preserveWildcards && character === '*') return character;
+  if (codePoint <= 0x7f) return character;
+  return Array.from(
+    new TextEncoder().encode(character),
+    (byte) => `%${byte.toString(16).toUpperCase().padStart(2, '0')}`,
+  ).join('');
+}
+
+function isUnreservedAscii(value: string): boolean {
+  return /^[A-Za-z0-9._~-]$/u.test(value);
 }

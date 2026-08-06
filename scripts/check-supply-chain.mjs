@@ -6,13 +6,21 @@ const root = resolve(import.meta.dirname, '..');
 const nodeModulesRoot = resolve(root, 'node_modules');
 const packageJson = readJson('package.json');
 const packageLock = readJson('package-lock.json');
+const npmrc = readText('.npmrc');
 const dockerfile = readText('Dockerfile');
 const compose = readText('compose.yaml');
+const composeHybrid = readText('compose.hybrid.yaml');
 
 const expected = {
   sdk: '1.30.0',
-  nodeImage:
-    'node:24.17.0-bookworm-slim@sha256:862263c612aa437e3037674b85419622a9d93bff80aa1eee5398dfe686375532',
+  nodeDockerImage: 'node@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
+  nodeRelayImage:
+    'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
+  allowScripts: {
+    'better-sqlite3@12.11.1': true,
+    'esbuild@0.28.1': true,
+    'fsevents@2.3.3': true,
+  },
   overrides: {
     '@hono/node-server': '2.1.0',
     'fast-uri': '3.1.5',
@@ -28,6 +36,17 @@ assert(packageJson.dependencies?.['@modelcontextprotocol/sdk'] === expected.sdk,
 assert(
   packageLock.packages?.['node_modules/@modelcontextprotocol/sdk']?.version === expected.sdk,
   'SDK_LOCK_MISMATCH',
+);
+assert(
+  JSON.stringify(packageJson.allowScripts) === JSON.stringify(expected.allowScripts),
+  'INSTALL_SCRIPT_ALLOWLIST_MISMATCH',
+);
+assert(
+  npmrc
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .includes('strict-allow-scripts=true'),
+  'STRICT_ALLOW_SCRIPTS_NOT_ENABLED',
 );
 for (const [name, version] of Object.entries(expected.overrides)) {
   assert(packageJson.overrides?.[name] === version, `OVERRIDE_NOT_PINNED:${name}`);
@@ -46,8 +65,13 @@ for (const [selector, version] of Object.entries(expected.developmentOverrides))
 
 const nodeImageLines = dockerfile
   .split(/\r?\n/u)
-  .filter((line) => line.startsWith(`FROM ${expected.nodeImage} AS `));
+  .filter((line) => line.startsWith(`FROM ${expected.nodeDockerImage} AS `));
 assert(nodeImageLines.length === 2, 'NODE_IMAGE_DIGEST_NOT_PINNED_IN_BOTH_STAGES');
+
+const relayImageLines = composeHybrid
+  .split(/\r?\n/u)
+  .filter((line) => line.trim() === `image: ${expected.nodeRelayImage}`);
+assert(relayImageLines.length === 1, 'LOOPBACK_RELAY_IMAGE_DIGEST_NOT_PINNED');
 
 const providerImageLines = compose
   .split(/\r?\n/u)
@@ -93,9 +117,11 @@ process.stdout.write(
     {
       status: 'SUPPLY_CHAIN_CHECK_PASSED',
       sdk: expected.sdk,
+      installScriptAllowlist: expected.allowScripts,
+      strictAllowScripts: true,
       overrides: expected.overrides,
       developmentOverrides: expected.developmentOverrides,
-      dockerImageReferencesPinnedByDigest: 4,
+      dockerImageReferencesPinnedByDigest: 5,
       installedProductionPackages,
       licenses: Object.fromEntries(
         [...licenseCounts].sort(([left], [right]) => left.localeCompare(right)),

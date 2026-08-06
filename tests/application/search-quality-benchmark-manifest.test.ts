@@ -41,7 +41,7 @@ describe('V2.13 search quality benchmark fixtures', () => {
     );
   });
 
-  it('contains fifty annotated queries across every required category', () => {
+  it('contains sixty annotated queries across every required category', () => {
     const querySet = readJson<BenchmarkQuerySet>('benchmarks/v2-search-quality/queries.json');
     const requiredCategories = new Set([
       'exact-api',
@@ -56,8 +56,8 @@ describe('V2.13 search quality benchmark fixtures', () => {
       'identifiers',
     ]);
 
-    expect(querySet.queries).toHaveLength(50);
-    expect(new Set(querySet.queries.map((query) => query.id)).size).toBe(50);
+    expect(querySet.queries).toHaveLength(60);
+    expect(new Set(querySet.queries.map((query) => query.id)).size).toBe(60);
     expect(new Set(querySet.queries.map((query) => query.category))).toEqual(requiredCategories);
     for (const query of querySet.queries) {
       expect(query.query.trim().length).toBeGreaterThan(0);

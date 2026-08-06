@@ -6,8 +6,9 @@ coverage
 # Generated dependency lockfile; formatted and verified by npm itself.
 package-lock.json
 
-# Prettier has no SQL parser in this project.
+# Prettier has no SQL or Python parser in this project.
 catalog-migrations/*.sql
+scripts/benchmark-local-embeddings.py
 
 # Historical evidence stays byte-stable; current documentation is formatted.
 docs/planning/validation-*.md

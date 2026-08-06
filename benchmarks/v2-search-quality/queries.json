@@ -1,6 +1,6 @@
 {
-  "schemaVersion": "1.0",
-  "description": "Fifty annotated queries across ten categories. Relevance grades use 0..3; only positive judgments are stored.",
+  "schemaVersion": "1.1",
+  "description": "Sixty annotated queries across ten categories, with reinforced paraphrase and multi-document coverage. Relevance grades use 0..3; only positive judgments are stored.",
   "queries": [
     {"id":"api-01","category":"exact-api","query":"fs readFile options","judgments":[{"documentPublicId":"nodejs--fs-readfile","grade":3}]},
     {"id":"api-02","category":"exact-api","query":"URLSearchParams pathname","judgments":[{"documentPublicId":"mdn-en--url-api","grade":3}]},
@@ -37,12 +37,22 @@
     {"id":"multi-03","category":"multi-document","query":"web security origin policy credentials","judgments":[{"documentPublicId":"mdn-en--cors","grade":3},{"documentPublicId":"mdn-en--content-security-policy","grade":2}]},
     {"id":"multi-04","category":"multi-document","query":"github security dependency scanning","judgments":[{"documentPublicId":"github--dependabot","grade":3},{"documentPublicId":"github--codeql","grade":3}]},
     {"id":"multi-05","category":"multi-document","query":"docker security filesystem capabilities rootless","judgments":[{"documentPublicId":"docker--read-only","grade":3},{"documentPublicId":"docker--rootless","grade":3}]},
+    {"id":"multi-06","category":"multi-document","query":"package dependency vulnerabilities and source code security analysis","judgments":[{"documentPublicId":"github--dependabot","grade":3},{"documentPublicId":"github--codeql","grade":3}]},
+    {"id":"multi-07","category":"multi-document","query":"container with minimal privileges and an immutable root filesystem","judgments":[{"documentPublicId":"docker--read-only","grade":3},{"documentPublicId":"docker--rootless","grade":3}]},
+    {"id":"multi-08","category":"multi-document","query":"node file processing with streaming backpressure and safe failure handling","judgments":[{"documentPublicId":"nodejs--streams-pipeline","grade":3},{"documentPublicId":"nodejs--fs-readfile","grade":1}]},
+    {"id":"multi-09","category":"multi-document","query":"sqlite full text relevance ranking together with query planning","judgments":[{"documentPublicId":"sqlite--fts5","grade":3},{"documentPublicId":"sqlite--query-planner","grade":3}]},
+    {"id":"multi-10","category":"multi-document","query":"maven lifecycle for unit tests integration tests and verification","judgments":[{"documentPublicId":"maven--lifecycle","grade":3},{"documentPublicId":"maven--surefire","grade":2},{"documentPublicId":"maven--failsafe","grade":2}]},
 
     {"id":"para-01","category":"paraphrase","query":"keep a container immutable except temporary files","judgments":[{"documentPublicId":"docker--read-only","grade":3}]},
     {"id":"para-02","category":"paraphrase","query":"avoid loading everything when streaming data","judgments":[{"documentPublicId":"nodejs--streams-pipeline","grade":3}]},
     {"id":"para-03","category":"paraphrase","query":"find why a sqlite writer cannot finish checkpointing","judgments":[{"documentPublicId":"sqlite--wal","grade":3},{"documentPublicId":"sqlite--locking","grade":2}]},
     {"id":"para-04","category":"paraphrase","query":"share reusable type behavior with constraints","judgments":[{"documentPublicId":"typescript--generics","grade":3}]},
     {"id":"para-05","category":"paraphrase","query":"authenticate deployment without storing a cloud secret","judgments":[{"documentPublicId":"github--oidc","grade":3}]},
+    {"id":"para-06","category":"paraphrase","query":"make the container filesystem impossible to modify while still allowing scratch space","judgments":[{"documentPublicId":"docker--read-only","grade":3}]},
+    {"id":"para-07","category":"paraphrase","query":"restrict which Java classes are allowed to extend a base type","judgments":[{"documentPublicId":"openjdk--sealed-classes","grade":3}]},
+    {"id":"para-08","category":"paraphrase","query":"let a GitHub workflow reach cloud resources without keeping long lived credentials","judgments":[{"documentPublicId":"github--oidc","grade":3}]},
+    {"id":"para-09","category":"paraphrase","query":"why do sqlite writes stall while the write ahead log is being checkpointed","judgments":[{"documentPublicId":"sqlite--wal","grade":3},{"documentPublicId":"sqlite--locking","grade":2}]},
+    {"id":"para-10","category":"paraphrase","query":"annuler proprement une requête réseau asynchrone côté navigateur","language":"fr","judgments":[{"documentPublicId":"mdn-fr--fetch-api","grade":3}]},
 
     {"id":"filter-01","category":"filters","query":"cache npm","sourceKey":"github","judgments":[{"documentPublicId":"github--actions-cache","grade":3}]},
     {"id":"filter-02","category":"filters","query":"modules import export","sourceKey":"typescript","judgments":[{"documentPublicId":"typescript--modules","grade":3}]},

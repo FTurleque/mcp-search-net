@@ -1,9 +1,67 @@
 # Overlay hôte : publie uniquement les providers sur loopback pour le serveur
-# Node/IntelliJ. Le mode conteneur utilise compose.yaml seul et reste interne.
+# Node/IntelliJ. Crawl4AI reste confiné à backend ; un relais Node minimal
+# porte l'exposition hôte sans rendre l'egress au conteneur Crawl4AI.
 services:
-  searxng:
-    ports:
-      - '127.0.0.1:8888:8080'
-  crawl4ai:
+  crawl4ai-loopback:
+    image: node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d
+    restart: unless-stopped
+    user: node
+    command:
+      - node
+      - --input-type=module
+      - --eval
+      - |
+        import net from 'node:net';
+        const server = net.createServer((client) => {
+          const upstream = net.connect({ host: 'crawl4ai', port: 11235 });
+          const destroy = () => {
+            client.destroy();
+            upstream.destroy();
+          };
+          client.setNoDelay(true);
+          upstream.setNoDelay(true);
+          client.on('error', destroy);
+          upstream.on('error', destroy);
+          client.pipe(upstream);
+          upstream.pipe(client);
+        });
+        server.on('error', (error) => {
+          console.error(error);
+          process.exit(1);
+        });
+        server.listen(11235, '0.0.0.0');
+    depends_on:
+      crawl4ai:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '--input-type=module',
+          '--eval',
+          "const response=await fetch('http://127.0.0.1:11235/health');if(!response.ok)process.exit(1)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - backend
+      - egress
     ports:
       - '127.0.0.1:11235:11235'
+
+  searxng:
+    depends_on:
+      crawl4ai-loopback:
+        condition: service_started
+    ports:
+      - '127.0.0.1:8888:8080'

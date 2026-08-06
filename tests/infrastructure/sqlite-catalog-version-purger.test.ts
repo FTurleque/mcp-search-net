@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-deprecated -- low-level SQLite compatibility tests intentionally exercise legacy mutation paths */
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

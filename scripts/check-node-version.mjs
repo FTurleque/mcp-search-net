@@ -1,12 +1,11 @@
 import process from 'node:process';
 
-const requiredMajor = 24;
+const requiredVersion = '24.18.0';
 const currentVersion = process.versions.node;
-const currentMajor = Number.parseInt(currentVersion.split('.')[0] ?? '0', 10);
 
-if (currentMajor !== requiredMajor) {
+if (currentVersion !== requiredVersion) {
   process.stderr.write(
-    `Node.js ${requiredMajor} LTS is required; current runtime is ${currentVersion}. ` +
+    `Node.js ${requiredVersion} is required; current runtime is ${currentVersion}. ` +
       'Activate the version declared in .nvmrc/.node-version before running project checks.\n',
   );
   process.exitCode = 1;
