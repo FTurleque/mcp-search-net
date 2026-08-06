@@ -34,7 +34,7 @@ import {
   UPSERT_DOCUMENT_SQL,
   UPSERT_DOCUMENT_VERSION_SQL,
 } from './catalog-sql.js';
-import { SqliteCatalogSyncStore } from './sqlite-catalog-sync-store.js';
+import type { SqliteCatalogSyncStore } from './sqlite-catalog-sync-store.js';
 
 const TOUCH_DOCUMENT_OBSERVATION_SQL = 'UPDATE documents SET last_seen_at = ? WHERE id = ?';
 

@@ -428,9 +428,7 @@ function robotsRuleMatches(rule: string, path: string): boolean {
   const withoutAnchor = anchored ? rule.slice(0, -1) : rule;
   const normalizedPattern = normalizeRobotsOctets(withoutAnchor, true);
   const normalizedPath = normalizeRobotsOctets(path, false);
-  const pattern = normalizedPattern
-    .replace(/[.+?^${}()|[\]\\]/gu, '\\$&')
-    .replace(/\*/gu, '.*');
+  const pattern = normalizedPattern.replace(/[.+?^${}()|[\]\\]/gu, '\\$&').replace(/\*/gu, '.*');
   return new RegExp(`^${pattern}${anchored ? '$' : ''}`, 'u').test(normalizedPath);
 }
 

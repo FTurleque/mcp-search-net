@@ -21,16 +21,23 @@ const querySet = readJson('benchmarks/v2-search-quality/queries.json');
 const expectedNode = '24.18.0';
 assert(readText('.nvmrc').trim() === expectedNode, '.nvmrc: Node 24.18.0 attendu');
 assert(readText('.node-version').trim() === expectedNode, '.node-version: Node 24.18.0 attendu');
-requireText(runtimeGuard, `requiredVersion = '${expectedNode}'`, 'check-node-version: version exacte absente');
+requireText(
+  runtimeGuard,
+  `requiredVersion = '${expectedNode}'`,
+  'check-node-version: version exacte absente',
+);
 
 const expectedNodeImage =
   'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d';
 assert(
-  dockerfile.split('\n').filter((line) => line.startsWith(`FROM ${expectedNodeImage} AS `)).length ===
-    2,
+  dockerfile.split('\n').filter((line) => line.startsWith(`FROM ${expectedNodeImage} AS `))
+    .length === 2,
   'Dockerfile: image Node 24.18.0 figée attendue dans les deux stages',
 );
-assert(countOccurrences(ci, 'node-version: 24.18.0') === 3, 'CI: trois runtimes Node 24.18.0 attendus');
+assert(
+  countOccurrences(ci, 'node-version: 24.18.0') === 3,
+  'CI: trois runtimes Node 24.18.0 attendus',
+);
 requireText(
   releaseWorkflow,
   'node-version: 24.18.0',
@@ -40,10 +47,10 @@ requireText(
 const crawl4aiBlock = serviceBlock(compose, 'crawl4ai', 'mcp-search-net');
 requireText(crawl4aiBlock, '- backend', 'Compose: Crawl4AI doit rester sur backend');
 assert(!crawl4aiBlock.includes('- egress'), 'Compose: Crawl4AI ne doit pas rejoindre egress');
-requireText(ci, "test \"$crawl4ai_network_count\" = '1'", 'CI: gate réseau Crawl4AI = 1 absent');
+requireText(ci, 'test "$crawl4ai_network_count" = \'1\'', 'CI: gate réseau Crawl4AI = 1 absent');
 requireText(
   security,
-  "Crawl4AI reste uniquement sur le réseau interne `backend`",
+  'Crawl4AI reste uniquement sur le réseau interne `backend`',
   'Documentation sécurité: isolation Crawl4AI absente',
 );
 
@@ -69,7 +76,11 @@ for (const needle of [
   '.VersionInfo.ProductVersion',
   'Version Inno Setup non qualifiée',
 ]) {
-  requireText(installerBuilder, needle, `build-windows-installer: invariant Inno absent: ${needle}`);
+  requireText(
+    installerBuilder,
+    needle,
+    `build-windows-installer: invariant Inno absent: ${needle}`,
+  );
 }
 for (const needle of [
   'choco install innosetup --version=6.7.1',
@@ -115,7 +126,11 @@ for (const contractInvariant of [
   "structuredContent?.schemaVersion !== '1.0'",
   'nativeThirdPartyClientCertification: false',
 ]) {
-  requireText(clientReporter, contractInvariant, `client contract report: invariant absent ${contractInvariant}`);
+  requireText(
+    clientReporter,
+    contractInvariant,
+    `client contract report: invariant absent ${contractInvariant}`,
+  );
 }
 
 assert(

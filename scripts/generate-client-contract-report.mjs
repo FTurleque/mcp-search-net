@@ -6,13 +6,7 @@ import process from 'node:process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-const EXPECTED_TOOLS = [
-  'fetch_url',
-  'list_docs',
-  'read_doc_section',
-  'search_docs',
-  'search_web',
-];
+const EXPECTED_TOOLS = ['fetch_url', 'list_docs', 'read_doc_section', 'search_docs', 'search_web'];
 const EXPECTED_RESOURCES = [
   'mcp-search-net://catalog',
   'mcp-search-net://documents',
@@ -66,9 +60,7 @@ try {
 
   const toolNames = tools.tools.map((tool) => tool.name).sort();
   const resourceUris = resources.resources.map((resource) => resource.uri).sort();
-  const templateUris = templates.resourceTemplates
-    .map((template) => template.uriTemplate)
-    .sort();
+  const templateUris = templates.resourceTemplates.map((template) => template.uriTemplate).sort();
   assertEqual(toolNames, EXPECTED_TOOLS, 'CLIENT_CONTRACT_TOOL_SET_CHANGED');
   assertEqual(resourceUris, EXPECTED_RESOURCES, 'CLIENT_CONTRACT_RESOURCE_SET_CHANGED');
   assertEqual(templateUris, EXPECTED_TEMPLATES, 'CLIENT_CONTRACT_TEMPLATE_SET_CHANGED');

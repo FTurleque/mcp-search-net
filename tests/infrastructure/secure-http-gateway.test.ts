@@ -212,12 +212,7 @@ describe('SecureHttpGateway', () => {
   });
 
   it('keeps blank lines inside the current robots group', async () => {
-    const robots = [
-      'User-agent: *',
-      'Disallow: /private',
-      '',
-      'Allow: /private/public',
-    ].join('\n');
+    const robots = ['User-agent: *', 'Disallow: /private', '', 'Allow: /private/public'].join('\n');
     const server = await listen((request, response) => {
       response.writeHead(200, { 'content-type': 'text/plain' });
       response.end(request.url === '/robots.txt' ? robots : 'allowed');

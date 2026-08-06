@@ -295,6 +295,7 @@ async function measureIncrementalSync(repositoryValue, manifestValue, clockValue
         extractionMode: 'static',
         statusCode: 200,
         contentHash: sha256(markdown),
+        redirectChain: [],
         metadata: { benchmark: 'v2.13' },
         links: [],
       };

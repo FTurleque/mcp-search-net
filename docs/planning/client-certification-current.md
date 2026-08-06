@@ -30,13 +30,13 @@ installé mais ne remplace toujours pas une observation dans l'UI d'un client ti
 
 ## Matrice de certification native
 
-| Client | Configuration supportée par l'installateur | Preuve serveur automatisée | Observation native requise |
-| --- | --- | --- | --- |
-| IntelliJ IDEA + GitHub Copilot | oui | oui | serveur `Running`, cinq tools, workflow `search_docs -> read_doc_section`, resources/templates selon plugin |
-| GitHub Copilot CLI | oui | oui | `copilot mcp` réel, visibilité et appel des tools |
-| Claude Code | oui | oui | `claude mcp` réel, visibilité et appel des tools |
-| Claude Desktop | oui | oui | chargement de `claude_desktop_config.json`, visibilité et appel des tools |
-| Codex | oui | oui | `codex mcp` réel, visibilité et appel des tools |
+| Client                         | Configuration supportée par l'installateur | Preuve serveur automatisée | Observation native requise                                                                                  |
+| ------------------------------ | ------------------------------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| IntelliJ IDEA + GitHub Copilot | oui                                        | oui                        | serveur `Running`, cinq tools, workflow `search_docs -> read_doc_section`, resources/templates selon plugin |
+| GitHub Copilot CLI             | oui                                        | oui                        | `copilot mcp` réel, visibilité et appel des tools                                                           |
+| Claude Code                    | oui                                        | oui                        | `claude mcp` réel, visibilité et appel des tools                                                            |
+| Claude Desktop                 | oui                                        | oui                        | chargement de `claude_desktop_config.json`, visibilité et appel des tools                                   |
+| Codex                          | oui                                        | oui                        | `codex mcp` réel, visibilité et appel des tools                                                             |
 
 ## Règle de verdict
 
