@@ -17,7 +17,7 @@ const installer = readText('scripts/release/build-windows-installer.ps1');
 for (const required of [
   'MCP-SEARCH-NET — PROPRIETARY SOURCE-AVAILABLE LICENSE',
   'Copyright (c) 2026 Fabrice Turleque. All rights reserved.',
-  'The public availability of the Software\'s source code does not make the Software',
+  "The public availability of the Software's source code does not make the Software",
   'PUBLIC GITHUB HOSTING',
   'NO GENERAL LICENSE GRANT',
   'THIRD-PARTY COMPONENTS',
@@ -50,7 +50,11 @@ requireText(
   'org.opencontainers.image.licenses="LicenseRef-mcp-search-net-Proprietary"',
   'OCI_LICENSE_LABEL_MISSING',
 );
-requireText(dockerfile, 'COPY package.json package-lock.json LICENSE ./', 'OCI_LICENSE_FILE_MISSING');
+requireText(
+  dockerfile,
+  'COPY package.json package-lock.json LICENSE ./',
+  'OCI_LICENSE_FILE_MISSING',
+);
 requireText(dockerignore, '!LICENSE', 'DOCKER_CONTEXT_LICENSE_ALLOWLIST_MISSING');
 
 for (const required of [
@@ -65,7 +69,7 @@ for (const required of [
 for (const required of [
   "'LICENSE'",
   "if (-not $Iss.Contains('LicenseFile='))",
-  "throw \"La licence propriétaire n'est pas présentée par l'installateur Inno Setup.\"",
+  'throw "La licence propriétaire n\'est pas présentée par l\'installateur Inno Setup."',
 ]) {
   requireText(installer, required, `WINDOWS_INSTALLER_LICENSE_MISSING:${required}`);
 }
