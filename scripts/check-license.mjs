@@ -10,6 +10,7 @@ const contributing = readText('CONTRIBUTING.md');
 const readme = readText('README.md');
 const packageJson = JSON.parse(readText('package.json'));
 const dockerfile = readText('Dockerfile');
+const dockerignore = readText('.dockerignore');
 const distribution = readText('scripts/release/build-windows-distribution.ps1');
 const installer = readText('scripts/release/build-windows-installer.ps1');
 
@@ -50,6 +51,7 @@ requireText(
   'OCI_LICENSE_LABEL_MISSING',
 );
 requireText(dockerfile, 'COPY package.json package-lock.json LICENSE ./', 'OCI_LICENSE_FILE_MISSING');
+requireText(dockerignore, '!LICENSE', 'DOCKER_CONTEXT_LICENSE_ALLOWLIST_MISSING');
 
 for (const required of [
   "Copy-Item -LiteralPath (Join-Path $RepoRoot 'LICENSE') -Destination $AppDist -Force",
@@ -85,6 +87,7 @@ process.stdout.write(
       bundledInWindowsDistribution: true,
       displayedByWindowsInstaller: true,
       bundledInOciImage: true,
+      dockerContextIncludesLicense: true,
       thirdPartyLicensesPreserved: true,
     },
     null,
