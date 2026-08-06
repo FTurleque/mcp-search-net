@@ -130,7 +130,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     };
     if (this.apiToken !== undefined) headers['authorization'] = `Bearer ${this.apiToken}`;
     // Crawl4AI's raw:// transport renders caller-provided HTML without issuing a
-    // network request. Its server-side SSRF guard intentionally rejects data: URLs.
+    // public target request. The renderer receives only resource-neutralized HTML.
     const rawUrl = `raw://${html}`;
     const json = await fetchJson(
       'crawl4ai',
@@ -222,12 +222,12 @@ function decodeHtml(html: string, baseUrl: string): DecodedContent {
     /<link\b[^>]*rel=["'][^"']*canonical[^"']*["'][^>]*href=["']([^"']+)["']/iu.exec(html)?.[1] ??
     /<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["'][^"']*canonical[^"']*["']/iu.exec(html)?.[1];
   const safeHtml = removeNoisyBlocks(html)
-    .replace(/<(script|style|noscript|iframe|form|nav|aside)\b[\s\S]*?<\/\1>/giu, ' ')
+    .replace(/<(script|style|noscript|iframe|form|nav|aside|svg|math|canvas)\b[\s\S]*?<\/\1>/giu, ' ')
     .replace(/<(object|embed|video|audio|source)\b[\s\S]*?<\/\1>/giu, ' ')
     .replace(/<(link|meta|base)\b[^>]*>/giu, ' ')
     .replace(/<!--([\s\S]*?)-->/gu, ' ')
     .replace(
-      /\s(?:src|srcset|action|poster|data|style|on\w+)\s*=\s*(?:["'][^"']*["']|[^\s>]+)/giu,
+      /\s(?:src|srcset|action|formaction|poster|data|background|ping|xlink:href|style|on\w+)\s*=\s*(?:["'][^"']*["']|[^\s>]+)/giu,
       '',
     );
   const links = [...safeHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["']/giu)].flatMap((match) =>
