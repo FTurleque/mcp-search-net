@@ -17,6 +17,7 @@ const expected = {
   allowScripts: {
     'better-sqlite3@12.11.1': true,
     'esbuild@0.28.1': true,
+    'fsevents@2.3.3': true,
   },
   overrides: {
     '@hono/node-server': '2.1.0',
