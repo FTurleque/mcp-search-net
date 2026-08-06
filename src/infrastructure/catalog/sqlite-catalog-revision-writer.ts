@@ -18,11 +18,7 @@ import type {
   DocumentSectionRow,
   DocumentVersionRow,
 } from './catalog-row-mappers.js';
-import {
-  toCatalogDocument,
-  toDocumentSection,
-  toDocumentVersion,
-} from './catalog-row-mappers.js';
+import { toCatalogDocument, toDocumentSection, toDocumentVersion } from './catalog-row-mappers.js';
 import {
   CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL,
   DELETE_DOCUMENT_SECTIONS_SQL,
@@ -112,9 +108,7 @@ export class SqliteCatalogRevisionWriter {
       });
       const sectionRows = this.replaceDocumentSectionRows(versionRow.id, revision.sections);
 
-      this.database
-        .prepare<[number]>(INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL)
-        .run(versionRow.id);
+      this.database.prepare<[number]>(INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL).run(versionRow.id);
       const now = this.now();
       this.database
         .prepare<[number, number, number]>(SET_DOCUMENT_CURRENT_VERSION_SQL)
