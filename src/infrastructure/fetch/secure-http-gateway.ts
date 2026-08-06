@@ -160,7 +160,8 @@ export class SecureHttpGateway {
       throw error;
     }
     const rules = new TextDecoder().decode(resource.body);
-    if (!isAllowedByRobots(rules, url.pathname || '/', this.options.userAgent)) {
+    const path = `${url.pathname || '/'}${url.search}`;
+    if (!isAllowedByRobots(rules, path, this.options.userAgent)) {
       throw new UrlSecurityError('robots.txt disallows fetching this URL', 'BLOCKED_ADDRESS');
     }
   }
@@ -400,10 +401,7 @@ function parseRobotsGroups(content: string): readonly RobotsGroup[] {
 
   for (const rawLine of content.replace(/\r/gu, '').split('\n')) {
     const line = rawLine.replace(/#.*$/u, '').trim();
-    if (line === '') {
-      if (rules.length > 0) flush();
-      continue;
-    }
+    if (line === '') continue;
 
     const separator = line.indexOf(':');
     if (separator < 0) continue;
@@ -428,10 +426,51 @@ function parseRobotsGroups(content: string): readonly RobotsGroup[] {
 function robotsRuleMatches(rule: string, path: string): boolean {
   const anchored = rule.endsWith('$');
   const withoutAnchor = anchored ? rule.slice(0, -1) : rule;
-  const pattern = withoutAnchor.replace(/[.+?^${}()|[\]\\]/gu, '\\$&').replace(/\*/gu, '.*');
-  return new RegExp(`^${pattern}${anchored ? '$' : ''}`, 'u').test(path);
+  const normalizedPattern = normalizeRobotsOctets(withoutAnchor, true);
+  const normalizedPath = normalizeRobotsOctets(path, false);
+  const pattern = normalizedPattern
+    .replace(/[.+?^${}()|[\]\\]/gu, '\\$&')
+    .replace(/\*/gu, '.*');
+  return new RegExp(`^${pattern}${anchored ? '$' : ''}`, 'u').test(normalizedPath);
 }
 
 function robotsRuleSpecificity(rule: string): number {
-  return rule.replace(/\*/gu, '').replace(/\$$/u, '').length;
+  const anchored = rule.endsWith('$');
+  const withoutAnchor = anchored ? rule.slice(0, -1) : rule;
+  return normalizeRobotsOctets(withoutAnchor, true)
+    .replace(/\*/gu, '')
+    .replace(/%[0-9A-F]{2}/gu, 'x').length;
+}
+
+function normalizeRobotsOctets(value: string, preserveWildcards: boolean): string {
+  let result = '';
+  for (let index = 0; index < value.length; ) {
+    if (value[index] === '%' && /^[0-9A-Fa-f]{2}$/u.test(value.slice(index + 1, index + 3))) {
+      const hex = value.slice(index + 1, index + 3).toUpperCase();
+      const byte = Number.parseInt(hex, 16);
+      const decoded = String.fromCharCode(byte);
+      result += isUnreservedAscii(decoded) ? decoded : `%${hex}`;
+      index += 3;
+      continue;
+    }
+
+    const codePoint = value.codePointAt(index);
+    if (codePoint === undefined) break;
+    const character = String.fromCodePoint(codePoint);
+    if (preserveWildcards && character === '*') {
+      result += character;
+    } else if (codePoint <= 0x7f) {
+      result += character;
+    } else {
+      for (const byte of new TextEncoder().encode(character)) {
+        result += `%${byte.toString(16).toUpperCase().padStart(2, '0')}`;
+      }
+    }
+    index += character.length;
+  }
+  return result;
+}
+
+function isUnreservedAscii(value: string): boolean {
+  return /^[A-Za-z0-9._~-]$/u.test(value);
 }
