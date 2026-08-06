@@ -223,7 +223,11 @@ for (const invariant of [
   'prototype-local-vector-index',
   'adoptEmbeddingRuntimeNow: false',
 ]) {
-  requireText(currentState, invariant, `current-state: état post-audit non réconcilié: ${invariant}`);
+  requireText(
+    currentState,
+    invariant,
+    `current-state: état post-audit non réconcilié: ${invariant}`,
+  );
 }
 assert(
   !existsSync(resolve(root, '.github/workflows/local-embeddings-benchmark.yml')),
