@@ -1,7 +1,8 @@
 {
   "name": "mcp-search-net",
   "version": "1.1.0",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Fabrice Turleque",
   "private": true,
   "description": "Local MCP web search and fetch server for GitHub Copilot",
   "type": "module",
@@ -18,6 +19,7 @@
     "clean": "rimraf build dist",
     "check:runtime": "node scripts/check-node-version.mjs",
     "check:copilot": "node scripts/validate-copilot-config.mjs",
+    "check:license": "node scripts/check-license.mjs",
     "check:audit-invariants": "node scripts/check-audit-invariants.mjs",
     "docs:check": "node scripts/check-docs.mjs",
     "build": "npm run clean && tsc -p tsconfig.build.json",
@@ -56,7 +58,7 @@
     "benchmark:v1": "node scripts/benchmark-v1.mjs",
     "install:user": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1",
     "install:user:run": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1 -StartServices -RunAfterInstall",
-    "check": "npm run check:runtime && npm run check:copilot && npm run check:supply-chain && npm run check:audit-invariants && npm run docs:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run client:contract-report && npm run test:coverage"
+    "check": "npm run check:runtime && npm run check:copilot && npm run check:license && npm run check:supply-chain && npm run check:audit-invariants && npm run docs:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run client:contract-report && npm run test:coverage"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
