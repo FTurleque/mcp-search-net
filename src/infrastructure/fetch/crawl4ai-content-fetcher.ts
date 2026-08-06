@@ -222,7 +222,10 @@ function decodeHtml(html: string, baseUrl: string): DecodedContent {
     /<link\b[^>]*rel=["'][^"']*canonical[^"']*["'][^>]*href=["']([^"']+)["']/iu.exec(html)?.[1] ??
     /<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["'][^"']*canonical[^"']*["']/iu.exec(html)?.[1];
   const safeHtml = removeNoisyBlocks(html)
-    .replace(/<(script|style|noscript|iframe|form|nav|aside|svg|math|canvas)\b[\s\S]*?<\/\1>/giu, ' ')
+    .replace(
+      /<(script|style|noscript|iframe|form|nav|aside|svg|math|canvas)\b[\s\S]*?<\/\1>/giu,
+      ' ',
+    )
     .replace(/<(object|embed|video|audio|source)\b[\s\S]*?<\/\1>/giu, ' ')
     .replace(/<(link|meta|base)\b[^>]*>/giu, ' ')
     .replace(/<!--([\s\S]*?)-->/gu, ' ')
