@@ -30,6 +30,7 @@
     "catalog:reranked-search": "npm run build && node build/cli/catalog-reranked-search.js",
     "benchmark:v2:search-quality": "npm run build && node scripts/benchmark-v2-search-quality.mjs",
     "benchmark:mcp:size": "npm run build && node scripts/benchmark-mcp-response-scale.mjs",
+    "client:contract-report": "node scripts/generate-client-contract-report.mjs",
     "check:supply-chain": "node scripts/check-supply-chain.mjs",
     "audit:prod": "npm audit --omit=dev --audit-level=moderate",
     "typecheck": "tsc -p tsconfig.json --noEmit",
