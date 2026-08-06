@@ -66,10 +66,25 @@ try {
 
   const toolNames = tools.tools.map((tool) => tool.name).sort();
   const resourceUris = resources.resources.map((resource) => resource.uri).sort();
-  const templateUris = templates.resourceTemplates.map((template) => template.uriTemplate).sort();
+  const templateUris = templates.resourceTemplates
+    .map((template) => template.uriTemplate)
+    .sort();
   assertEqual(toolNames, EXPECTED_TOOLS, 'CLIENT_CONTRACT_TOOL_SET_CHANGED');
   assertEqual(resourceUris, EXPECTED_RESOURCES, 'CLIENT_CONTRACT_RESOURCE_SET_CHANGED');
   assertEqual(templateUris, EXPECTED_TEMPLATES, 'CLIENT_CONTRACT_TEMPLATE_SET_CHANGED');
+
+  for (const tool of tools.tools) {
+    const annotations = tool.annotations ?? {};
+    const expectedOpenWorld = tool.name === 'search_web' || tool.name === 'fetch_url';
+    if (
+      annotations.readOnlyHint !== true ||
+      annotations.destructiveHint !== false ||
+      annotations.idempotentHint !== true ||
+      annotations.openWorldHint !== expectedOpenWorld
+    ) {
+      throw new Error(`CLIENT_CONTRACT_ANNOTATIONS_CHANGED:${tool.name}`);
+    }
+  }
 
   const catalogContent = catalog.contents[0];
   if (catalogContent === undefined || !('text' in catalogContent)) {
@@ -79,8 +94,14 @@ try {
   if (catalogJson.schemaVersion !== '1.0') {
     throw new Error('CLIENT_CONTRACT_RESOURCE_SCHEMA_VERSION_CHANGED');
   }
+  if (catalogJson.contentTrust !== 'EXTERNAL_UNTRUSTED_CONTENT') {
+    throw new Error('CLIENT_CONTRACT_RESOURCE_TRUST_MARKER_CHANGED');
+  }
   if (search.isError === true || search.structuredContent?.schemaVersion !== '1.0') {
     throw new Error('CLIENT_CONTRACT_SEARCH_DOCS_PROBE_FAILED');
+  }
+  if (search.structuredContent.metadata?.contentTrust !== 'EXTERNAL_UNTRUSTED_CONTENT') {
+    throw new Error('CLIENT_CONTRACT_TOOL_TRUST_MARKER_CHANGED');
   }
 
   const report = {
