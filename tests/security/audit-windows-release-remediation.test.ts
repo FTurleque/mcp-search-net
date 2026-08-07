@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-const installerTemplate = readFileSync('packaging/windows/mcp-search-net-installer.iss.template', 'utf8');
+const installerTemplate = readFileSync(
+  'packaging/windows/mcp-search-net-installer.iss.template',
+  'utf8',
+);
 const configureInstall = readFileSync('packaging/windows/configure-install.ps1', 'utf8');
 const releaseWorkflow = readFileSync('.github/workflows/release-windows.yml', 'utf8');
 
@@ -40,10 +43,14 @@ describe('audit Windows and release remediation', () => {
 
   it('preserves an unmarked preexisting Codex TOML server table', () => {
     expect(configureInstall).toContain('function Test-CodexMcpEntry');
-    expect(configureInstall).toContain("'[mcp_servers.mcp-search-net]'" );
+    expect(configureInstall).toContain("'[mcp_servers.mcp-search-net]'");
     expect(configureInstall).toContain('elseif (Test-CodexMcpEntry $text)');
     expect(configureInstall).toContain("ownership    = 'preexisting'");
-    expect(configureInstall).toContain("Codex Desktop : table 'mcp_servers.mcp-search-net' existante non gérée — préservée.");
-    expect(configureInstall).toContain("Codex Desktop : entrée préexistante/non gérée — préservée.");
+    expect(configureInstall).toContain(
+      "Codex Desktop : table 'mcp_servers.mcp-search-net' existante non gérée — préservée.",
+    );
+    expect(configureInstall).toContain(
+      'Codex Desktop : entrée préexistante/non gérée — préservée.',
+    );
   });
 });
