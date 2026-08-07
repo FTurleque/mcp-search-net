@@ -23,7 +23,10 @@ describe('better-sqlite3 13 / N-API qualification', () => {
       database.exec('CREATE VIRTUAL TABLE documents_fts USING fts5(title, body)');
       database
         .prepare('INSERT INTO documents_fts(title, body) VALUES (?, ?)')
-        .run('N-API migration', 'SQLite FTS5 remains available after the native dependency upgrade.');
+        .run(
+          'N-API migration',
+          'SQLite FTS5 remains available after the native dependency upgrade.',
+        );
 
       const result = database
         .prepare(
@@ -49,7 +52,9 @@ describe('better-sqlite3 13 / N-API qualification', () => {
       first.exec('BEGIN IMMEDIATE');
       first.prepare('INSERT INTO records(value) VALUES (?)').run('first');
 
-      expect(() => second.prepare('INSERT INTO records(value) VALUES (?)').run('blocked')).toThrow();
+      expect(() =>
+        second.prepare('INSERT INTO records(value) VALUES (?)').run('blocked'),
+      ).toThrow();
 
       first.exec('COMMIT');
       second.prepare('INSERT INTO records(value) VALUES (?)').run('second');
