@@ -40,9 +40,9 @@ requireText(
 );
 
 const expectedNodeDockerImage =
-  'node@sha256:6f7b03f7c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d';
+  'node@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d';
 const expectedNodeRelayImage =
-  'node:24.18.0-bookworm-slim@sha256:6f7b03f7c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d';
+  'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d';
 assert(
   dockerfile.split('\n').filter((line) => line.startsWith(`FROM ${expectedNodeDockerImage} AS `))
     .length === 2,
@@ -164,7 +164,7 @@ for (const invariant of [
 }
 
 for (const invariant of [
-  "DeleteUserDataOnUninstall := False",
+  'DeleteUserDataOnUninstall := False',
   "if DeleteUserDataOnUninstall and DirExists(ExpandConstant('{app}')) then",
   'Silent uninstall therefore preserves them.',
 ]) {
@@ -263,11 +263,12 @@ for (const invariant of [
 }
 for (const invariant of [
   'WebUrl.createTransport(request.url)',
+  'JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 4 })',
   'MIN_LINK_INSPECTION_BUDGET = 32',
   'MAX_LINK_VALIDATION_MS = 2_000',
   'inspected >= maximumInspections',
 ]) {
-  requireText(fetchUrl, invariant, `fetch_url: transport/liens non bornés ${invariant}`);
+  requireText(fetchUrl, invariant, `fetch_url: transport/cache/liens non bornés ${invariant}`);
 }
 for (const invariant of [
   'DEFAULT_MAX_PROVIDER_JSON_BYTES = 16 * 1024 * 1024',
