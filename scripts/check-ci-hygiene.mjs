@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import process from 'node:process';
 
 const root = resolve(import.meta.dirname, '..');
 const forbiddenWorkflows = [
