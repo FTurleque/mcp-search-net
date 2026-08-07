@@ -127,20 +127,20 @@ try {
         throw 'La réinstallation a supprimé les données utilisateur.'
     }
 
-    & (Join-Path $SourceRoot 'scripts\uninstall-user.ps1') -InstallRoot $InstallRoot -KeepData -SkipServices -Confirm:$false
+    & (Join-Path $SourceRoot 'scripts\uninstall-user.ps1') -InstallRoot $InstallRoot -SkipServices -Confirm:$false
     if (-not (Test-Path -LiteralPath (Join-Path $InstallRoot 'config')) -or -not (Test-Path -LiteralPath $DataMarker)) {
-        throw "La désinstallation -KeepData n'a pas conservé configuration et données."
+        throw "La désinstallation par défaut n'a pas conservé configuration et données."
     }
     if (Test-Path -LiteralPath (Join-Path $InstallRoot 'app')) {
-        throw "La désinstallation -KeepData n'a pas supprimé le programme."
+        throw "La désinstallation par défaut n'a pas supprimé le programme."
     }
 
     New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
     Copy-Item -Path (Join-Path $NodeRuntimeSource '*') -Destination $RuntimeRoot -Recurse -Force
     & (Join-Path $SourceRoot 'scripts\install-user.ps1') -InstallRoot $InstallRoot -SkipChecks
-    & (Join-Path $SourceRoot 'scripts\uninstall-user.ps1') -InstallRoot $InstallRoot -SkipServices -Confirm:$false
+    & (Join-Path $SourceRoot 'scripts\uninstall-user.ps1') -InstallRoot $InstallRoot -PurgeData -SkipServices -Confirm:$false
     if (Test-Path -LiteralPath $InstallRoot) {
-        throw 'La désinstallation complète a laissé le dossier utilisateur.'
+        throw 'La désinstallation -PurgeData a laissé le dossier utilisateur.'
     }
 
     Write-Host 'INSTALLATION_LIFECYCLE_VALID'
