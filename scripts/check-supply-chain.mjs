@@ -8,6 +8,7 @@ const packageJson = readJson('package.json');
 const packageLock = readJson('package-lock.json');
 const npmrc = readText('.npmrc');
 const dockerfile = readText('Dockerfile');
+const dockerignore = readText('.dockerignore');
 const windowsDistributionBuilder = readText('scripts/release/build-windows-distribution.ps1');
 const compose = readText('compose.yaml');
 const composeHybrid = readText('compose.hybrid.yaml');
@@ -52,6 +53,13 @@ assert(
 assert(
   dockerfile.split('COPY .npmrc ./').length - 1 === 2,
   'STRICT_ALLOW_SCRIPTS_NOT_PROPAGATED_TO_DOCKER',
+);
+assert(
+  dockerignore
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .includes('!.npmrc'),
+  'STRICT_ALLOW_SCRIPTS_NOT_AVAILABLE_IN_DOCKER_CONTEXT',
 );
 assert(
   windowsDistributionBuilder.includes(
@@ -131,6 +139,7 @@ process.stdout.write(
       installScriptAllowlist: expected.allowScripts,
       strictAllowScripts: true,
       strictAllowScriptsPropagatedToDocker: true,
+      strictAllowScriptsAvailableInDockerContext: true,
       strictAllowScriptsPropagatedToWindowsStaging: true,
       overrides: expected.overrides,
       developmentOverrides: expected.developmentOverrides,
