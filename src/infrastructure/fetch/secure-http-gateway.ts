@@ -49,6 +49,10 @@ interface PinnedResponse {
   readonly body: Uint8Array;
 }
 
+interface DownloadBudget {
+  remainingBytes: number;
+}
+
 interface RobotsRule {
   readonly allowed: boolean;
   readonly pattern: string;
@@ -95,7 +99,17 @@ export class SecureHttpGateway {
       if (this.options.respectRobotsTxt && !new URL(value).pathname.endsWith('/robots.txt')) {
         await this.assertRobotsAllowed(value, deadline, context, limits);
       }
-      return await this.follow(value, value, 0, deadline, conditionalHeaders, context, limits, []);
+      return await this.follow(
+        value,
+        value,
+        0,
+        deadline,
+        conditionalHeaders,
+        context,
+        limits,
+        [],
+        { remainingBytes: limits.maxBytes },
+      );
     } finally {
       this.release();
     }
@@ -110,6 +124,7 @@ export class SecureHttpGateway {
     context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
     limits: SecureDownloadLimits,
     redirectChain: readonly DownloadRedirect[],
+    budget: DownloadBudget,
   ): Promise<DownloadedResource> {
     if (redirects > limits.maxRedirects) throw new TooManyRedirectsError();
     const approved = await withDeadline(
@@ -122,9 +137,9 @@ export class SecureHttpGateway {
       approved,
       deadline,
       sameOrigin ? conditionalHeaders : {},
-      limits.maxBytes,
+      budget,
     );
-    if (response.status >= 300 && response.status < 400 && response.status !== 304) {
+    if (isRedirectStatus(response.status)) {
       const location = response.headers['location'];
       if (location === undefined)
         throw new HttpError('Redirect response has no Location header', response.status);
@@ -145,6 +160,7 @@ export class SecureHttpGateway {
         context,
         limits,
         [...redirectChain, redirect],
+        budget,
       );
     }
     if (response.status !== 304 && (response.status < 200 || response.status >= 300)) {
@@ -163,7 +179,17 @@ export class SecureHttpGateway {
     const robotsUrl = new URL('/robots.txt', url.origin).toString();
     let resource: DownloadedResource;
     try {
-      resource = await this.follow(robotsUrl, robotsUrl, 0, deadline, {}, context, limits, []);
+      resource = await this.follow(
+        robotsUrl,
+        robotsUrl,
+        0,
+        deadline,
+        {},
+        context,
+        limits,
+        [],
+        { remainingBytes: limits.maxBytes },
+      );
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) return;
       // A temporarily unavailable robots file does not grant access silently.
@@ -180,7 +206,7 @@ export class SecureHttpGateway {
     approved: Awaited<ReturnType<UrlSecurityPolicy['assertAllowed']>>,
     deadline: number,
     conditionalHeaders: Readonly<Record<string, string>>,
-    maxBytes: number,
+    budget: DownloadBudget,
   ): Promise<PinnedResponse> {
     if (approved.addresses.length === 0) {
       throw new UrlSecurityError('No approved address is available');
@@ -194,7 +220,7 @@ export class SecureHttpGateway {
           address,
           deadline,
           conditionalHeaders,
-          maxBytes,
+          budget,
         );
       } catch (error) {
         if (!isRetryablePinnedConnectionError(error)) throw error;
@@ -213,7 +239,7 @@ export class SecureHttpGateway {
     address: string,
     deadline: number,
     conditionalHeaders: Readonly<Record<string, string>>,
-    maxBytes: number,
+    budget: DownloadBudget,
   ): Promise<PinnedResponse> {
     const url = new URL(approvedUrl);
     const remaining = deadline - Date.now();
@@ -230,6 +256,22 @@ export class SecureHttpGateway {
     }) as unknown as LookupFunction;
 
     return new Promise((resolve, reject) => {
+      let settled = false;
+      let absoluteTimer: NodeJS.Timeout | undefined;
+
+      const settleResolve = (response: PinnedResponse): void => {
+        if (settled) return;
+        settled = true;
+        if (absoluteTimer !== undefined) clearTimeout(absoluteTimer);
+        resolve(response);
+      };
+      const settleReject = (error: unknown): void => {
+        if (settled) return;
+        settled = true;
+        if (absoluteTimer !== undefined) clearTimeout(absoluteTimer);
+        reject(toPinnedRequestError(error));
+      };
+
       const outgoing = request(
         url,
         {
@@ -247,28 +289,49 @@ export class SecureHttpGateway {
         (incoming) => {
           const status = incoming.statusCode ?? 0;
           const headers = flattenHeaders(incoming.headers);
-          const declared = Number.parseInt(headers['content-length'] ?? '0', 10);
-          if (Number.isFinite(declared) && declared > maxBytes) {
+
+          // Redirect and 304 bodies are irrelevant to the contract. Abort them immediately so a
+          // hostile endpoint cannot spend the byte budget before the next validated hop.
+          if (isRedirectStatus(status) || status === 304) {
             incoming.destroy();
-            reject(new ResponseTooLargeError());
+            settleResolve({ status, headers, body: new Uint8Array() });
             return;
           }
+
+          const declared = Number.parseInt(headers['content-length'] ?? '0', 10);
+          if (Number.isFinite(declared) && declared > budget.remainingBytes) {
+            incoming.destroy();
+            settleReject(new ResponseTooLargeError());
+            return;
+          }
+
           const chunks: Buffer[] = [];
-          let size = 0;
           incoming.on('data', (chunk: Buffer) => {
-            size += chunk.length;
-            if (size > maxBytes) {
-              incoming.destroy(new ResponseTooLargeError());
+            if (chunk.length > budget.remainingBytes) {
+              incoming.destroy();
+              settleReject(new ResponseTooLargeError());
               return;
             }
+            budget.remainingBytes -= chunk.length;
             chunks.push(chunk);
           });
-          incoming.on('end', () => resolve({ status, headers, body: Buffer.concat(chunks) }));
-          incoming.on('error', (error) => reject(toPinnedRequestError(error)));
+          incoming.on('end', () => settleResolve({ status, headers, body: Buffer.concat(chunks) }));
+          incoming.on('aborted', () =>
+            settleReject(new HttpError('Secure HTTP response was aborted before completion')),
+          );
+          incoming.on('error', (error) => settleReject(error));
         },
       );
-      outgoing.setTimeout(remaining, () => outgoing.destroy(new RequestTimeoutError()));
-      outgoing.on('error', (error) => reject(toPinnedRequestError(error)));
+
+      // ClientRequest.setTimeout is an inactivity timeout. This independent timer is the actual
+      // wall-clock deadline and therefore also stops slow-drip responses that keep the socket busy.
+      absoluteTimer = setTimeout(() => {
+        settleReject(new RequestTimeoutError());
+        outgoing.destroy();
+      }, remaining);
+      absoluteTimer.unref();
+
+      outgoing.on('error', (error) => settleReject(error));
       outgoing.end();
     });
   }
@@ -376,6 +439,10 @@ function flattenHeaders(headers: IncomingHttpHeaders): Record<string, string> {
         : [[key.toLowerCase(), Array.isArray(value) ? value.join(', ') : value]],
     ),
   );
+}
+
+function isRedirectStatus(status: number): boolean {
+  return status >= 300 && status < 400 && status !== 304;
 }
 
 function isPermanentRedirect(status: number): boolean {
