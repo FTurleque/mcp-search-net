@@ -34,6 +34,14 @@ describe('fetchJson stable errors', () => {
     ).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
   });
 
+  it('rejects an empty provider response body', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+
+    await expect(
+      fetchJson('crawl4ai', new URL('https://example.com'), {}, 1_000, fetchMock as typeof fetch),
+    ).rejects.toMatchObject({ code: 'CONTENT_PROVIDER_UNAVAILABLE' });
+  });
+
   it('rejects provider JSON responses above the configured byte budget', async () => {
     const fetchMock = vi.fn(
       async () =>
