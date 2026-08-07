@@ -485,7 +485,8 @@ function parseNumericResourceId(
 ): number {
   const prefix = `mcp-search-net://${collection}/`;
   if (!uri.href.startsWith(prefix)) throw new Error(`Invalid ${collection} resource URI`);
-  return parseStrictResourceInteger(uri.href.slice(prefix.length), `${collection} id`, false);
+  const [identifier] = uri.href.slice(prefix.length).split('/');
+  return parseStrictResourceInteger(identifier ?? '', `${collection} id`, false);
 }
 
 function parsePageOffset(uri: URL, collection: 'sources' | 'documents' | 'versions' | 'sections') {
@@ -504,7 +505,9 @@ function parseDocumentVersionResourceIds(uri: URL): {
   readonly versionId: number;
 } {
   const parts = uri.href.split('/');
-  if (parts.length < 6) throw new Error('Invalid document version resource URI');
+  if (parts.length !== 6 || parts[4] !== 'versions') {
+    throw new Error('Invalid document version resource URI');
+  }
   return {
     documentId: parseStrictResourceInteger(parts[3] ?? '', 'document id', false),
     versionId: parseStrictResourceInteger(parts[5] ?? '', 'version id', false),
