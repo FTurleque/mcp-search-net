@@ -24,11 +24,33 @@ function Get-PropertyExists([object] $Object, [string] $Name) {
     return $null -ne ($Object.PSObject.Properties | Where-Object { $_.Name -eq $Name } | Select-Object -First 1)
 }
 
+function Get-CollectionCount([object] $Value) {
+    return @($Value).Count
+}
+
+function Get-OperatingSystemArchitecture {
+    $candidate = $env:PROCESSOR_ARCHITEW6432
+    if (-not $candidate) { $candidate = $env:PROCESSOR_ARCHITECTURE }
+
+    if ($candidate) {
+        switch ($candidate.ToUpperInvariant()) {
+            'AMD64' { return 'X64' }
+            'ARM64' { return 'ARM64' }
+            'X86' { return 'X86' }
+            default { return $candidate.ToUpperInvariant() }
+        }
+    }
+
+    if ([Environment]::Is64BitOperatingSystem) { return 'X64' }
+    return 'X86'
+}
+
 function Read-JsonSafe([string] $Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
     try {
         return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
     } catch {
+        Write-Verbose "Unable to parse JSON '$Path': $($_.Exception.Message)"
         return $null
     }
 }
@@ -99,7 +121,11 @@ function Invoke-ExternalCapture {
         [System.Threading.Tasks.Task]::WhenAll($stdoutTask, $stderrTask).Wait(3000) | Out-Null
         $stdout = if ($stdoutTask.IsCompleted) { $stdoutTask.Result } else { '' }
         $stderr = if ($stderrTask.IsCompleted) { $stderrTask.Result } else { '' }
-        $exitCode = if ($finished) { try { $process.ExitCode } catch { -1 } } else { -1 }
+        $exitCode = if ($finished) {
+            try { $process.ExitCode } catch { -1 }
+        } else {
+            -1
+        }
         $process.Dispose()
         return [PSCustomObject]@{
             completed = $finished
@@ -122,7 +148,7 @@ function Resolve-CommandPath([string] $Name, [string[]] $Fallbacks = @()) {
     if ($command -and (Get-PropertyExists $command 'Source') -and $command.Source) {
         return $command.Source
     }
-    foreach ($fallback in $Fallbacks) {
+    foreach ($fallback in @($Fallbacks)) {
         if ($fallback -and (Test-Path -LiteralPath $fallback -PathType Leaf)) { return $fallback }
     }
     return $null
@@ -143,13 +169,13 @@ function Get-ExpectedToolsSeen([string] $Text) {
     foreach ($tool in $ExpectedTools) {
         if ($Text -match [regex]::Escape($tool)) { $seen += $tool }
     }
-    return @($seen)
+    Write-Output -NoEnumerate $seen
 }
 
 function Test-JsonServerEntry([string] $Path, [string[]] $RootKeys) {
     $data = Read-JsonSafe $Path
     if ($null -eq $data) { return $false }
-    foreach ($rootKey in $RootKeys) {
+    foreach ($rootKey in @($RootKeys)) {
         if ((Get-PropertyExists $data $rootKey) -and (Get-PropertyExists $data.$rootKey $ServerName)) {
             return $true
         }
@@ -170,6 +196,7 @@ function New-ClientResult {
         [string] $EvidenceSource,
         [string] $NextAction
     )
+    $normalizedTools = @($ExpectedToolsSeen | Where-Object { $null -ne $_ -and $_ -ne '' })
     return [PSCustomObject][ordered]@{
         name = $Name
         detected = $Detected
@@ -178,7 +205,7 @@ function New-ClientResult {
         configured = $Configured
         serverListed = $ServerListed
         serverDetailsAvailable = $ServerDetailsAvailable
-        expectedToolsSeen = @($ExpectedToolsSeen)
+        expectedToolsSeen = $normalizedTools
         evidenceSource = $EvidenceSource
         nativeToolInvocationObserved = $false
         verdict = 'NON_OBSERVE'
@@ -358,7 +385,7 @@ $report = [PSCustomObject][ordered]@{
     smokeMode = [bool]$SmokeMode
     host = [PSCustomObject][ordered]@{
         osVersion = [Environment]::OSVersion.VersionString
-        osArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+        osArchitecture = Get-OperatingSystemArchitecture
         powershellVersion = $PSVersionTable.PSVersion.ToString()
     }
     server = $server
@@ -380,26 +407,31 @@ $lines.Add("Server version: $($server.version)")
 $lines.Add('')
 $lines.Add('| Client | Detected | Configured/listed | Tools seen by metadata | Native tool call | Verdict |')
 $lines.Add('| --- | --- | --- | --- | --- | --- |')
-foreach ($client in $clients) {
-    $tools = if ($client.expectedToolsSeen.Count -gt 0) { $client.expectedToolsSeen -join ', ' } else { '—' }
-    $lines.Add("| $($client.name) | $($client.detected) | $($client.configured -or $client.serverListed) | $tools | false | NON OBSERVÉ |")
+foreach ($client in @($clients)) {
+    $toolsSeen = @($client.expectedToolsSeen | Where-Object { $null -ne $_ -and $_ -ne '' })
+    $tools = if ((Get-CollectionCount $toolsSeen) -gt 0) { $toolsSeen -join ', ' } else { '-' }
+    $lines.Add("| $($client.name) | $($client.detected) | $($client.configured -or $client.serverListed) | $tools | false | NON OBSERVE |")
 }
 $lines.Add('')
 $lines.Add('## Manual completion')
 $lines.Add('')
 $lines.Add('For each client, perform a real native tool invocation and record the client version, OS, server revision, and observed tool call. The recommended workflow is `search_docs -> read_doc_section`.')
 $lines.Add('')
-foreach ($client in $clients) {
+foreach ($client in @($clients)) {
     $lines.Add("- **$($client.name)**: $($client.nextAction)")
 }
 [System.IO.File]::WriteAllText($markdownPath, ($lines -join "`r`n") + "`r`n", $Utf8NoBom)
 
 if ($SmokeMode) {
-    if ($clients.Count -ne 5) { throw "Smoke mode expected five client records, got $($clients.Count)." }
+    $clientCount = Get-CollectionCount $clients
+    if ($clientCount -ne 5) { throw "Smoke mode expected five client records, got $clientCount." }
     $parsed = Get-Content -LiteralPath $jsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($parsed.schemaVersion -ne '1.0' -or $parsed.clients.Count -ne 5) {
-        throw 'Smoke mode report serialization is invalid.'
+    if (-not (Get-PropertyExists $parsed 'clients')) { throw 'Smoke mode report is missing clients.' }
+    $parsedClientCount = Get-CollectionCount $parsed.clients
+    if ($parsed.schemaVersion -ne '1.0' -or $parsedClientCount -ne 5) {
+        throw "Smoke mode report serialization is invalid (clients=$parsedClientCount)."
     }
+    if (-not $parsed.host.osArchitecture) { throw 'Smoke mode report is missing OS architecture.' }
     Write-Host "NATIVE_CLIENT_CERTIFICATION_SMOKE_VALID json=$jsonPath markdown=$markdownPath"
 } else {
     Write-Host "NATIVE_CLIENT_CERTIFICATION_COLLECTED json=$jsonPath markdown=$markdownPath"
