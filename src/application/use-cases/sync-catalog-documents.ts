@@ -105,7 +105,7 @@ export class SyncCatalogDocuments {
     const resumedDocuments = applyResumeCursor(configuredDocuments, options.resumeAfter);
     const selectedDocuments = applyLimit(resumedDocuments, options.limit);
     const limited = options.limit !== undefined && resumedDocuments.length > selectedDocuments.length;
-    const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : undefined;
+    const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter;
     const rateLimitMs = normalizeRateLimit(options.rateLimitMs);
     const scopedSource =
       options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
