@@ -279,7 +279,8 @@ async function filterApprovedLinks(
   let inspected = 0;
 
   for (const value of uniqueValues) {
-    if (accepted.length >= maximum || inspected >= maximumInspections || Date.now() >= deadline) break;
+    if (accepted.length >= maximum || inspected >= maximumInspections || Date.now() >= deadline)
+      break;
     inspected += 1;
     try {
       const remaining = deadline - Date.now();
