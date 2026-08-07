@@ -20,6 +20,7 @@ const expected = {
   nodeRelayImage:
     'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
   allowScripts: {
+    'better-sqlite3@13.0.3': false,
     'esbuild@0.28.1': true,
     'fsevents@2.3.3': true,
   },
@@ -45,7 +46,6 @@ assert(
 );
 const lockedBetterSqlite3 = packageLock.packages?.['node_modules/better-sqlite3'];
 assert(lockedBetterSqlite3?.version === expected.betterSqlite3, 'BETTER_SQLITE3_LOCK_MISMATCH');
-assert(lockedBetterSqlite3?.hasInstallScript !== true, 'BETTER_SQLITE3_INSTALL_SCRIPT_PRESENT');
 assert(
   packageLock.packages?.['node_modules/node-addon-api'] !== undefined,
   'BETTER_SQLITE3_NAPI_DEPENDENCY_MISSING',
@@ -157,6 +157,7 @@ process.stdout.write(
       sdk: expected.sdk,
       betterSqlite3: expected.betterSqlite3,
       betterSqlite3Napi: true,
+      betterSqlite3FallbackBuildAllowed: false,
       deprecatedPrebuildInstallPresent: false,
       installScriptAllowlist: expected.allowScripts,
       strictAllowScripts: true,
