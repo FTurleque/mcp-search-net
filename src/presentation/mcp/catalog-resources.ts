@@ -484,15 +484,19 @@ function parseNumericResourceId(
   collection: 'sources' | 'documents' | 'sections',
 ): number {
   const prefix = `mcp-search-net://${collection}/`;
-  if (!uri.href.startsWith(prefix)) return Number.NaN;
-  return Number.parseInt(uri.href.slice(prefix.length), 10);
+  if (!uri.href.startsWith(prefix)) throw new Error(`Invalid ${collection} resource URI`);
+  return parseStrictResourceInteger(uri.href.slice(prefix.length), `${collection} id`, false);
 }
 
 function parsePageOffset(uri: URL, collection: 'sources' | 'documents' | 'versions' | 'sections') {
   const marker = collection === 'versions' ? '/versions/page/' : `//${collection}/page/`;
   const markerIndex = uri.href.lastIndexOf(marker);
-  if (markerIndex === -1) return Number.NaN;
-  return Number.parseInt(uri.href.slice(markerIndex + marker.length), 10);
+  if (markerIndex === -1) throw new Error(`Invalid ${collection} page resource URI`);
+  return parseStrictResourceInteger(
+    uri.href.slice(markerIndex + marker.length),
+    `${collection} page offset`,
+    true,
+  );
 }
 
 function parseDocumentVersionResourceIds(uri: URL): {
@@ -500,7 +504,17 @@ function parseDocumentVersionResourceIds(uri: URL): {
   readonly versionId: number;
 } {
   const parts = uri.href.split('/');
-  const documentId = parts.length >= 4 ? Number.parseInt(parts[3] ?? '', 10) : Number.NaN;
-  const versionId = parts.length >= 6 ? Number.parseInt(parts[5] ?? '', 10) : Number.NaN;
-  return { documentId, versionId };
+  if (parts.length < 6) throw new Error('Invalid document version resource URI');
+  return {
+    documentId: parseStrictResourceInteger(parts[3] ?? '', 'document id', false),
+    versionId: parseStrictResourceInteger(parts[5] ?? '', 'version id', false),
+  };
+}
+
+function parseStrictResourceInteger(value: string, label: string, allowZero: boolean): number {
+  if (!/^\d+$/u.test(value)) throw new Error(`Invalid ${label}`);
+  const parsed = Number(value);
+  const minimum = allowZero ? 0 : 1;
+  if (!Number.isSafeInteger(parsed) || parsed < minimum) throw new Error(`Invalid ${label}`);
+  return parsed;
 }
