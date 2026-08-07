@@ -227,7 +227,7 @@ for (const invariant of [
 }
 for (const invariant of [
   'WebUrl.createTransport(document.url)',
-  'const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : undefined',
+  'const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter',
   'resumeAfter: continuationCursor',
 ]) {
   requireText(syncDocuments, invariant, `catalog sync: invariant reprise/transport absent ${invariant}`);
