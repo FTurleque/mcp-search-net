@@ -59,11 +59,7 @@ async function readJsonWithLimit(
     );
   }
 
-  if (response.body === null) {
-    throw providerUnavailable(service, `${service} returned an empty response body`, undefined);
-  }
   const reader = response.body.getReader();
-
   const chunks: Uint8Array[] = [];
   let total = 0;
   while (true) {
