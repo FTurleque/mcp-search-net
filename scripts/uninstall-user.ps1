@@ -2,6 +2,7 @@
 param(
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'mcp-search-net'),
     [switch]$KeepData,
+    [switch]$PurgeData,
     [switch]$SkipServices
 )
 
@@ -9,6 +10,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
 $ExpectedRoot = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'mcp-search-net'))
+if ($KeepData -and $PurgeData) {
+    throw 'KeepData et PurgeData sont mutuellement exclusifs.'
+}
+$DeleteData = [bool]$PurgeData
 
 if (-not $InstallRoot.Equals($ExpectedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
     throw "Désinstallation refusée hors de l'emplacement attendu : $ExpectedRoot"
@@ -44,10 +49,10 @@ if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $
             $DownArguments += @('-f', $ComposeHybridFile)
         }
         $DownArguments += 'down'
-        if (-not $KeepData) {
+        if ($DeleteData) {
             $DownArguments += '--volumes'
         }
-        $ComposeAction = if ($KeepData) { 'Arrêter les services Compose' } else { 'Arrêter les services Compose et supprimer leurs volumes' }
+        $ComposeAction = if (-not $DeleteData) { 'Arrêter les services Compose' } else { 'Arrêter les services Compose et supprimer leurs volumes' }
         if ($PSCmdlet.ShouldProcess("projet Compose $project", $ComposeAction)) {
             & $Docker.Source @DownArguments
             if ($LASTEXITCODE -ne 0) {
@@ -57,7 +62,7 @@ if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $
     }
 }
 
-if ($KeepData) {
+if (-not $DeleteData) {
     foreach ($name in @('app', 'bin', 'docs', 'runtime', 'src', 'migrations', 'catalog-migrations', 'compose.yaml', 'compose.hybrid.yaml', 'Dockerfile', '.dockerignore', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json', '.env.example', 'mcp.json.example', 'mcp.container.json.example', 'VERSION', 'BUILD-MANIFEST.json')) {
         $target = Join-Path $InstallRoot $name
         if ((Test-Path -LiteralPath $target) -and $PSCmdlet.ShouldProcess($target, 'Supprimer')) {
@@ -68,5 +73,5 @@ if ($KeepData) {
 }
 elseif ($PSCmdlet.ShouldProcess($InstallRoot, 'Supprimer entièrement')) {
     Remove-Item -LiteralPath $InstallRoot -Recurse -Force
-    Write-Host "mcp-search-net a été désinstallé pour cet utilisateur."
+    Write-Host "mcp-search-net et ses données ont été désinstallés pour cet utilisateur."
 }
