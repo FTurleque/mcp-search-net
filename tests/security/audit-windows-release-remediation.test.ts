@@ -37,4 +37,13 @@ describe('audit Windows and release remediation', () => {
     expect(configureInstall).toContain("ownership    = 'preexisting'");
     expect(configureInstall).toContain("if ($rec.ownership -ne 'managed')");
   });
+
+  it('preserves an unmarked preexisting Codex TOML server table', () => {
+    expect(configureInstall).toContain('function Test-CodexMcpEntry');
+    expect(configureInstall).toContain("'[mcp_servers.mcp-search-net]'" );
+    expect(configureInstall).toContain('elseif (Test-CodexMcpEntry $text)');
+    expect(configureInstall).toContain("ownership    = 'preexisting'");
+    expect(configureInstall).toContain("Codex Desktop : table 'mcp_servers.mcp-search-net' existante non gérée — préservée.");
+    expect(configureInstall).toContain("Codex Desktop : entrée préexistante/non gérée — préservée.");
+  });
 });
