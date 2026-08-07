@@ -59,10 +59,11 @@ async function readJsonWithLimit(
     );
   }
 
-  const reader = response.body.getReader();
+  const stream = response.body as ReadableStream<Uint8Array>;
+  const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  while (true) {
+  for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
