@@ -19,6 +19,11 @@ pas ce document pour connaître l’état présent.
   `cbc9b58d0c948da2ed840a8245c3aafa494e67b7`, qualification CI run `31126841127`. Le merge commit
   `005bf913de75feeb78ae7c9d23d60e7b93d210c0` n’introduit aucun changement de contenu par rapport
   à ce head.
+- Remédiation de qualification #47/#48 : terminée le 7 août 2026. Le candidat exact
+  `2b7af195e28861f185d8aa39db8f71640d6f8845` a réussi la CI PR run `31178105942`, les trois jobs
+  exact-head Node.js/Docker/Windows, les deux audits npm et le Quality Gate SonarQube avec zéro
+  Security Hotspot. La PR #48 a ensuite été mergée ; `master` et `develop` ont été réalignées sur
+  `9eeb6aba3fdb2b4a04b5e4b2085b9b9454873d5d`.
 - Release V2/1.1.0 : aucune publication n’est déclarée par ce document ; une publication doit
   passer la qualification exact-head et le workflow de release volontaire.
 - Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
@@ -161,15 +166,20 @@ explicite `-PurgeData` ; `-KeepData` reste accepté comme alias de compatibilit�
 - chaque URL et chaque redirection est validée avant connexion ;
 - les adresses DNS publiques approuvées sont épinglées et peuvent être essayées successivement sans
   nouvelle résolution DNS ;
-- les plages IPv4/IPv6 privées, réservées, de traduction, tunnel et documentation sont bloquées ;
+- les littéraux IPv4/IPv6 HTTP(S) suivent la même politique d’adresses publiques que les réponses
+  DNS ; les plages privées, réservées, de traduction, tunnel et documentation restent bloquées ;
 - Crawl4AI ne rejoint que le réseau Docker interne `backend` et n’expose aucun port hôte direct ;
 - le mode hybride passe par un relais Node loopback minimal et durci vers `crawl4ai:11235` ;
-- `robots.txt`, les budgets de taille/durée/redirections et les limites de concurrence restent
-  appliqués par la passerelle HTTP ;
+- `robots.txt` est chargé uniquement depuis la racine de l’origine et s’applique à toutes les autres
+  ressources, y compris un chemin imbriqué se terminant lui-même par `/robots.txt` ;
+- une opération de téléchargement partage un budget d’octets et une deadline uniques entre
+  `robots.txt`, les redirections et la ressource cible ; les limites de concurrence restent
+  appliquées par la passerelle HTTP ;
 - l’historique de throttling par origine est borné afin qu’un processus long ne conserve pas une
   entrée mémoire pour un nombre illimité d’origines visitées ;
 - le HTML envoyé au fallback natif Crawl4AI neutralise les attributs de chargement de ressources,
-  y compris `srcdoc`, avant le transport `raw://` ;
+  y compris `srcdoc`, supprime les éléments actifs et abandonne de façon conservative le reliquat
+  d’un bloc actif ou d’une balise de début malformée/non fermée avant le transport `raw://` ;
 - `pdfjs-dist` est fixé à `6.2.108` afin de sortir de la plage affectée par
   `GHSA-hq66-cqwq-w95j` (exécution JavaScript arbitraire sur PDF malveillant).
 
@@ -211,6 +221,13 @@ toolchain Inno Setup est figée sur la version `6.7.1`.
   fonctionnement hors ligne et budget mémoire produit avant toute décision d’intégration ;
 - l’affichage et l’usage direct des resources/templates dépendent du client MCP ; les cinq outils
   restent le contrat portable principal ;
+- les entrypoints bootstrap/CLI sont surtout qualifiés par les suites integration/E2E qui exécutent
+  des processus réels ; la couverture V8 in-process ne doit pas être interprétée seule comme leur
+  niveau de qualification ;
+- `better-sqlite3@12.11.1` entraîne encore le paquet déprécié `prebuild-install@7.1.3`. Les audits npm
+  du candidat qualifié ne signalent aucune vulnérabilité. La suppression de cette transitive passe
+  par `better-sqlite3` 13/N-API, un changement de version majeure et de moteur SQLite qui doit être
+  qualifié comme migration dédiée plutôt qu’introduit opportunistement dans un hardening réseau ;
 - la certification native des clients reste ouverte dans #34 ;
 - le serveur est un MCP STDIO local : il n’embarque aucun LLM et n’exige aucune API commerciale.
 
@@ -223,8 +240,8 @@ porter du travail unique et peuvent être retirées de la liste des branches act
 
 ## Réconciliation de qualification — audit du 7 août 2026
 
-Le nouvel audit complet du HEAD `ec0c6969178e99b424468631e00082acf51e3014` a établi que le produit
-avait conservé un socle runtime solide, mais que la gouvernance de qualification avait régressé :
+Le nouvel audit complet du HEAD `ec0c6969178e99b424468631e00082acf51e3014` avait établi que le
+produit conservait un socle runtime solide, mais que la gouvernance de qualification avait régressé :
 
 - la PR #45 avait été mergée alors que son run exact-head `31162249594` était en échec sur le job
   `Node.js 24 validation` ;
@@ -237,15 +254,19 @@ avait conservé un socle runtime solide, mais que la gouvernance de qualificatio
 Ces résultats restent des preuves historiques de non-qualification et ne doivent jamais être
 réinterprétés comme des PASS du produit courant.
 
-L’issue #47 et la PR #48 portent la remédiation : suppression et interdiction déterministe des
-workflows temporaires privilégiés, restauration des gates Node, propagation de
-`strict-allow-scripts=true` dans Docker et le staging Windows, durcissement HTML/Crawl4AI, parsing
-strict des resource URIs MCP, désinstallation historique safe-by-default, correction de l’identité
-des sections SQLite hors chunking réel et mise à jour de PDF.js vers `6.2.108`.
+La remédiation portée par l’issue #47 et la PR #48 est désormais **terminée**. Elle a supprimé et
+interdit déterministement les workflows temporaires privilégiés, restauré les gates Node, propagé
+`strict-allow-scripts=true` dans Docker et le staging Windows, durci HTML/Crawl4AI, rendu strict le
+parsing des resource URIs MCP, sécurisé la désinstallation historique, corrigé l’identité des
+sections SQLite hors chunking réel et mis PDF.js à jour vers `6.2.108`.
 
-La règle de sortie est stricte : le merge de cette remédiation n’est autorisé que si le HEAD final de
-la PR réussit les jobs `Node.js 24 validation`, `Docker integration and live E2E` et
-`Windows installation and STDIO packaging`, les deux audits npm et le Quality Gate SonarQube. Une
-publication ultérieure depuis `master` exige de nouveau une preuve CI réussie attachée au SHA exact
-de `master`. L’issue #34 reste séparée et ouverte pour la certification native réelle des clients
-MCP interactifs.
+Candidat exact de cette remédiation : `2b7af195e28861f185d8aa39db8f71640d6f8845`.
+CI PR : run `31178105942` / #702. Les jobs `Node.js 24 validation`,
+`Docker integration and live E2E` et `Windows installation and STDIO packaging` ont réussi, ainsi
+que les deux audits npm et le Quality Gate SonarQube avec zéro Security Hotspot. La PR #48 a été
+mergée et `develop` a été réalignée explicitement sur le merge commit
+`9eeb6aba3fdb2b4a04b5e4b2085b9b9454873d5d`, identique à `master` après intégration.
+
+Une publication ultérieure depuis `master` exige toujours une nouvelle preuve CI réussie attachée
+au SHA exact de `master`. L’issue #34 reste séparée et ouverte pour la certification native réelle
+des clients MCP interactifs.
