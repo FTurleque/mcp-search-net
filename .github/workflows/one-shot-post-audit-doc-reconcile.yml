@@ -1,0 +1,73 @@
+name: One-shot Post-audit Documentation Reconciliation
+
+on:
+  push:
+    branches:
+      - docs/post-audit-remediation-reconciliation
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out documentation branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: docs/post-audit-remediation-reconciliation
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Reconcile authoritative current state
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('docs/status/current-state.md')
+          text = path.read_text(encoding='utf-8')
+          marker = '## Réconciliation post-audit — 7 août 2026'
+          if marker not in text:
+              section = '''
+
+## Réconciliation post-audit — 7 août 2026
+
+La remédiation complète issue du nouvel audit de `mcp-search-net` a été intégrée via la PR #45.
+L'issue de remédiation #44 est terminée. Les branches `master` et `develop` ont ensuite été réalignées
+sur le même état intégré.
+
+Les corrections livrées couvrent notamment :
+
+- conservation explicite des données utilisateur lors de la désinstallation Windows et suppression
+  uniquement sur opt-in ;
+- deadline HTTP wall-clock réelle, budget d'octets cumulatif, abandon immédiat des bodies de
+  redirection et validation bornée des liens ;
+- séparation entre URL de transport et canonicalisation, y compris pour l'identité du cache ;
+- plafonnement des réponses JSON fournisseurs ;
+- chunking borné des sections avant persistance SQLite/FTS5 ;
+- réconciliation déclarative de `catalog-sources.yml`, reprise de sync corrigée, ingestion locale
+  bornée et purge SQLite par lots ;
+- préservation des configurations MCP préexistantes, y compris Codex TOML ;
+- refus de publication Windows depuis `master` sans CI réussie sur le SHA exact et les trois jobs
+  obligatoires serveur, Docker et Windows.
+
+La PR #45 a été mergée uniquement après qualification exact-head réussie des jobs `Node.js 24
+validation`, `Docker integration and live E2E` et `Windows installation and STDIO packaging`.
+
+L'issue #34 reste volontairement ouverte : la certification native réelle d'IntelliJ/GitHub
+Copilot, Claude Desktop/Code, Copilot CLI et Codex exige encore une observation manuelle sur des
+clients installés. Un test STDIO de référence ne constitue pas cette preuve native.
+'''
+              path.write_text(text.rstrip() + section + '\n', encoding='utf-8')
+
+      - name: Remove one-shot workflow and commit documentation only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/one-shot-post-audit-doc-reconcile.yml
+          git add docs/status/current-state.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs: reconcile post-audit remediation state'
+          git push origin HEAD:docs/post-audit-remediation-reconciliation
