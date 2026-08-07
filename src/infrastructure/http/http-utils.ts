@@ -59,21 +59,16 @@ async function readJsonWithLimit(
     );
   }
 
-  const reader = response.body?.getReader();
-  if (reader === undefined) {
-    try {
-      return JSON.parse('');
-    } catch (error) {
-      throw providerUnavailable(service, `${service} returned invalid JSON`, error);
-    }
+  if (response.body === null) {
+    throw providerUnavailable(service, `${service} returned an empty response body`, undefined);
   }
+  const reader = response.body.getReader();
 
   const chunks: Uint8Array[] = [];
   let total = 0;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    if (value === undefined) continue;
     total += value.byteLength;
     if (total > maximumBytes) {
       await reader.cancel();
