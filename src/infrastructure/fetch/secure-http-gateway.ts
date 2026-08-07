@@ -180,7 +180,17 @@ export class SecureHttpGateway {
     const robotsUrl = new URL('/robots.txt', url.origin).toString();
     let resource: DownloadedResource;
     try {
-      resource = await this.follow(robotsUrl, robotsUrl, 0, deadline, {}, context, limits, [], budget);
+      resource = await this.follow(
+        robotsUrl,
+        robotsUrl,
+        0,
+        deadline,
+        {},
+        context,
+        limits,
+        [],
+        budget,
+      );
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) return;
       throw error;
