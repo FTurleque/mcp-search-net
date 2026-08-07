@@ -1,0 +1,112 @@
+name: One-shot Node Diagnostics
+
+on:
+  pull_request:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    if: github.head_ref == 'agent/audit-remediation-complete'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Run ESLint and persist exact JSON report
+        shell: bash
+        run: |
+          set +e
+          npx eslint . --max-warnings=0 --format json --output-file lint-report.json
+          code=$?
+          printf '%s\n' "$code" > lint-exit-code.txt
+          exit 0
+      - name: Upload lint diagnostic
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: audit-lint-diagnostic
+          path: |
+            lint-report.json
+            lint-exit-code.txt
+      - name: Fail if lint failed
+        shell: bash
+        run: test "$(cat lint-exit-code.txt)" = "0"
+
+  typecheck:
+    if: github.head_ref == 'agent/audit-remediation-complete'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+
+  coverage:
+    if: github.head_ref == 'agent/audit-remediation-complete'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+      - run: npm ci
+      - name: Run coverage and preserve reports
+        shell: bash
+        run: |
+          set +e
+          npm run test:coverage
+          code=$?
+          printf '%s\n' "$code" > coverage-exit-code.txt
+          exit 0
+      - name: Upload coverage diagnostic
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: audit-coverage-diagnostic
+          if-no-files-found: warn
+          path: |
+            coverage-exit-code.txt
+            .data/test-reports
+            coverage
+      - name: Fail if coverage failed
+        shell: bash
+        run: test "$(cat coverage-exit-code.txt)" = "0"
+
+  client-contract:
+    if: github.head_ref == 'agent/audit-remediation-complete'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run client:contract-report

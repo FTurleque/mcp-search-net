@@ -17,7 +17,8 @@ Elle est déclenchée par CLI ou worker dédié, jamais par un outil MCP libreme
 ## Principes
 
 1. La synchronisation est déclenchée explicitement par CLI.
-2. Les URLs restent soumises aux politiques SSRF existantes.
+2. Les URLs restent soumises aux politiques SSRF existantes et leur query string de transport n'est
+   pas réécrite avant le fetch.
 3. Aucune authentification Web, cookie, proxy ou script utilisateur n'est accepté.
 4. Un échec réseau n'efface pas le dernier contenu valide.
 5. Les versions sont créées uniquement quand le SHA-256 du payload HTTP téléchargé change.
@@ -25,6 +26,8 @@ Elle est déclenchée par CLI ou worker dédié, jamais par un outil MCP libreme
 7. Les opérations mutables restent hors MCP.
 8. Le traitement est séquentiel en V2 initiale pour faciliter le rate limiting et la reprise.
 9. Une révision documentaire est atomique : document, version, sections, FTS et pointeur courant.
+10. Une section persistée est bornée à 12 000 caractères ; les sections plus longues sont découpées
+    avec un overlap borné avant écriture SQLite/FTS5.
 
 ## Pipeline implémenté
 
@@ -39,12 +42,26 @@ Crawl4aiContentFetcher
    ↓
 CatalogRepository.commitDocumentRevision
    ↓
+section chunking borné
+   ↓
 document + version + sections + FTS + current_version_id (transaction unique)
    ↓
 aliases + staleness_events liés au sync_run
    ↓
 SyncReport JSON
 ```
+
+## Réconciliation des sources
+
+`catalog load-sources --file config/catalog-sources.yml` est déclaratif :
+
+- une source absente est créée (`created`) ;
+- une source déjà identique est laissée intacte (`skipped`) ;
+- une source dont `displayName`, `baseUrl`, type, langue, politique de fraîcheur, stratégie de sync ou
+  état `enabled` a changé est mise à jour en place (`updated`).
+
+Quand au moins une source existante est réconciliée, l'index FTS dérivé est reconstruit une fois afin
+qu'un changement de `enabled` soit immédiatement reflété dans la recherche locale.
 
 ## CLI `catalog sync`
 
@@ -61,7 +78,8 @@ Options :
 ```
 
 Le dry-run planifie les sources/documents configurés sans fetch réseau. Il persiste néanmoins un
-`sync_run` créé en `RUNNING`, puis clôturé en `SUCCESS` avec les compteurs du plan.
+`sync_run` créé en `RUNNING`, puis clôturé en `SUCCESS` avec les compteurs du plan. `dry-run` signifie
+ici « aucune mutation des documents/versions/sections », et non « aucune écriture d'audit ».
 
 ### Sync réel
 
@@ -78,7 +96,8 @@ Options :
 --resume-after <cursor>  reprend après un document déjà traité
 ```
 
-`--limit` est désormais optionnel. Sans `--limit`, la synchronisation traite tous les documents activés du périmètre sélectionné.
+`--limit` est optionnel. Sans `--limit`, la synchronisation traite tous les documents activés du
+périmètre sélectionné.
 
 ### Curseur de reprise
 
@@ -94,16 +113,25 @@ Format raccourci possible quand `--source-key` est fourni :
 --source-key nodejs-docs --resume-after fs
 ```
 
-La reprise saute tous les documents jusqu'au curseur inclus et reprend au document suivant dans l'ordre du fichier `catalog-sources.yml`.
+La reprise saute tous les documents jusqu'au curseur inclus et reprend au document suivant dans
+l'ordre du fichier `catalog-sources.yml`.
 
-Si le curseur n'existe pas dans le périmètre sélectionné, la commande échoue explicitement pour éviter une resynchronisation silencieuse depuis le début.
+Quand `limited = true`, le champ `resumeAfter` du rapport est calculé à partir du **dernier document
+réellement sélectionné pour ce lot**. Il peut donc être réinjecté directement dans l'appel suivant ;
+il ne répète plus le curseur d'entrée d'un lot limité.
 
-## Rate limiting
+Si le curseur d'entrée n'existe pas dans le périmètre sélectionné, la commande échoue explicitement
+pour éviter une resynchronisation silencieuse depuis le début.
 
-La synchronisation V2 applique deux protections :
+## Rate limiting et budgets réseau
 
-1. `SecureHttpGateway` conserve les protections réseau existantes : timeout, taille maximale, redirections, concurrence et délai minimum configuré.
-2. `SyncCatalogDocuments` applique un délai applicatif séquentiel entre deux documents via `rateLimitMs`.
+La synchronisation V2 applique plusieurs protections :
+
+1. `SecureHttpGateway` conserve les protections réseau : deadline wall-clock absolue, taille maximale
+   cumulée de la ressource, redirections bornées, concurrence et délai minimum configuré ;
+2. les bodies 3xx/304 non utilisés ne sont pas bufferisés ;
+3. `SyncCatalogDocuments` applique un délai applicatif séquentiel entre deux documents via
+   `rateLimitMs`.
 
 Priorité du délai applicatif :
 
@@ -152,6 +180,16 @@ du Markdown normalisé exige une stratégie de migration/double-hash pour les ca
 ce changement est donc reporté explicitement à V3 et devra être comparé sur un corpus réel avant
 adoption.
 
+## Sections persistées et FTS5
+
+Avant `commitDocumentRevision`, le repository borne chaque section persistée à 12 000 caractères.
+Une section plus longue est découpée avec un overlap de 400 caractères, reçoit des ordinaux
+séquentiels et des ancres de partie déterministes. Les chunks identiques sont dédupliqués par
+SHA-256 avant insertion afin de respecter l'unicité `(document_version_id, content_hash)`.
+
+Cette règle s'applique à la synchronisation réseau comme à l'ingestion CLI et borne la quantité de
+texte traitée par une entrée FTS5 individuelle.
+
 ## Sortie JSON
 
 Le sync réel retourne notamment :
@@ -173,15 +211,17 @@ resumeAfter
 index
 ```
 
-`limited` vaut `true` quand `--limit` a empêché de traiter tous les documents restants. Le champ
-`index.indexedSections` provient de la vérification post-sync ; le CLI ne masque plus une
-incohérence en reconstruisant automatiquement tout l'index.
+`limited` vaut `true` quand `--limit` a empêché de traiter tous les documents restants. Dans ce cas,
+`resumeAfter` contient le dernier document sélectionné pour le lot. Le champ `index.indexedSections`
+provient de la vérification post-sync ; le CLI ne masque plus une incohérence en reconstruisant
+automatiquement tout l'index.
 
 ## Reprise après interruption
 
-La reprise opérationnelle repose sur l'ordre déterministe de `catalog-sources.yml` et sur le dernier document visible dans le rapport JSON.
+La reprise opérationnelle repose sur l'ordre déterministe de `catalog-sources.yml` et, pour un lot
+limité, sur le champ `resumeAfter` renvoyé par le rapport JSON.
 
-Exemple : si le dernier document traité est `nodejs-docs:fs`, relancer :
+Exemple : si le rapport renvoie `nodejs-docs:fs`, relancer :
 
 ```bash
 catalog sync --file config/catalog-sources.yml --resume-after nodejs-docs:fs
@@ -214,9 +254,10 @@ autorise aussi `CANCELLED`, mais aucun use case du candidat ne produit actuellem
 ## Tests couverts
 
 - fetch et stockage d'un document ;
+- conservation exacte de la query string de transport ;
 - sync exhaustive sans `--limit` ;
 - rate limiting applicatif ;
-- reprise via curseur ;
+- reprise via curseur et continuation calculée pour un lot limité ;
 - validateurs de version courante ;
 - contenu inchangé ;
 - réponse `notModified` avec touch `last_seen_at` et absence de nouvelle version ;
@@ -226,6 +267,7 @@ autorise aussi `CANCELLED`, mais aucun use case du candidat ne produit actuellem
 - aliases dédupliqués et six types d'événements liés au run ;
 - transition `RUNNING` vers un seul statut terminal ;
 - index FTS mis à jour dans la transaction de chaque révision ;
+- chunking borné des sections surdimensionnées ;
 - rollback des écritures si sections ou indexation échouent ;
 - vérification post-sync sans rebuild correctif implicite.
 

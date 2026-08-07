@@ -279,8 +279,7 @@ function decodeHtml(html: string, baseUrl: string): DecodedContent {
     .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/giu, (_all, body: string) => `\n- ${stripTags(body)}`)
     .replace(
       /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/giu,
-      (_all, href: string, body: string) =>
-        `[${stripTags(body)}](${new URL(href, baseUrl).toString()})`,
+      (_all, href: string, body: string) => formatMarkdownLink(href, body, baseUrl),
     )
     .replace(/<(br|p|div|section|article|main|header|footer|table|tr)\b[^>]*>/giu, '\n')
     .replace(/<[^>]+>/gu, ' ');
@@ -323,6 +322,15 @@ function normalizeLink(value: string, baseUrl: string): readonly string[] {
     return normalized === undefined ? [] : [normalized];
   } catch {
     return [];
+  }
+}
+
+function formatMarkdownLink(href: string, body: string, baseUrl: string): string {
+  const text = stripTags(body);
+  try {
+    return `[${text}](${new URL(href, baseUrl).toString()})`;
+  } catch {
+    return text;
   }
 }
 

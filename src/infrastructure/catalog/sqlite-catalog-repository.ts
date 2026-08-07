@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type Database from 'better-sqlite3';
 
 import type {
@@ -46,6 +48,9 @@ import { SqliteCatalogSearch } from './sqlite-catalog-search.js';
 import { SqliteCatalogSourceStore } from './sqlite-catalog-source-store.js';
 import { SqliteCatalogSyncStore } from './sqlite-catalog-sync-store.js';
 
+const MAX_PERSISTED_SECTION_CHARACTERS = 12_000;
+const SECTION_CHUNK_OVERLAP_CHARACTERS = 400;
+
 /**
  * Stable CatalogRepository facade over one SQLite connection.
  *
@@ -74,6 +79,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
     return this.asPromise(() => this.sources.add(source));
   }
 
+  public updateSource(source: NewCatalogSource): Promise<CatalogSource> {
+    return this.asPromise(() => this.sources.update(source));
+  }
+
   public getSourceByKey(sourceKey: string): Promise<CatalogSource | undefined> {
     return this.asPromise(() => this.sources.getByKey(sourceKey));
   }
@@ -98,7 +107,11 @@ export class SqliteCatalogRepository implements CatalogRepository {
     revision: CatalogDocumentRevisionInput,
     observation?: CatalogDocumentObservationInput,
   ): Promise<CatalogDocumentRevision> {
-    return this.asPromise(() => this.revisions.commit(revision, observation));
+    const boundedRevision: CatalogDocumentRevisionInput = {
+      ...revision,
+      sections: chunkDocumentSections(revision.sections),
+    };
+    return this.asPromise(() => this.revisions.commit(boundedRevision, observation));
   }
 
   public upsertDocument(
@@ -133,7 +146,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
     sections: readonly DocumentSectionInput[],
   ): Promise<readonly DocumentSection[]> {
     return this.asPromise(() =>
-      this.revisions.replaceDocumentSections(documentVersionId, sections),
+      this.revisions.replaceDocumentSections(documentVersionId, chunkDocumentSections(sections)),
     );
   }
 
@@ -241,4 +254,54 @@ export class SqliteCatalogRepository implements CatalogRepository {
   private asPromise<T>(operation: () => T): Promise<T> {
     return Promise.resolve().then(operation);
   }
+}
+
+function chunkDocumentSections(
+  sections: readonly DocumentSectionInput[],
+): readonly DocumentSectionInput[] {
+  const bounded: DocumentSectionInput[] = [];
+  const seenContentHashes = new Set<string>();
+
+  for (const section of sections) {
+    const characters = Array.from(section.content.trim());
+    if (characters.length <= MAX_PERSISTED_SECTION_CHARACTERS) {
+      appendSection(bounded, seenContentHashes, section, characters.join(''), 1);
+      continue;
+    }
+
+    const step = MAX_PERSISTED_SECTION_CHARACTERS - SECTION_CHUNK_OVERLAP_CHARACTERS;
+    let part = 1;
+    for (let start = 0; start < characters.length; start += step) {
+      const content = characters
+        .slice(start, start + MAX_PERSISTED_SECTION_CHARACTERS)
+        .join('')
+        .trim();
+      if (content !== '') appendSection(bounded, seenContentHashes, section, content, part);
+      part += 1;
+      if (start + MAX_PERSISTED_SECTION_CHARACTERS >= characters.length) break;
+    }
+  }
+  return bounded;
+}
+
+function appendSection(
+  target: DocumentSectionInput[],
+  seenContentHashes: Set<string>,
+  section: DocumentSectionInput,
+  content: string,
+  part: number,
+): void {
+  const contentHash = createHash('sha256').update(content).digest('hex');
+  if (seenContentHashes.has(contentHash)) return;
+  seenContentHashes.add(contentHash);
+  const suffix = part <= 1 ? '' : `-part-${part}`;
+  target.push({
+    ...section,
+    ordinal: target.length,
+    ...(section.anchor === undefined ? {} : { anchor: `${section.anchor}${suffix}` }),
+    content,
+    contentHash,
+    characterCount: Array.from(content).length,
+    tokenCount: content.trim().split(/\s+/u).filter(Boolean).length,
+  });
 }

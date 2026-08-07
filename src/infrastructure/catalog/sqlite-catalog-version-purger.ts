@@ -15,6 +15,8 @@ import {
   INSERT_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
 } from './catalog-sql.js';
 
+const SQLITE_ID_BATCH_SIZE = 400;
+
 const SELECT_SCANNED_DOCUMENT_COUNT_SQL = `
   SELECT count(DISTINCT documents.id) AS count
   FROM documents
@@ -142,38 +144,55 @@ export class SqliteCatalogVersionPurger implements CatalogVersionPurgeRepository
   }
 
   private countSectionsByVersionIds(versionIds: readonly number[]): number {
-    if (versionIds.length === 0) return 0;
-    const row = this.database
-      .prepare(
-        `SELECT count(*) AS count FROM document_sections WHERE document_version_id IN (${createPlaceholders(versionIds.length)})`,
-      )
-      .get(...versionIds) as CountRow | undefined;
-    return row?.count ?? 0;
+    let total = 0;
+    for (const batch of chunkIds(versionIds)) {
+      const row = this.database
+        .prepare(
+          `SELECT count(*) AS count FROM document_sections WHERE document_version_id IN (${createPlaceholders(batch.length)})`,
+        )
+        .get(...batch) as CountRow | undefined;
+      total += row?.count ?? 0;
+    }
+    return total;
   }
 
   private deleteSectionsByVersionIds(versionIds: readonly number[]): number {
-    const placeholders = createPlaceholders(versionIds.length);
-    this.database
-      .prepare(
-        `DELETE FROM document_section_fts WHERE rowid IN (
-          SELECT id FROM document_sections WHERE document_version_id IN (${placeholders})
-        )`,
-      )
-      .run(...versionIds);
-    const info = this.database
-      .prepare(`DELETE FROM document_sections WHERE document_version_id IN (${placeholders})`)
-      .run(...versionIds);
-    return info.changes;
+    let deleted = 0;
+    for (const batch of chunkIds(versionIds)) {
+      const placeholders = createPlaceholders(batch.length);
+      this.database
+        .prepare(
+          `DELETE FROM document_section_fts WHERE rowid IN (
+            SELECT id FROM document_sections WHERE document_version_id IN (${placeholders})
+          )`,
+        )
+        .run(...batch);
+      const info = this.database
+        .prepare(`DELETE FROM document_sections WHERE document_version_id IN (${placeholders})`)
+        .run(...batch);
+      deleted += info.changes;
+    }
+    return deleted;
   }
 
   private deleteVersionsByIds(versionIds: readonly number[]): number {
-    const info = this.database
-      .prepare(
-        `DELETE FROM document_versions WHERE id IN (${createPlaceholders(versionIds.length)})`,
-      )
-      .run(...versionIds);
-    return info.changes;
+    let deleted = 0;
+    for (const batch of chunkIds(versionIds)) {
+      const info = this.database
+        .prepare(`DELETE FROM document_versions WHERE id IN (${createPlaceholders(batch.length)})`)
+        .run(...batch);
+      deleted += info.changes;
+    }
+    return deleted;
   }
+}
+
+function chunkIds(ids: readonly number[]): readonly (readonly number[])[] {
+  const batches: number[][] = [];
+  for (let index = 0; index < ids.length; index += SQLITE_ID_BATCH_SIZE) {
+    batches.push(ids.slice(index, index + SQLITE_ID_BATCH_SIZE));
+  }
+  return batches;
 }
 
 function createPlaceholders(count: number): string {

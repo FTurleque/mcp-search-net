@@ -15,10 +15,18 @@ const security = readText('docs/reference/security.md');
 const currentState = readText('docs/status/current-state.md');
 const adr018 = readText('docs/adr/ADR-018-local-embeddings-evaluation.md');
 const installerBuilder = readText('scripts/release/build-windows-installer.ps1');
+const installerTemplate = readText('packaging/windows/mcp-search-net-installer.iss.template');
+const configureInstall = readText('packaging/windows/configure-install.ps1');
 const runtimeGuard = readText('scripts/check-node-version.mjs');
 const repositoryFacade = readText('src/infrastructure/catalog/sqlite-catalog-repository.ts');
 const revisionWriter = readText('src/infrastructure/catalog/sqlite-catalog-revision-writer.ts');
+const sourceLoader = readText('src/application/use-cases/load-catalog-sources.ts');
+const syncDocuments = readText('src/application/use-cases/sync-catalog-documents.ts');
+const ingestText = readText('src/cli/catalog-ingest-text.ts');
+const versionPurger = readText('src/infrastructure/catalog/sqlite-catalog-version-purger.ts');
 const secureHttpGateway = readText('src/infrastructure/fetch/secure-http-gateway.ts');
+const fetchUrl = readText('src/application/use-cases/fetch-url.ts');
+const httpUtils = readText('src/infrastructure/http/http-utils.ts');
 const clientReporter = readText('scripts/generate-client-contract-report.mjs');
 const querySet = readJson('benchmarks/v2-search-quality/queries.json');
 
@@ -133,10 +141,57 @@ for (const needle of [
 }
 for (const needle of [
   'choco install innosetup --version=6.7.1',
+  '--require-checksums',
   '.VersionInfo.ProductVersion',
   "StartsWith('6.7.1'",
 ]) {
   requireText(releaseWorkflow, needle, `release-windows: invariant Inno absent: ${needle}`);
+}
+
+for (const invariant of [
+  'actions: read',
+  'head_sha=$env:GITHUB_SHA',
+  'CI_EXACT_HEAD_QUALIFIED',
+  'Node.js 24 validation',
+  'Docker integration and live E2E',
+  'Windows installation and STDIO packaging',
+]) {
+  requireText(
+    releaseWorkflow,
+    invariant,
+    `release-windows: gate CI exact-head absent: ${invariant}`,
+  );
+}
+
+for (const invariant of [
+  'DeleteUserDataOnUninstall := False',
+  "if DeleteUserDataOnUninstall and DirExists(ExpandConstant('{app}')) then",
+  'Silent uninstall therefore preserves them.',
+]) {
+  requireText(
+    installerTemplate,
+    invariant,
+    `installer Inno: conservation des données utilisateur absente: ${invariant}`,
+  );
+}
+assert(
+  !installerTemplate.includes(
+    "if DirExists(ExpandConstant('{localappdata}\\mcp-search-net')) then",
+  ),
+  'installer Inno: suppression non prouvée du répertoire ZIP historique encore présente',
+);
+
+for (const invariant of [
+  'function Test-CodexMcpEntry',
+  'elseif (Test-CodexMcpEntry $text)',
+  "table 'mcp_servers.mcp-search-net' existante non gérée — préservée",
+  "ownership    = 'preexisting'",
+]) {
+  requireText(
+    configureInstall,
+    invariant,
+    `configuration Codex: ownership préexistant non protégé: ${invariant}`,
+  );
 }
 
 for (const component of [
@@ -157,18 +212,76 @@ for (const invariant of [
 ]) {
   requireText(revisionWriter, invariant, `revision writer: invariant atomique absent ${invariant}`);
 }
+for (const invariant of [
+  'MAX_PERSISTED_SECTION_CHARACTERS = 12_000',
+  'SECTION_CHUNK_OVERLAP_CHARACTERS = 400',
+  'chunkDocumentSections(revision.sections)',
+  'seenContentHashes',
+]) {
+  requireText(repositoryFacade, invariant, `catalog facade: chunking borné absent ${invariant}`);
+}
+for (const invariant of [
+  "CatalogSourceLoadStatus = 'created' | 'updated' | 'skipped'",
+  'repository.updateSource(source)',
+  'await this.repository.rebuildSearchIndex()',
+]) {
+  requireText(sourceLoader, invariant, `catalog sources: réconciliation absente ${invariant}`);
+}
+for (const invariant of [
+  'WebUrl.createTransport(document.url)',
+  'const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter',
+  'resumeAfter: continuationCursor',
+]) {
+  requireText(
+    syncDocuments,
+    invariant,
+    `catalog sync: invariant reprise/transport absent ${invariant}`,
+  );
+}
+for (const invariant of [
+  'MAX_INGEST_TEXT_BYTES = 16 * 1024 * 1024',
+  'await stat(options.filePath)',
+  'WebUrl.createTransport(options.canonicalUrl)',
+]) {
+  requireText(ingestText, invariant, `catalog ingest: borne locale absente ${invariant}`);
+}
+for (const invariant of [
+  'SQLITE_ID_BATCH_SIZE = 400',
+  'for (const batch of chunkIds(versionIds))',
+]) {
+  requireText(versionPurger, invariant, `catalog purge: traitement par lots absent ${invariant}`);
+}
 
 for (const invariant of [
   'DEFAULT_MAX_TRACKED_ORIGINS = 1_024',
   'readonly maxTrackedOrigins?: number',
   'this.rememberOriginRequest(origin, Date.now())',
   'while (this.lastRequestByOrigin.size > this.maxTrackedOrigins)',
+  'let absoluteTimer: NodeJS.Timeout | undefined',
+  'budget.remainingBytes -= chunk.length',
+  'if (isRedirectStatus(status) || status === 304)',
 ]) {
   requireText(
     secureHttpGateway,
     invariant,
-    `secure HTTP gateway: historique origine non borné ou invariant absent: ${invariant}`,
+    `secure HTTP gateway: invariant de budget absent: ${invariant}`,
   );
+}
+for (const invariant of [
+  'WebUrl.createTransport(request.url)',
+  'JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 4 })',
+  'MIN_LINK_INSPECTION_BUDGET = 32',
+  'MAX_LINK_VALIDATION_MS = 2_000',
+  'inspected >= maximumInspections',
+]) {
+  requireText(fetchUrl, invariant, `fetch_url: transport/cache/liens non bornés ${invariant}`);
+}
+for (const invariant of [
+  'DEFAULT_MAX_PROVIDER_JSON_BYTES = 16 * 1024 * 1024',
+  'readJsonWithLimit',
+  'total > maximumBytes',
+]) {
+  requireText(httpUtils, invariant, `provider JSON: borne absente ${invariant}`);
 }
 
 assert(
@@ -256,6 +369,14 @@ process.stdout.write(
       adoptEmbeddingRuntimeNow: false,
       oneShotBenchmarkWorkflowRemoved: true,
       boundedOriginThrottle: true,
+      absoluteHttpDeadline: true,
+      boundedLinkValidation: true,
+      boundedProviderJson: true,
+      boundedCatalogSections: true,
+      reconciledCatalogSources: true,
+      safeWindowsUninstall: true,
+      exactHeadReleaseGate: true,
+      codexOwnershipProtection: true,
       clientContractReport: true,
     },
     null,

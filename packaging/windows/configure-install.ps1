@@ -599,7 +599,7 @@ if ($Uninstall) {
         if ($CopilotExe) {
             Write-Host ''
             Write-Host 'GitHub Copilot CLI détecté.'
-            $isPs1        = $CopilotExe.EndsWith('.ps1', [System.StringComparison]::OrdinalIgnoreCase)
+            $isPs1          = $CopilotExe.EndsWith('.ps1', [System.StringComparison]::OrdinalIgnoreCase)
             $alreadyManaged = $integrations.ContainsKey($integKeyCopilotCli) -and $integrations[$integKeyCopilotCli].ownership -eq 'managed'
 
             $rList   = Invoke-ExternalProcess $CopilotExe @('mcp', 'list') 10 -ViaPs5:$isPs1
@@ -670,15 +670,24 @@ function Remove-CodexBlock([string] $Text) {
     return [regex]::Replace($Text, $pat, '').Trim()
 }
 
+function Test-CodexMcpEntry([string] $Text) {
+    return $Text -match '(?m)^\s*\[mcp_servers\.mcp-search-net\]\s*(?:#.*)?$'
+}
+
 if ($Uninstall) {
     try {
-        if ($integrations.ContainsKey($integKeyCodex) -and $integrations[$integKeyCodex].ownership -eq 'managed') {
-            $text = Read-CodexConfig
-            if ($text -match [regex]::Escape($CodexBeginMark)) {
-                Backup-ConfigFile $CodexConfigPath
-                $cleaned = Remove-CodexBlock $text
-                Write-CodexConfig (if ($cleaned) { $cleaned + [Environment]::NewLine } else { '' })
-                Write-Host '  Codex Desktop : mcp-search-net retiré de config.toml' -ForegroundColor Green
+        if ($integrations.ContainsKey($integKeyCodex)) {
+            $record = $integrations[$integKeyCodex]
+            if ($record.ownership -eq 'managed') {
+                $text = Read-CodexConfig
+                if ($text -match [regex]::Escape($CodexBeginMark)) {
+                    Backup-ConfigFile $CodexConfigPath
+                    $cleaned = Remove-CodexBlock $text
+                    Write-CodexConfig (if ($cleaned) { $cleaned + [Environment]::NewLine } else { '' })
+                    Write-Host '  Codex Desktop : mcp-search-net retiré de config.toml' -ForegroundColor Green
+                }
+            } else {
+                Write-Host '  Codex Desktop : entrée préexistante/non gérée — préservée.' -ForegroundColor Cyan
             }
             $integrations.Remove($integKeyCodex)
         }
@@ -701,14 +710,24 @@ if ($Uninstall) {
             } else {
                 Write-Host '  Codex Desktop : configuration déjà à jour.' -ForegroundColor Cyan
             }
+            $integrations[$integKeyCodex] = [PSCustomObject]@{
+                ownership    = 'managed'
+                configPath   = $CodexConfigPath
+                configuredAt = [datetime]::UtcNow.ToString('o')
+            }
+        } elseif (Test-CodexMcpEntry $text) {
+            Write-Host "  Codex Desktop : table 'mcp_servers.mcp-search-net' existante non gérée — préservée." -ForegroundColor Cyan
+            $integrations[$integKeyCodex] = [PSCustomObject]@{
+                ownership    = 'preexisting'
+                configPath   = $CodexConfigPath
+                configuredAt = [datetime]::UtcNow.ToString('o')
+            }
         } else {
             $prefix  = $text.TrimEnd()
             $newText = if ($prefix) { $prefix + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }
             Backup-ConfigFile $CodexConfigPath
             Write-CodexConfig $newText
             Write-Host '  Codex Desktop : mcp-search-net configuré dans config.toml' -ForegroundColor Green
-        }
-        if (-not $integrations.ContainsKey($integKeyCodex)) {
             $integrations[$integKeyCodex] = [PSCustomObject]@{
                 ownership    = 'managed'
                 configPath   = $CodexConfigPath

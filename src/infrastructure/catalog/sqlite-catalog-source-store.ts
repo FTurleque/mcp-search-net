@@ -25,6 +25,19 @@ import {
 } from './catalog-sql.js';
 import type { CountRow } from './sqlite-catalog-row-views.js';
 
+const UPDATE_CATALOG_SOURCE_SQL = `
+  UPDATE catalog_sources SET
+    display_name = ?,
+    base_url = ?,
+    source_type = ?,
+    language = ?,
+    freshness_policy = ?,
+    sync_strategy = ?,
+    enabled = ?,
+    updated_at = ?
+  WHERE source_key = ?
+`;
+
 type InsertCatalogSourceParams = [
   string,
   string,
@@ -36,6 +49,18 @@ type InsertCatalogSourceParams = [
   number,
   number,
   number,
+];
+
+type UpdateCatalogSourceParams = [
+  string,
+  string,
+  CatalogSourceType,
+  string,
+  CatalogFreshnessPolicy,
+  CatalogSyncStrategy,
+  number,
+  number,
+  string,
 ];
 
 export class SqliteCatalogSourceStore {
@@ -63,6 +88,27 @@ export class SqliteCatalogSourceStore {
 
     const row = this.selectByKey(source.sourceKey);
     if (row === undefined) throw new Error('CATALOG_SOURCE_INSERT_FAILED');
+    return toCatalogSource(row);
+  }
+
+  public update(source: NewCatalogSource): CatalogSource {
+    const info = this.database
+      .prepare<UpdateCatalogSourceParams>(UPDATE_CATALOG_SOURCE_SQL)
+      .run(
+        source.displayName,
+        source.baseUrl,
+        source.sourceType,
+        source.language,
+        source.freshnessPolicy,
+        source.syncStrategy,
+        source.enabled ? 1 : 0,
+        this.clock.now().getTime(),
+        source.sourceKey,
+      );
+    if (info.changes !== 1) throw new Error(`CATALOG_SOURCE_NOT_FOUND:${source.sourceKey}`);
+
+    const row = this.selectByKey(source.sourceKey);
+    if (row === undefined) throw new Error('CATALOG_SOURCE_UPDATE_FAILED');
     return toCatalogSource(row);
   }
 

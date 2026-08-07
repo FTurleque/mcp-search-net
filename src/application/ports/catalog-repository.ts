@@ -80,6 +80,7 @@ export interface CatalogIntegrityReport {
 
 export interface CatalogRepository {
   addSource(source: NewCatalogSource): Promise<CatalogSource>;
+  updateSource(source: NewCatalogSource): Promise<CatalogSource>;
   getSourceByKey(sourceKey: string): Promise<CatalogSource | undefined>;
   getSourceById(sourceId: number): Promise<CatalogSource | undefined>;
   listSources(): Promise<readonly CatalogSource[]>;

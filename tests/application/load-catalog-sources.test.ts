@@ -6,6 +6,7 @@ import type { CatalogSource, NewCatalogSource } from '../../src/domain/models/ca
 class CatalogSourceRepositoryStub {
   private nextId = 1;
   private readonly sources = new Map<string, CatalogSource>();
+  public rebuildCount = 0;
 
   public async addSource(source: NewCatalogSource): Promise<CatalogSource> {
     const createdSource: CatalogSource = {
@@ -19,13 +20,30 @@ class CatalogSourceRepositoryStub {
     return createdSource;
   }
 
+  public async updateSource(source: NewCatalogSource): Promise<CatalogSource> {
+    const existing = this.sources.get(source.sourceKey);
+    if (existing === undefined) throw new Error('source missing');
+    const updated: CatalogSource = {
+      ...existing,
+      ...source,
+      updatedAt: new Date(2_000),
+    };
+    this.sources.set(source.sourceKey, updated);
+    return updated;
+  }
+
   public async getSourceByKey(sourceKey: string): Promise<CatalogSource | undefined> {
     return this.sources.get(sourceKey);
+  }
+
+  public async rebuildSearchIndex(): Promise<{ indexedSections: number }> {
+    this.rebuildCount += 1;
+    return { indexedSections: 0 };
   }
 }
 
 describe('LoadCatalogSources', () => {
-  it('creates missing sources and skips existing ones', async () => {
+  it('creates missing sources and skips unchanged existing ones', async () => {
     const repository = new CatalogSourceRepositoryStub();
     await repository.addSource({
       sourceKey: 'existing',
@@ -66,6 +84,7 @@ describe('LoadCatalogSources', () => {
     expect(result).toEqual({
       schemaVersion: '1.0',
       createdCount: 1,
+      updatedCount: 0,
       skippedCount: 1,
       sources: [
         {
@@ -80,5 +99,50 @@ describe('LoadCatalogSources', () => {
         },
       ],
     });
+    expect(repository.rebuildCount).toBe(0);
+  });
+
+  it('reconciles changed source configuration and rebuilds the derived search index', async () => {
+    const repository = new CatalogSourceRepositoryStub();
+    await repository.addSource({
+      sourceKey: 'docs',
+      displayName: 'Old docs',
+      baseUrl: 'https://example.test/old/',
+      sourceType: 'documentation',
+      language: 'fr',
+      freshnessPolicy: 'manual',
+      syncStrategy: 'manual',
+      enabled: true,
+    });
+
+    const result = await new LoadCatalogSources(repository).execute({
+      sources: [
+        {
+          sourceKey: 'docs',
+          displayName: 'Current docs',
+          baseUrl: 'https://example.test/current/',
+          sourceType: 'reference',
+          language: 'en-US',
+          freshnessPolicy: 'daily',
+          syncStrategy: 'polling',
+          enabled: false,
+        },
+      ],
+    });
+
+    expect(result.updatedCount).toBe(1);
+    expect(result.createdCount).toBe(0);
+    expect(result.skippedCount).toBe(0);
+    expect(result.sources).toEqual([{ sourceKey: 'docs', status: 'updated', id: 1 }]);
+    expect(await repository.getSourceByKey('docs')).toMatchObject({
+      displayName: 'Current docs',
+      baseUrl: 'https://example.test/current/',
+      sourceType: 'reference',
+      language: 'en-US',
+      freshnessPolicy: 'daily',
+      syncStrategy: 'polling',
+      enabled: false,
+    });
+    expect(repository.rebuildCount).toBe(1);
   });
 });

@@ -104,6 +104,9 @@ export class SyncCatalogDocuments {
       .filter((document) => document.enabled);
     const resumedDocuments = applyResumeCursor(configuredDocuments, options.resumeAfter);
     const selectedDocuments = applyLimit(resumedDocuments, options.limit);
+    const limited =
+      options.limit !== undefined && resumedDocuments.length > selectedDocuments.length;
+    const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter;
     const rateLimitMs = normalizeRateLimit(options.rateLimitMs);
     const scopedSource =
       options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
@@ -138,7 +141,7 @@ export class SyncCatalogDocuments {
           currentVersion = await this.getCurrentVersion(existingDocument);
           const fetched = await this.fetcher.fetch(
             {
-              url: WebUrl.create(document.url),
+              url: WebUrl.createTransport(document.url),
               renderMode: 'auto',
               timeoutMs: options.timeoutMs,
               maxResponseBytes: options.maxResponseBytes,
@@ -333,9 +336,9 @@ export class SyncCatalogDocuments {
       failedCount,
       skippedCount,
       documents: entries,
-      ...(options.resumeAfter === undefined ? {} : { resumeAfter: options.resumeAfter }),
+      ...(continuationCursor === undefined ? {} : { resumeAfter: continuationCursor }),
       rateLimitMs,
-      limited: options.limit !== undefined && resumedDocuments.length > selectedDocuments.length,
+      limited,
     };
   }
 
@@ -368,6 +371,14 @@ function applyLimit(
   limit: number | undefined,
 ): readonly CatalogSyncDocumentInput[] {
   return limit === undefined ? documents : documents.slice(0, limit);
+}
+
+function cursorFor(
+  document: CatalogSyncDocumentInput | undefined,
+): SyncCatalogResumeCursor | undefined {
+  return document === undefined
+    ? undefined
+    : { sourceKey: document.sourceKey, stableKey: document.stableKey };
 }
 
 function normalizeRateLimit(value: number | undefined): number {

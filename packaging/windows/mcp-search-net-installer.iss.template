@@ -376,6 +376,7 @@ var
   DataRoot: String;
   MessageText: String;
 begin
+  { Interactive uninstall asks explicitly; silent uninstall preserves data by default. }
   DeleteUserDataOnUninstall := False;
   if IsSmokeBuild() or UninstallSilent() then exit;
   DataRoot := ExpandConstant('{app}\data');
@@ -415,12 +416,16 @@ begin
   end
   else if CurUninstallStep = usPostUninstall then
   begin
+    { Installation metadata is never user data and must not point at an uninstalled program. }
+    RegDeleteValue(HKCU, InstallerRegistryPath(), 'InstallRoot');
     DeleteUserData;
-    { Force-remove remaining app directory (user-generated files: .env, integrations, backups) }
-    if DirExists(ExpandConstant('{app}')) then
+
+    { Inno already removes every file installed from [Files]. Remaining files are user-generated.
+      Remove them only after the explicit opt-in above. Silent uninstall therefore preserves them. }
+    if DeleteUserDataOnUninstall and DirExists(ExpandConstant('{app}')) then
       DelTree(ExpandConstant('{app}'), True, True, True);
-    { Remove legacy installation directory (default path from ZIP install.ps1) }
-    if DirExists(ExpandConstant('{localappdata}\mcp-search-net')) then
-      DelTree(ExpandConstant('{localappdata}\mcp-search-net'), True, True, True);
+
+    { Never delete the legacy ZIP installation path from this setup. It is a separate installation
+      root and ownership cannot be proven by the Inno uninstaller. }
   end;
 end;

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 
 import type { CatalogRepository } from '../application/ports/catalog-repository.js';
 import type {
@@ -7,6 +7,9 @@ import type {
   DocumentSectionInput,
   DocumentVersion,
 } from '../domain/models/catalog.js';
+import { WebUrl } from '../domain/value-objects/web-url.js';
+
+const MAX_INGEST_TEXT_BYTES = 16 * 1024 * 1024;
 
 export interface IngestTextDocumentOptions {
   readonly sourceKey: string;
@@ -42,14 +45,21 @@ export async function ingestTextDocument(
   const source = await repository.getSourceByKey(options.sourceKey);
   if (source === undefined) throw new Error(`Unknown catalog source ${options.sourceKey}`);
 
+  const file = await stat(options.filePath);
+  if (!file.isFile()) throw new Error('CATALOG_INGEST_INPUT_NOT_FILE');
+  if (file.size > MAX_INGEST_TEXT_BYTES) {
+    throw new Error(`CATALOG_INGEST_FILE_TOO_LARGE:${file.size}:${MAX_INGEST_TEXT_BYTES}`);
+  }
+
+  const canonicalUrl = WebUrl.createTransport(options.canonicalUrl).value;
   const content = await readFile(options.filePath, 'utf8');
   const contentHash = sha256(content);
-  const stableKey = options.stableKey ?? stableKeyFromUrl(options.canonicalUrl);
+  const stableKey = options.stableKey ?? stableKeyFromUrl(canonicalUrl);
   const revision = await repository.commitDocumentRevision({
     document: {
       publicId: publicDocumentId(options.sourceKey, stableKey),
       sourceId: source.id,
-      canonicalUrl: options.canonicalUrl,
+      canonicalUrl,
       stableKey,
       title: options.title,
       mimeType: options.mimeType,

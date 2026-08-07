@@ -12,6 +12,10 @@ import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/t
 import { selectRelevantContent } from '../../domain/services/content-selection.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
 
+const MIN_LINK_INSPECTION_BUDGET = 32;
+const LINK_INSPECTION_MULTIPLIER = 4;
+const MAX_LINK_VALIDATION_MS = 2_000;
+
 export interface FetchUrlOptions {
   readonly documentationTtlMs: number;
   readonly readmeTtlMs: number;
@@ -40,11 +44,13 @@ export class FetchUrl {
       ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
       tool: 'fetch_url' as const,
     };
-    const requestedUrl = WebUrl.create(request.url);
+    const requestedUrl = WebUrl.createTransport(request.url);
     const approved = await this.securityPolicy.assertAllowed(requestedUrl.value, securityContext);
+    // Cache identity must preserve the exact approved transport query. Canonical URL normalization
+    // is reserved for search-result deduplication and must never collapse transport semantics.
     const key = createHash('sha256')
       .update(
-        JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 3 }),
+        JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 4 }),
       )
       .digest('hex');
     const cached = await this.cache.getContent<FetchedContent>(key, { allowStale: true });
@@ -70,7 +76,7 @@ export class FetchUrl {
       try {
         const fetched = await this.fetcher.fetch(
           {
-            url: WebUrl.create(approved.value),
+            url: WebUrl.createTransport(approved.value),
             renderMode: request.renderMode,
             timeoutMs: this.options.timeoutMs,
             maxResponseBytes: this.options.maxResponseBytes,
@@ -264,15 +270,40 @@ async function filterApprovedLinks(
   context: NonNullable<Parameters<UrlSecurityPolicy['assertAllowed']>[1]>,
 ): Promise<readonly string[]> {
   const accepted: string[] = [];
-  for (const value of [...new Set(values)]) {
-    if (accepted.length >= maximum) break;
+  const uniqueValues = [...new Set(values)];
+  const maximumInspections = Math.max(
+    MIN_LINK_INSPECTION_BUDGET,
+    maximum * LINK_INSPECTION_MULTIPLIER,
+  );
+  const deadline = Date.now() + MAX_LINK_VALIDATION_MS;
+  let inspected = 0;
+
+  for (const value of uniqueValues) {
+    if (accepted.length >= maximum || inspected >= maximumInspections || Date.now() >= deadline)
+      break;
+    inspected += 1;
     try {
-      accepted.push((await policy.assertAllowed(value, context)).value);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      accepted.push((await withTimeout(policy.assertAllowed(value, context), remaining)).value);
     } catch {
-      /* Blocked links are never exposed. */
+      /* Blocked, invalid and over-budget links are never exposed. */
     }
   }
   return accepted;
+}
+
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('LINK_VALIDATION_TIMEOUT')), timeoutMs);
+    timer.unref();
+  });
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function classifySource(url: string, registry: OfficialSourceRegistry): SourceStatus {
