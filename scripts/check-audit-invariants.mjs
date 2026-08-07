@@ -120,6 +120,7 @@ assert(
   '.npmrc: strict-allow-scripts=true absent',
 );
 const expectedAllowScripts = {
+  'better-sqlite3@13.0.3': false,
   'esbuild@0.28.1': true,
   'fsevents@2.3.3': true,
 };
@@ -134,10 +135,6 @@ assert(
 assert(
   packageLock.packages?.['node_modules/better-sqlite3']?.version === '13.0.3',
   'package-lock: better-sqlite3 13.0.3 attendu',
-);
-assert(
-  packageLock.packages?.['node_modules/better-sqlite3']?.hasInstallScript !== true,
-  'package-lock: better-sqlite3 ne doit plus avoir de script install',
 );
 assert(
   packageLock.packages?.['node_modules/node-addon-api'] !== undefined,
@@ -263,7 +260,7 @@ for (const invariant of [
   'await stat(options.filePath)',
   'WebUrl.createTransport(options.canonicalUrl)',
 ]) {
-  requireText(ingestText, invariant, `catalog ingest: borne locale absente ${invariant}`);
+  requireText(ingestText, invariant, `catalog ingest: borne locale absent ${invariant}`);
 }
 for (const invariant of [
   'SQLITE_ID_BATCH_SIZE = 400',
@@ -387,6 +384,7 @@ process.stdout.write(
       installScriptAllowlist: Object.keys(expectedAllowScripts),
       betterSqlite3: '13.0.3',
       betterSqlite3Napi: true,
+      betterSqlite3FallbackBuildAllowed: false,
       deprecatedPrebuildInstallPresent: false,
       catalogComponents: 5,
       benchmarkQueries: querySet.queries.length,
