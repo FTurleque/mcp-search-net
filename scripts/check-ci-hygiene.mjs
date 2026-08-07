@@ -9,6 +9,7 @@ const forbiddenWorkflows = [
   '.github/workflows/one-shot-remediation-cleanup.yml',
   '.github/workflows/one-shot-post-audit-doc-reconcile.yml',
   '.github/workflows/temp-post-audit-remediation.yml',
+  '.github/workflows/temp-pdfjs-security-update.yml',
 ];
 
 const remaining = forbiddenWorkflows.filter((path) => existsSync(resolve(root, path)));
