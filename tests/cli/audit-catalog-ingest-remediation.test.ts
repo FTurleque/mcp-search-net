@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, truncateSync } from 'node:fs';
+import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -35,6 +35,7 @@ describe('audit catalog ingestion remediation', () => {
     });
 
     const filePath = join(root, 'oversized.md');
+    writeFileSync(filePath, '');
     truncateSync(filePath, 16 * 1024 * 1024 + 1);
 
     await expect(
@@ -68,7 +69,7 @@ describe('audit catalog ingestion remediation', () => {
     });
 
     const filePath = join(root, 'small.md');
-    truncateSync(filePath, 1);
+    writeFileSync(filePath, 'x');
 
     await expect(
       ingestTextDocument(repository, {
