@@ -33,4 +33,25 @@ describe('fetchJson stable errors', () => {
       fetchJson('crawl4ai', new URL('https://example.com'), {}, 1, fetchMock as typeof fetch),
     ).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
   });
+
+  it('rejects provider JSON responses above the configured byte budget', async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response('{"value":"too-large"}', {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'content-length': '21' },
+        }),
+    );
+
+    await expect(
+      fetchJson(
+        'searxng',
+        new URL('https://example.com'),
+        {},
+        1_000,
+        fetchMock as typeof fetch,
+        8,
+      ),
+    ).rejects.toMatchObject({ code: 'SEARCH_PROVIDER_UNAVAILABLE' });
+  });
 });
