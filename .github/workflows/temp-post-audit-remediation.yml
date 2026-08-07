@@ -1,0 +1,82 @@
+name: Temporary Post-audit Remediation
+
+on:
+  push:
+    branches:
+      - agent/post-audit-release-qualification
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out remediation branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: agent/post-audit-release-qualification
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Node.js 24.18.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+
+      - name: Apply deterministic remediation
+        run: python scripts/apply-post-audit-remediation.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Format changed sources
+        run: |
+          npx prettier --write \
+            Dockerfile \
+            scripts/check-supply-chain.mjs \
+            scripts/check-audit-invariants.mjs \
+            scripts/release/build-windows-distribution.ps1 \
+            scripts/uninstall-user.ps1 \
+            scripts/test-installation.ps1 \
+            src/infrastructure/fetch/secure-http-gateway.ts \
+            src/infrastructure/fetch/crawl4ai-content-fetcher.ts \
+            src/infrastructure/http/http-utils.ts \
+            src/presentation/mcp/catalog-resources.ts \
+            tests/infrastructure/http-utils.test.ts \
+            tests/infrastructure/crawl4ai-content-fetcher.test.ts \
+            tests/e2e/mcp-resources.test.ts \
+            docs/getting-started/installation-windows.md \
+            docs/operations/supply-chain.md
+
+      - name: Run deterministic quality gate
+        run: npm run check
+
+      - name: Commit validated remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            Dockerfile \
+            scripts/check-supply-chain.mjs \
+            scripts/check-audit-invariants.mjs \
+            scripts/release/build-windows-distribution.ps1 \
+            scripts/uninstall-user.ps1 \
+            scripts/test-installation.ps1 \
+            src/infrastructure/fetch/secure-http-gateway.ts \
+            src/infrastructure/fetch/crawl4ai-content-fetcher.ts \
+            src/infrastructure/http/http-utils.ts \
+            src/presentation/mcp/catalog-resources.ts \
+            tests/infrastructure/http-utils.test.ts \
+            tests/infrastructure/crawl4ai-content-fetcher.test.ts \
+            tests/e2e/mcp-resources.test.ts \
+            docs/getting-started/installation-windows.md \
+            docs/operations/supply-chain.md
+          git diff --cached --quiet && { echo 'NO_REMEDIATION_CHANGES'; exit 0; }
+          git commit -m 'fix: apply post-audit release qualification hardening'
+          git push origin HEAD:agent/post-audit-release-qualification
