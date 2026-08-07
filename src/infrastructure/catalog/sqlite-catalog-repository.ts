@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type Database from 'better-sqlite3';
 
 import type {
@@ -45,6 +47,9 @@ import type { CountRow } from './sqlite-catalog-row-views.js';
 import { SqliteCatalogSearch } from './sqlite-catalog-search.js';
 import { SqliteCatalogSourceStore } from './sqlite-catalog-source-store.js';
 import { SqliteCatalogSyncStore } from './sqlite-catalog-sync-store.js';
+
+const MAX_PERSISTED_SECTION_CHARACTERS = 12_000;
+const SECTION_CHUNK_OVERLAP_CHARACTERS = 400;
 
 /**
  * Stable CatalogRepository facade over one SQLite connection.
@@ -98,7 +103,11 @@ export class SqliteCatalogRepository implements CatalogRepository {
     revision: CatalogDocumentRevisionInput,
     observation?: CatalogDocumentObservationInput,
   ): Promise<CatalogDocumentRevision> {
-    return this.asPromise(() => this.revisions.commit(revision, observation));
+    const boundedRevision: CatalogDocumentRevisionInput = {
+      ...revision,
+      sections: chunkDocumentSections(revision.sections),
+    };
+    return this.asPromise(() => this.revisions.commit(boundedRevision, observation));
   }
 
   public upsertDocument(
@@ -133,7 +142,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
     sections: readonly DocumentSectionInput[],
   ): Promise<readonly DocumentSection[]> {
     return this.asPromise(() =>
-      this.revisions.replaceDocumentSections(documentVersionId, sections),
+      this.revisions.replaceDocumentSections(documentVersionId, chunkDocumentSections(sections)),
     );
   }
 
@@ -241,4 +250,46 @@ export class SqliteCatalogRepository implements CatalogRepository {
   private asPromise<T>(operation: () => T): Promise<T> {
     return Promise.resolve().then(operation);
   }
+}
+
+function chunkDocumentSections(
+  sections: readonly DocumentSectionInput[],
+): readonly DocumentSectionInput[] {
+  const bounded: DocumentSectionInput[] = [];
+  for (const section of sections) {
+    const characters = Array.from(section.content.trim());
+    if (characters.length <= MAX_PERSISTED_SECTION_CHARACTERS) {
+      bounded.push(normalizeSection(section, bounded.length, characters.join(''), 1));
+      continue;
+    }
+
+    const step = MAX_PERSISTED_SECTION_CHARACTERS - SECTION_CHUNK_OVERLAP_CHARACTERS;
+    let part = 1;
+    for (let start = 0; start < characters.length; start += step) {
+      const content = characters.slice(start, start + MAX_PERSISTED_SECTION_CHARACTERS).join('').trim();
+      if (content === '') continue;
+      bounded.push(normalizeSection(section, bounded.length, content, part));
+      part += 1;
+      if (start + MAX_PERSISTED_SECTION_CHARACTERS >= characters.length) break;
+    }
+  }
+  return bounded;
+}
+
+function normalizeSection(
+  section: DocumentSectionInput,
+  ordinal: number,
+  content: string,
+  part: number,
+): DocumentSectionInput {
+  const suffix = part <= 1 ? '' : `-part-${part}`;
+  return {
+    ...section,
+    ordinal,
+    ...(section.anchor === undefined ? {} : { anchor: `${section.anchor}${suffix}` }),
+    content,
+    contentHash: createHash('sha256').update(content).digest('hex'),
+    characterCount: Array.from(content).length,
+    tokenCount: content.trim().split(/\s+/u).filter(Boolean).length,
+  };
 }
