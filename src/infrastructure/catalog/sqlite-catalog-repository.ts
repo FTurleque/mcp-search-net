@@ -107,11 +107,13 @@ export class SqliteCatalogRepository implements CatalogRepository {
     revision: CatalogDocumentRevisionInput,
     observation?: CatalogDocumentObservationInput,
   ): Promise<CatalogDocumentRevision> {
-    const boundedRevision: CatalogDocumentRevisionInput = {
-      ...revision,
-      sections: chunkDocumentSections(revision.sections),
-    };
-    return this.asPromise(() => this.revisions.commit(boundedRevision, observation));
+    return this.asPromise(() => {
+      const boundedRevision: CatalogDocumentRevisionInput = {
+        ...revision,
+        sections: chunkDocumentSections(revision.sections),
+      };
+      return this.revisions.commit(boundedRevision, observation);
+    });
   }
 
   public upsertDocument(
