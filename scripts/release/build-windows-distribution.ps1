@@ -76,6 +76,7 @@ Copy-Item -LiteralPath (Join-Path $RepoRoot 'migrations') -Destination $AppDist 
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'catalog-migrations') -Destination $AppDist -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'package.json') -Destination $AppDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'package-lock.json') -Destination $AppDist -Force
+Copy-Item -LiteralPath (Join-Path $RepoRoot '.npmrc') -Destination $AppDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'LICENSE') -Destination $AppDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'scripts\probe-installed-mcp.mjs') -Destination $AppDist -Force
 
