@@ -10,6 +10,7 @@ runtime
 
 !Dockerfile
 !.dockerignore
+!.npmrc
 !LICENSE
 !package.json
 !package-lock.json
