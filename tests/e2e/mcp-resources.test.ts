@@ -143,6 +143,16 @@ describe('MCP catalog resources', () => {
         limit: 20,
       });
     }
+
+    for (const uri of [
+      'mcp-search-net://sources/1abc',
+      'mcp-search-net://sources/page/0junk',
+      'mcp-search-net://documents/1abc/versions',
+      'mcp-search-net://documents/1/versions/2abc',
+      'mcp-search-net://sections/0',
+    ]) {
+      await expect(client.readResource({ uri })).rejects.toThrow();
+    }
   });
 });
 
