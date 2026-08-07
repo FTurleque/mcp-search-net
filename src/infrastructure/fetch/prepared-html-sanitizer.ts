@@ -31,8 +31,7 @@ const UNSAFE_HTML_ATTRIBUTES = new Set([
   'style',
 ]);
 
-const HTML_ATTRIBUTE_ASSIGNMENT_PATTERN =
-  /\s([^\s=/>]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gu;
+const HTML_ATTRIBUTE_ASSIGNMENT_PATTERN = /\s([^\s=/>]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gu;
 const HTML_START_PATTERN = /<[A-Za-z]/gu;
 const ACTIVE_CONTAINER_START_PATTERN = new RegExp(
   String.raw`<\s*(${ACTIVE_CONTAINER_TAGS.join('|')})\b`,
