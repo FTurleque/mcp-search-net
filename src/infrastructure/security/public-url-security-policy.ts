@@ -58,7 +58,7 @@ export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
       throw new UrlSecurityError('URLs containing credentials are not allowed', 'INVALID_URL');
     }
 
-    const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
+    const hostname = normalizeUrlHostname(url.hostname);
     if (
       hostname === 'localhost' ||
       hostname.endsWith('.localhost') ||
@@ -101,10 +101,16 @@ export class PublicUrlSecurityPolicy implements UrlSecurityPolicy {
 
 function safeHostname(value: string): string | undefined {
   try {
-    return new URL(value).hostname || undefined;
+    const hostname = new URL(value).hostname;
+    return hostname === '' ? undefined : normalizeUrlHostname(hostname);
   } catch {
     return undefined;
   }
+}
+
+function normalizeUrlHostname(value: string): string {
+  const hostname = value.toLowerCase().replace(/\.$/u, '');
+  return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
 }
 
 export function isPublicAddress(address: string): boolean {

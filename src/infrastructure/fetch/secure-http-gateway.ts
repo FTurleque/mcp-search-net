@@ -94,14 +94,23 @@ export class SecureHttpGateway {
   ): Promise<DownloadedResource> {
     const limits = this.validateLimits(requestedLimits);
     const deadline = Date.now() + limits.timeoutMs;
+    const budget: DownloadBudget = { remainingBytes: limits.maxBytes };
     await this.acquire(deadline);
     try {
-      if (this.options.respectRobotsTxt && !new URL(value).pathname.endsWith('/robots.txt')) {
-        await this.assertRobotsAllowed(value, deadline, context, limits);
+      if (this.options.respectRobotsTxt && new URL(value).pathname !== '/robots.txt') {
+        await this.assertRobotsAllowed(value, deadline, context, limits, budget);
       }
-      return await this.follow(value, value, 0, deadline, conditionalHeaders, context, limits, [], {
-        remainingBytes: limits.maxBytes,
-      });
+      return await this.follow(
+        value,
+        value,
+        0,
+        deadline,
+        conditionalHeaders,
+        context,
+        limits,
+        [],
+        budget,
+      );
     } finally {
       this.release();
     }
@@ -165,14 +174,23 @@ export class SecureHttpGateway {
     deadline: number,
     context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
     limits: SecureDownloadLimits,
+    budget: DownloadBudget,
   ): Promise<void> {
     const url = new URL(value);
     const robotsUrl = new URL('/robots.txt', url.origin).toString();
     let resource: DownloadedResource;
     try {
-      resource = await this.follow(robotsUrl, robotsUrl, 0, deadline, {}, context, limits, [], {
-        remainingBytes: limits.maxBytes,
-      });
+      resource = await this.follow(
+        robotsUrl,
+        robotsUrl,
+        0,
+        deadline,
+        {},
+        context,
+        limits,
+        [],
+        budget,
+      );
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) return;
       throw error;
@@ -236,6 +254,7 @@ export class SecureHttpGateway {
       if (options.all === true) callback(null, [{ address, family }]);
       else callback(null, address, family);
     }) as unknown as LookupFunction;
+    const tlsHostname = stripIpv6Brackets(url.hostname);
 
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -265,7 +284,9 @@ export class SecureHttpGateway {
             ...conditionalHeaders,
           },
           lookup,
-          ...(url.protocol === 'https:' ? { servername: url.hostname } : {}),
+          ...(url.protocol === 'https:' && isIP(tlsHostname) === 0
+            ? { servername: tlsHostname }
+            : {}),
         },
         (incoming) => {
           const status = incoming.statusCode ?? 0;
@@ -424,6 +445,10 @@ function isRedirectStatus(status: number): boolean {
 
 function isPermanentRedirect(status: number): boolean {
   return status === 301 || status === 308;
+}
+
+function stripIpv6Brackets(hostname: string): string {
+  return hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
 }
 
 function isAllowedByRobots(content: string, path: string, userAgent: string): boolean {

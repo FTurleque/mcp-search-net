@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 import { InvalidDomainError } from '../errors/domain-errors.js';
 
 const DOMAIN_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u;
@@ -7,6 +9,8 @@ export class DomainName {
 
   public static create(input: string): DomainName {
     const candidate = input.trim().toLowerCase().replace(/\.$/u, '');
+    const address = stripIpv6Brackets(candidate);
+    if (isIP(address) !== 0) return new DomainName(address);
     if (candidate === '' || /[\s/:@?#]/u.test(candidate)) {
       throw new InvalidDomainError(`Invalid domain: ${input}`);
     }
@@ -25,6 +29,11 @@ export class DomainName {
 
   public matches(hostname: string): boolean {
     const candidate = DomainName.create(hostname).value;
+    if (isIP(this.value) !== 0 || isIP(candidate) !== 0) return candidate === this.value;
     return candidate === this.value || candidate.endsWith(`.${this.value}`);
   }
+}
+
+function stripIpv6Brackets(value: string): string {
+  return value.startsWith('[') && value.endsWith(']') ? value.slice(1, -1) : value;
 }
