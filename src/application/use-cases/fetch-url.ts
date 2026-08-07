@@ -46,10 +46,11 @@ export class FetchUrl {
     };
     const requestedUrl = WebUrl.createTransport(request.url);
     const approved = await this.securityPolicy.assertAllowed(requestedUrl.value, securityContext);
-    const cacheIdentity = WebUrl.create(approved.value).value;
+    // Cache identity must preserve the exact approved transport query. Canonical URL normalization
+    // is reserved for search-result deduplication and must never collapse transport semantics.
     const key = createHash('sha256')
       .update(
-        JSON.stringify({ url: cacheIdentity, renderMode: request.renderMode, contractVersion: 4 }),
+        JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 4 }),
       )
       .digest('hex');
     const cached = await this.cache.getContent<FetchedContent>(key, { allowStale: true });
@@ -270,7 +271,10 @@ async function filterApprovedLinks(
 ): Promise<readonly string[]> {
   const accepted: string[] = [];
   const uniqueValues = [...new Set(values)];
-  const maximumInspections = Math.max(MIN_LINK_INSPECTION_BUDGET, maximum * LINK_INSPECTION_MULTIPLIER);
+  const maximumInspections = Math.max(
+    MIN_LINK_INSPECTION_BUDGET,
+    maximum * LINK_INSPECTION_MULTIPLIER,
+  );
   const deadline = Date.now() + MAX_LINK_VALIDATION_MS;
   let inspected = 0;
 
