@@ -4,20 +4,20 @@ on:
   pull_request:
     branches:
       - master
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   lockfile:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Check out candidate
+      - name: Check out exact candidate
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: true
 
       - name: Set up Node.js 24.18.0
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -41,9 +41,18 @@ jobs:
           if (lock.packages?.['node_modules/prebuild-install']) throw new Error('prebuild-install still present');
           NODE
 
-      - name: Upload generated lockfile
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: better-sqlite3-13-lockfile
-          path: package-lock.json
-          if-no-files-found: error
+      - name: Commit generated lockfile to PR branch
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo 'Lockfile already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Regenerate lockfile for better-sqlite3 13'
+          git push origin "HEAD:${HEAD_BRANCH}"
