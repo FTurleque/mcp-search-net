@@ -23,9 +23,12 @@ afterEach(() => {
 
 describe('audit sync remediation', () => {
   it('returns the last processed document as continuation cursor when limited', async () => {
-    const fixture = createRepository();
+    const fixture = await createRepository();
     const fetcher = new RecordingFetcher();
-    const first = declaredDocument('first', 'https://example.test/docs/first?utm_source=required&b=2&a=1');
+    const first = declaredDocument(
+      'first',
+      'https://example.test/docs/first?utm_source=required&b=2&a=1',
+    );
     const second = declaredDocument('second', 'https://example.test/docs/second');
 
     const result = await new SyncCatalogDocuments(fixture.repository, fetcher, fixedClock).execute({
@@ -46,12 +49,12 @@ describe('audit sync remediation', () => {
   });
 });
 
-function createRepository() {
+async function createRepository() {
   const root = mkdtempSync(join(tmpdir(), 'mcp-sync-audit-'));
   roots.push(root);
   const repository = new SqliteCatalogRepository(join(root, 'catalog.db'), fixedClock);
   repositories.push(repository);
-  void repository.addSource({
+  await repository.addSource({
     sourceKey: 'docs',
     displayName: 'Docs',
     baseUrl: 'https://example.test/docs/',
