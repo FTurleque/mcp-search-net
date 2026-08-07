@@ -1,0 +1,67 @@
+name: Native client certification smoke
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - scripts/certify-native-clients.ps1
+      - docs/planning/client-certification-current.md
+      - .github/workflows/native-client-certification-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QUALIFIED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  windows-powershell-51:
+    name: Windows PowerShell 5.1 certification harness
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.QUALIFIED_SHA }}
+          persist-credentials: false
+
+      - name: Parse certification collector with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'scripts\certify-native-clients.ps1'),
+            [ref]$tokens,
+            [ref]$parseErrors
+          ) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $details = ($parseErrors | ForEach-Object { $_.Message }) -join '; '
+            throw "PowerShell parse failed: $details"
+          }
+          Write-Host 'NATIVE_CLIENT_CERTIFICATION_PARSE_VALID'
+
+      - name: Run non-destructive smoke collection
+        shell: powershell
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP 'native-client-certification-smoke'
+          .\scripts\certify-native-clients.ps1 -SmokeMode -OutputDirectory $output
+          $report = Get-Content -LiteralPath (Join-Path $output 'native-client-certification.json') -Raw | ConvertFrom-Json
+          if ($report.schemaVersion -ne '1.0') { throw 'Unexpected certification schema version.' }
+          if ($report.clients.Count -ne 5) { throw "Expected five clients, got $($report.clients.Count)." }
+          if (@($report.clients | Where-Object { $_.verdict -ne 'NON_OBSERVE' }).Count -ne 0) {
+            throw 'Smoke collector must never infer a native PASS.'
+          }
+          Write-Host 'NATIVE_CLIENT_CERTIFICATION_SMOKE_VALID'
+
+      - name: Record exact head
+        shell: powershell
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:QUALIFIED_SHA) {
+            throw "Unexpected qualified head: $actual"
+          }
+          Write-Host "NATIVE_CLIENT_CERTIFICATION_QUALIFIED_SHA=$actual"
