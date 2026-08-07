@@ -79,6 +79,10 @@ export class SqliteCatalogRepository implements CatalogRepository {
     return this.asPromise(() => this.sources.add(source));
   }
 
+  public updateSource(source: NewCatalogSource): Promise<CatalogSource> {
+    return this.asPromise(() => this.sources.update(source));
+  }
+
   public getSourceByKey(sourceKey: string): Promise<CatalogSource | undefined> {
     return this.asPromise(() => this.sources.getByKey(sourceKey));
   }
@@ -256,10 +260,12 @@ function chunkDocumentSections(
   sections: readonly DocumentSectionInput[],
 ): readonly DocumentSectionInput[] {
   const bounded: DocumentSectionInput[] = [];
+  const seenContentHashes = new Set<string>();
+
   for (const section of sections) {
     const characters = Array.from(section.content.trim());
     if (characters.length <= MAX_PERSISTED_SECTION_CHARACTERS) {
-      bounded.push(normalizeSection(section, bounded.length, characters.join(''), 1));
+      appendSection(bounded, seenContentHashes, section, characters.join(''), 1);
       continue;
     }
 
@@ -267,8 +273,7 @@ function chunkDocumentSections(
     let part = 1;
     for (let start = 0; start < characters.length; start += step) {
       const content = characters.slice(start, start + MAX_PERSISTED_SECTION_CHARACTERS).join('').trim();
-      if (content === '') continue;
-      bounded.push(normalizeSection(section, bounded.length, content, part));
+      if (content !== '') appendSection(bounded, seenContentHashes, section, content, part);
       part += 1;
       if (start + MAX_PERSISTED_SECTION_CHARACTERS >= characters.length) break;
     }
@@ -276,20 +281,24 @@ function chunkDocumentSections(
   return bounded;
 }
 
-function normalizeSection(
+function appendSection(
+  target: DocumentSectionInput[],
+  seenContentHashes: Set<string>,
   section: DocumentSectionInput,
-  ordinal: number,
   content: string,
   part: number,
-): DocumentSectionInput {
+): void {
+  const contentHash = createHash('sha256').update(content).digest('hex');
+  if (seenContentHashes.has(contentHash)) return;
+  seenContentHashes.add(contentHash);
   const suffix = part <= 1 ? '' : `-part-${part}`;
-  return {
+  target.push({
     ...section,
-    ordinal,
+    ordinal: target.length,
     ...(section.anchor === undefined ? {} : { anchor: `${section.anchor}${suffix}` }),
     content,
-    contentHash: createHash('sha256').update(content).digest('hex'),
+    contentHash,
     characterCount: Array.from(content).length,
     tokenCount: content.trim().split(/\s+/u).filter(Boolean).length,
-  };
+  });
 }
