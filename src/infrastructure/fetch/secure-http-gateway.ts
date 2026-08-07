@@ -241,18 +241,17 @@ export class SecureHttpGateway {
 
     return new Promise((resolve, reject) => {
       let settled = false;
-      let absoluteTimer: NodeJS.Timeout | undefined;
 
       const settleResolve = (response: PinnedResponse): void => {
         if (settled) return;
         settled = true;
-        if (absoluteTimer !== undefined) clearTimeout(absoluteTimer);
+        clearTimeout(absoluteTimer);
         resolve(response);
       };
       const settleReject = (error: unknown): void => {
         if (settled) return;
         settled = true;
-        if (absoluteTimer !== undefined) clearTimeout(absoluteTimer);
+        clearTimeout(absoluteTimer);
         reject(toPinnedRequestError(error));
       };
 
@@ -309,7 +308,7 @@ export class SecureHttpGateway {
 
       // ClientRequest.setTimeout is an inactivity timeout. This independent timer is the actual
       // wall-clock deadline and therefore also stops slow-drip responses that keep the socket busy.
-      absoluteTimer = setTimeout(() => {
+      const absoluteTimer = setTimeout(() => {
         settleReject(new RequestTimeoutError());
         outgoing.destroy();
       }, remaining);
