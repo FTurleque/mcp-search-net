@@ -90,7 +90,11 @@ function Invoke-ExternalCapture {
         $stderrTask = $process.StandardError.ReadToEndAsync()
         $finished = $process.WaitForExit($TimeoutSeconds * 1000)
         if (-not $finished) {
-            try { $process.Kill() } catch {}
+            try {
+                $process.Kill()
+            } catch {
+                Write-Verbose "Unable to terminate timed-out process '$Executable': $($_.Exception.Message)"
+            }
         }
         [System.Threading.Tasks.Task]::WhenAll($stdoutTask, $stderrTask).Wait(3000) | Out-Null
         $stdout = if ($stdoutTask.IsCompleted) { $stdoutTask.Result } else { '' }
@@ -193,7 +197,9 @@ function Find-ClaudeDesktopConfig {
                 }
             }
         }
-    } catch {}
+    } catch {
+        Write-Verbose "Claude Desktop package detection failed: $($_.Exception.Message)"
+    }
     return (Join-Path $env:APPDATA 'Claude\claude_desktop_config.json')
 }
 
@@ -208,7 +214,9 @@ function Find-IntelliJVersion {
                 return "$($data.name) $($data.version)"
             }
         }
-    } catch {}
+    } catch {
+        Write-Verbose "IntelliJ version detection failed: $($_.Exception.Message)"
+    }
     return $null
 }
 
@@ -218,11 +226,15 @@ function Find-ClaudeDesktopVersion {
         if ($process -and $process.Path) {
             return [System.Diagnostics.FileVersionInfo]::GetVersionInfo($process.Path).ProductVersion
         }
-    } catch {}
+    } catch {
+        Write-Verbose "Claude Desktop process version detection failed: $($_.Exception.Message)"
+    }
     try {
         $package = Get-AppxPackage -Name 'Claude*' -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
         if ($package) { return [string]$package.Version }
-    } catch {}
+    } catch {
+        Write-Verbose "Claude Desktop package version detection failed: $($_.Exception.Message)"
+    }
     return $null
 }
 
