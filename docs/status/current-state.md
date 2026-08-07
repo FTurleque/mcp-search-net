@@ -22,8 +22,10 @@ pas ce document pour connaître l’état présent.
 - Remédiation de qualification #47/#48 : terminée le 7 août 2026. Le candidat exact
   `2b7af195e28861f185d8aa39db8f71640d6f8845` a réussi la CI PR run `31178105942`, les trois jobs
   exact-head Node.js/Docker/Windows, les deux audits npm et le Quality Gate SonarQube avec zéro
-  Security Hotspot. La PR #48 a ensuite été mergée ; `master` et `develop` ont été réalignées sur
-  `9eeb6aba3fdb2b4a04b5e4b2085b9b9454873d5d`.
+  Security Hotspot.
+- Hardening résiduel #49/#50 : terminé le 7 août 2026. La PR #50 a été squash-mergée puis `develop`
+  a été réalignée sans force. La baseline commune `master`/`develop` avant la migration SQLite est
+  `63289d3bb498132ada4effdafa79039548c02381`.
 - Release V2/1.1.0 : aucune publication n’est déclarée par ce document ; une publication doit
   passer la qualification exact-head et le workflow de release volontaire.
 - Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
@@ -72,12 +74,20 @@ le serveur n’exécute jamais le contenu récupéré comme instruction.
 La sonde STDIO de référence gèle cinq tools, quatre resources et neuf templates avec
 `schemaVersion = 1.0`. La certification native IntelliJ/Copilot, Claude Desktop/Code, Copilot CLI et
 Codex reste séparée dans l’issue #34 : elle exige une observation réelle du client et ne peut pas
-être déduite de la seule sonde STDIO.
+être déduite de la seule sonde STDIO. L’état courant détaillé est
+`docs/planning/client-certification-current.md`.
 
-## Stockage et migrations catalogue
+## Stockage, SQLite et migrations catalogue
 
 `cache.sqlite` est le cache Web V1. `catalog.db` est le catalogue documentaire persistant V2. Ces
 fichiers sont isolés et n’ont pas la même politique de rétention.
+
+La dépendance native SQLite est fixée à `better-sqlite3@13.0.3`. Cette ligne utilise N-API et dépend
+de `node-addon-api`; les anciennes transitives `prebuild-install` et `bindings` ne font plus partie
+du lockfile. Le package conserve un fallback `node-gyp rebuild`, mais il est explicitement refusé
+par `allowScripts` : les plateformes supportées doivent fonctionner avec les prebuilds embarqués.
+La qualification dédiée est décrite dans
+`docs/planning/validation-better-sqlite3-13-2026-08-07.md`.
 
 Les migrations catalogue appliquées dans l’ordre sont :
 
@@ -96,6 +106,10 @@ Une migration appliquée est immuable. Toute évolution crée une nouvelle migra
 sépare les responsabilités source/read-model/révision/recherche/synchronisation. Une révision
 courante reste une transaction atomique couvrant document, version, sections, FTS, pointeur courant
 et observations.
+
+FTS5 reste une dépendance fonctionnelle explicite. La qualification N-API vérifie en plus la version
+SQLite embarquée, une vraie requête FTS5 et le verrouillage writer entre connexions. Les suites
+existantes continuent de couvrir migrations, catalogue, cache, backup et restauration de snapshot.
 
 ## Recherche locale et décision embeddings
 
@@ -224,11 +238,8 @@ toolchain Inno Setup est figée sur la version `6.7.1`.
 - les entrypoints bootstrap/CLI sont surtout qualifiés par les suites integration/E2E qui exécutent
   des processus réels ; la couverture V8 in-process ne doit pas être interprétée seule comme leur
   niveau de qualification ;
-- `better-sqlite3@12.11.1` entraîne encore le paquet déprécié `prebuild-install@7.1.3`. Les audits npm
-  du candidat qualifié ne signalent aucune vulnérabilité. La suppression de cette transitive passe
-  par `better-sqlite3` 13/N-API, un changement de version majeure et de moteur SQLite qui doit être
-  qualifié comme migration dédiée plutôt qu’introduit opportunistement dans un hardening réseau ;
-- la certification native des clients reste ouverte dans #34 ;
+- la certification native des cinq clients reste ouverte dans #34 ; les preuves GitHub/STDIO ne la
+  remplacent pas et les lignes sans observation réelle restent `NON OBSERVÉ` ;
 - le serveur est un MCP STDIO local : il n’embarque aucun LLM et n’exige aucune API commerciale.
 
 ## Gouvernance Git post-V2
@@ -266,6 +277,10 @@ CI PR : run `31178105942` / #702. Les jobs `Node.js 24 validation`,
 que les deux audits npm et le Quality Gate SonarQube avec zéro Security Hotspot. La PR #48 a été
 mergée et `develop` a été réalignée explicitement sur le merge commit
 `9eeb6aba3fdb2b4a04b5e4b2085b9b9454873d5d`, identique à `master` après intégration.
+
+Le hardening résiduel #49/#50 a ensuite fermé les derniers P2/P3 du même audit. La PR #50 a été
+squash-mergée sur `63289d3bb498132ada4effdafa79039548c02381`, puis `develop` a été fast-forwardée
+sans force sur le même SHA.
 
 Une publication ultérieure depuis `master` exige toujours une nouvelle preuve CI réussie attachée
 au SHA exact de `master`. L’issue #34 reste séparée et ouverte pour la certification native réelle

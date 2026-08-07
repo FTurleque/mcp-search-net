@@ -6,6 +6,7 @@ const root = resolve(import.meta.dirname, '..');
 const failures = [];
 
 const packageJson = readJson('package.json');
+const packageLock = readJson('package-lock.json');
 const compose = readText('compose.yaml');
 const composeHybrid = readText('compose.hybrid.yaml');
 const ci = readText('.github/workflows/ci.yml');
@@ -119,13 +120,29 @@ assert(
   '.npmrc: strict-allow-scripts=true absent',
 );
 const expectedAllowScripts = {
-  'better-sqlite3@12.11.1': true,
+  'better-sqlite3@13.0.3': false,
   'esbuild@0.28.1': true,
   'fsevents@2.3.3': true,
 };
 assert(
   JSON.stringify(packageJson.allowScripts) === JSON.stringify(expectedAllowScripts),
   'package.json: allowScripts inattendu',
+);
+assert(
+  packageJson.dependencies?.['better-sqlite3'] === '13.0.3',
+  'package.json: better-sqlite3 13.0.3 attendu',
+);
+assert(
+  packageLock.packages?.['node_modules/better-sqlite3']?.version === '13.0.3',
+  'package-lock: better-sqlite3 13.0.3 attendu',
+);
+assert(
+  packageLock.packages?.['node_modules/node-addon-api'] !== undefined,
+  'package-lock: node-addon-api attendu pour better-sqlite3 N-API',
+);
+assert(
+  packageLock.packages?.['node_modules/prebuild-install'] === undefined,
+  'package-lock: prebuild-install déprécié doit être absent',
 );
 
 for (const needle of [
@@ -243,7 +260,7 @@ for (const invariant of [
   'await stat(options.filePath)',
   'WebUrl.createTransport(options.canonicalUrl)',
 ]) {
-  requireText(ingestText, invariant, `catalog ingest: borne locale absente ${invariant}`);
+  requireText(ingestText, invariant, `catalog ingest: borne locale absent ${invariant}`);
 }
 for (const invariant of [
   'SQLITE_ID_BATCH_SIZE = 400',
@@ -346,6 +363,10 @@ assert(
   !existsSync(resolve(root, '.github/workflows/local-embeddings-benchmark.yml')),
   'CI: workflow embeddings one-shot terminé encore présent',
 );
+assert(
+  !existsSync(resolve(root, '.github/workflows/bootstrap-better-sqlite3-lock.yml')),
+  'CI: workflow bootstrap better-sqlite3 temporaire encore présent',
+);
 
 if (failures.length > 0) {
   process.stderr.write(`AUDIT_INVARIANTS_FAILED (${failures.length})\n`);
@@ -361,6 +382,10 @@ process.stdout.write(
       crawl4aiNetworks: ['backend'],
       crawl4aiLoopbackRelay: true,
       installScriptAllowlist: Object.keys(expectedAllowScripts),
+      betterSqlite3: '13.0.3',
+      betterSqlite3Napi: true,
+      betterSqlite3FallbackBuildAllowed: false,
+      deprecatedPrebuildInstallPresent: false,
       catalogComponents: 5,
       benchmarkQueries: querySet.queries.length,
       paraphraseQueries: categories.get('paraphrase') ?? 0,
@@ -368,6 +393,7 @@ process.stdout.write(
       embeddingsDecision: 'prototype-local-vector-index',
       adoptEmbeddingRuntimeNow: false,
       oneShotBenchmarkWorkflowRemoved: true,
+      temporarySqliteBootstrapWorkflowRemoved: true,
       boundedOriginThrottle: true,
       absoluteHttpDeadline: true,
       boundedLinkValidation: true,

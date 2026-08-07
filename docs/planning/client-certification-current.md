@@ -30,19 +30,36 @@ installé mais ne remplace toujours pas une observation dans l'UI d'un client ti
 
 ## Matrice de certification native
 
-| Client                         | Configuration supportée par l'installateur | Preuve serveur automatisée | Observation native requise                                                                                  |
-| ------------------------------ | ------------------------------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| IntelliJ IDEA + GitHub Copilot | oui                                        | oui                        | serveur `Running`, cinq tools, workflow `search_docs -> read_doc_section`, resources/templates selon plugin |
-| GitHub Copilot CLI             | oui                                        | oui                        | `copilot mcp` réel, visibilité et appel des tools                                                           |
-| Claude Code                    | oui                                        | oui                        | `claude mcp` réel, visibilité et appel des tools                                                            |
-| Claude Desktop                 | oui                                        | oui                        | chargement de `claude_desktop_config.json`, visibilité et appel des tools                                   |
-| Codex                          | oui                                        | oui                        | `codex mcp` réel, visibilité et appel des tools                                                             |
+Tous les clients ci-dessous sont supportés par la configuration de l'installateur et bénéficient de
+la preuve serveur automatisée. Leur verdict **natif** est cependant distinct :
 
-## Règle de verdict
+- **IntelliJ IDEA + GitHub Copilot — NON OBSERVÉ.** Le 2026-08-04, IntelliJ et le plugin étaient
+  présents, mais `%APPDATA%\GitHub Copilot\mcp.json` était absent et le serveur n'était donc pas
+  déclaré.
+- **GitHub Copilot CLI — NON OBSERVÉ.** Aucune sortie native `copilot mcp` n'est enregistrée.
+- **Claude Code — NON OBSERVÉ.** Aucune sortie native `claude mcp` n'est enregistrée.
+- **Claude Desktop — NON OBSERVÉ.** Le 2026-08-04, `claude_desktop_config.json` avait été inspecté ;
+  `mcpServers` ne contenait pas `mcp-search-net`.
+- **Codex — NON OBSERVÉ.** Aucune sortie ou intégration native `codex mcp` n'est enregistrée.
+
+Les observations du 2026-08-04 proviennent de la recette historique
+`docs/planning/validation-v2-14-client-contracts.md`. Elles prouvent l'absence de configuration au
+moment du contrôle ; elles ne doivent ni être extrapolées à une version cliente plus récente, ni être
+transformées en PASS.
+
+## Critère de clôture de #34
 
 Une ligne de la matrice ne passe à `PASS` ou `PASS AVEC RÉSERVE` que lorsqu'une version précise du
 client, l'OS, le SHA serveur et l'observation correspondante sont enregistrés. En l'absence de cette
 preuve, le verdict reste `NON OBSERVÉ`, même si le serveur de référence et le packaging sont verts.
 
-Cette séparation permet de livrer et maintenir un contrat MCP portable sans transformer une recette
-manuelle non exécutée en faux résultat de certification.
+Pour fermer #34 comme `completed`, il faut donc encore fournir une observation native des cinq
+clients. Pour les clients CLI, enregistrer au minimum la version, `mcp list/get` (ou commande native
+équivalente), puis un appel réel d'au moins un tool. Pour IntelliJ/Copilot et Claude Desktop,
+enregistrer la configuration chargée, l'état du serveur et l'appel réel d'un tool dans le client.
+Resources/templates peuvent rester une réserve si le client ne les expose pas directement, à
+condition que le workflow `search_docs -> read_doc_section` soit réellement observé.
+
+GitHub CI peut certifier le contrat serveur et le bundle installé, mais ne peut pas fabriquer une
+observation native d'une application cliente installée sur le poste utilisateur. Tant que ces cinq
+preuves ne sont pas enregistrées, #34 doit rester ouverte plutôt que d'être fermée sur un faux PASS.

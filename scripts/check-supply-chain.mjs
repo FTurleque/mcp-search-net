@@ -15,11 +15,12 @@ const composeHybrid = readText('compose.hybrid.yaml');
 
 const expected = {
   sdk: '1.30.0',
+  betterSqlite3: '13.0.3',
   nodeDockerImage: 'node@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
   nodeRelayImage:
     'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
   allowScripts: {
-    'better-sqlite3@12.11.1': true,
+    'better-sqlite3@13.0.3': false,
     'esbuild@0.28.1': true,
     'fsevents@2.3.3': true,
   },
@@ -38,6 +39,24 @@ assert(packageJson.dependencies?.['@modelcontextprotocol/sdk'] === expected.sdk,
 assert(
   packageLock.packages?.['node_modules/@modelcontextprotocol/sdk']?.version === expected.sdk,
   'SDK_LOCK_MISMATCH',
+);
+assert(
+  packageJson.dependencies?.['better-sqlite3'] === expected.betterSqlite3,
+  'BETTER_SQLITE3_NOT_PINNED',
+);
+const lockedBetterSqlite3 = packageLock.packages?.['node_modules/better-sqlite3'];
+assert(lockedBetterSqlite3?.version === expected.betterSqlite3, 'BETTER_SQLITE3_LOCK_MISMATCH');
+assert(
+  packageLock.packages?.['node_modules/node-addon-api'] !== undefined,
+  'BETTER_SQLITE3_NAPI_DEPENDENCY_MISSING',
+);
+assert(
+  packageLock.packages?.['node_modules/prebuild-install'] === undefined,
+  'DEPRECATED_PREBUILD_INSTALL_PRESENT',
+);
+assert(
+  packageLock.packages?.['node_modules/bindings'] === undefined,
+  'LEGACY_BINDINGS_PACKAGE_PRESENT',
 );
 assert(
   JSON.stringify(packageJson.allowScripts) === JSON.stringify(expected.allowScripts),
@@ -136,6 +155,10 @@ process.stdout.write(
     {
       status: 'SUPPLY_CHAIN_CHECK_PASSED',
       sdk: expected.sdk,
+      betterSqlite3: expected.betterSqlite3,
+      betterSqlite3Napi: true,
+      betterSqlite3FallbackBuildAllowed: false,
+      deprecatedPrebuildInstallPresent: false,
       installScriptAllowlist: expected.allowScripts,
       strictAllowScripts: true,
       strictAllowScriptsPropagatedToDocker: true,
