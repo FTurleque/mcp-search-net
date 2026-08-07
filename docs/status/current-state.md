@@ -152,6 +152,10 @@ Règles de sécurité de configuration :
 - le nettoyage d’une ancienne clé JetBrains incorrecte n’est autorisé que lorsqu’elle pointe
   explicitement vers l’installation courante.
 
+Le setup Inno et le script historique de désinstallation conservent les données utilisateur par
+défaut. Dans le chemin historique, la suppression complète des données et volumes exige l’option
+explicite `-PurgeData` ; `-KeepData` reste accepté comme alias de compatibilité du comportement sûr.
+
 ## Sécurité Web et exploitation
 
 - chaque URL et chaque redirection est validée avant connexion ;
@@ -163,7 +167,11 @@ Règles de sécurité de configuration :
 - `robots.txt`, les budgets de taille/durée/redirections et les limites de concurrence restent
   appliqués par la passerelle HTTP ;
 - l’historique de throttling par origine est borné afin qu’un processus long ne conserve pas une
-  entrée mémoire pour un nombre illimité d’origines visitées.
+  entrée mémoire pour un nombre illimité d’origines visitées ;
+- le HTML envoyé au fallback natif Crawl4AI neutralise les attributs de chargement de ressources,
+  y compris `srcdoc`, avant le transport `raw://` ;
+- `pdfjs-dist` est fixé à `6.2.108` afin de sortir de la plage affectée par
+  `GHSA-hq66-cqwq-w95j` (exécution JavaScript arbitraire sur PDF malveillant).
 
 ## CI et qualification
 
@@ -212,3 +220,32 @@ toolchain Inno Setup est figée sur la version `6.7.1`.
 un merge brut de l’ancien `develop`. `develop` doit rester explicitement alignée sur le `master`
 qualifié. La PR #27 est supersédée par cette règle. Les branches absorbées n’ont plus vocation à
 porter du travail unique et peuvent être retirées de la liste des branches actives.
+
+## Réconciliation de qualification — audit du 7 août 2026
+
+Le nouvel audit complet du HEAD `ec0c6969178e99b424468631e00082acf51e3014` a établi que le produit
+avait conservé un socle runtime solide, mais que la gouvernance de qualification avait régressé :
+
+- la PR #45 avait été mergée alors que son run exact-head `31162249594` était en échec sur le job
+  `Node.js 24 validation` ;
+- le Quality Gate SonarQube de cette PR avait signalé un `Security Rating E` sur le nouveau code ;
+- la PR documentaire #46 avait été mergée sans qualification exact-head réussie ;
+- quatre workflows one-shot terminés ou échoués, dont certains avec `contents: write`, restaient
+  présents dans le dépôt ;
+- le gate npm révélait ensuite l’advisory high `GHSA-hq66-cqwq-w95j` sur `pdfjs-dist@6.0.227`.
+
+Ces résultats restent des preuves historiques de non-qualification et ne doivent jamais être
+réinterprétés comme des PASS du produit courant.
+
+L’issue #47 et la PR #48 portent la remédiation : suppression et interdiction déterministe des
+workflows temporaires privilégiés, restauration des gates Node, propagation de
+`strict-allow-scripts=true` dans Docker et le staging Windows, durcissement HTML/Crawl4AI, parsing
+strict des resource URIs MCP, désinstallation historique safe-by-default, correction de l’identité
+des sections SQLite hors chunking réel et mise à jour de PDF.js vers `6.2.108`.
+
+La règle de sortie est stricte : le merge de cette remédiation n’est autorisé que si le HEAD final de
+la PR réussit les jobs `Node.js 24 validation`, `Docker integration and live E2E` et
+`Windows installation and STDIO packaging`, les deux audits npm et le Quality Gate SonarQube. Une
+publication ultérieure depuis `master` exige de nouveau une preuve CI réussie attachée au SHA exact
+de `master`. L’issue #34 reste séparée et ouverte pour la certification native réelle des clients
+MCP interactifs.
