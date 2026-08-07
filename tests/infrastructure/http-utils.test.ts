@@ -44,14 +44,7 @@ describe('fetchJson stable errors', () => {
     );
 
     await expect(
-      fetchJson(
-        'searxng',
-        new URL('https://example.com'),
-        {},
-        1_000,
-        fetchMock as typeof fetch,
-        8,
-      ),
+      fetchJson('searxng', new URL('https://example.com'), {}, 1_000, fetchMock as typeof fetch, 8),
     ).rejects.toMatchObject({ code: 'SEARCH_PROVIDER_UNAVAILABLE' });
   });
 });

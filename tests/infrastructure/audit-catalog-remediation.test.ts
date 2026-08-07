@@ -69,9 +69,9 @@ describe('audit catalog remediation', () => {
     });
 
     expect(revision.sections.length).toBeGreaterThan(1);
-    expect(Math.max(...revision.sections.map((section) => section.characterCount))).toBeLessThanOrEqual(
-      12_000,
-    );
+    expect(
+      Math.max(...revision.sections.map((section) => section.characterCount)),
+    ).toBeLessThanOrEqual(12_000);
     expect(new Set(revision.sections.map((section) => section.ordinal)).size).toBe(
       revision.sections.length,
     );

@@ -175,7 +175,9 @@ for (const invariant of [
   );
 }
 assert(
-  !installerTemplate.includes("if DirExists(ExpandConstant('{localappdata}\\mcp-search-net')) then"),
+  !installerTemplate.includes(
+    "if DirExists(ExpandConstant('{localappdata}\\mcp-search-net')) then",
+  ),
   'installer Inno: suppression non prouvée du répertoire ZIP historique encore présente',
 );
 
@@ -230,7 +232,11 @@ for (const invariant of [
   'const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter',
   'resumeAfter: continuationCursor',
 ]) {
-  requireText(syncDocuments, invariant, `catalog sync: invariant reprise/transport absent ${invariant}`);
+  requireText(
+    syncDocuments,
+    invariant,
+    `catalog sync: invariant reprise/transport absent ${invariant}`,
+  );
 }
 for (const invariant of [
   'MAX_INGEST_TEXT_BYTES = 16 * 1024 * 1024',

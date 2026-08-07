@@ -101,7 +101,7 @@ Le benchmark embeddings de #32 est terminé. Résultats officiels du run `311241
 `72b65a12786081d4e1fbc795fd8764dd4c81fd51`, sur 10 sources / 100 documents / 10 000 sections /
 60 requêtes :
 
-| Métrique                 | Lexical  | Embeddings locaux | Fusion RRF |
+| Métrique                 |  Lexical | Embeddings locaux | Fusion RRF |
 | ------------------------ | -------: | ----------------: | ---------: |
 | Recall@10                |   0.6167 |            0.8528 |     0.8528 |
 | MRR@10                   |   0.6167 |            0.9500 |          — |

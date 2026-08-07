@@ -53,7 +53,10 @@ describe('audit fetch_url remediation', () => {
 
   it('bounds rejected link inspections independently from accepted links', async () => {
     let blockedInspections = 0;
-    const links = Array.from({ length: 200 }, (_, index) => `https://blocked-${index}.example.test/`);
+    const links = Array.from(
+      { length: 200 },
+      (_, index) => `https://blocked-${index}.example.test/`,
+    );
     const useCase = new FetchUrl(
       {
         async fetch({ url }) {

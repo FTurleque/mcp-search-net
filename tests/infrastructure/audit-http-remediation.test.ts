@@ -73,7 +73,9 @@ describe('audit HTTP remediation', () => {
   });
 });
 
-async function listen(server: ReturnType<typeof createServer>): Promise<{ url: string; port: number }> {
+async function listen(
+  server: ReturnType<typeof createServer>,
+): Promise<{ url: string; port: number }> {
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as AddressInfo).port;

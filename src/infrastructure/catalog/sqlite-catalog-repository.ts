@@ -272,7 +272,10 @@ function chunkDocumentSections(
     const step = MAX_PERSISTED_SECTION_CHARACTERS - SECTION_CHUNK_OVERLAP_CHARACTERS;
     let part = 1;
     for (let start = 0; start < characters.length; start += step) {
-      const content = characters.slice(start, start + MAX_PERSISTED_SECTION_CHARACTERS).join('').trim();
+      const content = characters
+        .slice(start, start + MAX_PERSISTED_SECTION_CHARACTERS)
+        .join('')
+        .trim();
       if (content !== '') appendSection(bounded, seenContentHashes, section, content, part);
       part += 1;
       if (start + MAX_PERSISTED_SECTION_CHARACTERS >= characters.length) break;

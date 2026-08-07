@@ -99,17 +99,9 @@ export class SecureHttpGateway {
       if (this.options.respectRobotsTxt && !new URL(value).pathname.endsWith('/robots.txt')) {
         await this.assertRobotsAllowed(value, deadline, context, limits);
       }
-      return await this.follow(
-        value,
-        value,
-        0,
-        deadline,
-        conditionalHeaders,
-        context,
-        limits,
-        [],
-        { remainingBytes: limits.maxBytes },
-      );
+      return await this.follow(value, value, 0, deadline, conditionalHeaders, context, limits, [], {
+        remainingBytes: limits.maxBytes,
+      });
     } finally {
       this.release();
     }
@@ -179,17 +171,9 @@ export class SecureHttpGateway {
     const robotsUrl = new URL('/robots.txt', url.origin).toString();
     let resource: DownloadedResource;
     try {
-      resource = await this.follow(
-        robotsUrl,
-        robotsUrl,
-        0,
-        deadline,
-        {},
-        context,
-        limits,
-        [],
-        { remainingBytes: limits.maxBytes },
-      );
+      resource = await this.follow(robotsUrl, robotsUrl, 0, deadline, {}, context, limits, [], {
+        remainingBytes: limits.maxBytes,
+      });
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) return;
       // A temporarily unavailable robots file does not grant access silently.
