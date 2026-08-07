@@ -218,6 +218,7 @@ async function decodeResource(
 const UNSAFE_HTML_ATTRIBUTES = new Set([
   'src',
   'srcset',
+  'srcdoc',
   'action',
   'formaction',
   'poster',

@@ -20,6 +20,7 @@
     "check:runtime": "node scripts/check-node-version.mjs",
     "check:copilot": "node scripts/validate-copilot-config.mjs",
     "check:license": "node scripts/check-license.mjs",
+    "check:ci-hygiene": "node scripts/check-ci-hygiene.mjs",
     "check:audit-invariants": "node scripts/check-audit-invariants.mjs",
     "docs:check": "node scripts/check-docs.mjs",
     "build": "npm run clean && tsc -p tsconfig.build.json",
@@ -58,12 +59,12 @@
     "benchmark:v1": "node scripts/benchmark-v1.mjs",
     "install:user": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1",
     "install:user:run": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1 -StartServices -RunAfterInstall",
-    "check": "npm run check:runtime && npm run check:copilot && npm run check:license && npm run check:supply-chain && npm run check:audit-invariants && npm run docs:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run client:contract-report && npm run test:coverage"
+    "check": "npm run check:runtime && npm run check:copilot && npm run check:license && npm run check:supply-chain && npm run check:ci-hygiene && npm run check:audit-invariants && npm run docs:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run client:contract-report && npm run test:coverage"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "better-sqlite3": "^12.0.0",
-    "pdfjs-dist": "6.0.227",
+    "pdfjs-dist": "6.2.108",
     "yaml": "^2.8.0",
     "zod": "^4.0.0"
   },

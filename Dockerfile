@@ -2,6 +2,7 @@
 FROM node@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY .npmrc ./
 RUN npm ci
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
@@ -18,6 +19,7 @@ LABEL org.opencontainers.image.title="mcp-search-net" \
 ENV NODE_ENV=production
 WORKDIR /app
 COPY package.json package-lock.json LICENSE ./
+COPY .npmrc ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/build ./build
 COPY config/application.docker.yml config/official-sources.yml ./config/

@@ -8,6 +8,8 @@ const packageJson = readJson('package.json');
 const packageLock = readJson('package-lock.json');
 const npmrc = readText('.npmrc');
 const dockerfile = readText('Dockerfile');
+const dockerignore = readText('.dockerignore');
+const windowsDistributionBuilder = readText('scripts/release/build-windows-distribution.ps1');
 const compose = readText('compose.yaml');
 const composeHybrid = readText('compose.hybrid.yaml');
 
@@ -47,6 +49,23 @@ assert(
     .map((line) => line.trim())
     .includes('strict-allow-scripts=true'),
   'STRICT_ALLOW_SCRIPTS_NOT_ENABLED',
+);
+assert(
+  dockerfile.split('COPY .npmrc ./').length - 1 === 2,
+  'STRICT_ALLOW_SCRIPTS_NOT_PROPAGATED_TO_DOCKER',
+);
+assert(
+  dockerignore
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .includes('!.npmrc'),
+  'STRICT_ALLOW_SCRIPTS_NOT_AVAILABLE_IN_DOCKER_CONTEXT',
+);
+assert(
+  windowsDistributionBuilder.includes(
+    "Copy-Item -LiteralPath (Join-Path $RepoRoot '.npmrc') -Destination $AppDist -Force",
+  ),
+  'STRICT_ALLOW_SCRIPTS_NOT_PROPAGATED_TO_WINDOWS_STAGING',
 );
 for (const [name, version] of Object.entries(expected.overrides)) {
   assert(packageJson.overrides?.[name] === version, `OVERRIDE_NOT_PINNED:${name}`);
@@ -119,6 +138,9 @@ process.stdout.write(
       sdk: expected.sdk,
       installScriptAllowlist: expected.allowScripts,
       strictAllowScripts: true,
+      strictAllowScriptsPropagatedToDocker: true,
+      strictAllowScriptsAvailableInDockerContext: true,
+      strictAllowScriptsPropagatedToWindowsStaging: true,
       overrides: expected.overrides,
       developmentOverrides: expected.developmentOverrides,
       dockerImageReferencesPinnedByDigest: 5,

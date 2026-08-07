@@ -108,8 +108,8 @@ La désinstallation du setup arrête explicitement la stack avec
 
 ## Posture Docker
 
-Le réseau `backend` est interne. SearXNG et Crawl4AI disposent aussi du réseau `egress` pour joindre
-les sources publiques nécessaires à leur fonctionnement.
+Le réseau `backend` est interne. SearXNG et le serveur MCP disposent du réseau `egress` lorsque
+nécessaire. Crawl4AI reste uniquement sur `backend` et ne dispose d’aucun egress public direct.
 
 - SearXNG : utilisateur `977:977`, filesystem read-only, `cap_drop: ALL`,
   `no-new-privileges` et tmpfs limité ;
@@ -138,13 +138,14 @@ Puis :
 
 ```powershell
 .\scripts\uninstall-user.ps1
-.\scripts\uninstall-user.ps1 -KeepData
+.\scripts\uninstall-user.ps1 -PurgeData
 ```
 
-La première commande supprime l’installation et les volumes Compose canoniques après arrêt des
-services. La seconde conserve explicitement configuration, données et volumes, tout en retirant le
-programme. `-SkipServices` signifie que l’opérateur prend lui-même en charge les conteneurs et
-volumes.
+La première commande retire le programme mais conserve par défaut configuration, données et volumes.
+La seconde exige explicitement la purge complète des données et volumes avec `-PurgeData`. Le switch
+historique `-KeepData` reste accepté comme alias explicite du comportement sûr par défaut ; il est
+mutuellement exclusif avec `-PurgeData`. `-SkipServices` signifie que l’opérateur prend lui-même en
+charge les conteneurs et volumes.
 
 ## Opérations catalogue installées
 

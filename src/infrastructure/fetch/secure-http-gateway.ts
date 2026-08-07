@@ -142,7 +142,6 @@ export class SecureHttpGateway {
         status: response.status,
         permanent: isPermanentRedirect(response.status),
       };
-      // The next URL is validated at the start of follow, before any connection is opened.
       return this.follow(
         requestedUrl,
         target,
@@ -176,7 +175,6 @@ export class SecureHttpGateway {
       });
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) return;
-      // A temporarily unavailable robots file does not grant access silently.
       throw error;
     }
     const rules = new TextDecoder().decode(resource.body);
@@ -241,18 +239,17 @@ export class SecureHttpGateway {
 
     return new Promise((resolve, reject) => {
       let settled = false;
-      let absoluteTimer: NodeJS.Timeout | undefined;
 
       const settleResolve = (response: PinnedResponse): void => {
         if (settled) return;
         settled = true;
-        if (absoluteTimer !== undefined) clearTimeout(absoluteTimer);
+        clearTimeout(absoluteTimer);
         resolve(response);
       };
       const settleReject = (error: unknown): void => {
         if (settled) return;
         settled = true;
-        if (absoluteTimer !== undefined) clearTimeout(absoluteTimer);
+        clearTimeout(absoluteTimer);
         reject(toPinnedRequestError(error));
       };
 
@@ -274,8 +271,6 @@ export class SecureHttpGateway {
           const status = incoming.statusCode ?? 0;
           const headers = flattenHeaders(incoming.headers);
 
-          // Redirect and 304 bodies are irrelevant to the contract. Abort them immediately so a
-          // hostile endpoint cannot spend the byte budget before the next validated hop.
           if (isRedirectStatus(status) || status === 304) {
             incoming.destroy();
             settleResolve({ status, headers, body: new Uint8Array() });
@@ -284,16 +279,16 @@ export class SecureHttpGateway {
 
           const declared = Number.parseInt(headers['content-length'] ?? '0', 10);
           if (Number.isFinite(declared) && declared > budget.remainingBytes) {
-            incoming.destroy();
             settleReject(new ResponseTooLargeError());
+            incoming.destroy();
             return;
           }
 
           const chunks: Buffer[] = [];
           incoming.on('data', (chunk: Buffer) => {
             if (chunk.length > budget.remainingBytes) {
-              incoming.destroy();
               settleReject(new ResponseTooLargeError());
+              incoming.destroy();
               return;
             }
             budget.remainingBytes -= chunk.length;
@@ -307,9 +302,7 @@ export class SecureHttpGateway {
         },
       );
 
-      // ClientRequest.setTimeout is an inactivity timeout. This independent timer is the actual
-      // wall-clock deadline and therefore also stops slow-drip responses that keep the socket busy.
-      absoluteTimer = setTimeout(() => {
+      const absoluteTimer = setTimeout(() => {
         settleReject(new RequestTimeoutError());
         outgoing.destroy();
       }, remaining);

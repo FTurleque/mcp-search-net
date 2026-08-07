@@ -8,9 +8,9 @@ Le contrôle déterministe, sans réseau, fait partie de `npm run check` :
 npm run check:supply-chain
 ```
 
-Il vérifie les versions exactes du SDK MCP et des overrides de sécurité, les
-quatre références OCI par digest, l'absence de secret Compose par défaut et les licences des
-paquets de production réellement installés. Une dépendance de production sans
+Il vérifie les versions exactes du SDK MCP et des overrides de sécurité, les références OCI par
+digest, l'absence de secret Compose par défaut, la politique des scripts lifecycle npm et les
+licences des paquets de production réellement installés. Une dépendance de production sans
 manifeste ou avec une licence hors liste autorisée fait échouer le gate.
 
 La qualification avec accès au registre ajoute :
@@ -24,6 +24,19 @@ Les deux commandes doivent annoncer zéro vulnérabilité connue. Ne pas utilise
 `npm audit fix` ou `--force` sans avoir identifié chaque chemin de dépendance et
 validé les changements de version.
 
+## Scripts lifecycle npm dans les artefacts
+
+`.npmrc` active `strict-allow-scripts=true` et `package.json` contient l'allowlist exacte des scripts
+lifecycle autorisés. Cette frontière doit rester identique dans tous les environnements qui exécutent
+`npm ci` :
+
+- les deux stages du `Dockerfile` copient `.npmrc` avant l'installation ;
+- le staging de la distribution Windows copie `.npmrc` avant `npm ci --omit=dev` ;
+- `npm run check:supply-chain` vérifie explicitement ces deux invariants.
+
+Une construction d'artefact qui omet `.npmrc` est considérée non qualifiée même si le checkout local
+possède une politique stricte.
+
 ## Installation de production reproductible
 
 Valider dans un répertoire propre, sans réutiliser `node_modules` :
@@ -35,7 +48,17 @@ npm audit --omit=dev --audit-level=moderate
 
 Le lockfile est la source de vérité. La recette Windows exécute cette installation
 dans le staging et a confirmé 132 paquets installés, puis zéro vulnérabilité de
-production lors de la qualification V2.12.
+production lors de la qualification V2.12. Toute nouvelle release doit toutefois refaire ses audits
+sur son SHA exact ; une preuve historique ne qualifie pas le candidat courant.
+
+## Provenance historique de `v1.1.1`
+
+Le tag Git historique `v1.1.1` pointe vers un commit dont `package.json` déclare encore la version
+`1.1.0`. Il est conservé comme trace historique et ne constitue pas une release SemVer qualifiée
+selon la politique actuelle. Le tag ne doit pas être réécrit silencieusement.
+
+Toute future publication doit utiliser une nouvelle version dont le tag, le paramètre du workflow,
+`package.json`, `package-lock.json` et les manifestes embarqués sont cohérents.
 
 ## Mise à jour npm
 

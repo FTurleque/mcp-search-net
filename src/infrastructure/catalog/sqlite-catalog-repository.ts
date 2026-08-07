@@ -107,11 +107,13 @@ export class SqliteCatalogRepository implements CatalogRepository {
     revision: CatalogDocumentRevisionInput,
     observation?: CatalogDocumentObservationInput,
   ): Promise<CatalogDocumentRevision> {
-    const boundedRevision: CatalogDocumentRevisionInput = {
-      ...revision,
-      sections: chunkDocumentSections(revision.sections),
-    };
-    return this.asPromise(() => this.revisions.commit(boundedRevision, observation));
+    return this.asPromise(() => {
+      const boundedRevision: CatalogDocumentRevisionInput = {
+        ...revision,
+        sections: chunkDocumentSections(revision.sections),
+      };
+      return this.revisions.commit(boundedRevision, observation);
+    });
   }
 
   public upsertDocument(
@@ -259,13 +261,19 @@ export class SqliteCatalogRepository implements CatalogRepository {
 function chunkDocumentSections(
   sections: readonly DocumentSectionInput[],
 ): readonly DocumentSectionInput[] {
+  validateSectionIdentity(sections);
+  const requiresChunking = sections.some(
+    (section) => Array.from(section.content).length > MAX_PERSISTED_SECTION_CHARACTERS,
+  );
+  if (!requiresChunking) return sections;
+
   const bounded: DocumentSectionInput[] = [];
-  const seenContentHashes = new Set<string>();
+  const seenChunkContentHashes = new Set<string>();
 
   for (const section of sections) {
-    const characters = Array.from(section.content.trim());
+    const characters = Array.from(section.content);
     if (characters.length <= MAX_PERSISTED_SECTION_CHARACTERS) {
-      appendSection(bounded, seenContentHashes, section, characters.join(''), 1);
+      bounded.push({ ...section, ordinal: bounded.length });
       continue;
     }
 
@@ -276,7 +284,22 @@ function chunkDocumentSections(
         .slice(start, start + MAX_PERSISTED_SECTION_CHARACTERS)
         .join('')
         .trim();
-      if (content !== '') appendSection(bounded, seenContentHashes, section, content, part);
+      if (content !== '') {
+        const contentHash = createHash('sha256').update(content).digest('hex');
+        if (!seenChunkContentHashes.has(contentHash)) {
+          seenChunkContentHashes.add(contentHash);
+          const suffix = part <= 1 ? '' : `-part-${part}`;
+          bounded.push({
+            ...section,
+            ordinal: bounded.length,
+            ...(section.anchor === undefined ? {} : { anchor: `${section.anchor}${suffix}` }),
+            content,
+            contentHash,
+            characterCount: Array.from(content).length,
+            tokenCount: content.trim().split(/\s+/u).filter(Boolean).length,
+          });
+        }
+      }
       part += 1;
       if (start + MAX_PERSISTED_SECTION_CHARACTERS >= characters.length) break;
     }
@@ -284,24 +307,15 @@ function chunkDocumentSections(
   return bounded;
 }
 
-function appendSection(
-  target: DocumentSectionInput[],
-  seenContentHashes: Set<string>,
-  section: DocumentSectionInput,
-  content: string,
-  part: number,
-): void {
-  const contentHash = createHash('sha256').update(content).digest('hex');
-  if (seenContentHashes.has(contentHash)) return;
-  seenContentHashes.add(contentHash);
-  const suffix = part <= 1 ? '' : `-part-${part}`;
-  target.push({
-    ...section,
-    ordinal: target.length,
-    ...(section.anchor === undefined ? {} : { anchor: `${section.anchor}${suffix}` }),
-    content,
-    contentHash,
-    characterCount: Array.from(content).length,
-    tokenCount: content.trim().split(/\s+/u).filter(Boolean).length,
-  });
+function validateSectionIdentity(sections: readonly DocumentSectionInput[]): void {
+  const seenOrdinals = new Set<number>();
+  const seenContentHashes = new Set<string>();
+  for (const section of sections) {
+    if (seenOrdinals.has(section.ordinal)) throw new Error('Duplicate document section ordinal');
+    if (seenContentHashes.has(section.contentHash)) {
+      throw new Error('Duplicate document section content hash');
+    }
+    seenOrdinals.add(section.ordinal);
+    seenContentHashes.add(section.contentHash);
+  }
 }
