@@ -257,7 +257,7 @@ for (const invariant of [
   'readonly maxTrackedOrigins?: number',
   'this.rememberOriginRequest(origin, Date.now())',
   'while (this.lastRequestByOrigin.size > this.maxTrackedOrigins)',
-  'let absoluteTimer: NodeJS.Timeout | undefined',
+  'const absoluteTimer = setTimeout(() => {',
   'budget.remainingBytes -= chunk.length',
   'if (isRedirectStatus(status) || status === 304)',
 ]) {
