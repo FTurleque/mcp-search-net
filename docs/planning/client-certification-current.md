@@ -30,13 +30,17 @@ installé mais ne remplace toujours pas une observation dans l'UI d'un client ti
 
 ## Matrice de certification native
 
-| Client                         | Configuration supportée par l'installateur | Preuve serveur automatisée | Dernière preuve native enregistrée | Verdict natif |
-| ------------------------------ | ------------------------------------------ | -------------------------- | ---------------------------------- | ------------- |
-| IntelliJ IDEA + GitHub Copilot | oui                                        | oui                        | 2026-08-04 : IntelliJ et plugin présents, mais `%APPDATA%\\GitHub Copilot\\mcp.json` absent ; serveur non déclaré | **NON OBSERVÉ** |
-| GitHub Copilot CLI             | oui                                        | oui                        | aucune sortie `copilot mcp` enregistrée | **NON OBSERVÉ** |
-| Claude Code                    | oui                                        | oui                        | aucune sortie `claude mcp` enregistrée | **NON OBSERVÉ** |
-| Claude Desktop                 | oui                                        | oui                        | 2026-08-04 : `claude_desktop_config.json` inspecté ; `mcpServers` ne contenait pas `mcp-search-net` | **NON OBSERVÉ** |
-| Codex                          | oui                                        | oui                        | aucune sortie/intégration `codex mcp` enregistrée | **NON OBSERVÉ** |
+Tous les clients ci-dessous sont supportés par la configuration de l'installateur et bénéficient de
+la preuve serveur automatisée. Leur verdict **natif** est cependant distinct :
+
+- **IntelliJ IDEA + GitHub Copilot — NON OBSERVÉ.** Le 2026-08-04, IntelliJ et le plugin étaient
+  présents, mais `%APPDATA%\GitHub Copilot\mcp.json` était absent et le serveur n'était donc pas
+  déclaré.
+- **GitHub Copilot CLI — NON OBSERVÉ.** Aucune sortie native `copilot mcp` n'est enregistrée.
+- **Claude Code — NON OBSERVÉ.** Aucune sortie native `claude mcp` n'est enregistrée.
+- **Claude Desktop — NON OBSERVÉ.** Le 2026-08-04, `claude_desktop_config.json` avait été inspecté ;
+  `mcpServers` ne contenait pas `mcp-search-net`.
+- **Codex — NON OBSERVÉ.** Aucune sortie ou intégration native `codex mcp` n'est enregistrée.
 
 Les observations du 2026-08-04 proviennent de la recette historique
 `docs/planning/validation-v2-14-client-contracts.md`. Elles prouvent l'absence de configuration au
