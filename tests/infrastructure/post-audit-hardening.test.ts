@@ -96,13 +96,13 @@ describe('IPv6 literal URL support', () => {
       resolver,
     );
 
-    await expect(policy.assertAllowed('https://[2606:4700:4700::1111]/docs#section')).resolves.toEqual(
-      {
-        value: 'https://[2606:4700:4700::1111]/docs',
-        hostname: '2606:4700:4700::1111',
-        addresses: ['2606:4700:4700::1111'],
-      },
-    );
+    await expect(
+      policy.assertAllowed('https://[2606:4700:4700::1111]/docs#section'),
+    ).resolves.toEqual({
+      value: 'https://[2606:4700:4700::1111]/docs',
+      hostname: '2606:4700:4700::1111',
+      addresses: ['2606:4700:4700::1111'],
+    });
     expect(resolver).not.toHaveBeenCalled();
   });
 
