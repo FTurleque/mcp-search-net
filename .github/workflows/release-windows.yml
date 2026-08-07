@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: windows-release-${{ github.ref }}-${{ inputs.version }}
@@ -42,7 +43,7 @@ jobs:
       - name: Installer Inno Setup 6.7.1
         shell: pwsh
         run: |
-          choco install innosetup --version=6.7.1 --yes --no-progress
+          choco install innosetup --version=6.7.1 --yes --no-progress --require-checksums
           $iscc = @(
             (Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
             'C:\Program Files (x86)\Inno Setup 7\ISCC.exe',
@@ -77,6 +78,35 @@ jobs:
           git rev-parse HEAD
           Write-Host "Ref: $env:GITHUB_REF"
           Write-Host "SHA: $env:GITHUB_SHA"
+
+      - name: Vérifier la CI exact-head avant publication
+        if: github.ref == 'refs/heads/master'
+        shell: pwsh
+        run: |
+          $runsResponse = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$env:GITHUB_SHA&status=completed&per_page=20" | ConvertFrom-Json
+          $successfulRuns = @(
+            $runsResponse.workflow_runs |
+              Where-Object { $_.head_sha -eq $env:GITHUB_SHA -and $_.conclusion -eq 'success' } |
+              Sort-Object created_at -Descending
+          )
+          if ($successfulRuns.Count -eq 0) {
+            throw "Aucune exécution CI terminée avec succès pour le SHA exact $env:GITHUB_SHA. Publication refusée."
+          }
+
+          $qualifiedRun = $successfulRuns[0]
+          $jobsResponse = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$($qualifiedRun.id)/jobs?filter=latest&per_page=100" | ConvertFrom-Json
+          $requiredJobs = @(
+            'Node.js 24 validation',
+            'Docker integration and live E2E',
+            'Windows installation and STDIO packaging'
+          )
+          foreach ($requiredJob in $requiredJobs) {
+            $job = @($jobsResponse.jobs | Where-Object { $_.name -eq $requiredJob }) | Select-Object -First 1
+            if ($null -eq $job -or $job.conclusion -ne 'success') {
+              throw "Gate CI exact-head absent ou non réussi : $requiredJob (run $($qualifiedRun.id), SHA $env:GITHUB_SHA)."
+            }
+          }
+          Write-Host "CI_EXACT_HEAD_QUALIFIED run=$($qualifiedRun.id) sha=$env:GITHUB_SHA"
 
       - name: Qualifier la release (branche non-master)
         if: github.ref != 'refs/heads/master'
