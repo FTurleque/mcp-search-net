@@ -43,6 +43,7 @@ export function createSearchDocsSchemas(defaultResults: number, maximumResults: 
       sourceKey: z.string().min(1),
       sourceName: z.string().min(1),
       documentPublicId: z.string().min(1),
+      sectionId: z.number().int().positive(),
       title: z.string().min(1),
       url: z.url(),
       language: z.string().min(1),
