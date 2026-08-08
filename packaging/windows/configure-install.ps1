@@ -212,6 +212,16 @@ if (-not $Uninstall) {
 
 $BinLauncher       = Join-Path $InstallRoot 'bin\mcp-search-net.cmd'
 $ContainerLauncher = Join-Path $InstallRoot 'bin\mcp-search-net-container.cmd'
+$ClientConfigPath  = Join-Path $InstallRoot 'config\application.yml'
+$ClientCatalogPath = Join-Path $InstallRoot 'data\catalog.db'
+
+function New-ManagedClientEnv {
+    return [ordered]@{
+        MCP_SEARCH_HOME  = $InstallRoot
+        MCP_CONFIG_PATH  = $ClientConfigPath
+        MCP_CATALOG_PATH = $ClientCatalogPath
+    }
+}
 
 if (-not $Uninstall) {
     $McpExample = [ordered]@{
@@ -220,7 +230,7 @@ if (-not $Uninstall) {
                 type    = 'local'
                 command = 'cmd.exe'
                 args    = @('/d', '/s', '/c', $BinLauncher)
-                env     = [ordered]@{ MCP_SEARCH_HOME = $InstallRoot }
+                env     = (New-ManagedClientEnv)
                 tools   = @('*')
             }
         }
@@ -332,13 +342,13 @@ $JetBrainsEntry = [PSCustomObject]@{
     type    = 'stdio'
     command = 'cmd.exe'
     args    = @('/d', '/s', '/c', $BinLauncher)
-    env     = [PSCustomObject]@{ MCP_SEARCH_HOME = $InstallRoot }
+    env     = (New-ManagedClientEnv)
 }
 # Claude Desktop uses mcpServers root, no type/tools fields
 $DesktopEntry = [PSCustomObject]@{
     command = 'cmd.exe'
     args    = @('/d', '/s', '/c', $BinLauncher)
-    env     = [PSCustomObject]@{ MCP_SEARCH_HOME = $InstallRoot }
+    env     = (New-ManagedClientEnv)
 }
 
 function Install-JsonMcpClient {
@@ -573,17 +583,21 @@ if ($Uninstall) {
           ownership    = 'preexisting'
           configuredAt = [datetime]::UtcNow.ToString('o')
       }
-  } elseif ($listed -and $alreadyManaged) {
-      Write-Host "  Claude Code : 'mcp-search-net' déjà configuré et vérifié (scope=user)." -ForegroundColor Cyan
   } else {
-      if ($alreadyManaged) { $integrations.Remove($integKeyCC) }
+      if ($alreadyManaged) {
+          $rRm = Invoke-ExternalProcess $ClaudeExe @('mcp', 'remove', '--scope', 'user', 'mcp-search-net') 15
+          if (-not ($rRm.Done -and $rRm.ExitCode -eq 0)) {
+              throw "Impossible de migrer l'entrée Claude Code gérée : $(Get-SafeProcessSummary $rRm)"
+          }
+          $integrations.Remove($integKeyCC)
+      }
 
       # add-json avoids the version-dependent --env parser used by `mcp add`.
       $claudePayload = [ordered]@{
           type    = 'stdio'
           command = 'cmd.exe'
           args    = @('/d', '/s', '/c', $BinLauncher)
-          env     = [ordered]@{ MCP_SEARCH_HOME = $InstallRoot }
+          env     = (New-ManagedClientEnv)
       }
       $claudeJson = $claudePayload | ConvertTo-Json -Depth 6 -Compress
       $rAdd = Invoke-ExternalProcess `
@@ -633,7 +647,7 @@ $CopilotCliEntry  = [PSCustomObject]@{
     type    = 'stdio'
     command = 'cmd.exe'
     args    = @('/d', '/s', '/c', $BinLauncher)
-    env     = [PSCustomObject]@{ MCP_SEARCH_HOME = $InstallRoot }
+    env     = (New-ManagedClientEnv)
     tools   = @('*')
 }
 $integKeyCopilotCli = 'copilot-cli:mcp-search-net'
@@ -662,8 +676,6 @@ if ($Uninstall) {
           configPath   = $CopilotCliConfig
           configuredAt = [datetime]::UtcNow.ToString('o')
       }
-  } elseif ($listed -and $alreadyManaged) {
-      Write-Host "  Copilot CLI : 'mcp-search-net' déjà configuré et vérifié." -ForegroundColor Cyan
   } else {
       $data = Read-JsonFile $CopilotCliConfig
       if (-not (Get-PropertyExists $data 'mcpServers')) {
@@ -721,12 +733,14 @@ function New-CodexMcpBlock {
     # Use distinct names to avoid shadowing PS automatic variables ($args, $home)
     $cmdLine  = 'command = "cmd.exe"'
     $argsLine = 'args = ["/d", "/s", "/c", "' + $BinLauncher.Replace('\', '\\') + '"]'
-    $envLine  = 'MCP_SEARCH_HOME = "' + $InstallRoot.Replace('\', '\\') + '"'
+    $homeEnvLine    = 'MCP_SEARCH_HOME = "' + $InstallRoot.Replace('\', '\\') + '"'
+    $configEnvLine  = 'MCP_CONFIG_PATH = "' + $ClientConfigPath.Replace('\', '\\') + '"'
+    $catalogEnvLine = 'MCP_CATALOG_PATH = "' + $ClientCatalogPath.Replace('\', '\\') + '"'
     return ($CodexBeginMark,
             '[mcp_servers.mcp-search-net]',
             $cmdLine, $argsLine, 'enabled = true', '',
             '[mcp_servers.mcp-search-net.env]',
-            $envLine,
+            $homeEnvLine, $configEnvLine, $catalogEnvLine,
             $CodexEndMark) -join [Environment]::NewLine
 }
 
