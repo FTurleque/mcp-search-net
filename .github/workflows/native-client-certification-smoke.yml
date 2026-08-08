@@ -52,10 +52,13 @@ jobs:
           }
 
           $configure = Get-Content -LiteralPath 'packaging\windows\configure-install.ps1' -Raw
-          if ($configure -notmatch "'--transport', 'stdio'") { throw 'Claude Code stdio transport flag is missing.' }
-          if ($configure -notmatch "'--type', 'stdio'") { throw 'Copilot CLI stdio type flag is missing.' }
-          if ($configure -notmatch "'--env'") { throw 'Native CLI environment flag is missing.' }
-          if ($configure -notmatch 'Test-NativeServerOutput') { throw 'Post-add native server verification is missing.' }
+          if ($configure -notmatch "'add-json', '--scope', 'user'") { throw 'Claude Code add-json user-scope wiring is missing.' }
+          if (-not $configure.Contains("'.copilot\mcp-config.json'")) { throw 'Copilot CLI user config path is missing.' }
+          if ($configure -notmatch '\$CopilotCliEntry') { throw 'Copilot CLI deterministic JSON entry is missing.' }
+          if ($configure -match '\$copilotAddArgs') { throw 'Legacy Copilot CLI mcp add wiring must not return.' }
+          if ($configure -match '\$claudeAddArgs') { throw 'Legacy Claude Code mcp add wiring must not return.' }
+          if ($configure -notmatch "'mcp', 'get', 'mcp-search-net', '--json'") { throw 'Copilot CLI post-write verification is missing.' }
+          if ($configure -notmatch 'Test-NativeServerOutput') { throw 'Native server verification is missing.' }
           Write-Host "NATIVE_CLIENT_CERTIFICATION_PARSE_VALID files=$($files.Count)"
 
       - name: Run non-destructive smoke collection
