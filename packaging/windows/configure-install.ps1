@@ -585,14 +585,15 @@ if ($Uninstall) {
             }
 
             if (-not $listed) {
-                $rAdd = Invoke-ExternalProcess $ClaudeExe @(
+                $claudeAddArgs = @(
                     'mcp', 'add',
                     '--transport', 'stdio',
                     '--scope', 'user',
                     '--env', "MCP_SEARCH_HOME=$InstallRoot",
                     'mcp-search-net', '--',
                     'cmd.exe', '/d', '/s', '/c', $BinLauncher
-                ) 20
+                )
+                $rAdd = Invoke-ExternalProcess -Exe $ClaudeExe -ExeArgs $claudeAddArgs -Sec 20
                 $ccExit = $rAdd.ExitCode
                 if ($rAdd.Done -and $ccExit -eq 0) {
                     $rGet = Invoke-ExternalProcess $ClaudeExe @('mcp', 'get', 'mcp-search-net') 15
@@ -675,13 +676,14 @@ if ($Uninstall) {
             }
 
             if (-not $listed) {
-                $rAdd = Invoke-ExternalProcess $CopilotExe @(
+                $copilotAddArgs = @(
                     'mcp', 'add', 'mcp-search-net',
                     '--type', 'stdio',
                     '--env', "MCP_SEARCH_HOME=$InstallRoot",
                     '--tools', '*', '--',
                     'cmd.exe', '/d', '/s', '/c', $BinLauncher
-                ) 20 -ViaPs5:$isPs1
+                )
+                $rAdd = Invoke-ExternalProcess -Exe $CopilotExe -ExeArgs $copilotAddArgs -Sec 20 -ViaPs5:$isPs1
                 if (-not $rAdd.Done) {
                     $integrations.Remove($integKeyCopilotCli)
                     Write-Host '  Copilot CLI : délai dépassé lors de la configuration.' -ForegroundColor Yellow
