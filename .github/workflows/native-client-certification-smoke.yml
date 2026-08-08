@@ -5,79 +5,83 @@ on:
     branches:
       - master
     paths:
+      - scripts/certify-native-clients.ps1
       - packaging/windows/configure-install.ps1
+      - docs/planning/client-certification-current.md
       - .github/workflows/native-client-certification-smoke.yml
-
-permissions:
-  contents: write
+  workflow_dispatch:
 
 env:
-  PATCH_BRANCH: fix/native-client-wiring-json
-  PATCH_SOURCE_SHA: 680f2939ccffda626f047fd1dba417050ede497a
+  QUALIFIED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
-  patch-native-wiring:
-    if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+  windows-powershell-51:
+    name: Windows PowerShell 5.1 certification harness
+    runs-on: windows-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
-      - name: Check out patch branch
+      - name: Check out exact candidate head
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ env.PATCH_BRANCH }}
-          fetch-depth: 8
-          persist-credentials: true
+          ref: ${{ env.QUALIFIED_SHA }}
+          persist-credentials: false
 
-      - name: Apply configure-install patch from recorded source
-        shell: python
+      - name: Parse certification and client wiring with Windows PowerShell 5.1
+        shell: powershell
         run: |
-          import os
-          import subprocess
-
-          source = subprocess.check_output(
-              ['git', 'show', f"{os.environ['PATCH_SOURCE_SHA']}:.github/workflows/native-wiring-patch-temp.yml"],
-              text=True,
-              encoding='utf-8',
+          $files = @(
+            'scripts\certify-native-clients.ps1',
+            'packaging\windows\configure-install.ps1'
           )
-          lines = source.splitlines()
-          marker = lines.index('      - name: Patch native client wiring')
-          run_line = next(i for i in range(marker + 1, len(lines)) if lines[i] == '        run: |')
-          body = []
-          for line in lines[run_line + 1:]:
-              if line.startswith('      - name:'):
-                  break
-              body.append(line[10:] if line.startswith('          ') else line)
-          code = '\n'.join(body) + '\n'
-          smoke_marker = "\nsmoke = Path('.github/workflows/native-client-certification-smoke.yml')"
-          if smoke_marker not in code:
-              raise SystemExit('Embedded configure patch boundary not found')
-          configure_only = code.split(smoke_marker, 1)[0] + '\n'
-          exec(compile(configure_only, '<native-wiring-configure-patch>', 'exec'))
-
-      - name: Validate Windows PowerShell syntax and diff
-        shell: pwsh
-        run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'packaging/windows/configure-install.ps1'),
-            [ref]$tokens,
-            [ref]$errors
-          ) | Out-Null
-          if (@($errors).Count -gt 0) {
-            throw ((@($errors | ForEach-Object { "line=$($_.Extent.StartLineNumber) col=$($_.Extent.StartColumnNumber) $($_.Message)" })) -join '; ')
-          }
-          git diff --check
-          if (-not (git diff --name-only | Select-String -SimpleMatch 'packaging/windows/configure-install.ps1')) {
-            throw 'configure-install.ps1 was not changed.'
+          foreach ($path in $files) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            if (@($parseErrors).Count -gt 0) {
+              $details = @($parseErrors | ForEach-Object {
+                "line=$($_.Extent.StartLineNumber) col=$($_.Extent.StartColumnNumber) text=[$($_.Extent.Text)] message=$($_.Message)"
+              }) -join '; '
+              throw "PowerShell parse failed for ${path}: $details"
+            }
           }
 
-      - name: Commit generated configure patch
-        shell: bash
+          $configure = Get-Content -LiteralPath 'packaging\windows\configure-install.ps1' -Raw
+          if ($configure -notmatch "'add-json', '--scope', 'user'") { throw 'Claude Code add-json user-scope wiring is missing.' }
+          if (-not $configure.Contains("'.copilot\mcp-config.json'")) { throw 'Copilot CLI user config path is missing.' }
+          if ($configure -notmatch '\$CopilotCliEntry') { throw 'Copilot CLI deterministic JSON entry is missing.' }
+          if ($configure -match '\$copilotAddArgs') { throw 'Legacy Copilot CLI mcp add wiring must not return.' }
+          if ($configure -match '\$claudeAddArgs') { throw 'Legacy Claude Code mcp add wiring must not return.' }
+          if ($configure -notmatch "'mcp', 'get', 'mcp-search-net', '--json'") { throw 'Copilot CLI post-write verification is missing.' }
+          if ($configure -notmatch 'Test-NativeServerOutput') { throw 'Native server verification is missing.' }
+          Write-Host "NATIVE_CLIENT_CERTIFICATION_PARSE_VALID files=$($files.Count)"
+
+      - name: Run non-destructive smoke collection
+        shell: powershell
         run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add packaging/windows/configure-install.ps1
-          git commit -m 'Make native CLI MCP wiring deterministic'
-          git push origin "HEAD:${PATCH_BRANCH}"
+          $output = Join-Path $env:RUNNER_TEMP 'native-client-certification-smoke'
+          .\scripts\certify-native-clients.ps1 -SmokeMode -OutputDirectory $output
+          $report = Get-Content -LiteralPath (Join-Path $output 'native-client-certification.json') -Raw | ConvertFrom-Json
+          if ($report.schemaVersion -ne '1.0') { throw 'Unexpected certification schema version.' }
+          $clientCount = @($report.clients).Count
+          if ($clientCount -ne 5) { throw "Expected five clients, got $clientCount." }
+          if (@($report.clients | Where-Object { $_.verdict -ne 'NON_OBSERVE' }).Count -ne 0) {
+            throw 'Smoke collector must never infer a native PASS.'
+          }
+          if (-not $report.host.osArchitecture) { throw 'OS architecture must be present.' }
+          if (-not $report.host.powershellVersion) { throw 'PowerShell version must be present.' }
+          Write-Host "NATIVE_CLIENT_CERTIFICATION_SMOKE_VALID arch=$($report.host.osArchitecture) powershell=$($report.host.powershellVersion)"
+
+      - name: Record exact head
+        shell: powershell
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:QUALIFIED_SHA) {
+            throw "Unexpected qualified head: $actual"
+          }
+          Write-Host "NATIVE_CLIENT_CERTIFICATION_QUALIFIED_SHA=$actual"
