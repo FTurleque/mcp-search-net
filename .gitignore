@@ -11,3 +11,6 @@ coverage/
 target/
 node-runtime.zip
 innosetup*.exe
+
+# Claude Code user-local settings must never affect repository state.
+.claude/settings.local.json

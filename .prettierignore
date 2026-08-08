@@ -16,3 +16,6 @@ docs/planning/status-v2-7.md
 
 # Versioned benchmark fixtures are machine-readable and validated structurally by tests.
 benchmarks/v2-search-quality/*.json
+
+# Claude Code user-local settings must never affect repository checks.
+.claude/settings.local.json
