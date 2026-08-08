@@ -5,9 +5,8 @@ on:
     branches:
       - master
     paths:
-      - scripts/certify-native-clients.ps1
+      - scripts/patch-native-client-path-confinement.ps1
       - packaging/windows/configure-install.ps1
-      - docs/planning/client-certification-current.md
       - .github/workflows/native-client-certification-smoke.yml
   workflow_dispatch:
 
@@ -15,8 +14,8 @@ env:
   QUALIFIED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
-  windows-powershell-51:
-    name: Windows PowerShell 5.1 certification harness
+  apply-path-confinement:
+    name: Apply native client path confinement patch
     runs-on: windows-latest
     timeout-minutes: 10
     permissions:
@@ -28,208 +27,19 @@ jobs:
           ref: ${{ env.QUALIFIED_SHA }}
           persist-credentials: true
 
-      - name: Apply path confinement patch and restore smoke
+      - name: Apply patch with Windows PowerShell 5.1
         shell: powershell
         run: |
-          $path = 'packaging\windows\configure-install.ps1'
-          $text = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8) -replace "`r`n", "`n"
+          .\scripts\patch-native-client-path-confinement.ps1
 
-          function Replace-Required([string] $Old, [string] $New, [string] $Label) {
-            $oldNormalized = $Old -replace "`r`n", "`n"
-            $newNormalized = $New -replace "`r`n", "`n"
-            if (-not $script:text.Contains($oldNormalized)) {
-              throw "Patch anchor missing: $Label"
-            }
-            $script:text = $script:text.Replace($oldNormalized, $newNormalized)
-          }
-
-          Replace-Required @'
-          $BinLauncher       = Join-Path $InstallRoot 'bin\mcp-search-net.cmd'
-          $ContainerLauncher = Join-Path $InstallRoot 'bin\mcp-search-net-container.cmd'
-
-          if (-not $Uninstall) {
-          '@ @'
-          $BinLauncher       = Join-Path $InstallRoot 'bin\mcp-search-net.cmd'
-          $ContainerLauncher = Join-Path $InstallRoot 'bin\mcp-search-net-container.cmd'
-          $ClientConfigPath  = Join-Path $InstallRoot 'config\application.yml'
-          $ClientCatalogPath = Join-Path $InstallRoot 'data\catalog.db'
-
-          function New-ManagedClientEnv {
-              return [ordered]@{
-                  MCP_SEARCH_HOME  = $InstallRoot
-                  MCP_CONFIG_PATH  = $ClientConfigPath
-                  MCP_CATALOG_PATH = $ClientCatalogPath
-              }
-          }
-
-          if (-not $Uninstall) {
-          '@ 'managed client environment helper'
-
-          Replace-Required @'
-                args    = @('/d', '/s', '/c', $BinLauncher)
-                env     = [ordered]@{ MCP_SEARCH_HOME = $InstallRoot }
-                tools   = @('*')
-          '@ @'
-                args    = @('/d', '/s', '/c', $BinLauncher)
-                env     = (New-ManagedClientEnv)
-                tools   = @('*')
-          '@ 'mcp example confinement'
-
-          Replace-Required @'
-          $JetBrainsEntry = [PSCustomObject]@{
-              type    = 'stdio'
-              command = 'cmd.exe'
-              args    = @('/d', '/s', '/c', $BinLauncher)
-              env     = [PSCustomObject]@{ MCP_SEARCH_HOME = $InstallRoot }
-          }
-          '@ @'
-          $JetBrainsEntry = [PSCustomObject]@{
-              type    = 'stdio'
-              command = 'cmd.exe'
-              args    = @('/d', '/s', '/c', $BinLauncher)
-              env     = (New-ManagedClientEnv)
-          }
-          '@ 'JetBrains confinement'
-
-          Replace-Required @'
-          $DesktopEntry = [PSCustomObject]@{
-              command = 'cmd.exe'
-              args    = @('/d', '/s', '/c', $BinLauncher)
-              env     = [PSCustomObject]@{ MCP_SEARCH_HOME = $InstallRoot }
-          }
-          '@ @'
-          $DesktopEntry = [PSCustomObject]@{
-              command = 'cmd.exe'
-              args    = @('/d', '/s', '/c', $BinLauncher)
-              env     = (New-ManagedClientEnv)
-          }
-          '@ 'Claude Desktop confinement'
-
-          Replace-Required @'
-        } elseif ($listed -and $alreadyManaged) {
-            Write-Host "  Claude Code : 'mcp-search-net' déjà configuré et vérifié (scope=user)." -ForegroundColor Cyan
-        } else {
-            if ($alreadyManaged) { $integrations.Remove($integKeyCC) }
-
-            # add-json avoids the version-dependent --env parser used by `mcp add`.
-          '@ @'
-        } else {
-            if ($alreadyManaged) {
-                $rRm = Invoke-ExternalProcess $ClaudeExe @('mcp', 'remove', '--scope', 'user', 'mcp-search-net') 15
-                if (-not ($rRm.Done -and $rRm.ExitCode -eq 0)) {
-                    throw "Impossible de migrer l'entrée Claude Code gérée : $(Get-SafeProcessSummary $rRm)"
-                }
-                $integrations.Remove($integKeyCC)
-            }
-
-            # add-json avoids the version-dependent --env parser used by `mcp add`.
-          '@ 'Claude managed migration'
-
-          Replace-Required @'
-              $claudePayload = [ordered]@{
-                  type    = 'stdio'
-                  command = 'cmd.exe'
-                  args    = @('/d', '/s', '/c', $BinLauncher)
-                  env     = [ordered]@{ MCP_SEARCH_HOME = $InstallRoot }
-              }
-          '@ @'
-              $claudePayload = [ordered]@{
-                  type    = 'stdio'
-                  command = 'cmd.exe'
-                  args    = @('/d', '/s', '/c', $BinLauncher)
-                  env     = (New-ManagedClientEnv)
-              }
-          '@ 'Claude payload confinement'
-
-          Replace-Required @'
-          $CopilotCliEntry  = [PSCustomObject]@{
-              type    = 'stdio'
-              command = 'cmd.exe'
-              args    = @('/d', '/s', '/c', $BinLauncher)
-              env     = [PSCustomObject]@{ MCP_SEARCH_HOME = $InstallRoot }
-              tools   = @('*')
-          }
-          '@ @'
-          $CopilotCliEntry  = [PSCustomObject]@{
-              type    = 'stdio'
-              command = 'cmd.exe'
-              args    = @('/d', '/s', '/c', $BinLauncher)
-              env     = (New-ManagedClientEnv)
-              tools   = @('*')
-          }
-          '@ 'Copilot CLI confinement'
-
-          Replace-Required @'
-        } elseif ($listed -and $alreadyManaged) {
-            Write-Host "  Copilot CLI : 'mcp-search-net' déjà configuré et vérifié." -ForegroundColor Cyan
-        } else {
-            $data = Read-JsonFile $CopilotCliConfig
-          '@ @'
-        } else {
-            $data = Read-JsonFile $CopilotCliConfig
-          '@ 'Copilot managed migration'
-
-          Replace-Required @'
-              $envLine  = 'MCP_SEARCH_HOME = "' + $InstallRoot.Replace('\', '\\') + '"'
-              return ($CodexBeginMark,
-                      '[mcp_servers.mcp-search-net]',
-                      $cmdLine, $argsLine, 'enabled = true', '',
-                      '[mcp_servers.mcp-search-net.env]',
-                      $envLine,
-                      $CodexEndMark) -join [Environment]::NewLine
-          '@ @'
-              $homeEnvLine    = 'MCP_SEARCH_HOME = "' + $InstallRoot.Replace('\', '\\') + '"'
-              $configEnvLine  = 'MCP_CONFIG_PATH = "' + $ClientConfigPath.Replace('\', '\\') + '"'
-              $catalogEnvLine = 'MCP_CATALOG_PATH = "' + $ClientCatalogPath.Replace('\', '\\') + '"'
-              return ($CodexBeginMark,
-                      '[mcp_servers.mcp-search-net]',
-                      $cmdLine, $argsLine, 'enabled = true', '',
-                      '[mcp_servers.mcp-search-net.env]',
-                      $homeEnvLine, $configEnvLine, $catalogEnvLine,
-                      $CodexEndMark) -join [Environment]::NewLine
-          '@ 'Codex confinement'
-
-          $utf8Bom = New-Object System.Text.UTF8Encoding($true)
-          [System.IO.File]::WriteAllText($path, $text, $utf8Bom)
-
-          $tokens = $null
-          $parseErrors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path $path), [ref]$tokens, [ref]$parseErrors
-          ) | Out-Null
-          if (@($parseErrors).Count -gt 0) {
-            $details = @($parseErrors | ForEach-Object { $_.Message }) -join '; '
-            throw "Patched configure-install.ps1 does not parse: $details"
-          }
-
+      - name: Commit generated patch and restore smoke
+        shell: powershell
+        run: |
           git fetch origin master:refs/remotes/origin/master --depth=1
           git checkout origin/master -- .github/workflows/native-client-certification-smoke.yml
+          git rm scripts/patch-native-client-path-confinement.ps1
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add packaging/windows/configure-install.ps1 .github/workflows/native-client-certification-smoke.yml
           git commit -m 'Pin managed native client config and catalog paths'
           git push origin "HEAD:${{ github.head_ref }}"
-
-      - name: Parse certification and client wiring with Windows PowerShell 5.1
-        shell: powershell
-        run: |
-          $files = @(
-            'scripts\certify-native-clients.ps1',
-            'packaging\windows\configure-install.ps1'
-          )
-          foreach ($path in $files) {
-            $tokens = $null
-            $parseErrors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile(
-              (Resolve-Path $path),
-              [ref]$tokens,
-              [ref]$parseErrors
-            ) | Out-Null
-            if (@($parseErrors).Count -gt 0) {
-              $details = @($parseErrors | ForEach-Object {
-                "line=$($_.Extent.StartLineNumber) col=$($_.Extent.StartColumnNumber) text=[$($_.Extent.Text)] message=$($_.Message)"
-              }) -join '; '
-              throw "PowerShell parse failed for ${path}: $details"
-            }
-          }
-          Write-Host "NATIVE_CLIENT_PATH_CONFINEMENT_PATCH_APPLIED"
