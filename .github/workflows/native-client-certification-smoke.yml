@@ -46,12 +46,7 @@ jobs:
           for line in lines[run_line + 1:]:
               if line.startswith('      - name:'):
                   break
-              if line.startswith('          '):
-                  body.append(line[10:])
-              elif line == '':
-                  body.append('')
-              else:
-                  raise SystemExit(f'Unexpected embedded patch line: {line!r}')
+              body.append(line[10:] if line.startswith('          ') else line)
           code = '\n'.join(body) + '\n'
           smoke_marker = "\nsmoke = Path('.github/workflows/native-client-certification-smoke.yml')"
           if smoke_marker not in code:
