@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - scripts/certify-native-clients.ps1
+      - packaging/windows/configure-install.ps1
       - docs/planning/client-certification-current.md
       - .github/workflows/native-client-certification-smoke.yml
   workflow_dispatch:
@@ -28,21 +29,33 @@ jobs:
           ref: ${{ env.QUALIFIED_SHA }}
           persist-credentials: false
 
-      - name: Parse certification collector with Windows PowerShell 5.1
+      - name: Parse certification and client wiring with Windows PowerShell 5.1
         shell: powershell
         run: |
-          $tokens = $null
-          $parseErrors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'scripts\certify-native-clients.ps1'),
-            [ref]$tokens,
-            [ref]$parseErrors
-          ) | Out-Null
-          if (@($parseErrors).Count -gt 0) {
-            $details = ($parseErrors | ForEach-Object { $_.Message }) -join '; '
-            throw "PowerShell parse failed: $details"
+          $files = @(
+            'scripts\certify-native-clients.ps1',
+            'packaging\windows\configure-install.ps1'
+          )
+          foreach ($path in $files) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            if (@($parseErrors).Count -gt 0) {
+              $details = ($parseErrors | ForEach-Object { $_.Message }) -join '; '
+              throw "PowerShell parse failed for ${path}: $details"
+            }
           }
-          Write-Host 'NATIVE_CLIENT_CERTIFICATION_PARSE_VALID'
+
+          $configure = Get-Content -LiteralPath 'packaging\windows\configure-install.ps1' -Raw
+          if ($configure -notmatch "'--transport', 'stdio'") { throw 'Claude Code stdio transport flag is missing.' }
+          if ($configure -notmatch "'--type', 'stdio'") { throw 'Copilot CLI stdio type flag is missing.' }
+          if ($configure -notmatch "'--env'") { throw 'Native CLI environment flag is missing.' }
+          if ($configure -notmatch 'Test-NativeServerOutput') { throw 'Post-add native server verification is missing.' }
+          Write-Host "NATIVE_CLIENT_CERTIFICATION_PARSE_VALID files=$($files.Count)"
 
       - name: Run non-destructive smoke collection
         shell: powershell
