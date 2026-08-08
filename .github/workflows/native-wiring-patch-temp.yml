@@ -1,9 +1,9 @@
 name: Temporary native wiring patch
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/native-client-wiring-json
+      - master
     paths:
       - .github/workflows/native-wiring-patch-temp.yml
 
@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -19,15 +20,15 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: fix/native-client-wiring-json
-          fetch-depth: 2
+          fetch-depth: 3
           persist-credentials: true
 
-      - name: Execute patch embedded in parent workflow
+      - name: Execute patch embedded in original workflow
         shell: python
         run: |
           import subprocess
           source = subprocess.check_output(
-              ['git', 'show', 'HEAD^:.github/workflows/native-wiring-patch-temp.yml'],
+              ['git', 'show', 'HEAD^^:.github/workflows/native-wiring-patch-temp.yml'],
               text=True,
               encoding='utf-8',
           )
@@ -44,8 +45,7 @@ jobs:
                   body.append('')
               else:
                   raise SystemExit(f'Unexpected embedded patch line: {line!r}')
-          code = '\n'.join(body) + '\n'
-          exec(compile(code, '<embedded-native-wiring-patch>', 'exec'))
+          exec(compile('\n'.join(body) + '\n', '<embedded-native-wiring-patch>', 'exec'))
 
       - name: Validate generated patch
         shell: pwsh
