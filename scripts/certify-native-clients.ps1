@@ -55,6 +55,24 @@ function Read-JsonSafe([string] $Path) {
     }
 }
 
+function Test-JsonServerResponse([string] $Text, [string] $Name) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    try {
+        $parsed = $Text | ConvertFrom-Json
+        if ($null -eq $parsed) { return $false }
+        $normalized = $parsed | ConvertTo-Json -Depth 20 -Compress
+        return $normalized -match ('"' + [regex]::Escape($Name) + '"')
+    } catch {
+        return $false
+    }
+}
+
+function Test-TextServerResponse([string] $Text, [string] $Name) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    if ($Text -match '(?i)not\s+found|no\s+MCP\s+server\s+named') { return $false }
+    return $Text -match [regex]::Escape($Name)
+}
+
 function Normalize-PathForReport([string] $Path) {
     if (-not $Path) { return $null }
     $value = [System.IO.Path]::GetFullPath($Path)
@@ -280,6 +298,19 @@ $server = [PSCustomObject][ordered]@{
 $clients = @()
 
 if ($SmokeMode) {
+    $copilotNegative = "Error: Server `"mcp-search-net`" not found.`r`n`r`nAvailable servers:`r`n  minos"
+    if (Test-JsonServerResponse -Text $copilotNegative -Name $ServerName) {
+        throw 'Smoke regression: Copilot not-found text must never be accepted as JSON server evidence.'
+    }
+    $copilotPositive = '{"name":"mcp-search-net","type":"stdio","enabled":true}'
+    if (-not (Test-JsonServerResponse -Text $copilotPositive -Name $ServerName)) {
+        throw 'Smoke regression: valid Copilot JSON evidence was rejected.'
+    }
+    $claudeNegative = 'No MCP server named "mcp-search-net". Configured servers: minos'
+    if (Test-TextServerResponse -Text $claudeNegative -Name $ServerName) {
+        throw 'Smoke regression: Claude not-found text must never be accepted as server evidence.'
+    }
+
     foreach ($name in @('IntelliJ IDEA + GitHub Copilot', 'GitHub Copilot CLI', 'Claude Code', 'Claude Desktop', 'Codex')) {
         $clients += New-ClientResult -Name $name -Detected $false -Version $null -ConfigurationPath $null -Configured $false -ServerListed $false -ServerDetailsAvailable $false -ExpectedToolsSeen @() -EvidenceSource 'SMOKE_MODE' -NextAction 'Run without -SmokeMode on the Windows workstation.'
     }
@@ -308,15 +339,18 @@ if ($SmokeMode) {
     }
     $copilotText = if ($copilotGet) { $copilotGet.stdout + $copilotGet.stderr } else { '' }
     $copilotConfig = Join-Path $env:USERPROFILE '.copilot\mcp-config.json'
-    $copilotConfigured = (Test-JsonServerEntry -Path $copilotConfig -RootKeys @('mcpServers', 'servers')) -or ($copilotGet -and $copilotGet.completed -and $copilotGet.exitCode -eq 0)
+    $copilotConfigEntry = Test-JsonServerEntry -Path $copilotConfig -RootKeys @('mcpServers', 'servers')
+    $copilotListValid = [bool]($copilotList -and $copilotList.completed -and $copilotList.exitCode -eq 0 -and (Test-JsonServerResponse -Text $copilotList.stdout -Name $ServerName))
+    $copilotGetValid = [bool]($copilotGet -and $copilotGet.completed -and $copilotGet.exitCode -eq 0 -and (Test-JsonServerResponse -Text $copilotGet.stdout -Name $ServerName))
+    $copilotConfigured = [bool]($copilotConfigEntry -or $copilotListValid -or $copilotGetValid)
     $clients += New-ClientResult `
         -Name 'GitHub Copilot CLI' `
         -Detected ([bool]$copilotExe) `
         -Version (Get-VersionProbe $copilotExe) `
         -ConfigurationPath (Normalize-PathForReport $copilotConfig) `
         -Configured $copilotConfigured `
-        -ServerListed ([bool]($copilotList -and $copilotList.completed -and $copilotList.exitCode -eq 0 -and (($copilotList.stdout + $copilotList.stderr) -match [regex]::Escape($ServerName)))) `
-        -ServerDetailsAvailable ([bool]($copilotGet -and $copilotGet.completed -and $copilotGet.exitCode -eq 0)) `
+        -ServerListed $copilotListValid `
+        -ServerDetailsAvailable $copilotGetValid `
         -ExpectedToolsSeen (Get-ExpectedToolsSeen $copilotText) `
         -EvidenceSource 'copilot mcp list/get --json + ~/.copilot/mcp-config.json' `
         -NextAction 'In Copilot CLI, ask it to use mcp-search-net search_docs and then read_doc_section; record the tool invocation.'
@@ -330,14 +364,17 @@ if ($SmokeMode) {
         $claudeGet = Invoke-ExternalCapture -Executable $claudeExe -Arguments @('mcp', 'get', $ServerName) -TimeoutSeconds 15
     }
     $claudeText = if ($claudeGet) { $claudeGet.stdout + $claudeGet.stderr } else { '' }
+    $claudeListText = if ($claudeList) { $claudeList.stdout + $claudeList.stderr } else { '' }
+    $claudeListValid = [bool]($claudeList -and $claudeList.completed -and $claudeList.exitCode -eq 0 -and (Test-TextServerResponse -Text $claudeListText -Name $ServerName))
+    $claudeGetValid = [bool]($claudeGet -and $claudeGet.completed -and $claudeGet.exitCode -eq 0 -and (Test-TextServerResponse -Text $claudeText -Name $ServerName))
     $clients += New-ClientResult `
         -Name 'Claude Code' `
         -Detected ([bool]$claudeExe) `
         -Version (Get-VersionProbe $claudeExe) `
         -ConfigurationPath $null `
-        -Configured ([bool]($claudeGet -and $claudeGet.completed -and $claudeGet.exitCode -eq 0)) `
-        -ServerListed ([bool]($claudeList -and $claudeList.completed -and $claudeList.exitCode -eq 0 -and (($claudeList.stdout + $claudeList.stderr) -match [regex]::Escape($ServerName)))) `
-        -ServerDetailsAvailable ([bool]($claudeGet -and $claudeGet.completed -and $claudeGet.exitCode -eq 0)) `
+        -Configured ([bool]($claudeGetValid -or $claudeListValid)) `
+        -ServerListed $claudeListValid `
+        -ServerDetailsAvailable $claudeGetValid `
         -ExpectedToolsSeen (Get-ExpectedToolsSeen $claudeText) `
         -EvidenceSource 'claude mcp list/get' `
         -NextAction 'Run Claude Code and explicitly ask it to call mcp-search-net search_docs, then read_doc_section; record the native tool invocation.'
