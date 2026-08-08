@@ -59,7 +59,22 @@ jobs:
           if ($configure -match '\$claudeAddArgs') { throw 'Legacy Claude Code mcp add wiring must not return.' }
           if ($configure -notmatch "'mcp', 'get', 'mcp-search-net', '--json'") { throw 'Copilot CLI post-write verification is missing.' }
           if ($configure -notmatch 'Test-NativeServerOutput') { throw 'Native server verification is missing.' }
-          Write-Host "NATIVE_CLIENT_CERTIFICATION_PARSE_VALID files=$($files.Count)"
+
+          if ($configure -notmatch 'function New-ManagedClientEnv') { throw 'Managed client environment helper is missing.' }
+          foreach ($requiredPathVariable in @('MCP_SEARCH_HOME', 'MCP_CONFIG_PATH', 'MCP_CATALOG_PATH')) {
+            if ($configure -notmatch [regex]::Escape($requiredPathVariable)) {
+              throw "Managed client path variable is missing: $requiredPathVariable"
+            }
+          }
+          $managedEnvUses = [regex]::Matches($configure, 'env\s+=\s+\(New-ManagedClientEnv\)').Count
+          if ($managedEnvUses -lt 5) { throw "Expected at least five confined stdio env uses, got $managedEnvUses." }
+          if ($configure -match '\$listed\s+-and\s+\$alreadyManaged') {
+            throw 'Managed CLI entries must be rewritten, not accepted only because mcp get succeeds.'
+          }
+          if ($configure -notmatch '\$configEnvLine' -or $configure -notmatch '\$catalogEnvLine') {
+            throw 'Codex config/catalog path confinement is missing.'
+          }
+          Write-Host "NATIVE_CLIENT_CERTIFICATION_PARSE_VALID files=$($files.Count) confinedEnvUses=$managedEnvUses"
 
       - name: Run non-destructive smoke collection
         shell: powershell
