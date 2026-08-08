@@ -22,6 +22,7 @@ export interface SearchCatalogDocumentsItem {
   readonly sourceKey: string;
   readonly sourceName: string;
   readonly documentPublicId: string;
+  readonly sectionId: number;
   readonly title: string;
   readonly url: string;
   readonly language: string;
@@ -61,6 +62,7 @@ function toOutputItem(result: CatalogDocumentSearchResult): SearchCatalogDocumen
     sourceKey: result.source.sourceKey,
     sourceName: result.source.displayName,
     documentPublicId: result.document.publicId,
+    sectionId: result.section.id,
     title: result.document.title,
     url: result.document.canonicalUrl,
     language: result.document.language,
