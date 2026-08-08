@@ -46,6 +46,7 @@ describe('SearchCatalogDocuments', () => {
           sourceKey: 'nodejs-docs',
           sourceName: 'Node.js Documentation',
           documentPublicId: 'nodejs-fs',
+          sectionId: 1000,
           title: 'File system',
           url: 'https://nodejs.org/api/fs.html',
           language: 'en-US',
