@@ -127,16 +127,39 @@ function Invoke-ExternalProcess {
         $outTask  = $proc.StandardOutput.ReadToEndAsync()
         $errTask  = $proc.StandardError.ReadToEndAsync()
         $finished = $proc.WaitForExit($Sec * 1000)
-        if (-not $finished) { try { $proc.Kill() } catch {} }
+        if (-not $finished) {
+            try { $proc.Kill() } catch {
+                Write-Verbose "Impossible d'arrêter le processus expiré '$Exe' : $($_.Exception.Message)"
+            }
+        }
         [System.Threading.Tasks.Task]::WhenAll($outTask, $errTask).Wait(3000) | Out-Null
         $stdout   = if ($outTask.IsCompleted) { $outTask.Result } else { '' }
         $stderr   = if ($errTask.IsCompleted) { $errTask.Result } else { '' }
-        $exitCode = if ($finished) { try { $proc.ExitCode } catch { -1 } } else { -1 }
+        $exitCode = if ($finished) {
+            try { $proc.ExitCode } catch { -1 }
+        } else {
+            -1
+        }
         $proc.Dispose()
         return [PSCustomObject]@{ Stdout = $stdout; Stderr = $stderr; Out = ($stdout + $stderr); Done = $finished; ExitCode = $exitCode }
     } catch {
-        return [PSCustomObject]@{ Stdout = ''; Stderr = ''; Out = ''; Done = $false; ExitCode = -1 }
+        return [PSCustomObject]@{ Stdout = ''; Stderr = $_.Exception.Message; Out = $_.Exception.Message; Done = $false; ExitCode = -1 }
     }
+}
+
+function Test-NativeServerOutput([object] $Result, [string] $ServerKey = 'mcp-search-net') {
+    if ($null -eq $Result -or -not $Result.Done -or $Result.ExitCode -ne 0) { return $false }
+    $text = [string]$Result.Out
+    if ([string]::IsNullOrWhiteSpace($text)) { return $false }
+    if ($text -match '(?i)not\s+found|no\s+MCP\s+server\s+named') { return $false }
+    return $text -match [regex]::Escape($ServerKey)
+}
+
+function Get-SafeProcessSummary([object] $Result) {
+    if ($null -eq $Result) { return '' }
+    $text = ([string]$Result.Out).Trim()
+    if ($text.Length -gt 500) { $text = $text.Substring(0, 500) + '...' }
+    return ($text -replace '[\r\n]+', ' ')
 }
 
 # ── .env generation ────────────────────────────────────────────────────────────
@@ -501,6 +524,10 @@ try {
     $claudeCmd = Get-Command claude -ErrorAction SilentlyContinue
     if ($claudeCmd) { $ClaudeExe = $claudeCmd.Source }
     if (-not $ClaudeExe) {
+        $nativeClaude = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
+        if (Test-Path -LiteralPath $nativeClaude -PathType Leaf) { $ClaudeExe = $nativeClaude }
+    }
+    if (-not $ClaudeExe) {
         # Claude Code Desktop embeds its own CLI under %APPDATA%\Claude\claude-code
         $claudeCodeDir = Join-Path $env:APPDATA 'Claude\claude-code'
         if (Test-Path -LiteralPath $claudeCodeDir -PathType Container) {
@@ -538,29 +565,55 @@ if ($Uninstall) {
             $alreadyManaged = $integrations.ContainsKey($integKeyCC) -and $integrations[$integKeyCC].ownership -eq 'managed'
 
             $rList   = Invoke-ExternalProcess $ClaudeExe @('mcp', 'list') 10
-            $listOut = $rList.Out
+            $listed  = Test-NativeServerOutput $rList
 
-            if ($listOut -match 'mcp-search-net' -and -not $alreadyManaged) {
+            if ($listed -and -not $alreadyManaged) {
                 Write-Host "  Claude Code : entrée 'mcp-search-net' existante non gérée — préservée." -ForegroundColor Cyan
                 $integrations[$integKeyCC] = [PSCustomObject]@{
                     ownership    = 'preexisting'
                     configuredAt = [datetime]::UtcNow.ToString('o')
                 }
-            } else {
-                $rAdd   = Invoke-ExternalProcess $ClaudeExe @('mcp', 'add', '--scope', 'user', '-e', "MCP_SEARCH_HOME=$InstallRoot", 'mcp-search-net', '--', 'cmd.exe', '/d', '/s', '/c', $BinLauncher) 20
+            } elseif ($listed -and $alreadyManaged) {
+                $rGet = Invoke-ExternalProcess $ClaudeExe @('mcp', 'get', 'mcp-search-net') 15
+                if (Test-NativeServerOutput $rGet) {
+                    Write-Host "  Claude Code : 'mcp-search-net' déjà configuré et vérifié (scope=user)." -ForegroundColor Cyan
+                } else {
+                    $integrations.Remove($integKeyCC)
+                    Write-Host '  Claude Code : entrée suivie mais vérification impossible ; reconfiguration requise.' -ForegroundColor Yellow
+                    $listed = $false
+                }
+            }
+
+            if (-not $listed) {
+                $claudeAddArgs = @(
+                    'mcp', 'add',
+                    '--transport', 'stdio',
+                    '--scope', 'user',
+                    '--env', "MCP_SEARCH_HOME=$InstallRoot",
+                    'mcp-search-net', '--',
+                    'cmd.exe', '/d', '/s', '/c', $BinLauncher
+                )
+                $rAdd = Invoke-ExternalProcess -Exe $ClaudeExe -ExeArgs $claudeAddArgs -Sec 20
                 $ccExit = $rAdd.ExitCode
                 if ($rAdd.Done -and $ccExit -eq 0) {
-                    Write-Host "  Claude Code : 'mcp-search-net' configuré (scope=user)" -ForegroundColor Green
-                    $integrations[$integKeyCC] = [PSCustomObject]@{
-                        ownership    = 'managed'
-                        configuredAt = [datetime]::UtcNow.ToString('o')
+                    $rGet = Invoke-ExternalProcess $ClaudeExe @('mcp', 'get', 'mcp-search-net') 15
+                    if (Test-NativeServerOutput $rGet) {
+                        Write-Host "  Claude Code : 'mcp-search-net' configuré et vérifié (scope=user)" -ForegroundColor Green
+                        $integrations[$integKeyCC] = [PSCustomObject]@{
+                            ownership    = 'managed'
+                            configuredAt = [datetime]::UtcNow.ToString('o')
+                        }
+                    } else {
+                        $integrations.Remove($integKeyCC)
+                        Write-Host "  Claude Code : ajout terminé mais 'mcp get' ne confirme pas le serveur. $(Get-SafeProcessSummary $rGet)" -ForegroundColor Yellow
                     }
                 } else {
-                    Write-Host "  Claude Code : configuration échouée (code $ccExit)" -ForegroundColor Yellow
+                    $integrations.Remove($integKeyCC)
+                    Write-Host "  Claude Code : configuration échouée (code $ccExit). $(Get-SafeProcessSummary $rAdd)" -ForegroundColor Yellow
                 }
             }
         } else {
-            Write-Host '  Claude Code : CLI non détecté (claude absent du PATH et %APPDATA%\Claude\claude-code absent).' -ForegroundColor Yellow
+            Write-Host '  Claude Code : CLI non détecté (PATH, %USERPROFILE%\.local\bin et %APPDATA%\Claude\claude-code inspectés).' -ForegroundColor Yellow
         }
     } catch {
         Write-Host "  Claude Code : erreur lors de la configuration: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -602,27 +655,53 @@ if ($Uninstall) {
             $isPs1          = $CopilotExe.EndsWith('.ps1', [System.StringComparison]::OrdinalIgnoreCase)
             $alreadyManaged = $integrations.ContainsKey($integKeyCopilotCli) -and $integrations[$integKeyCopilotCli].ownership -eq 'managed'
 
-            $rList   = Invoke-ExternalProcess $CopilotExe @('mcp', 'list') 10 -ViaPs5:$isPs1
-            $listOut = $rList.Out
+            $rList  = Invoke-ExternalProcess $CopilotExe @('mcp', 'list') 10 -ViaPs5:$isPs1
+            $listed = Test-NativeServerOutput $rList
 
-            if ($listOut -match 'mcp-search-net' -and -not $alreadyManaged) {
+            if ($listed -and -not $alreadyManaged) {
                 Write-Host "  Copilot CLI : entrée 'mcp-search-net' existante non gérée — préservée." -ForegroundColor Cyan
                 $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
                     ownership    = 'preexisting'
                     configuredAt = [datetime]::UtcNow.ToString('o')
                 }
-            } else {
-                $rAdd = Invoke-ExternalProcess $CopilotExe @('mcp', 'add', '-e', "MCP_SEARCH_HOME=$InstallRoot", 'mcp-search-net', '--', 'cmd.exe', '/d', '/s', '/c', $BinLauncher) 20 -ViaPs5:$isPs1
+            } elseif ($listed -and $alreadyManaged) {
+                $rGet = Invoke-ExternalProcess $CopilotExe @('mcp', 'get', 'mcp-search-net') 15 -ViaPs5:$isPs1
+                if (Test-NativeServerOutput $rGet) {
+                    Write-Host "  Copilot CLI : 'mcp-search-net' déjà configuré et vérifié." -ForegroundColor Cyan
+                } else {
+                    $integrations.Remove($integKeyCopilotCli)
+                    Write-Host '  Copilot CLI : entrée suivie mais vérification impossible ; reconfiguration requise.' -ForegroundColor Yellow
+                    $listed = $false
+                }
+            }
+
+            if (-not $listed) {
+                $copilotAddArgs = @(
+                    'mcp', 'add', 'mcp-search-net',
+                    '--type', 'stdio',
+                    '--env', "MCP_SEARCH_HOME=$InstallRoot",
+                    '--tools', '*', '--',
+                    'cmd.exe', '/d', '/s', '/c', $BinLauncher
+                )
+                $rAdd = Invoke-ExternalProcess -Exe $CopilotExe -ExeArgs $copilotAddArgs -Sec 20 -ViaPs5:$isPs1
                 if (-not $rAdd.Done) {
+                    $integrations.Remove($integKeyCopilotCli)
                     Write-Host '  Copilot CLI : délai dépassé lors de la configuration.' -ForegroundColor Yellow
                 } elseif ($rAdd.ExitCode -eq 0) {
-                    Write-Host "  Copilot CLI : 'mcp-search-net' configuré" -ForegroundColor Green
-                    $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
-                        ownership    = 'managed'
-                        configuredAt = [datetime]::UtcNow.ToString('o')
+                    $rGet = Invoke-ExternalProcess $CopilotExe @('mcp', 'get', 'mcp-search-net') 15 -ViaPs5:$isPs1
+                    if (Test-NativeServerOutput $rGet) {
+                        Write-Host "  Copilot CLI : 'mcp-search-net' configuré et vérifié" -ForegroundColor Green
+                        $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
+                            ownership    = 'managed'
+                            configuredAt = [datetime]::UtcNow.ToString('o')
+                        }
+                    } else {
+                        $integrations.Remove($integKeyCopilotCli)
+                        Write-Host "  Copilot CLI : ajout terminé mais 'mcp get' ne confirme pas le serveur. $(Get-SafeProcessSummary $rGet)" -ForegroundColor Yellow
                     }
                 } else {
-                    Write-Host "  Copilot CLI : configuration échouée (code $($rAdd.ExitCode))" -ForegroundColor Yellow
+                    $integrations.Remove($integKeyCopilotCli)
+                    Write-Host "  Copilot CLI : configuration échouée (code $($rAdd.ExitCode)). $(Get-SafeProcessSummary $rAdd)" -ForegroundColor Yellow
                 }
             }
         } else {
