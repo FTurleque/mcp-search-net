@@ -87,11 +87,11 @@ describe('audit P2/P3 remediations', () => {
   it('keeps strict cache mode failing after the first operational failure', async () => {
     const setSearch = vi.fn(async () => true);
     const failing: CacheRepository = {
-      async getSearch<T>() {
+      async getSearch() {
         throw new Error('sqlite unavailable');
       },
       setSearch,
-      async getContent<T>() {
+      async getContent() {
         return undefined;
       },
       async setContent() {
@@ -255,7 +255,7 @@ function createFetchUrlThatFails(status: number): FetchUrl {
     contentHash: staleContent.contentHash,
   };
   const cache: CacheRepository = {
-    async getSearch<T>() {
+    async getSearch() {
       return undefined;
     },
     async setSearch() {
