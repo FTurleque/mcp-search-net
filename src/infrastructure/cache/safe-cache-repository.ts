@@ -9,6 +9,7 @@ import type { Logger } from '../../application/ports/logger.js';
 
 export class SafeCacheRepository implements CacheRepository {
   private available = true;
+  private unavailableCause: unknown;
 
   public constructor(
     private readonly inner: CacheRepository,
@@ -65,11 +66,17 @@ export class SafeCacheRepository implements CacheRepository {
   }
 
   private async run<T>(operation: string, action: () => Promise<T>, fallback: T): Promise<T> {
-    if (!this.available) return fallback;
+    if (!this.available) {
+      if (this.continueOnError) return fallback;
+      throw new CacheUnavailableError('The cache is unavailable', {
+        cause: this.unavailableCause,
+      });
+    }
     try {
       return await action();
     } catch (error) {
       this.available = false;
+      this.unavailableCause = error;
       this.logger.error('cache_unavailable', {
         operation,
         error: error instanceof Error ? { name: error.name } : 'unknown',
