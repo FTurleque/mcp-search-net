@@ -27,14 +27,14 @@ export function selectRelevantContent(
   const sections = splitMarkdown(normalizeMarkdown(markdown));
   const terms = tokenize(query ?? '');
 
-  const ranked = sections
+  const rankedCandidates = sections
     .map((section) => ({
       section,
       score: terms.length === 0 ? 1 / (section.index + 1) : lexicalRelevance(section, terms),
     }))
     .filter(({ score }) => terms.length === 0 || score > 0)
-    .sort((left, right) => right.score - left.score || left.section.index - right.section.index)
-    .slice(0, maxSections);
+    .sort((left, right) => right.score - left.score || left.section.index - right.section.index);
+  const ranked = rankedCandidates.slice(0, maxSections);
 
   if (ranked.length === 0) {
     return {
@@ -47,7 +47,7 @@ export function selectRelevantContent(
   }
 
   let remaining = maxCharacters;
-  let contentTruncated = ranked.length < sections.length;
+  let contentTruncated = rankedCandidates.length > ranked.length;
   let sectionTruncated = false;
   const selected: ContentSection[] = [];
 
