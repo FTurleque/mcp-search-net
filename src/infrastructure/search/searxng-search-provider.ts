@@ -8,6 +8,7 @@ import type {
 import {
   ExternalServiceError,
   HttpError,
+  RequestTimeoutError,
   SearchProviderUnavailableError,
 } from '../../domain/errors/domain-errors.js';
 import { fetchJson } from '../http/http-utils.js';
@@ -47,6 +48,7 @@ export class SearxngSearchProvider implements SearchProvider {
   ) {}
 
   public async search(request: SearchProviderRequest): Promise<SearchProviderResponse> {
+    const deadline = Date.now() + this.timeoutMs;
     const endpoint = new URL('/search', ensureTrailingSlash(this.baseUrl));
     endpoint.searchParams.set('q', request.query.value);
     endpoint.searchParams.set('format', 'json');
@@ -56,7 +58,7 @@ export class SearxngSearchProvider implements SearchProvider {
     if (request.language !== undefined) endpoint.searchParams.set('language', request.language);
     if (request.timeRange !== undefined) endpoint.searchParams.set('time_range', request.timeRange);
 
-    const json = await this.requestJson(endpoint);
+    const json = await this.requestJson(endpoint, deadline);
     const parsed = responseSchema.safeParse(json);
     if (!parsed.success) {
       throw new ExternalServiceError('searxng response does not match its contract', 'searxng', {
@@ -89,14 +91,16 @@ export class SearxngSearchProvider implements SearchProvider {
     };
   }
 
-  private async requestJson(endpoint: URL): Promise<unknown> {
+  private async requestJson(endpoint: URL, deadline: number): Promise<unknown> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new RequestTimeoutError('searxng search deadline exceeded');
       try {
         return await fetchJson(
           'searxng',
           endpoint,
           { method: 'GET', headers: { accept: 'application/json' } },
-          this.timeoutMs,
+          remaining,
           this.fetchImplementation,
         );
       } catch (error) {
