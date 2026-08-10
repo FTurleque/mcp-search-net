@@ -249,10 +249,7 @@ function cacheTtl(content: FetchedContent, options: FetchUrlOptions): number {
 
 function isTransientProviderError(error: unknown): boolean {
   if (!(error instanceof ApplicationError)) return false;
-  if (
-    error.code === 'CONTENT_PROVIDER_UNAVAILABLE' ||
-    error.code === 'REQUEST_TIMEOUT'
-  )
+  if (error.code === 'CONTENT_PROVIDER_UNAVAILABLE' || error.code === 'REQUEST_TIMEOUT')
     return true;
   if (!(error instanceof HttpError)) return false;
   if (error.status === undefined) return true;
