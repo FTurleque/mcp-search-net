@@ -22,11 +22,13 @@ import {
   toSearchResult,
 } from '../../domain/services/result-ranking.js';
 
+const DEFAULT_PROVIDER_TIMEOUT_MS = 20_000;
+
 export interface SearchWebOptions {
   readonly cacheTtlMs: number;
   readonly providerOversampling: number;
   readonly maxSnippetChars: number;
-  readonly providerTimeoutMs: number;
+  readonly providerTimeoutMs?: number;
 }
 
 interface CachedSearchValue {
@@ -73,7 +75,7 @@ export class SearchWeb {
     let firstResponse: SearchProviderResponse;
     let providerResponse: SearchProviderResponse;
     let shouldFallback: boolean;
-    const deadline = Date.now() + this.options.providerTimeoutMs;
+    const deadline = Date.now() + (this.options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS);
     try {
       firstResponse = await this.searchProvider(
         normalizedRequest,
