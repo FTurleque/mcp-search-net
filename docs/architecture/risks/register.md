@@ -1,6 +1,6 @@
 # Registre de risques
 
-> mcp-search-net v1.1.0 · 2026-08-08
+> mcp-search-net v1.1.0 · 2026-08-10
 
 Ce registre développe les risques résumés dans la [section 11](../arc42/11-risques-dette.md).
 
@@ -76,16 +76,16 @@ Ce registre développe les risques résumés dans la [section 11](../arc42/11-ri
 
 ---
 
-## R05 — Certification native des clients MCP non terminée
+## R05 — Requalification native des clients MCP après évolution
 
-- **Probabilité** : Moyenne (issue #34 ouverte)
-- **Impact** : Moyen (le contrat est documenté et partiellement testé ; l'observation réelle manque pour 5 clients)
-- **Exposition** : Moyenne
-- **Description** : IntelliJ/Copilot, Claude Desktop/Code, Codex Desktop et Copilot CLI n'ont pas tous été certifiés par observation directe. La sonde STDIO prouve le contrat serveur mais pas la compatibilité client.
-- **Mitigation actuelle** : Cinq outils restent le contrat portable principal ; resources/templates complémentaires.
-- **Mitigation complémentaire** : Terminer l'issue #34 avec preuves client réelles.
+- **Probabilité** : Faible (la matrice retenue est certifiée 3/3 depuis le 10 août 2026)
+- **Impact** : Moyen (une nouvelle version cliente, un nouvel OS ou un nouveau SHA serveur peut modifier le comportement natif)
+- **Exposition** : Faible
+- **Description** : Claude Code, Claude Desktop et Codex ont été certifiés par observation directe sur Windows 10 avec le runtime `a70b9a51527543c9417566326bb780121954cef5`. Cette preuve reste liée aux versions clientes, à l'OS et au SHA observés ; elle ne vaut pas automatiquement pour une évolution future.
+- **Mitigation actuelle** : Cinq outils restent le contrat portable principal ; sonde STDIO automatisée ; collecteur de preuve Windows ; workflow natif recommandé `search_docs -> sectionId -> read_doc_section`.
+- **Mitigation complémentaire** : Requalifier uniquement lorsqu'une évolution du client, de l'OS ou du serveur le justifie et conserver une preuve datée liée au nouveau SHA.
 - **Propriétaire** : Auteur
-- **Date cible** : Non planifié
+- **Date cible** : À chaque évolution significative
 
 ---
 
