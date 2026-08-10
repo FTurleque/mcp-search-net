@@ -4,7 +4,7 @@
 
 ## Finalité
 
-Ce dossier contient la documentation d'architecture du serveur MCP `mcp-search-net`, organisée selon le template arc42 et illustrée par des diagrammes C4 en Mermaid. Il n'est pas une source de vérité sur l'état de livraison ; l'état autoritatif est [`docs/status/current-state.md`](../status/current-state.md).
+Ce dossier contient la documentation d'architecture du serveur MCP `mcp-search-net`, organisée selon le template arc42 et illustrée par des diagrammes C4 en Mermaid. Il n'est pas une source de vérité sur l'état de livraison ; l'état autoritatif est [`docs/status/current-state.md`](../status/current-state.md). La certification native des clients MCP est suivie séparément dans [`docs/planning/client-certification-current.md`](../planning/client-certification-current.md).
 
 ## Structure
 
