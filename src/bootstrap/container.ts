@@ -50,6 +50,7 @@ export function createContainer(loaded: LoadedConfiguration) {
       cacheTtlMs: config.cache.searchTtlMs,
       providerOversampling: config.limits.providerOversampling,
       maxSnippetChars: config.limits.maxSnippetChars,
+      providerTimeoutMs: config.searxng.timeoutMs,
     },
     logger,
   );
