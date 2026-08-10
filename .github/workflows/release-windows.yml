@@ -27,6 +27,8 @@ jobs:
     timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      TARGET_COMMIT: ${{ github.sha }}
 
     steps:
       - name: Checkout
@@ -113,9 +115,9 @@ jobs:
         shell: pwsh
         run: |
           .\scripts\release\publish-windows-release.ps1 `
-            -Version '${{ inputs.version }}' `
+            -Version $env:RELEASE_VERSION `
             -NodeZipPath '.\node-runtime.zip' `
-            -TargetCommit '${{ github.sha }}' `
+            -TargetCommit $env:TARGET_COMMIT `
             -ValidateOnly
 
       - name: Construire, qualifier et publier la GitHub Release (master)
@@ -123,9 +125,9 @@ jobs:
         shell: pwsh
         run: |
           .\scripts\release\publish-windows-release.ps1 `
-            -Version '${{ inputs.version }}' `
+            -Version $env:RELEASE_VERSION `
             -NodeZipPath '.\node-runtime.zip' `
-            -TargetCommit '${{ github.sha }}'
+            -TargetCommit $env:TARGET_COMMIT
 
       - name: Conserver les artefacts du run
         if: always()
