@@ -126,7 +126,7 @@ function isUnsafeHtmlAttributeAssignment(attribute: string, rawName: string): bo
   if (name !== 'href') return false;
   const value = extractAttributeValue(attribute);
   if (value === undefined) return true;
-  const normalized = value.replace(/[\u0000-\u0020]/gu, '');
+  const normalized = stripAsciiControlsAndSpace(value);
   const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/u.exec(normalized)?.[1]?.toLowerCase();
   return scheme !== undefined && scheme !== 'http' && scheme !== 'https';
 }
@@ -134,4 +134,10 @@ function isUnsafeHtmlAttributeAssignment(attribute: string, rawName: string): bo
 function extractAttributeValue(attribute: string): string | undefined {
   const match = /=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/u.exec(attribute);
   return (match?.[1] ?? match?.[2] ?? match?.[3])?.trim();
+}
+
+function stripAsciiControlsAndSpace(value: string): string {
+  return [...value]
+    .filter((character) => (character.codePointAt(0) ?? 0) > 0x20)
+    .join('');
 }
