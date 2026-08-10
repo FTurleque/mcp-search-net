@@ -4,10 +4,7 @@ import type { AddressInfo } from 'node:net';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type {
-  CacheRecord,
-  CacheRepository,
-} from '../../src/application/ports/cache-repository.js';
+import type { CacheRecord, CacheRepository } from '../../src/application/ports/cache-repository.js';
 import { DisabledCacheRepository } from '../../src/application/ports/cache-repository.js';
 import type { ContentFetcher } from '../../src/application/ports/content-fetcher.js';
 import type { Logger } from '../../src/application/ports/logger.js';
@@ -19,11 +16,11 @@ import { SearchWeb } from '../../src/application/use-cases/search-web.js';
 import { HttpError } from '../../src/domain/errors/domain-errors.js';
 import type { FetchedContent } from '../../src/domain/models/content.js';
 import { selectRelevantContent } from '../../src/domain/services/content-selection.js';
+import { SearchQuery } from '../../src/domain/value-objects/search-query.js';
 import { SafeCacheRepository } from '../../src/infrastructure/cache/safe-cache-repository.js';
 import { sanitizePreparedHtml } from '../../src/infrastructure/fetch/prepared-html-sanitizer.js';
 import { SecureHttpGateway } from '../../src/infrastructure/fetch/secure-http-gateway.js';
 import { SearxngSearchProvider } from '../../src/infrastructure/search/searxng-search-provider.js';
-import { SearchQuery } from '../../src/domain/value-objects/search-query.js';
 
 const servers: ReturnType<typeof createServer>[] = [];
 
@@ -41,19 +38,22 @@ afterEach(async () => {
 });
 
 describe('audit P2/P3 remediations', () => {
-  it.each([403, 404, 410])('does not use stale fetch content after permanent HTTP %i', async (status) => {
-    const fetchUrl = createFetchUrlThatFails(status);
+  it.each([403, 404, 410])(
+    'does not use stale fetch content after permanent HTTP %i',
+    async (status) => {
+      const fetchUrl = createFetchUrlThatFails(status);
 
-    await expect(
-      fetchUrl.execute({
-        url: 'https://example.com/doc',
-        query: 'cached',
-        maxCharacters: 5_000,
-        maxSections: 5,
-        renderMode: 'static',
-      }),
-    ).rejects.toMatchObject({ code: 'HTTP_ERROR', status });
-  });
+      await expect(
+        fetchUrl.execute({
+          url: 'https://example.com/doc',
+          query: 'cached',
+          maxCharacters: 5_000,
+          maxSections: 5,
+          renderMode: 'static',
+        }),
+      ).rejects.toMatchObject({ code: 'HTTP_ERROR', status });
+    },
+  );
 
   it.each([429, 500])('uses stale fetch content for transient HTTP %i', async (status) => {
     const fetchUrl = createFetchUrlThatFails(status);
@@ -337,7 +337,10 @@ function silentLogger(): Logger {
 function delayedHttpFailure(milliseconds: number) {
   return (_input: string | URL | Request, init?: RequestInit): Promise<Response> =>
     new Promise<Response>((resolve, reject) => {
-      const timer = setTimeout(() => resolve(new Response('failure', { status: 500 })), milliseconds);
+      const timer = setTimeout(
+        () => resolve(new Response('failure', { status: 500 })),
+        milliseconds,
+      );
       const signal = init?.signal;
       const abort = (): void => {
         clearTimeout(timer);
