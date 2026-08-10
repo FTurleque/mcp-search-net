@@ -26,6 +26,10 @@ pas ce document pour connaître l’état présent.
 - Hardening résiduel #49/#50 : terminé le 7 août 2026. La PR #50 a été squash-mergée puis `develop`
   a été réalignée sans force. La baseline commune `master`/`develop` avant la migration SQLite est
   `63289d3bb498132ada4effdafa79039548c02381`.
+- Certification native #34 : terminée le 10 août 2026 pour le périmètre retenu Claude Code,
+  Claude Desktop et Codex. Les trois clients ont été observés réellement sur Windows 10 avec le
+  runtime installé `a70b9a51527543c9417566326bb780121954cef5` et la chaîne déterministe
+  `search_docs -> sectionId réel -> read_doc_section(même sectionId)`.
 - Release V2/1.1.0 : aucune publication n’est déclarée par ce document ; une publication doit
   passer la qualification exact-head et le workflow de release volontaire.
 - Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
@@ -72,10 +76,11 @@ Toutes les réponses issues du Web ou du catalogue sont marquées comme contenu 
 le serveur n’exécute jamais le contenu récupéré comme instruction.
 
 La sonde STDIO de référence gèle cinq tools, quatre resources et neuf templates avec
-`schemaVersion = 1.0`. La certification native IntelliJ/Copilot, Claude Desktop/Code, Copilot CLI et
-Codex reste séparée dans l’issue #34 : elle exige une observation réelle du client et ne peut pas
-être déduite de la seule sonde STDIO. L’état courant détaillé est
-`docs/planning/client-certification-current.md`.
+`schemaVersion = 1.0`. La certification native retenue couvre Claude Code, Claude Desktop et Codex ;
+elle a été finalisée dans l’issue #34 sur le runtime installé
+`a70b9a51527543c9417566326bb780121954cef5`. IntelliJ/GitHub Copilot et GitHub Copilot CLI restent
+des intégrations de compatibilité supportées par l’installateur mais sont hors périmètre de
+certification. L’état détaillé est `docs/planning/client-certification-current.md`.
 
 ## Stockage, SQLite et migrations catalogue
 
@@ -238,8 +243,9 @@ toolchain Inno Setup est figée sur la version `6.7.1`.
 - les entrypoints bootstrap/CLI sont surtout qualifiés par les suites integration/E2E qui exécutent
   des processus réels ; la couverture V8 in-process ne doit pas être interprétée seule comme leur
   niveau de qualification ;
-- la certification native des cinq clients reste ouverte dans #34 ; les preuves GitHub/STDIO ne la
-  remplacent pas et les lignes sans observation réelle restent `NON OBSERVÉ` ;
+- la certification native #34 est **terminée à 3/3** pour Claude Code, Claude Desktop et Codex sur
+  le runtime `a70b9a51527543c9417566326bb780121954cef5` ; les intégrations Copilot restent hors
+  périmètre de certification ;
 - le serveur est un MCP STDIO local : il n’embarque aucun LLM et n’exige aucune API commerciale.
 
 ## Gouvernance Git post-V2
@@ -266,7 +272,7 @@ Ces résultats restent des preuves historiques de non-qualification et ne doiven
 réinterprétés comme des PASS du produit courant.
 
 La remédiation portée par l’issue #47 et la PR #48 est désormais **terminée**. Elle a supprimé et
-interdit déterministement les workflows temporaires privilégiés, restauré les gates Node, propagé
+interdit déterministiquement les workflows temporaires privilégiés, restauré les gates Node, propagé
 `strict-allow-scripts=true` dans Docker et le staging Windows, durci HTML/Crawl4AI, rendu strict le
 parsing des resource URIs MCP, sécurisé la désinstallation historique, corrigé l’identité des
 sections SQLite hors chunking réel et mis PDF.js à jour vers `6.2.108`.
@@ -283,5 +289,6 @@ squash-mergée sur `63289d3bb498132ada4effdafa79039548c02381`, puis `develop` a 
 sans force sur le même SHA.
 
 Une publication ultérieure depuis `master` exige toujours une nouvelle preuve CI réussie attachée
-au SHA exact de `master`. L’issue #34 reste séparée et ouverte pour la certification native réelle
-des clients MCP interactifs.
+au SHA exact de `master`. La certification native #34 est désormais clôturée à 3/3 sur le runtime
+installé `a70b9a51527543c9417566326bb780121954cef5`; une future requalification devra de nouveau
+capturer les appels natifs sur le SHA serveur concerné.
