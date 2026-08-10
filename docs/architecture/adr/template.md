@@ -55,7 +55,7 @@ Comment vérifier que la décision est bien implémentée et atteint ses objecti
 
 ## Liens
 
-- Exigence : [section 10](../arc42/10-exigences-qualite.md#…)
-- Scénario : [section 6](../arc42/06-vue-execution.md#…)
-- Diagramme : [section 5](../arc42/05-vue-blocs.md#…)
+- Exigence : [section 10](../arc42/10-exigences-qualite.md)
+- Scénario : [section 6](../arc42/06-vue-execution.md)
+- Diagramme : [section 5](../arc42/05-vue-blocs.md)
 - Ticket / issue : #NNN
