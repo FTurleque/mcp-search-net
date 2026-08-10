@@ -51,13 +51,15 @@ jobs:
             }
           }
 
+          # Copilot wiring remains supported for compatibility even though it is no longer
+          # part of the native certification scope.
           $configure = Get-Content -LiteralPath 'packaging\windows\configure-install.ps1' -Raw
           if ($configure -notmatch "'add-json', '--scope', 'user'") { throw 'Claude Code add-json user-scope wiring is missing.' }
-          if (-not $configure.Contains("'.copilot\mcp-config.json'")) { throw 'Copilot CLI user config path is missing.' }
-          if ($configure -notmatch '\$CopilotCliEntry') { throw 'Copilot CLI deterministic JSON entry is missing.' }
+          if (-not $configure.Contains("'.copilot\mcp-config.json'")) { throw 'Copilot CLI compatibility config path is missing.' }
+          if ($configure -notmatch '\$CopilotCliEntry') { throw 'Copilot CLI compatibility JSON entry is missing.' }
           if ($configure -match '\$copilotAddArgs') { throw 'Legacy Copilot CLI mcp add wiring must not return.' }
           if ($configure -match '\$claudeAddArgs') { throw 'Legacy Claude Code mcp add wiring must not return.' }
-          if ($configure -notmatch "'mcp', 'get', 'mcp-search-net', '--json'") { throw 'Copilot CLI post-write verification is missing.' }
+          if ($configure -notmatch "'mcp', 'get', 'mcp-search-net', '--json'") { throw 'Copilot CLI compatibility post-write verification is missing.' }
           if ($configure -notmatch 'Test-NativeServerOutput') { throw 'Native server verification is missing.' }
 
           if ($configure -notmatch 'function New-ManagedClientEnv') { throw 'Managed client environment helper is missing.' }
@@ -67,7 +69,7 @@ jobs:
             }
           }
           $managedEnvUses = [regex]::Matches($configure, 'env\s+=\s+\(New-ManagedClientEnv\)').Count
-          if ($managedEnvUses -lt 5) { throw "Expected at least five confined stdio env uses, got $managedEnvUses." }
+          if ($managedEnvUses -lt 5) { throw "Expected at least five confined stdio env uses for supported integrations, got $managedEnvUses." }
           if ($configure -match '\$listed\s+-and\s+\$alreadyManaged') {
             throw 'Managed CLI entries must be rewritten, not accepted only because mcp get succeeds.'
           }
@@ -84,7 +86,13 @@ jobs:
           $report = Get-Content -LiteralPath (Join-Path $output 'native-client-certification.json') -Raw | ConvertFrom-Json
           if ($report.schemaVersion -ne '1.0') { throw 'Unexpected certification schema version.' }
           $clientCount = @($report.clients).Count
-          if ($clientCount -ne 5) { throw "Expected five clients, got $clientCount." }
+          if ($clientCount -ne 3) { throw "Expected three certification clients, got $clientCount." }
+          $expectedNames = @('Claude Code', 'Claude Desktop', 'Codex')
+          foreach ($name in $expectedNames) {
+            if (@($report.clients | Where-Object { $_.name -eq $name }).Count -ne 1) {
+              throw "Missing retained certification client: $name"
+            }
+          }
           if (@($report.clients | Where-Object { $_.verdict -ne 'NON_OBSERVE' }).Count -ne 0) {
             throw 'Smoke collector must never infer a native PASS.'
           }
