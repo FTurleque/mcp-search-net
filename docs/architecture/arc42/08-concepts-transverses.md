@@ -43,26 +43,26 @@ Chargé depuis la racine de l'origine uniquement ; appliqué à toutes les resso
 
 ### Schéma de cache V1 (`cache.sqlite`)
 
-| Table | Rôle | TTL par défaut |
-|---|---|---|
-| `search_cache` | Résultats de recherche | 1 h |
-| `content_cache` | Contenu Markdown extrait | 24 h (docs) / 6 h (README) / 24 h (sitemap) |
-| `schema_migrations` | Versions de migrations V1 | — |
+| Table               | Rôle                      | TTL par défaut                              |
+| ------------------- | ------------------------- | ------------------------------------------- |
+| `search_cache`      | Résultats de recherche    | 1 h                                         |
+| `content_cache`     | Contenu Markdown extrait  | 24 h (docs) / 6 h (README) / 24 h (sitemap) |
+| `schema_migrations` | Versions de migrations V1 | —                                           |
 
 ### Schéma catalogue V2 (`catalog.db`)
 
 Migrations C001–C008, appliquées dans l'ordre, immuables (checksum SHA-256) :
 
-| Migration | Table créée / modifiée | Rôle |
-|---|---|---|
-| C001 | `catalog_sources` | Sources documentaires |
-| C002 | `documents` | Documents catalogués |
-| C003 | `document_versions` | Versions avec ETag / hash |
-| C004 | `document_sections` | Sections de contenu (≤ 12 000 chars) |
-| C005 | `sync_tracking` | Runs de synchronisation |
-| C006 | `document_section_fts` (FTS5 classique) | Index plein texte (initial, cf. C007) |
-| C007 | `document_section_fts` (FTS5 contentless-delete) | Index reconstruit selon ADR-015 + triggers de cohérence |
-| C008 | Index de pagination | Optimisation des filtres langue/statut |
+| Migration | Table créée / modifiée                           | Rôle                                                    |
+| --------- | ------------------------------------------------ | ------------------------------------------------------- |
+| C001      | `catalog_sources`                                | Sources documentaires                                   |
+| C002      | `documents`                                      | Documents catalogués                                    |
+| C003      | `document_versions`                              | Versions avec ETag / hash                               |
+| C004      | `document_sections`                              | Sections de contenu (≤ 12 000 chars)                    |
+| C005      | `sync_tracking`                                  | Runs de synchronisation                                 |
+| C006      | `document_section_fts` (FTS5 classique)          | Index plein texte (initial, cf. C007)                   |
+| C007      | `document_section_fts` (FTS5 contentless-delete) | Index reconstruit selon ADR-015 + triggers de cohérence |
+| C008      | Index de pagination                              | Optimisation des filtres langue/statut                  |
 
 ### Politique de rétention
 
@@ -100,21 +100,22 @@ flowchart LR
 
 ## 8.6 Résilience
 
-| Scénario | Comportement |
-|---|---|
-| SearXNG indisponible | Retour stale cache si disponible (`STALE_FALLBACK`) ; sinon `SEARCH_PROVIDER_UNAVAILABLE` |
-| Crawl4AI indisponible | `CONTENT_PROVIDER_UNAVAILABLE` |
-| Cache SQLite inouvrable | Poursuite avec `DisabledCacheRepository` si `continueOnError: true` |
-| Catalogue SQLite absent | Démarrage échoue avec `ConfigurationError` sur `stderr` |
-| Timeout réseau | `RequestTimeoutError` → code `REQUEST_TIMEOUT` |
-| Trop de redirections | `TooManyRedirectsError` → code `TOO_MANY_REDIRECTS` |
-| Réponse > 10 Mo | `ResponseTooLargeError` → code `RESPONSE_TOO_LARGE` |
+| Scénario                | Comportement                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------- |
+| SearXNG indisponible    | Retour stale cache si disponible (`STALE_FALLBACK`) ; sinon `SEARCH_PROVIDER_UNAVAILABLE` |
+| Crawl4AI indisponible   | `CONTENT_PROVIDER_UNAVAILABLE`                                                            |
+| Cache SQLite inouvrable | Poursuite avec `DisabledCacheRepository` si `continueOnError: true`                       |
+| Catalogue SQLite absent | Démarrage échoue avec `ConfigurationError` sur `stderr`                                   |
+| Timeout réseau          | `RequestTimeoutError` → code `REQUEST_TIMEOUT`                                            |
+| Trop de redirections    | `TooManyRedirectsError` → code `TOO_MANY_REDIRECTS`                                       |
+| Réponse > 10 Mo         | `ResponseTooLargeError` → code `RESPONSE_TOO_LARGE`                                       |
 
 ---
 
 ## 8.7 Configuration
 
 Ordre de priorité (le dernier écrase) :
+
 1. Valeurs par défaut Zod (`applicationConfigSchema`)
 2. Fichier YAML (`MCP_CONFIG_PATH`)
 3. Variables d'environnement (`MCP_*`)
@@ -136,27 +137,27 @@ Variables d'environnement supportées : `MCP_CONFIG_PATH`, `MCP_PROFILE`, `MCP_L
 
 ## 8.9 Persistance
 
-| Données | Stockage | Politique |
-|---|---|---|
-| Résultats de recherche | `cache.sqlite` / `search_cache` | TTL 1 h, stale retention 7 j, max 2 000 entrées |
-| Contenu Web | `cache.sqlite` / `content_cache` | TTL 6–24 h selon type |
-| Sources documentaires | `catalog.db` | Permanentes, CRUD CLI |
-| Documents / versions | `catalog.db` | Versionnés, purge explicite |
-| Sections de contenu | `catalog.db` | ≤ 12 000 chars/section, chunking avec overlap 400 chars |
-| Index FTS5 | `catalog.db` (dérivé) | Reconstructible (`catalog rebuild-index`) |
+| Données                | Stockage                         | Politique                                               |
+| ---------------------- | -------------------------------- | ------------------------------------------------------- |
+| Résultats de recherche | `cache.sqlite` / `search_cache`  | TTL 1 h, stale retention 7 j, max 2 000 entrées         |
+| Contenu Web            | `cache.sqlite` / `content_cache` | TTL 6–24 h selon type                                   |
+| Sources documentaires  | `catalog.db`                     | Permanentes, CRUD CLI                                   |
+| Documents / versions   | `catalog.db`                     | Versionnés, purge explicite                             |
+| Sections de contenu    | `catalog.db`                     | ≤ 12 000 chars/section, chunking avec overlap 400 chars |
+| Index FTS5             | `catalog.db` (dérivé)            | Reconstructible (`catalog rebuild-index`)               |
 
 ---
 
 ## 8.10 Performance
 
-| Opération | Mesure observée | Seuil |
-|---|---|---|
-| FTS5/BM25 p50 | 0,79 ms (10 000 sections, V2.13) | — |
-| FTS5/BM25 p95 | 17,3 ms (10 000 sections, V2.13) | ≤ 150 ms |
-| Recall@10 FTS5 | 0,617 (V2.13, corpus synthétique) | — |
-| Recall@10 embeddings locaux | 0,853 (benchmark #32, prototype non intégré) | — |
-| Download max | 10 Mo | Limite absolue |
-| Timeout fetch | 20 s | Limite absolue |
+| Opération                   | Mesure observée                              | Seuil          |
+| --------------------------- | -------------------------------------------- | -------------- |
+| FTS5/BM25 p50               | 0,79 ms (10 000 sections, V2.13)             | —              |
+| FTS5/BM25 p95               | 17,3 ms (10 000 sections, V2.13)             | ≤ 150 ms       |
+| Recall@10 FTS5              | 0,617 (V2.13, corpus synthétique)            | —              |
+| Recall@10 embeddings locaux | 0,853 (benchmark #32, prototype non intégré) | —              |
+| Download max                | 10 Mo                                        | Limite absolue |
+| Timeout fetch               | 20 s                                         | Limite absolue |
 
 ---
 
@@ -171,17 +172,17 @@ Variables d'environnement supportées : `MCP_CONFIG_PATH`, `MCP_PROFILE`, `MCP_L
 
 ## 8.12 Tests
 
-| Suite | Contenu | Commande |
-|---|---|---|
-| `required` | Tests essentiels sans réseau ni Docker | `npm run test:required` |
-| `unit` | Règles domaine, value-objects, ranking | `npm run test:unit` |
-| `contract` | Contrat MCP STDIO, schémas Zod | `npm run test:contract` |
-| `security` | SSRF, bloquage URL, DNS rebinding, intégrité release | `npm run test:security` |
-| `resilience` | Panne cache, panne provider, stale | `npm run test:resilience` |
-| `performance` | Seuils de latence (passerelle HTTP) | `npm run test:performance` |
-| `integration` | SQLite en mémoire, config, migrations | `npm run test:integration` |
-| `e2e:deterministic` | Processus réel STDIO sans réseau | `npm run test:e2e:deterministic` |
-| `e2e:live` | Appels réels SearXNG + Crawl4AI | `npm run test:e2e` (nécessite Docker) |
+| Suite               | Contenu                                              | Commande                              |
+| ------------------- | ---------------------------------------------------- | ------------------------------------- |
+| `required`          | Tests essentiels sans réseau ni Docker               | `npm run test:required`               |
+| `unit`              | Règles domaine, value-objects, ranking               | `npm run test:unit`                   |
+| `contract`          | Contrat MCP STDIO, schémas Zod                       | `npm run test:contract`               |
+| `security`          | SSRF, bloquage URL, DNS rebinding, intégrité release | `npm run test:security`               |
+| `resilience`        | Panne cache, panne provider, stale                   | `npm run test:resilience`             |
+| `performance`       | Seuils de latence (passerelle HTTP)                  | `npm run test:performance`            |
+| `integration`       | SQLite en mémoire, config, migrations                | `npm run test:integration`            |
+| `e2e:deterministic` | Processus réel STDIO sans réseau                     | `npm run test:e2e:deterministic`      |
+| `e2e:live`          | Appels réels SearXNG + Crawl4AI                      | `npm run test:e2e` (nécessite Docker) |
 
 ---
 

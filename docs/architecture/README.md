@@ -36,16 +36,16 @@ docs/architecture/
 
 ## Navigation rapide
 
-| Besoin | Section |
-|---|---|
-| Qu'est-ce que ce système ? | [01 — Introduction](arc42/01-introduction-objectifs.md) |
-| Quelles contraintes s'appliquent ? | [02 — Contraintes](arc42/02-contraintes.md) |
-| Quels acteurs et systèmes externes ? | [03 — Contexte](arc42/03-contexte-perimetre.md) |
-| Comment est structuré le code ? | [05 — Vue blocs](arc42/05-vue-blocs.md) |
-| Comment fonctionne une recherche ? | [06 — Vue exécution](arc42/06-vue-execution.md) |
-| Comment le système est-il déployé ? | [07 — Vue déploiement](arc42/07-vue-deploiement.md) |
-| Quelles décisions ont été prises ? | [09 — Décisions (index ADR)](arc42/09-decisions.md) |
-| Quels sont les risques ouverts ? | [11 — Risques et dette](arc42/11-risques-dette.md) |
+| Besoin                               | Section                                                 |
+| ------------------------------------ | ------------------------------------------------------- |
+| Qu'est-ce que ce système ?           | [01 — Introduction](arc42/01-introduction-objectifs.md) |
+| Quelles contraintes s'appliquent ?   | [02 — Contraintes](arc42/02-contraintes.md)             |
+| Quels acteurs et systèmes externes ? | [03 — Contexte](arc42/03-contexte-perimetre.md)         |
+| Comment est structuré le code ?      | [05 — Vue blocs](arc42/05-vue-blocs.md)                 |
+| Comment fonctionne une recherche ?   | [06 — Vue exécution](arc42/06-vue-execution.md)         |
+| Comment le système est-il déployé ?  | [07 — Vue déploiement](arc42/07-vue-deploiement.md)     |
+| Quelles décisions ont été prises ?   | [09 — Décisions (index ADR)](arc42/09-decisions.md)     |
+| Quels sont les risques ouverts ?     | [11 — Risques et dette](arc42/11-risques-dette.md)      |
 
 ## Conventions
 

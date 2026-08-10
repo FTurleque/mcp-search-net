@@ -9,6 +9,7 @@ Ce dossier accueille les **futurs ADR** produits après la mise en place de cett
 ## Règles de création
 
 Créer un ADR lorsqu'un choix :
+
 - est coûteux à inverser ;
 - modifie une frontière ou une dépendance majeure ;
 - engage une technologie structurante ;

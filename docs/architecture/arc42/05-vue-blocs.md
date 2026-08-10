@@ -244,26 +244,26 @@ classDiagram
 
 ## 5.7 Référence des fichiers source par composant
 
-| Composant | Fichier(s) principal(aux) |
-|---|---|
-| Bootstrap | `src/bootstrap/main.ts`, `src/bootstrap/container.ts`, `src/bootstrap/runtime-guard.ts` |
-| MCP Server V1 | `src/presentation/mcp/mcp-server.ts` |
-| MCP Server V2 | `src/presentation/mcp/mcp-server-v2.ts` |
-| Catalog Resources | `src/presentation/mcp/catalog-resources.ts` |
-| Tool execution | `src/presentation/mcp/tool-call.ts` |
-| SearchWeb | `src/application/use-cases/search-web.ts` |
-| FetchUrl | `src/application/use-cases/fetch-url.ts` |
-| SearchCatalogDocuments | `src/application/use-cases/search-catalog-documents.ts` |
-| SyncCatalogDocuments | `src/application/use-cases/sync-catalog-documents.ts` |
-| Ports (interfaces) | `src/application/ports/*.ts` |
-| Domain models | `src/domain/models/*.ts`, `src/domain/value-objects/*.ts` |
-| Domain errors | `src/domain/errors/domain-errors.ts` |
-| SearxngSearchProvider | `src/infrastructure/search/searxng-search-provider.ts` |
-| Crawl4aiContentFetcher | `src/infrastructure/fetch/crawl4ai-content-fetcher.ts` |
-| SecureHttpGateway | `src/infrastructure/fetch/secure-http-gateway.ts` |
-| PreparedHtmlSanitizer | `src/infrastructure/fetch/prepared-html-sanitizer.ts` |
-| PublicUrlSecurityPolicy | `src/infrastructure/security/public-url-security-policy.ts` |
-| SqliteCacheRepository | `src/infrastructure/cache/sqlite-cache-repository.ts` |
-| SqliteCatalogRepository | `src/infrastructure/catalog/sqlite-catalog-repository.ts` |
-| Configuration | `src/infrastructure/config/application-config.ts`, `src/infrastructure/config/load-configuration.ts` |
-| StructuredLogger | `src/infrastructure/logging/structured-logger.ts` |
+| Composant               | Fichier(s) principal(aux)                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| Bootstrap               | `src/bootstrap/main.ts`, `src/bootstrap/container.ts`, `src/bootstrap/runtime-guard.ts`              |
+| MCP Server V1           | `src/presentation/mcp/mcp-server.ts`                                                                 |
+| MCP Server V2           | `src/presentation/mcp/mcp-server-v2.ts`                                                              |
+| Catalog Resources       | `src/presentation/mcp/catalog-resources.ts`                                                          |
+| Tool execution          | `src/presentation/mcp/tool-call.ts`                                                                  |
+| SearchWeb               | `src/application/use-cases/search-web.ts`                                                            |
+| FetchUrl                | `src/application/use-cases/fetch-url.ts`                                                             |
+| SearchCatalogDocuments  | `src/application/use-cases/search-catalog-documents.ts`                                              |
+| SyncCatalogDocuments    | `src/application/use-cases/sync-catalog-documents.ts`                                                |
+| Ports (interfaces)      | `src/application/ports/*.ts`                                                                         |
+| Domain models           | `src/domain/models/*.ts`, `src/domain/value-objects/*.ts`                                            |
+| Domain errors           | `src/domain/errors/domain-errors.ts`                                                                 |
+| SearxngSearchProvider   | `src/infrastructure/search/searxng-search-provider.ts`                                               |
+| Crawl4aiContentFetcher  | `src/infrastructure/fetch/crawl4ai-content-fetcher.ts`                                               |
+| SecureHttpGateway       | `src/infrastructure/fetch/secure-http-gateway.ts`                                                    |
+| PreparedHtmlSanitizer   | `src/infrastructure/fetch/prepared-html-sanitizer.ts`                                                |
+| PublicUrlSecurityPolicy | `src/infrastructure/security/public-url-security-policy.ts`                                          |
+| SqliteCacheRepository   | `src/infrastructure/cache/sqlite-cache-repository.ts`                                                |
+| SqliteCatalogRepository | `src/infrastructure/catalog/sqlite-catalog-repository.ts`                                            |
+| Configuration           | `src/infrastructure/config/application-config.ts`, `src/infrastructure/config/load-configuration.ts` |
+| StructuredLogger        | `src/infrastructure/logging/structured-logger.ts`                                                    |

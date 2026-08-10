@@ -8,17 +8,17 @@ Ce registre développe les risques résumés dans la [section 11](../arc42/11-ri
 
 ## Légende
 
-| Probabilité | Valeur |
-|---|---|
-| Haute | > 50 % de survenance dans les 12 prochains mois |
-| Moyenne | 20–50 % |
-| Faible | < 20 % |
+| Probabilité | Valeur                                          |
+| ----------- | ----------------------------------------------- |
+| Haute       | > 50 % de survenance dans les 12 prochains mois |
+| Moyenne     | 20–50 %                                         |
+| Faible      | < 20 %                                          |
 
-| Impact | Valeur |
-|---|---|
-| Haut | Blocage de la livraison ou régression de sécurité |
-| Moyen | Dégradation de la qualité ou effort de remédiation significatif |
-| Faible | Gêne mineure, contournable rapidement |
+| Impact | Valeur                                                          |
+| ------ | --------------------------------------------------------------- |
+| Haut   | Blocage de la livraison ou régression de sécurité               |
+| Moyen  | Dégradation de la qualité ou effort de remédiation significatif |
+| Faible | Gêne mineure, contournable rapidement                           |
 
 **Exposition** = Probabilité × Impact (Haute/Haute → Critique, etc.)
 

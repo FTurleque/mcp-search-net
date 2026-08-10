@@ -29,15 +29,15 @@
 
 ## 3.2 Acteurs et systèmes externes
 
-| Acteur / Système | Type | Rôle | Interface |
-|---|---|---|---|
-| **Développeur** | Personne | Configure, installe et utilise le serveur via son IDE ou un client MCP | Configuration YAML / variables d'environnement |
-| **Agent LLM** (Copilot, Claude, Codex…) | Système logiciel externe | Appelle les outils MCP pour enrichir son contexte | MCP STDIO JSON-RPC |
-| **SearXNG** | Système logiciel externe (Docker local) | Moteur de méta-recherche Web | HTTP JSON (`/search?format=json`) |
-| **Crawl4AI** | Système logiciel externe (Docker local) | Extraction de contenu HTML/PDF avec Playwright | HTTP JSON (`raw://` document neutralisé) |
-| **Internet (Web public)** | Système externe | Pages, sitemaps, `robots.txt` récupérés par la passerelle sécurisée | HTTPS (ports 80/443 uniquement) |
-| **Système de fichiers local** | Infrastructure | Stockage des bases SQLite, de la configuration et des clés secrètes locales | Fichiers sur disque |
-| **Docker Engine** | Infrastructure | Exécution conteneurisée de SearXNG et Crawl4AI | Docker Compose |
+| Acteur / Système                        | Type                                    | Rôle                                                                        | Interface                                      |
+| --------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------- |
+| **Développeur**                         | Personne                                | Configure, installe et utilise le serveur via son IDE ou un client MCP      | Configuration YAML / variables d'environnement |
+| **Agent LLM** (Copilot, Claude, Codex…) | Système logiciel externe                | Appelle les outils MCP pour enrichir son contexte                           | MCP STDIO JSON-RPC                             |
+| **SearXNG**                             | Système logiciel externe (Docker local) | Moteur de méta-recherche Web                                                | HTTP JSON (`/search?format=json`)              |
+| **Crawl4AI**                            | Système logiciel externe (Docker local) | Extraction de contenu HTML/PDF avec Playwright                              | HTTP JSON (`raw://` document neutralisé)       |
+| **Internet (Web public)**               | Système externe                         | Pages, sitemaps, `robots.txt` récupérés par la passerelle sécurisée         | HTTPS (ports 80/443 uniquement)                |
+| **Système de fichiers local**           | Infrastructure                          | Stockage des bases SQLite, de la configuration et des clés secrètes locales | Fichiers sur disque                            |
+| **Docker Engine**                       | Infrastructure                          | Exécution conteneurisée de SearXNG et Crawl4AI                              | Docker Compose                                 |
 
 ---
 
@@ -113,10 +113,10 @@ flowchart TB
 
 ### Interface système de fichiers
 
-| Chemin | Rôle |
-|---|---|
-| `config/application.yml` | Configuration principale YAML |
-| `config/official-sources.yml` | Registre des sources officielles |
-| `.data/cache.sqlite` | Cache Web V1 (supprimable) |
-| `.data/catalog.db` | Catalogue documentaire V2 (durable) |
-| `.env` | Secrets locaux (chargé au démarrage si présent) |
+| Chemin                        | Rôle                                            |
+| ----------------------------- | ----------------------------------------------- |
+| `config/application.yml`      | Configuration principale YAML                   |
+| `config/official-sources.yml` | Registre des sources officielles                |
+| `.data/cache.sqlite`          | Cache Web V1 (supprimable)                      |
+| `.data/catalog.db`            | Catalogue documentaire V2 (durable)             |
+| `.env`                        | Secrets locaux (chargé au démarrage si présent) |
