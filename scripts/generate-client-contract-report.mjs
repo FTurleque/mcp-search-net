@@ -123,10 +123,8 @@ try {
     },
     automatedVerdict: 'PASS',
     manualClientCertificationStillRequired: [
-      'IntelliJ IDEA + GitHub Copilot native UI',
       'Claude Desktop native integration',
       'Claude Code native integration',
-      'GitHub Copilot CLI native integration',
       'Codex native integration',
     ],
   };

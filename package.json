@@ -4,7 +4,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "author": "Fabrice Turleque",
   "private": true,
-  "description": "Local MCP web search and fetch server for GitHub Copilot",
+  "description": "Local MCP web search and fetch server for MCP-compatible AI clients",
   "type": "module",
   "engines": {
     "node": ">=24 <25"
