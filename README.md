@@ -2,8 +2,10 @@
 
 > **Licence propriétaire source-available — Tous droits réservés.** La visibilité publique du dépôt donne accès au code source mais ne transforme pas mcp-search-net en logiciel open source. Voir la section [Licence](#licence) et le fichier [`LICENSE`](LICENSE).
 
-Serveur MCP local, en lecture seule, destiné notamment à GitHub Copilot dans IntelliJ IDEA. La V1
-expose deux outils Web stables :
+Serveur MCP local, en lecture seule, destiné aux clients MCP compatibles. Le périmètre de
+certification native retenu couvre Claude Code, Claude Desktop et Codex. La compatibilité
+IntelliJ IDEA / GitHub Copilot reste disponible pour les utilisateurs qui en ont besoin, mais elle
+n'appartient plus au périmètre de certification du projet. La V1 expose deux outils Web stables :
 
 - `search_web` découvre des pages avec SearXNG et privilégie les domaines du registre officiel ;
 - `fetch_url` récupère une URL publique connue, applique la protection SSRF, extrait du Markdown et
@@ -39,7 +41,8 @@ catalogue durable.
 
 - Node.js 24 LTS et npm pour le développement depuis les sources ;
 - Docker Desktop avec Docker Compose pour SearXNG et Crawl4AI ;
-- IntelliJ IDEA et GitHub Copilot si cette intégration est utilisée.
+- un client MCP compatible pour l’intégration interactive ; Claude Code, Claude Desktop et Codex
+  constituent le périmètre de certification native retenu.
 
 ## Installation depuis les sources
 
@@ -132,11 +135,12 @@ volume d’écriture limité au cache et au catalogue. Aucun socket Docker, mode
 hôte n’est utilisé. Les images fournisseurs sont figées par digest SHA-256. L’image du serveur porte
 le label OCI propriétaire `LicenseRef-mcp-search-net-Proprietary` et embarque `LICENSE`.
 
-## IntelliJ IDEA / GitHub Copilot
+## Compatibilité IntelliJ IDEA / GitHub Copilot
 
 Le chemin exact de la configuration MCP dépend de la version d’IntelliJ et du plugin GitHub Copilot.
-Le serveur expose cinq outils : `search_web`, `fetch_url`, `search_docs`, `list_docs` et
-`read_doc_section`.
+Cette intégration reste supportée à titre de compatibilité, sans faire partie du périmètre de
+certification native courant. Le serveur expose cinq outils : `search_web`, `fetch_url`,
+`search_docs`, `list_docs` et `read_doc_section`.
 
 Exécution Node locale, après `npm run build` :
 
