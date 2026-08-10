@@ -14,7 +14,7 @@ import type {
   ToolResponseStatus,
   ToolWarningDescriptor,
 } from '../../domain/models/tool-response.js';
-import { ApplicationError } from '../../domain/errors/domain-errors.js';
+import { ApplicationError, RequestTimeoutError } from '../../domain/errors/domain-errors.js';
 import { SearchQuery } from '../../domain/value-objects/search-query.js';
 import {
   matchesDomain,
@@ -22,10 +22,13 @@ import {
   toSearchResult,
 } from '../../domain/services/result-ranking.js';
 
+const DEFAULT_PROVIDER_TIMEOUT_MS = 20_000;
+
 export interface SearchWebOptions {
   readonly cacheTtlMs: number;
   readonly providerOversampling: number;
   readonly maxSnippetChars: number;
+  readonly providerTimeoutMs?: number;
 }
 
 interface CachedSearchValue {
@@ -72,17 +75,19 @@ export class SearchWeb {
     let firstResponse: SearchProviderResponse;
     let providerResponse: SearchProviderResponse;
     let shouldFallback: boolean;
+    const deadline = Date.now() + (this.options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS);
     try {
       firstResponse = await this.searchProvider(
         normalizedRequest,
         normalizedRequest.language,
         context,
+        deadline,
       );
       shouldFallback =
         firstResponse.results.length === 0 &&
         !normalizedRequest.language.toLowerCase().startsWith('en');
       providerResponse = shouldFallback
-        ? await this.searchProvider(normalizedRequest, 'en', context)
+        ? await this.searchProvider(normalizedRequest, 'en', context, deadline)
         : firstResponse;
     } catch (error) {
       if (cached !== undefined && isTransientProviderError(error)) {
@@ -162,15 +167,19 @@ export class SearchWeb {
     request: NormalizedSearchRequest,
     language: string,
     context: OperationContext,
+    deadline: number,
   ): Promise<SearchProviderResponse> {
     const startedAt = performance.now();
     try {
-      const response = await this.provider.search({
-        query: SearchQuery.create(request.query),
-        language,
-        ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
-        maxResults: request.maxResults * this.options.providerOversampling,
-      });
+      const response = await withDeadline(
+        this.provider.search({
+          query: SearchQuery.create(request.query),
+          language,
+          ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
+          maxResults: request.maxResults * this.options.providerOversampling,
+        }),
+        deadline,
+      );
       this.telemetry?.record('provider_called', {
         requestId: context.requestId,
         tool: 'search_web',
@@ -316,4 +325,22 @@ function truncate(value: string, maxChars: number): string {
   return value.length <= maxChars
     ? value
     : `${value.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+}
+
+async function withDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new RequestTimeoutError('search_web provider deadline exceeded');
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new RequestTimeoutError('search_web provider deadline exceeded')),
+      remaining,
+    );
+    timer.unref();
+  });
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }

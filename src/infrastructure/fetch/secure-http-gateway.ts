@@ -73,6 +73,7 @@ export class SecureHttpGateway {
   private active = 0;
   private readonly waiters: (() => void)[] = [];
   private readonly lastRequestByOrigin = new Map<string, number>();
+  private readonly originThrottleQueues = new Map<string, Promise<void>>();
   private readonly maxTrackedOrigins: number;
 
   public constructor(
@@ -354,13 +355,29 @@ export class SecureHttpGateway {
   }
 
   private async throttle(origin: string, deadline: number): Promise<void> {
-    const wait = Math.max(
-      0,
-      (this.lastRequestByOrigin.get(origin) ?? 0) + this.options.minimumDelayMs - Date.now(),
-    );
-    if (Date.now() + wait >= deadline) throw new RequestTimeoutError();
-    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    this.rememberOriginRequest(origin, Date.now());
+    const predecessor = this.originThrottleQueues.get(origin) ?? Promise.resolve();
+    let releaseSlot!: () => void;
+    const slot = new Promise<void>((resolve) => {
+      releaseSlot = resolve;
+    });
+    const tail = predecessor.then(() => slot);
+    this.originThrottleQueues.set(origin, tail);
+
+    try {
+      await withDeadline(predecessor, deadline);
+      const wait = Math.max(
+        0,
+        (this.lastRequestByOrigin.get(origin) ?? 0) + this.options.minimumDelayMs - Date.now(),
+      );
+      if (Date.now() + wait >= deadline) throw new RequestTimeoutError();
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      this.rememberOriginRequest(origin, Date.now());
+    } finally {
+      releaseSlot();
+      if (this.originThrottleQueues.get(origin) === tail) {
+        this.originThrottleQueues.delete(origin);
+      }
+    }
   }
 
   private rememberOriginRequest(origin: string, timestamp: number): void {
