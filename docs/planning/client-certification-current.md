@@ -2,8 +2,31 @@
 
 Ce document sépare explicitement les preuves automatisables du serveur des observations qui exigent
 une application cliente réelle. Un client STDIO de référence ne prouve jamais à lui seul qu'une
-version donnée d'IntelliJ, Claude, Copilot CLI ou Codex expose correctement les mêmes surfaces dans
-son interface native.
+version donnée d'un client tiers expose correctement les mêmes surfaces dans son interface native.
+
+## Périmètre de certification retenu
+
+Depuis la clôture de l'issue #34 le 10 août 2026, le périmètre de certification native retenu est :
+
+1. Claude Code ;
+2. Claude Desktop ;
+3. Codex.
+
+GitHub Copilot CLI et IntelliJ IDEA + GitHub Copilot sont **hors périmètre de certification**. Leur
+compatibilité d'installation peut rester supportée pour les utilisateurs qui en ont besoin, mais
+aucun nouveau test Copilot n'est requis pour qualifier ou fermer #34.
+
+La certification finalisée ci-dessous est liée au runtime Windows 10 réellement installé :
+
+```text
+version        = 1.1.0
+sourceRevision = a70b9a51527543c9417566326bb780121954cef5
+sourceState    = CLEAN
+nodeVersion    = 24.18.0
+```
+
+Les évolutions documentaires ou du harness postérieures à cette preuve ne réécrivent pas
+rétroactivement le SHA du runtime certifié.
 
 ## Couche automatisée
 
@@ -19,32 +42,29 @@ construit :
 - un appel `search_docs` déterministe sans fournisseur Web ;
 - absence d'intégration cliente tierce implicite dans le verdict.
 
-Le rapport JSON est écrit sous `.data/test-reports/client-contract-report.json` et fait partie des
-artefacts de qualification déterministe lorsque la CI s'exécute. Le test E2E
-`tests/e2e/mcp-stdio.test.ts` gèle en parallèle les mêmes contrats ainsi que la pureté JSON-RPC de
-`stdout`.
+Le rapport JSON est écrit sous `.data/test-reports/client-contract-report.json`. Il décrit le
+contrat serveur et le périmètre de certification native, mais ne transforme jamais une sonde SDK en
+preuve d'appel natif depuis Claude ou Codex.
 
 Le lifecycle Windows ajoute une preuve différente : installation du bundle, launcher `.cmd`, sonde
 STDIO sur le runtime Node embarqué, upgrade/rollback et uninstall. Cette preuve valide le package
-installé mais ne remplace toujours pas une observation dans l'UI d'un client tiers.
+installé mais ne remplace pas une observation dans l'UI ou la CLI d'un client tiers.
 
 ## Collecteur de preuve Windows
 
-`scripts/certify-native-clients.ps1` produit une photographie **non destructive** de la machine
-Windows utilisée pour #34. Il ne modifie aucune configuration cliente et ne déclenche aucun appel
-LLM payant. Il relève uniquement les éléments locaux vérifiables sans interaction humaine :
+`scripts/certify-native-clients.ps1` produit une photographie **non destructive** des trois clients
+retenus pour la certification native. Il ne modifie aucune configuration cliente et ne déclenche
+aucun appel LLM payant. Il relève uniquement les éléments locaux vérifiables sans interaction
+humaine :
 
 - version et révision de l'installation `mcp-search-net` via `BUILD-MANIFEST.json` ;
-- configuration GitHub Copilot JetBrains sous `%LOCALAPPDATA%\github-copilot\intellij\mcp.json` ;
-- GitHub Copilot CLI via `copilot --version`, `copilot mcp list --json` et
-  `copilot mcp get mcp-search-net --json` ;
 - Claude Code via `claude --version`, `claude mcp list` et `claude mcp get mcp-search-net` ;
-- Claude Desktop via son `claude_desktop_config.json` ;
-- Codex via `codex --version`, `codex mcp list` et `%USERPROFILE%\.codex\config.toml`.
+- Claude Desktop via son `claude_desktop_config.json` et sa version locale ;
+- Codex via `codex --version`, `codex mcp list` et `%USERPROFILE%\.codex\config.toml` lorsque ces
+  commandes sont disponibles.
 
-Le collecteur masque les préfixes de chemins utilisateur courants dans le rapport et n'enregistre
-pas les sorties brutes des commandes `mcp get`, afin de ne pas archiver accidentellement des secrets
-ou variables d'environnement tierces.
+Le collecteur ne sonde plus GitHub Copilot CLI ni IntelliJ/GitHub Copilot. Le support d'installation
+Copilot reste séparé du périmètre de certification et n'est pas supprimé par cette décision.
 
 Depuis un checkout Windows du dépôt :
 
@@ -56,62 +76,99 @@ powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass `
 Deux fichiers sont générés sous `.data\native-client-certification-<timestamp>` :
 
 - `native-client-certification.json` : preuve structurée ;
-- `native-client-certification.md` : résumé prêt à joindre à #34.
+- `native-client-certification.md` : résumé prêt à joindre à une future qualification manuelle.
 
-Le mode `-SmokeMode` ne touche aucun client réel. Il est exécuté par le workflow
-`Native client certification smoke` sous Windows PowerShell 5.1 et vérifie notamment qu'aucun PASS
-natif ne peut être inféré automatiquement.
+Le mode `-SmokeMode` ne touche aucun client réel. Le workflow `Native client certification smoke`
+sous Windows PowerShell 5.1 vérifie notamment que le collecteur produit exactement trois lignes de
+certification et qu'aucun PASS natif ne peut être inféré automatiquement.
 
-## Matrice de certification native
+## Matrice native finalisée — 3/3
 
-Tous les clients ci-dessous sont supportés par la configuration de l'installateur et bénéficient de
-la preuve serveur automatisée. Leur verdict **natif** est cependant distinct :
+### Claude Code 2.1.225 — CERTIFIÉ
 
-- **IntelliJ IDEA + GitHub Copilot — NON OBSERVÉ.** Le 2026-08-04, IntelliJ et le plugin étaient
-  présents, mais aucune configuration native `mcp-search-net` exploitable n'avait été enregistrée.
-  L'installateur courant utilise `%LOCALAPPDATA%\github-copilot\intellij\mcp.json` avec la racine
-  `servers`.
-- **GitHub Copilot CLI — NON OBSERVÉ.** Aucune sortie native `copilot mcp` n'est encore enregistrée
-  dans #34. La configuration utilisateur courante est `%USERPROFILE%\.copilot\mcp-config.json`.
-- **Claude Code — NON OBSERVÉ.** Aucune sortie native `claude mcp` n'est encore enregistrée dans #34.
-- **Claude Desktop — NON OBSERVÉ.** Le 2026-08-04, `claude_desktop_config.json` avait été inspecté ;
-  `mcpServers` ne contenait pas `mcp-search-net`.
-- **Codex — NON OBSERVÉ.** Aucune sortie ou intégration native `codex mcp` n'est encore enregistrée
-  dans #34 ; l'installateur utilise `%USERPROFILE%\.codex\config.toml`.
-
-Les observations du 2026-08-04 proviennent de la recette historique
-`docs/planning/validation-v2-14-client-contracts.md`. Elles prouvent l'état de configuration au
-moment du contrôle ; elles ne doivent ni être extrapolées à une version cliente plus récente, ni être
-transformées en PASS.
-
-## Complétion manuelle après collecte
-
-La collecte automatique peut prouver qu'un client est installé, configuré et qu'il sait lister le
-serveur. Elle ne prouve pas qu'un modèle a réellement invoqué un tool depuis l'interface native.
-Après la collecte, effectuer pour chaque client un appel natif réel, idéalement le workflow compact :
+Session native Claude Code 2.1.225 sur Windows 10, runtime serveur
+`a70b9a51527543c9417566326bb780121954cef5` :
 
 ```text
-search_docs -> sélectionner un résultat -> read_doc_section
+search_docs        = OBSERVÉ
+returned sectionId = 9
+read_doc_section   = OBSERVÉ
+used sectionId     = 9
+section found      = true
 ```
 
-Pour IntelliJ/GitHub Copilot et Claude Desktop, consigner l'état du serveur dans l'UI et l'appel de
-tool observé. Pour les trois CLI, consigner la version, la sortie `mcp list/get` ou équivalente et
-l'appel de tool observé dans une session réelle. L'absence d'interface resources/templates peut être
-classée `PASS AVEC RÉSERVE` si les cinq tools sont disponibles et si le workflow documentaire
-compact fonctionne.
+Le `sectionId=9` retourné par `search_docs` a été réutilisé exactement dans
+`read_doc_section(9)`.
 
-## Critère de clôture de #34
+**Verdict Claude Code : PASS NATIF.**
 
-Une ligne de la matrice ne passe à `PASS` ou `PASS AVEC RÉSERVE` que lorsqu'une version précise du
-client, l'OS, le SHA serveur et l'observation correspondante sont enregistrés. En l'absence de cette
-preuve, le verdict reste `NON OBSERVÉ`, même si le serveur de référence et le packaging sont verts.
+### Claude Desktop 1.26832.0 — CERTIFIÉ
 
-Pour fermer #34 comme `completed`, il faut une observation native des cinq clients. Le collecteur
-préremplit les preuves techniques locales mais laisse toujours
-`nativeToolInvocationObserved = false`. Ce champ ne peut devenir vrai qu'après une observation
-cliente réelle.
+Session native Claude Desktop 1.26832.0 sur Windows 10, runtime serveur
+`a70b9a51527543c9417566326bb780121954cef5` :
 
-GitHub CI peut certifier le contrat serveur, le bundle installé et le collecteur de preuve, mais ne
-peut pas fabriquer une observation native d'une application cliente installée sur le poste
-utilisateur. Tant que ces cinq preuves ne sont pas enregistrées, #34 doit rester ouverte plutôt que
-d'être fermée sur un faux PASS.
+```text
+search_docs requestId      = 59b183b4-112f-40fe-b527-99b8fdcae023
+returned sectionId         = 9
+read_doc_section requestId = b3196950-da47-4027-8b5d-b3ff3810e893
+used sectionId             = 9
+section found              = true
+truncated                  = false
+characterCount             = 901
+```
+
+**Verdict Claude Desktop : PASS NATIF.**
+
+### Codex 26.803.5235.0 — CERTIFIÉ
+
+Session native Codex 26.803.5235.0 sur Windows 10. La version a été récupérée depuis le package MSIX
+exact du processus Codex actif, `codex --version` ayant été refusé par Windows.
+
+```text
+search_docs tool           = mcp__mcp_search_net__search_docs
+search_docs requestId      = 2260b551-e143-417e-94f5-886a28a3c9e1
+returned sectionId         = 9
+read_doc_section tool      = mcp__mcp_search_net__read_doc_section
+read_doc_section requestId = d6dbad89-b224-45f3-830f-fef26c23983b
+used sectionId             = 9
+section found              = true
+truncated                  = false
+characterCount             = 901
+```
+
+La chaîne native a vérifié automatiquement l'égalité :
+
+```text
+search_docs.sectionId      = 9
+read_doc_section.sectionId = 9
+exact match                = YES
+```
+
+**Verdict Codex : PASS NATIF.**
+
+## Statut de #34
+
+La matrice retenue est désormais :
+
+- [x] Claude Code 2.1.225 ;
+- [x] Claude Desktop 1.26832.0 ;
+- [x] Codex 26.803.5235.0.
+
+**Matrice finale : 3/3 CERTIFIÉS.**
+
+L'issue #34 est fermée avec `state_reason=completed` depuis le 10 août 2026.
+
+## Règle pour une future requalification
+
+Une preuve native reste liée à une version cliente, un OS et un SHA serveur précis. Pour une future
+requalification, le collecteur peut préremplir les preuves techniques locales, mais
+`nativeToolInvocationObserved` reste `false` jusqu'à une vraie invocation cliente.
+
+Le workflow recommandé reste :
+
+```text
+search_docs -> relever le sectionId réel -> read_doc_section(exactement ce sectionId)
+```
+
+Une simple configuration, un `mcp list`, un `mcp get`, un état `connected` ou la sonde STDIO de
+référence ne suffisent jamais à établir un nouveau PASS natif.
