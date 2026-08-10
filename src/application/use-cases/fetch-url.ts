@@ -6,7 +6,11 @@ import type { ContentFetcher } from '../ports/content-fetcher.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
 import type { UrlSecurityPolicy } from '../ports/url-security-policy.js';
 import type { FetchRequest, FetchResponse, FetchedContent } from '../../domain/models/content.js';
-import { ApplicationError, InternalApplicationError } from '../../domain/errors/domain-errors.js';
+import {
+  ApplicationError,
+  HttpError,
+  InternalApplicationError,
+} from '../../domain/errors/domain-errors.js';
 import type { SourceStatus } from '../../domain/models/search.js';
 import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import { selectRelevantContent } from '../../domain/services/content-selection.js';
@@ -244,10 +248,11 @@ function cacheTtl(content: FetchedContent, options: FetchUrlOptions): number {
 }
 
 function isTransientProviderError(error: unknown): boolean {
-  return (
-    error instanceof ApplicationError &&
-    ['CONTENT_PROVIDER_UNAVAILABLE', 'REQUEST_TIMEOUT', 'HTTP_ERROR'].includes(error.code)
-  );
+  if (!(error instanceof ApplicationError)) return false;
+  if (error.code === 'CONTENT_PROVIDER_UNAVAILABLE' || error.code === 'REQUEST_TIMEOUT') return true;
+  if (!(error instanceof HttpError)) return false;
+  if (error.status === undefined) return true;
+  return [408, 425, 429].includes(error.status) || error.status >= 500;
 }
 
 async function safeApprovedUrl(
