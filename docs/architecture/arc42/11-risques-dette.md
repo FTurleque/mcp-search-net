@@ -8,6 +8,7 @@ Le registre complet se trouve dans [`../risks/register.md`](../risks/register.md
 
 ## 11.1 Risques priorisés
 
+<!-- prettier-ignore -->
 | ID  | Risque                                                                                                                                           | Probabilité    | Impact | Exposition | Mitigation                                                                                                             | Propriétaire | Date cible            |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- | ------ | ---------- | ---------------------------------------------------------------------------------------------------------------------- | ------------ | --------------------- |
 | R01 | **Recall FTS5/BM25 insuffisant** sur paraphrases et requêtes multi-document (Recall@10 = 0 sur ces catégories)                                   | Haute (mesuré) | Moyen  | Haute      | Prototype embeddings locaux autorisé (ADR-018) ; FTS reste la baseline produit                                         | Auteur       | À définir (prototype) |
@@ -22,6 +23,7 @@ Le registre complet se trouve dans [`../risks/register.md`](../risks/register.md
 
 ## 11.2 Dette technique
 
+<!-- prettier-ignore -->
 | ID  | Dette                                                                                                                                                                                     | Impact | Effort d'élimination | Priorité                       |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------------------- | ------------------------------ |
 | D01 | **`addDocumentVersion` / `replaceDocumentSections` dépréciées** dans `CatalogRepository` : maintenues pour compatibilité interne CLI mais `commitDocumentRevision` est l'API de référence | Faible | Faible               | Basse (nettoyage opportuniste) |
