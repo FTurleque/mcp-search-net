@@ -137,7 +137,5 @@ function extractAttributeValue(attribute: string): string | undefined {
 }
 
 function stripAsciiControlsAndSpace(value: string): string {
-  return [...value]
-    .filter((character) => (character.codePointAt(0) ?? 0) > 0x20)
-    .join('');
+  return [...value].filter((character) => (character.codePointAt(0) ?? 0) > 0x20).join('');
 }
