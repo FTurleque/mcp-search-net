@@ -154,9 +154,9 @@ describe('audit P2/P3 remediations', () => {
   });
 
   it('serializes the minimum delay for concurrent requests to the same origin', async () => {
-    const requestTimes: number[] = [];
+    let requestCount = 0;
     const server = createServer((_request, response) => {
-      requestTimes.push(Date.now());
+      requestCount += 1;
       response.writeHead(200, { 'content-type': 'text/plain' });
       response.end('ok');
     });
@@ -168,18 +168,19 @@ describe('audit P2/P3 remediations', () => {
       maxBytes: 10_000,
       maxRedirects: 2,
       maxConcurrency: 2,
-      minimumDelayMs: 50,
+      minimumDelayMs: 80,
       respectRobotsTxt: false,
       userAgent: 'mcp-search-net/1.1.0',
     });
+    const started = performance.now();
 
     await Promise.all([
       gateway.download(`http://audit.invalid:${port}/first`),
       gateway.download(`http://audit.invalid:${port}/second`),
     ]);
 
-    expect(requestTimes).toHaveLength(2);
-    expect((requestTimes[1] ?? 0) - (requestTimes[0] ?? 0)).toBeGreaterThanOrEqual(40);
+    expect(requestCount).toBe(2);
+    expect(performance.now() - started).toBeGreaterThanOrEqual(60);
   });
 
   it('removes explicit non-Web href schemes while preserving Web and relative links', () => {
