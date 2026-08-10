@@ -137,5 +137,13 @@ function extractAttributeValue(attribute: string): string | undefined {
 }
 
 function stripAsciiControlsAndSpace(value: string): string {
-  return [...value].filter((character) => (character.codePointAt(0) ?? 0) > 0x20).join('');
+  let output = '';
+  for (let index = 0; index < value.length; ) {
+    const codePoint = value.codePointAt(index);
+    if (codePoint === undefined) break;
+    const character = String.fromCodePoint(codePoint);
+    if (codePoint > 0x20) output += character;
+    index += character.length;
+  }
+  return output;
 }
