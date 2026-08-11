@@ -85,6 +85,7 @@ export class PlanCatalogSync {
       ...(selectedSources.length === 1 && selectedSources[0] !== undefined
         ? { sourceId: selectedSources[0].id }
         : {}),
+      runKind: 'PLAN',
       startedAt,
     });
 
@@ -160,8 +161,8 @@ export class PlanCatalogSync {
     const skippedDocumentCount = entries
       .flatMap((entry) => entry.documents)
       .filter((entry) => entry.status === 'skipped').length;
-    // A dry-run is deliberately recorded as CANCELLED with a stable marker rather than SUCCESS.
-    // This preserves the historical audit trail without conflating planning with an executed sync.
+    // Planning remains a terminal non-execution run, but runKind now separates PLAN
+    // records from real cancellations in historical metrics and retention queries.
     const syncRun = await this.repository.completeCatalogSyncRun(runningSyncRun.id, {
       completedAt: this.clock.now(),
       status: 'CANCELLED',
