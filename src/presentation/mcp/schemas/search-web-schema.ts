@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 
 import {
+  countUnicodeCharacters,
   MAX_EXTERNAL_ENGINE_NAME_CHARACTERS,
   MAX_EXTERNAL_LANGUAGE_CHARACTERS,
   MAX_EXTERNAL_TITLE_CHARACTERS,
@@ -46,12 +47,12 @@ export function createSearchWebSchemas(defaultResults: number, maximumResults: n
 
   const result = z
     .object({
-      title: z.string().max(MAX_EXTERNAL_TITLE_CHARACTERS),
+      title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS),
       url: z.url(),
       domain: z.string().max(253),
-      snippet: z.string().max(500),
+      snippet: unicodeBoundedString(500),
       sourceStatus: z.enum(['VERIFIED_OFFICIAL', 'LIKELY_OFFICIAL', 'THIRD_PARTY', 'UNKNOWN']),
-      engines: z.array(z.string().max(MAX_EXTERNAL_ENGINE_NAME_CHARACTERS)).max(32),
+      engines: z.array(unicodeBoundedString(MAX_EXTERNAL_ENGINE_NAME_CHARACTERS)).max(32),
       publishedAt: z.iso.datetime().optional(),
       updatedAt: z.iso.datetime().optional(),
       detectedLanguage: z.string().max(MAX_EXTERNAL_LANGUAGE_CHARACTERS).optional(),
@@ -68,7 +69,7 @@ export function createSearchWebSchemas(defaultResults: number, maximumResults: n
           total: z.number(),
           returned: z.number(),
           unresponsiveEngines: z
-            .array(z.string().max(MAX_EXTERNAL_ENGINE_NAME_CHARACTERS))
+            .array(unicodeBoundedString(MAX_EXTERNAL_ENGINE_NAME_CHARACTERS))
             .max(32),
           sourceProvider: z.literal('searxng'),
           retrievedAt: z.iso.datetime(),
@@ -79,4 +80,10 @@ export function createSearchWebSchemas(defaultResults: number, maximumResults: n
   const output = createToolResponseSchema('search_web', data);
 
   return { input, data, output } as const;
+}
+
+function unicodeBoundedString(maximumCharacters: number) {
+  return z.string().refine((value) => countUnicodeCharacters(value) <= maximumCharacters, {
+    message: `Must contain at most ${maximumCharacters} Unicode characters`,
+  });
 }
