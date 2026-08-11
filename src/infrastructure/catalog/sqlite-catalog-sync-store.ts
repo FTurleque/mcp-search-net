@@ -4,6 +4,7 @@ import type {
   CatalogDocumentObservationInput,
   CatalogSyncRun,
   CatalogSyncRunCompletionInput,
+  CatalogSyncRunKind,
   CatalogSyncRunStartInput,
   CatalogSyncRunStatus,
 } from '../../domain/models/catalog.js';
@@ -12,10 +13,10 @@ import { toCatalogSyncRun } from './catalog-row-mappers.js';
 
 const INSERT_CATALOG_SYNC_RUN_SQL = `
   INSERT INTO sync_runs (
-    source_id, started_at, completed_at, status,
+    source_id, run_kind, started_at, completed_at, status,
     documents_checked, documents_added, documents_updated, documents_unchanged,
     documents_failed, error_summary
-  ) VALUES (?, ?, NULL, 'RUNNING', 0, 0, 0, 0, 0, NULL)
+  ) VALUES (?, ?, ?, NULL, 'RUNNING', 0, 0, 0, 0, 0, NULL)
 `;
 
 const SELECT_CATALOG_SYNC_RUN_BY_ID_SQL = 'SELECT * FROM sync_runs WHERE id = ?';
@@ -48,7 +49,7 @@ const INSERT_STALENESS_EVENT_SQL = `
   ) VALUES (?, ?, ?, ?, ?)
 `;
 
-type InsertCatalogSyncRunParams = [number | null, number];
+type InsertCatalogSyncRunParams = [number | null, CatalogSyncRunKind, number];
 type CompleteCatalogSyncRunParams = [
   number,
   CatalogSyncRunStatus,
@@ -67,7 +68,7 @@ export class SqliteCatalogSyncStore {
   public start(input: CatalogSyncRunStartInput): CatalogSyncRun {
     const info = this.database
       .prepare<InsertCatalogSyncRunParams>(INSERT_CATALOG_SYNC_RUN_SQL)
-      .run(input.sourceId ?? null, input.startedAt.getTime());
+      .run(input.sourceId ?? null, input.runKind ?? 'EXECUTION', input.startedAt.getTime());
     const row = this.database
       .prepare<[number], CatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
       .get(Number(info.lastInsertRowid));
