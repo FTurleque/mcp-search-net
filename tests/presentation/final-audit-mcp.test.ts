@@ -86,7 +86,9 @@ describe('final audit MCP regressions', () => {
         .prepare('UPDATE documents SET public_id = ?, title = ?, language = ? WHERE id = ?')
         .run('p'.repeat(300), '😀'.repeat(900), 'l'.repeat(120), revision.document.id);
       database
-        .prepare('UPDATE document_sections SET heading = ?, heading_path = ?, anchor = ? WHERE id = ?')
+        .prepare(
+          'UPDATE document_sections SET heading = ?, heading_path = ?, anchor = ? WHERE id = ?',
+        )
         .run('h'.repeat(600), 'q'.repeat(2_000), 'a'.repeat(600), revision.sections[0]?.id);
       database.close();
 
