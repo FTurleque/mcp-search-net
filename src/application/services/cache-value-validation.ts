@@ -38,12 +38,16 @@ const httpUrlSchema = z
   .url()
   .max(MAX_CATALOG_URL_CHARACTERS)
   .refine((value) => {
-    const url = new URL(value);
-    return (
-      (url.protocol === 'http:' || url.protocol === 'https:') &&
-      url.username === '' &&
-      url.password === ''
-    );
+    try {
+      const url = new URL(value);
+      return (
+        (url.protocol === 'http:' || url.protocol === 'https:') &&
+        url.username === '' &&
+        url.password === ''
+      );
+    } catch {
+      return false;
+    }
   }, 'Expected an HTTP(S) URL without credentials');
 
 const isoDateTimeSchema = z.iso.datetime();
