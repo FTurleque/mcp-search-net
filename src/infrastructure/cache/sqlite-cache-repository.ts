@@ -112,14 +112,14 @@ export class SqliteCacheRepository implements CacheRepository {
 
   public getSearch<T>(
     key: string,
-    options: CacheGetOptions = {},
+    options: CacheGetOptions<T> = {},
   ): Promise<CacheRecord<T> | undefined> {
     return this.get<T>('search', key, options);
   }
 
   public getContent<T>(
     key: string,
-    options: CacheGetOptions = {},
+    options: CacheGetOptions<T> = {},
   ): Promise<CacheRecord<T> | undefined> {
     return this.get<T>('content', key, options);
   }
@@ -153,7 +153,7 @@ export class SqliteCacheRepository implements CacheRepository {
   private get<T>(
     kind: CacheKind,
     key: string,
-    options: CacheGetOptions,
+    options: CacheGetOptions<T>,
   ): Promise<CacheRecord<T> | undefined> {
     const row = this.selectStatements[kind].get(key);
     if (row === undefined) return Promise.resolve(undefined);
@@ -164,13 +164,21 @@ export class SqliteCacheRepository implements CacheRepository {
       this.deleteStatements[kind].run(key);
       return Promise.resolve(undefined);
     }
-    let value: T;
+
+    let parsed: unknown;
     try {
-      value = JSON.parse(row.payload) as T;
+      parsed = JSON.parse(row.payload) as unknown;
     } catch {
       this.deleteStatements[kind].run(key);
       return Promise.resolve(undefined);
     }
+
+    const value = options.decode === undefined ? (parsed as T) : options.decode(parsed);
+    if (value === undefined) {
+      this.deleteStatements[kind].run(key);
+      return Promise.resolve(undefined);
+    }
+
     this.touchStatements[kind].run(now, key);
     return Promise.resolve({
       value,
