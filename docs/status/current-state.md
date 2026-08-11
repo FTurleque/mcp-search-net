@@ -108,6 +108,7 @@ Les migrations catalogue appliquées dans l’ordre sont :
 - `C007__harden_revision_integrity.sql`
 - `C008__add_catalog_pagination_indexes.sql`
 - `C009__allow_repeated_section_content.sql`
+- `C010__add_sync_run_kind.sql`
 
 Une migration appliquée est immuable. Toute évolution crée une nouvelle migration.
 
@@ -116,16 +117,24 @@ content_hash)` et reconstruit le FTS courant. L’identité persistée d’une s
 ordonnée : deux sections ou chunks identiques à des positions différentes restent tous deux
 présents et recherchables.
 
+`C010` ajoute `sync_runs.run_kind` avec les valeurs `EXECUTION` et `PLAN`. Les historiques existants
+sont baselinés en `EXECUTION`; un dry-run est enregistré comme `PLAN`, ce qui permet de le séparer
+d’une vraie annulation sans casser les statuts terminaux historiques.
+
 Le découpage Markdown du fetch et l’ingestion CLI utilisent le même scanner de headings/fences. Les
 fences backtick ou tilde se ferment uniquement avec le même caractère et une longueur compatible ;
-un heading présent dans du code n’est pas interprété comme une section. Les options numériques des
-CLI catalogue exigent une chaîne décimale entière complète. L’ajout et le chargement des sources
-passent par la même validation de `NewCatalogSource`, dont une base URL HTTP(S) obligatoire.
+un heading présent dans du code n’est pas interprété comme une section. Le scanner borne désormais
+le nombre de headings/sections, les lignes structurelles et les métadonnées de heading avant
+matérialisation ; la persistance SQLite applique également un plafond indépendant au nombre de
+sections et aux champs heading/heading path/anchor. Les options numériques des CLI catalogue exigent
+une chaîne décimale entière complète. L’ajout et le chargement des sources passent par la même
+validation de `NewCatalogSource`, dont une base URL HTTP(S) obligatoire.
 
 `SqliteCatalogRepository` est une façade stable construite autour d’une connexion SQLite unique et
 sépare les responsabilités source/read-model/révision/recherche/synchronisation. Une révision
 courante reste une transaction atomique couvrant document, version, sections, FTS, pointeur courant
-et observations.
+et observations. Les primitives legacy dépréciées stage désormais une version candidate non courante
+puis ne la promeuvent qu’au moment où ses sections peuvent être remplacées dans la même transaction.
 
 FTS5 reste une dépendance fonctionnelle explicite. La qualification N-API vérifie en plus la version
 SQLite embarquée, une vraie requête FTS5 et le verrouillage writer entre connexions. Les suites
