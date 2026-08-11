@@ -61,13 +61,14 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     context: ContentFetchContext = {},
   ): Promise<ContentFetchResult> {
     const deadline = request.deadline ?? performance.now() + request.timeoutMs;
+    const securityContext = {
+      ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+      tool: 'fetch_url' as const,
+    };
     const resource = await this.gateway.download(
       request.url.value,
       createConditionalHeaders(context.cacheValidators),
-      {
-        ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
-        tool: 'fetch_url',
-      },
+      securityContext,
       {
         timeoutMs: remainingTimeoutMs(deadline),
         maxBytes: request.maxResponseBytes,
@@ -98,13 +99,20 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     if (markdown.trim() === '')
       throw new ExtractionError('No usable textual content was extracted');
 
+    const canonicalUrl = await approveCanonicalUrl(
+      decoded.canonicalUrl,
+      resource.finalUrl,
+      this.gateway,
+      securityContext,
+      remainingTimeoutMs(deadline),
+    );
     const redirectChain = resource.redirectChain ?? [];
     const redirectedPermanently = redirectChain.some((redirect) => redirect.permanent);
 
     return {
       requestedUrl: resource.requestedUrl,
       finalUrl: resource.finalUrl,
-      canonicalUrl: decoded.canonicalUrl ?? resource.finalUrl,
+      canonicalUrl,
       ...(decoded.title === undefined ? {} : { title: decoded.title }),
       markdown,
       documentSections: extractDocumentSections(markdown),
@@ -171,6 +179,22 @@ function remainingTimeoutMs(deadline: number): number {
   const remaining = Math.ceil(deadline - performance.now());
   if (remaining <= 0) throw new RequestTimeoutError('fetch_url operation deadline exceeded');
   return remaining;
+}
+
+async function approveCanonicalUrl(
+  candidate: string | undefined,
+  fallback: string,
+  gateway: SecureHttpGateway,
+  context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
+  timeoutMs: number,
+): Promise<string> {
+  if (candidate === undefined || candidate === fallback) return fallback;
+  try {
+    return (await gateway.approveUrl(candidate, context, timeoutMs)).value;
+  } catch (error) {
+    if (error instanceof RequestTimeoutError) throw error;
+    return fallback;
+  }
 }
 
 function createConditionalHeaders(
