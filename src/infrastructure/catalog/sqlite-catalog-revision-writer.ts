@@ -13,6 +13,13 @@ import type {
   DocumentVersion,
   DocumentVersionInput,
 } from '../../domain/models/catalog.js';
+import {
+  MAX_EXTERNAL_ANCHOR_CHARACTERS,
+  MAX_EXTERNAL_HEADING_CHARACTERS,
+  MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
+  MAX_PERSISTED_DOCUMENT_SECTIONS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 import type {
   CatalogDocumentRow,
   DocumentSectionRow,
@@ -317,6 +324,9 @@ export class SqliteCatalogRevisionWriter {
     documentVersionId: number,
     sections: readonly DocumentSectionInput[],
   ): readonly DocumentSectionRow[] {
+    if (sections.length > MAX_PERSISTED_DOCUMENT_SECTIONS) {
+      throw new Error('CATALOG_DOCUMENT_SECTION_LIMIT_EXCEEDED');
+    }
     this.database.prepare<[number]>(DELETE_DOCUMENT_SECTIONS_SQL).run(documentVersionId);
 
     const insert = this.database.prepare<InsertDocumentSectionParams>(INSERT_DOCUMENT_SECTION_SQL);
@@ -324,10 +334,10 @@ export class SqliteCatalogRevisionWriter {
       insert.run(
         documentVersionId,
         section.ordinal,
-        section.heading ?? null,
-        section.headingPath ?? null,
+        boundOptionalText(section.heading, MAX_EXTERNAL_HEADING_CHARACTERS) ?? null,
+        boundOptionalText(section.headingPath, MAX_EXTERNAL_HEADING_PATH_CHARACTERS) ?? null,
         section.headingLevel ?? null,
-        section.anchor ?? null,
+        boundOptionalText(section.anchor, MAX_EXTERNAL_ANCHOR_CHARACTERS) ?? null,
         section.content,
         section.contentHash,
         section.characterCount,
@@ -345,4 +355,8 @@ export class SqliteCatalogRevisionWriter {
       .prepare<[string], CatalogDocumentRow>(SELECT_DOCUMENT_BY_PUBLIC_ID_SQL)
       .get(publicId);
   }
+}
+
+function boundOptionalText(value: string | undefined, maximumCharacters: number): string | undefined {
+  return value === undefined ? undefined : truncateUnicode(value, maximumCharacters);
 }
