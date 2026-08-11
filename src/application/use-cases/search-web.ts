@@ -13,11 +13,7 @@ import type {
   SearchResponse,
   SearchResult,
 } from '../../domain/models/search.js';
-import type {
-  ToolExecution,
-  ToolResponseStatus,
-  ToolWarningDescriptor,
-} from '../../domain/models/tool-response.js';
+import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import {
   ApplicationError,
   HttpError,
