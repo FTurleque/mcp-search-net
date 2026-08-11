@@ -5,6 +5,7 @@ import type { OperationContext, Telemetry } from '../ports/telemetry.js';
 import type { ContentFetcher } from '../ports/content-fetcher.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
 import type { UrlSecurityPolicy } from '../ports/url-security-policy.js';
+import { decodeFetchedContent } from '../services/cache-value-validation.js';
 import type { FetchRequest, FetchResponse, FetchedContent } from '../../domain/models/content.js';
 import {
   ApplicationError,
@@ -68,7 +69,10 @@ export class FetchUrl {
         JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 4 }),
       )
       .digest('hex');
-    const cached = await this.cache.getContent<FetchedContent>(key, { allowStale: true });
+    const cached = await this.cache.getContent<FetchedContent>(key, {
+      allowStale: true,
+      decode: decodeFetchedContent,
+    });
     let content: FetchedContent;
     let cacheStatus: ToolExecution<FetchResponse>['cacheStatus'];
     let staleFallback = false;
