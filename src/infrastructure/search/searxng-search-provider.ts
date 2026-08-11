@@ -12,7 +12,15 @@ import {
   RequestTimeoutError,
   SearchProviderUnavailableError,
 } from '../../domain/errors/domain-errors.js';
+import {
+  MAX_EXTERNAL_ENGINE_NAME_CHARACTERS,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 import { fetchJson } from '../http/http-utils.js';
+
+const MAX_PROVIDER_SNIPPET_CHARACTERS = 4_096;
+const MAX_PROVIDER_ENGINES = 32;
 
 const resultSchema = z
   .object({
@@ -72,12 +80,15 @@ export class SearxngSearchProvider implements SearchProvider {
         const publishedAt = toPublishedAt(result.publishedDate ?? result.pubdate);
         const updatedAt = toPublishedAt(result.updatedDate);
         const detectedLanguage = result.language ?? result.lang ?? undefined;
+        const engines = result.engines ?? (result.engine === undefined ? [] : [result.engine]);
         return {
-          title: decodeSnippet(result.title),
+          title: truncateUnicode(decodeSnippet(result.title), MAX_EXTERNAL_TITLE_CHARACTERS),
           url: result.url,
-          snippet: decodeSnippet(result.content),
+          snippet: truncateUnicode(decodeSnippet(result.content), MAX_PROVIDER_SNIPPET_CHARACTERS),
           ...(result.score === undefined ? {} : { score: result.score }),
-          engines: result.engines ?? (result.engine === undefined ? [] : [result.engine]),
+          engines: engines
+            .slice(0, MAX_PROVIDER_ENGINES)
+            .map((engine) => truncateUnicode(engine, MAX_EXTERNAL_ENGINE_NAME_CHARACTERS)),
           ...(publishedAt === undefined ? {} : { publishedAt }),
           ...(updatedAt === undefined ? {} : { updatedAt }),
           ...(detectedLanguage === undefined ? {} : { detectedLanguage }),
@@ -86,9 +97,10 @@ export class SearxngSearchProvider implements SearchProvider {
       ...(parsed.data.number_of_results === undefined
         ? {}
         : { total: parsed.data.number_of_results }),
-      unresponsiveEngines: parsed.data.unresponsive_engines.map((entry) =>
-        typeof entry === 'string' ? entry : entry[0],
-      ),
+      unresponsiveEngines: parsed.data.unresponsive_engines
+        .slice(0, MAX_PROVIDER_ENGINES)
+        .map((entry) => (typeof entry === 'string' ? entry : entry[0]))
+        .map((engine) => truncateUnicode(engine, MAX_EXTERNAL_ENGINE_NAME_CHARACTERS)),
     };
   }
 

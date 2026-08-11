@@ -15,6 +15,10 @@ import {
   RequestTimeoutError,
   UnsupportedContentTypeError,
 } from '../../domain/errors/domain-errors.js';
+import {
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
 import { extractDocumentSections } from '../../domain/services/content-selection.js';
 import { fetchJson } from '../http/http-utils.js';
@@ -57,13 +61,14 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     context: ContentFetchContext = {},
   ): Promise<ContentFetchResult> {
     const deadline = request.deadline ?? performance.now() + request.timeoutMs;
+    const securityContext = {
+      ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+      tool: 'fetch_url' as const,
+    };
     const resource = await this.gateway.download(
       request.url.value,
       createConditionalHeaders(context.cacheValidators),
-      {
-        ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
-        tool: 'fetch_url',
-      },
+      securityContext,
       {
         timeoutMs: remainingTimeoutMs(deadline),
         maxBytes: request.maxResponseBytes,
@@ -79,7 +84,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       };
     }
     const contentType = detectContentType(resource);
-    const decoded = await decodeResource(resource, contentType);
+    const decoded = await decodeResource(resource, contentType, deadline);
     let markdown = decoded.markdown;
     let extractionMode: FetchedContent['extractionMode'] = 'static';
 
@@ -94,13 +99,20 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     if (markdown.trim() === '')
       throw new ExtractionError('No usable textual content was extracted');
 
+    const canonicalUrl = await approveCanonicalUrl(
+      decoded.canonicalUrl,
+      resource.finalUrl,
+      this.gateway,
+      securityContext,
+      deadline,
+    );
     const redirectChain = resource.redirectChain ?? [];
     const redirectedPermanently = redirectChain.some((redirect) => redirect.permanent);
 
     return {
       requestedUrl: resource.requestedUrl,
       finalUrl: resource.finalUrl,
-      canonicalUrl: decoded.canonicalUrl ?? resource.finalUrl,
+      canonicalUrl,
       ...(decoded.title === undefined ? {} : { title: decoded.title }),
       markdown,
       documentSections: extractDocumentSections(markdown),
@@ -169,6 +181,23 @@ function remainingTimeoutMs(deadline: number): number {
   return remaining;
 }
 
+async function approveCanonicalUrl(
+  candidate: string | undefined,
+  fallback: string,
+  gateway: SecureHttpGateway,
+  context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
+  deadline: number,
+): Promise<string> {
+  if (candidate === undefined || candidate === fallback) return fallback;
+  try {
+    if (new URL(candidate).origin === new URL(fallback).origin) return candidate;
+    return (await gateway.approveUrl(candidate, context, remainingTimeoutMs(deadline))).value;
+  } catch (error) {
+    if (error instanceof RequestTimeoutError) throw error;
+    return fallback;
+  }
+}
+
 function createConditionalHeaders(
   context: ContentFetchContext['cacheValidators'],
 ): Readonly<Record<string, string>> {
@@ -193,8 +222,9 @@ interface DecodedContent {
 async function decodeResource(
   resource: DownloadedResource,
   contentType: string,
+  deadline: number,
 ): Promise<DecodedContent> {
-  if (contentType === 'application/pdf') return decodePdf(resource.body);
+  if (contentType === 'application/pdf') return decodePdf(resource.body, deadline);
   if (contentType.startsWith('image/')) {
     throw new OcrRequiredNotSupportedError();
   }
@@ -228,8 +258,11 @@ async function decodeResource(
 }
 
 function decodeHtml(html: string, baseUrl: string): DecodedContent {
+  const rawTitle = decodeEntities(
+    /<title\b[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '',
+  ).trim();
   const title =
-    decodeEntities(/<title\b[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '').trim() || undefined;
+    rawTitle === '' ? undefined : truncateUnicode(rawTitle, MAX_EXTERNAL_TITLE_CHARACTERS);
   const canonical =
     /<link\b[^>]*rel=["'][^"']*canonical[^"']*["'][^>]*href=["']([^"']+)["']/iu.exec(html)?.[1] ??
     /<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["'][^"']*canonical[^"']*["']/iu.exec(html)?.[1];
@@ -338,8 +371,8 @@ function decodeEntities(value: string): string {
     .replace(/&#39;/gu, "'");
 }
 
-async function decodePdf(body: Uint8Array): Promise<DecodedContent> {
-  const decoded = await extractPdfText(body);
+async function decodePdf(body: Uint8Array, deadline: number): Promise<DecodedContent> {
+  const decoded = await extractPdfText(body, deadline);
   return { markdown: decoded, links: collectPlainLinks(decoded, 'https://example.invalid/') };
 }
 

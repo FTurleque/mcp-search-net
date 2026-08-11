@@ -37,6 +37,8 @@ import {
 import type { SqliteCatalogSyncStore } from './sqlite-catalog-sync-store.js';
 
 const TOUCH_DOCUMENT_OBSERVATION_SQL = 'UPDATE documents SET last_seen_at = ? WHERE id = ?';
+const SELECT_DOCUMENT_VERSION_STATE_SQL =
+  'SELECT document_id, is_current FROM document_versions WHERE id = ?';
 
 type UpsertDocumentParams = [
   string,
@@ -79,6 +81,11 @@ type InsertDocumentSectionParams = [
   number,
   number | null,
 ];
+
+interface DocumentVersionStateRow {
+  readonly document_id: number;
+  readonly is_current: number;
+}
 
 export class SqliteCatalogRevisionWriter {
   public constructor(
@@ -187,6 +194,9 @@ export class SqliteCatalogRevisionWriter {
     const transaction = this.database.transaction((): DocumentVersionRow => {
       if (version.isCurrent) {
         this.database
+          .prepare<[number]>(DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL)
+          .run(version.documentId);
+        this.database
           .prepare<[number]>(CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL)
           .run(version.documentId);
       }
@@ -197,6 +207,9 @@ export class SqliteCatalogRevisionWriter {
         this.database
           .prepare<[number, number, number]>(SET_DOCUMENT_CURRENT_VERSION_SQL)
           .run(row.id, now, version.documentId);
+        // Legacy callers may upsert an already-populated version. Keep the derived index
+        // synchronized in the same transaction even though commit() remains preferred.
+        this.database.prepare<[number]>(INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL).run(row.id);
       }
 
       return row;
@@ -209,9 +222,23 @@ export class SqliteCatalogRevisionWriter {
     documentVersionId: number,
     sections: readonly DocumentSectionInput[],
   ): readonly DocumentSection[] {
-    const transaction = this.database.transaction(() =>
-      this.replaceDocumentSectionRows(documentVersionId, sections),
-    );
+    const transaction = this.database.transaction((): readonly DocumentSectionRow[] => {
+      const version = this.database
+        .prepare<[number], DocumentVersionStateRow>(SELECT_DOCUMENT_VERSION_STATE_SQL)
+        .get(documentVersionId);
+      if (version === undefined) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
+
+      const rows = this.replaceDocumentSectionRows(documentVersionId, sections);
+      if (version.is_current === 1) {
+        this.database
+          .prepare<[number]>(DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL)
+          .run(version.document_id);
+        this.database
+          .prepare<[number]>(INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL)
+          .run(documentVersionId);
+      }
+      return rows;
+    });
     return transaction().map(toDocumentSection);
   }
 

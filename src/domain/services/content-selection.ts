@@ -1,4 +1,5 @@
 import type { ContentSection, SelectedContent } from '../models/content.js';
+import { countUnicodeCharacters } from './bounded-text.js';
 import { scanMarkdownHeadings } from './markdown-structure.js';
 
 interface MarkdownSection {
@@ -60,7 +61,8 @@ export function selectRelevantContent(
     }
     const rendered = renderSection(section);
     const sectionBudget = Math.min(MAX_SECTION_CHARACTERS, remaining);
-    const truncated = rendered.length > sectionBudget;
+    const renderedCharacters = countUnicodeCharacters(rendered);
+    const truncated = renderedCharacters > sectionBudget;
     const value = truncated ? truncateAtBoundary(rendered, sectionBudget) : rendered;
     if (truncated) sectionTruncated = true;
     selected.push({
@@ -69,7 +71,7 @@ export function selectRelevantContent(
       score: Number(score.toFixed(6)),
       truncated,
     });
-    remaining -= value.length;
+    remaining -= countUnicodeCharacters(value);
   }
 
   return {
@@ -166,9 +168,19 @@ function normalizeMarkdown(value: string): string {
 }
 
 function truncateAtBoundary(value: string, maxCharacters: number): string {
-  if (maxCharacters <= 1) return '…'.slice(0, maxCharacters);
-  const candidate = value.slice(0, maxCharacters - 1);
-  const boundary = Math.max(candidate.lastIndexOf('\n'), candidate.lastIndexOf(' '));
-  const end = boundary >= Math.floor(maxCharacters * 0.7) ? boundary : candidate.length;
-  return `${candidate.slice(0, end).trimEnd()}…`;
+  if (maxCharacters <= 0) return '';
+  if (maxCharacters === 1) return '…';
+
+  const candidate = Array.from(value).slice(0, maxCharacters - 1);
+  let boundary = -1;
+  for (let index = candidate.length - 1; index >= 0; index -= 1) {
+    const character = candidate[index];
+    if (character === '\n' || character === ' ') {
+      boundary = index;
+      break;
+    }
+  }
+  const minimumBoundary = Math.floor(maxCharacters * 0.7);
+  const end = boundary >= minimumBoundary ? boundary : candidate.length;
+  return `${candidate.slice(0, end).join('').trimEnd()}…`;
 }

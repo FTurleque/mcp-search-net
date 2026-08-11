@@ -131,6 +131,7 @@ function isPublicIpv4(address: string): boolean {
     [ipv4ToNumber('172.16.0.0'), 12],
     [ipv4ToNumber('192.0.0.0'), 24],
     [ipv4ToNumber('192.0.2.0'), 24],
+    [ipv4ToNumber('192.88.99.0'), 24],
     [ipv4ToNumber('192.168.0.0'), 16],
     [ipv4ToNumber('198.18.0.0'), 15],
     [ipv4ToNumber('198.51.100.0'), 24],
@@ -163,21 +164,18 @@ function isPublicIpv6(address: string): boolean {
     return isPublicIpv4([24, 16, 8, 0].map((shift) => String((ipv4 >>> shift) & 0xff)).join('.'));
   }
 
-  // These are denylist CIDR prefixes, never outbound connection destinations.
-  // NOSONAR is intentionally scoped per literal because S1313 otherwise treats policy data as endpoints.
+  // Fail closed: native IPv6 destinations must live in IANA's currently assignable
+  // Global Unicast space (2000::/3). This rejects reserved, local, multicast and
+  // deprecated spaces such as fec0::/10 without relying on an ever-growing denylist.
+  const globalUnicast = ipv6ToBigInt('2000::'); // NOSONAR - policy network prefix
+  if (globalUnicast === undefined || !inIpv6Range(value, globalUnicast, 3)) return false;
+
+  // Special-purpose ranges inside 2000::/3 that must not be outbound destinations.
   const blockedCidrs: readonly [string, number][] = [
-    ['::', 96], // NOSONAR
-    ['64:ff9b::', 96], // NOSONAR
-    ['64:ff9b:1::', 48], // NOSONAR
-    ['100::', 64], // NOSONAR
     ['2001::', 23], // NOSONAR
     ['2001:db8::', 32], // NOSONAR
     ['2002::', 16], // NOSONAR
     ['3fff::', 20], // NOSONAR
-    ['5f00::', 16], // NOSONAR
-    ['fc00::', 7], // NOSONAR
-    ['fe80::', 10], // NOSONAR
-    ['ff00::', 8], // NOSONAR
   ];
   return !blockedCidrs.some(([network, bits]) => {
     const networkValue = ipv6ToBigInt(network);

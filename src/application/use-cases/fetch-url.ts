@@ -15,6 +15,11 @@ import {
 } from '../../domain/errors/domain-errors.js';
 import type { SourceStatus } from '../../domain/models/search.js';
 import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
+import {
+  countUnicodeCharacters,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 import { selectRelevantContent } from '../../domain/services/content-selection.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
 
@@ -177,7 +182,9 @@ export class FetchUrl {
       finalUrl: final.value,
       canonicalUrl: canonical,
       domain: final.hostname,
-      ...(content.title === undefined ? {} : { title: content.title }),
+      ...(content.title === undefined
+        ? {}
+        : { title: truncateUnicode(content.title, MAX_EXTERNAL_TITLE_CHARACTERS) }),
       contentType: content.contentType,
       sourceStatus,
       fetchedAt: content.fetchedAt,
@@ -215,7 +222,7 @@ export class FetchUrl {
         tool: 'fetch_url',
         domain: final.hostname,
         sectionCount: selected.sections.length,
-        outputCharacters: selected.markdown.length,
+        outputCharacters: countUnicodeCharacters(selected.markdown),
       });
     if (selected.truncated)
       warnings.push({
