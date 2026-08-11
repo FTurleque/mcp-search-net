@@ -8,6 +8,14 @@ import type {
 } from '../../application/use-cases/search-catalog-documents.js';
 import { InvalidArgumentError, ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
 import type { CatalogDocument } from '../../domain/models/catalog.js';
+import {
+  countUnicodeCharacters,
+  MAX_EXTERNAL_HEADING_CHARACTERS,
+  MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
+  MAX_EXTERNAL_LANGUAGE_CHARACTERS,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 import type { ToolResponse, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import type { Logger } from '../../application/ports/logger.js';
 import { registerCatalogResources } from './catalog-resources.js';
@@ -33,9 +41,9 @@ const compactDocumentSchema = z
     id: z.number().int().positive(),
     publicId: z.string().min(1),
     sourceKey: z.string().min(1),
-    title: z.string().min(1),
+    title: z.string().min(1).max(MAX_EXTERNAL_TITLE_CHARACTERS),
     url: z.url(),
-    language: z.string().min(1),
+    language: z.string().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS),
     status: z.string().min(1),
     currentVersionId: z.number().int().positive().nullable(),
   })
@@ -44,7 +52,7 @@ const compactDocumentSchema = z
 const listDocsInputSchema = z
   .object({
     sourceKey: z.string().trim().min(1).max(128).optional(),
-    language: z.string().trim().min(1).max(32).optional(),
+    language: z.string().trim().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS).optional(),
     status: z.enum(['ACTIVE', 'STALE', 'REDIRECTED', 'REMOVED', 'UNAVAILABLE']).optional(),
     limit: z.number().int().min(1).max(50).default(20),
     offset: z.number().int().min(0).default(0),
@@ -79,7 +87,7 @@ const sectionDocumentSchema = z
     id: z.number().int().positive(),
     publicId: z.string().min(1),
     sourceKey: z.string().min(1),
-    title: z.string().min(1),
+    title: z.string().min(1).max(MAX_EXTERNAL_TITLE_CHARACTERS),
     url: z.url(),
   })
   .strict();
@@ -91,8 +99,8 @@ const readDocSectionDataSchema = z
     truncated: z.boolean(),
     characterCount: z.number().int().nonnegative(),
     document: sectionDocumentSchema.nullable(),
-    heading: z.string().nullable(),
-    headingPath: z.string().nullable(),
+    heading: z.string().max(MAX_EXTERNAL_HEADING_CHARACTERS).nullable(),
+    headingPath: z.string().max(MAX_EXTERNAL_HEADING_PATH_CHARACTERS).nullable(),
     content: z.string(),
   })
   .strict();
@@ -295,7 +303,7 @@ function toSearchDocsData(
     resultCount: output.resultCount,
     results: output.results.map((result) => ({
       ...result,
-      snippet: truncateText(result.snippet, snippetLimit),
+      snippet: truncateUnicode(result.snippet, snippetLimit),
     })),
   };
 }
@@ -345,12 +353,13 @@ async function readDocSection(
       content: '',
     };
   }
-  const content = truncateText(entry.section.content, input.maxCharacters);
+  const content = truncateUnicode(entry.section.content, input.maxCharacters);
   return {
     sectionId: input.sectionId,
     found: true,
-    truncated: content.length < entry.section.content.length,
-    characterCount: content.length,
+    truncated:
+      countUnicodeCharacters(content) < countUnicodeCharacters(entry.section.content),
+    characterCount: countUnicodeCharacters(content),
     document: {
       id: entry.document.id,
       publicId: entry.document.publicId,
@@ -392,15 +401,17 @@ function applyListDocsBudget(
     const candidate = [...accepted, document];
     const candidateNextOffset =
       offset + candidate.length < total ? offset + candidate.length : null;
-    const candidateLength = JSON.stringify({
-      count: candidate.length,
-      total,
-      offset,
-      limit,
-      nextOffset: candidateNextOffset,
-      truncated: candidate.length < documents.length,
-      documents: candidate,
-    }).length;
+    const candidateLength = countUnicodeCharacters(
+      JSON.stringify({
+        count: candidate.length,
+        total,
+        offset,
+        limit,
+        nextOffset: candidateNextOffset,
+        truncated: candidate.length < documents.length,
+        documents: candidate,
+      }),
+    );
     if (candidateLength > MAX_LIST_DOCS_DATA_CHARACTERS) {
       if (accepted.length === 0) {
         throw new ResponseTooLargeError(
@@ -417,11 +428,6 @@ function applyListDocsBudget(
     nextOffset,
     truncated: accepted.length < documents.length,
   };
-}
-
-function truncateText(value: string, maxCharacters: number): string {
-  if (value.length <= maxCharacters) return value;
-  return `${value.slice(0, Math.max(0, maxCharacters - 1))}…`;
 }
 
 function searchDocsWarnings(data: SearchDocsData): readonly ToolWarningDescriptor[] {
