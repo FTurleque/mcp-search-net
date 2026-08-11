@@ -27,7 +27,7 @@ export class SafeCacheRepository implements CacheRepository {
 
   public async getSearch<T>(
     key: string,
-    options?: CacheGetOptions,
+    options?: CacheGetOptions<T>,
   ): Promise<CacheRecord<T> | undefined> {
     return this.run('getSearch', () => this.inner.getSearch<T>(key, options), undefined);
   }
@@ -43,7 +43,7 @@ export class SafeCacheRepository implements CacheRepository {
 
   public async getContent<T>(
     key: string,
-    options?: CacheGetOptions,
+    options?: CacheGetOptions<T>,
   ): Promise<CacheRecord<T> | undefined> {
     return this.run('getContent', () => this.inner.getContent<T>(key, options), undefined);
   }
