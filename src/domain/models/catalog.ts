@@ -190,7 +190,7 @@ export interface CatalogSyncRun {
 
 export interface CatalogSyncRunStartInput {
   readonly sourceId?: number;
-  readonly runKind: CatalogSyncRunKind;
+  readonly runKind?: CatalogSyncRunKind;
   readonly startedAt: Date;
 }
 
