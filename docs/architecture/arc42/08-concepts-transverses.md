@@ -35,7 +35,7 @@ Toutes les réponses JSON MCP contenant du contenu Web ou documentaire sont marq
 
 ### robots.txt
 
-Chargé depuis la racine de l'origine uniquement ; appliqué à toutes les ressources de l'origine, y compris les chemins se terminant par `/robots.txt`. Supporte les jokers `*`, l'ancre terminale `$` et la priorité `Allow` à spécificité égale. Le budget (octets + deadline) est partagé entre `robots.txt`, redirections et ressource cible.
+Chargé depuis la racine de l'origine uniquement ; appliqué à toutes les ressources de l'origine, y compris les chemins se terminant par `/robots.txt`. Supporte les jokers `*`, l'ancre terminale `$` et la priorité `Allow` à spécificité égale. Le budget d’octets est partagé entre `robots.txt`, redirections et ressource cible ; la deadline de l’opération couvre aussi les validations initiale/finale et le fallback natif Crawl4AI.
 
 ---
 
@@ -51,7 +51,7 @@ Chargé depuis la racine de l'origine uniquement ; appliqué à toutes les resso
 
 ### Schéma catalogue V2 (`catalog.db`)
 
-Migrations C001–C008, appliquées dans l'ordre, immuables (checksum SHA-256) :
+Migrations C001–C009, appliquées dans l'ordre, immuables (checksum SHA-256) :
 
 | Migration | Table créée / modifiée                           | Rôle                                                    |
 | --------- | ------------------------------------------------ | ------------------------------------------------------- |
@@ -63,6 +63,7 @@ Migrations C001–C008, appliquées dans l'ordre, immuables (checksum SHA-256) :
 | C006      | `document_section_fts` (FTS5 classique)          | Index plein texte (initial, cf. C007)                   |
 | C007      | `document_section_fts` (FTS5 contentless-delete) | Index reconstruit selon ADR-015 + triggers de cohérence |
 | C008      | Index de pagination                              | Optimisation des filtres langue/statut                  |
+| C009      | Reconstruction de `document_sections`            | Identité par occurrence ; répétitions de hash permises  |
 
 ### Politique de rétention
 
@@ -100,15 +101,17 @@ flowchart LR
 
 ## 8.6 Résilience
 
-| Scénario                | Comportement                                                                              |
-| ----------------------- | ----------------------------------------------------------------------------------------- |
-| SearXNG indisponible    | Retour stale cache si disponible (`STALE_FALLBACK`) ; sinon `SEARCH_PROVIDER_UNAVAILABLE` |
-| Crawl4AI indisponible   | `CONTENT_PROVIDER_UNAVAILABLE`                                                            |
-| Cache SQLite inouvrable | Poursuite avec `DisabledCacheRepository` si `continueOnError: true`                       |
-| Catalogue SQLite absent | Démarrage échoue avec `ConfigurationError` sur `stderr`                                   |
-| Timeout réseau          | `RequestTimeoutError` → code `REQUEST_TIMEOUT`                                            |
-| Trop de redirections    | `TooManyRedirectsError` → code `TOO_MANY_REDIRECTS`                                       |
-| Réponse > 10 Mo         | `ResponseTooLargeError` → code `RESPONSE_TOO_LARGE`                                       |
+| Scénario                | Comportement                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| SearXNG transitoire     | Stale si disponible pour réseau, timeout, 408/425/429/5xx ; sinon erreur stable |
+| SearXNG 4xx permanent   | Erreur propagée sans `STALE_FALLBACK`                                           |
+| Crawl4AI indisponible   | `CONTENT_PROVIDER_UNAVAILABLE`                                                  |
+| Cache SQLite inouvrable | Poursuite avec `DisabledCacheRepository` si `continueOnError: true`             |
+| Catalogue SQLite absent | Création/migrations puis vérification ; base vide saine acceptée                |
+| Catalogue incohérent    | Démarrage échoue avec `ConfigurationError` sur `stderr`                         |
+| Timeout réseau          | `RequestTimeoutError` → code `REQUEST_TIMEOUT`                                  |
+| Trop de redirections    | `TooManyRedirectsError` → code `TOO_MANY_REDIRECTS`                             |
+| Réponse > 10 Mo         | `ResponseTooLargeError` → code `RESPONSE_TOO_LARGE`                             |
 
 ---
 
@@ -139,12 +142,15 @@ Variables d'environnement supportées : `MCP_CONFIG_PATH`, `MCP_PROFILE`, `MCP_L
 
 | Données                | Stockage                         | Politique                                               |
 | ---------------------- | -------------------------------- | ------------------------------------------------------- |
-| Résultats de recherche | `cache.sqlite` / `search_cache`  | TTL 1 h, stale retention 7 j, max 2 000 entrées         |
+| Résultats de recherche | `cache.sqlite` / `search_cache`  | TTL 1 h, stale retention 7 j                            |
 | Contenu Web            | `cache.sqlite` / `content_cache` | TTL 6–24 h selon type                                   |
 | Sources documentaires  | `catalog.db`                     | Permanentes, CRUD CLI                                   |
 | Documents / versions   | `catalog.db`                     | Versionnés, purge explicite                             |
 | Sections de contenu    | `catalog.db`                     | ≤ 12 000 chars/section, chunking avec overlap 400 chars |
 | Index FTS5             | `catalog.db` (dérivé)            | Reconstructible (`catalog rebuild-index`)               |
+
+Les deux namespaces du cache partagent une limite LRU globale de 2 000 entrées et 256 Mio de
+payloads JSON sérialisés par défaut. La rétention stale est appliquée avant ces deux bornes.
 
 ---
 

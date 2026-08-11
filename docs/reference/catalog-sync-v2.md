@@ -184,8 +184,9 @@ adoption.
 
 Avant `commitDocumentRevision`, le repository borne chaque section persistée à 12 000 caractères.
 Une section plus longue est découpée avec un overlap de 400 caractères, reçoit des ordinaux
-séquentiels et des ancres de partie déterministes. Les chunks identiques sont dédupliqués par
-SHA-256 avant insertion afin de respecter l'unicité `(document_version_id, content_hash)`.
+séquentiels et des ancres de partie déterministes. Chaque occurrence est conservée : des chunks
+identiques à deux positions différentes, ou une petite section identique au chunk d’une grande
+section, peuvent partager un SHA-256 sans être dédupliqués.
 
 Cette règle s'applique à la synchronisation réseau comme à l'ingestion CLI et borne la quantité de
 texte traitée par une entrée FTS5 individuelle.

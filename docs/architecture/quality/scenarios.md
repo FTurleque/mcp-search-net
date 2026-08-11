@@ -74,7 +74,9 @@ Ce fichier complète la [section 10 — Exigences qualité](../arc42/10-exigence
 **Contexte** : Coupure électrique pendant une transaction d'écriture.
 **Stimulus** : Démarrage du serveur avec `catalog.db` corrompu.
 **Réponse attendue** : Démarrage échoue avec `ConfigurationError` sur `stderr` ; log explicite.
-**Mitigation** : `PRAGMA integrity_check` avant ouverture ; restauration depuis backup (`catalog backup`).
+**Mitigation** : après ouverture et migrations, `PRAGMA integrity_check`,
+`PRAGMA foreign_key_check` et les invariants current/sections/FTS sont vérifiés avant exposition du
+serveur MCP ; restauration depuis backup (`catalog backup`).
 **Note** : À la différence du cache, `catalog.db` n'a pas de mode `continueOnError` — c'est intentionnel (ADR-014).
 
 ### QD-02 — Crawl4AI retourne du contenu malveillant

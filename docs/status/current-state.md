@@ -8,7 +8,10 @@ pas ce document pour connaître l’état présent.
 
 - Jalon produit : V2 documentaire intégrée et hardening post-audit livré.
 - Version SemVer : `1.1.0`.
-- Branche de référence : `master`.
+- Branche de release et source de vérité publiée : `master`.
+- Branche d’intégration courante : `develop`. Une correction présente uniquement sur `develop`
+  n’est pas déclarée publiée sur `master` ; sa qualification repose sur la CI du SHA exact de la
+  PR d’intégration concernée.
 - Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
 - Hardening post-merge initial : PR #31 regroupe les corrections d’ownership Windows, de release,
   de provenance MCP, de passerelle HTTP et de réconciliation documentaire issues de l’audit V2.
@@ -104,8 +107,20 @@ Les migrations catalogue appliquées dans l’ordre sont :
 - `C006__create_document_section_fts.sql`
 - `C007__harden_revision_integrity.sql`
 - `C008__add_catalog_pagination_indexes.sql`
+- `C009__allow_repeated_section_content.sql`
 
 Une migration appliquée est immuable. Toute évolution crée une nouvelle migration.
+
+`C009` préserve les IDs de section, retire l’ancienne unicité `(document_version_id,
+content_hash)` et reconstruit le FTS courant. L’identité persistée d’une section est son occurrence
+ordonnée : deux sections ou chunks identiques à des positions différentes restent tous deux
+présents et recherchables.
+
+Le découpage Markdown du fetch et l’ingestion CLI utilisent le même scanner de headings/fences. Les
+fences backtick ou tilde se ferment uniquement avec le même caractère et une longueur compatible ;
+un heading présent dans du code n’est pas interprété comme une section. Les options numériques des
+CLI catalogue exigent une chaîne décimale entière complète. L’ajout et le chargement des sources
+passent par la même validation de `NewCatalogSource`, dont une base URL HTTP(S) obligatoire.
 
 `SqliteCatalogRepository` est une façade stable construite autour d’une connexion SQLite unique et
 sépare les responsabilités source/read-model/révision/recherche/synchronisation. Une révision
@@ -183,6 +198,8 @@ explicite `-PurgeData` ; `-KeepData` reste accepté comme alias de compatibilit�
 ## Sécurité Web et exploitation
 
 - chaque URL et chaque redirection est validée avant connexion ;
+- `VERIFIED_OFFICIAL` exige à la fois une URL résultat HTTPS et une correspondance au registre
+  officiel ; HTTP reste non vérifié même pour un domaine ou une organisation GitHub connu ;
 - les adresses DNS publiques approuvées sont épinglées et peuvent être essayées successivement sans
   nouvelle résolution DNS ;
 - les littéraux IPv4/IPv6 HTTP(S) suivent la même politique d’adresses publiques que les réponses
@@ -192,8 +209,8 @@ explicite `-PurgeData` ; `-KeepData` reste accepté comme alias de compatibilit�
 - `robots.txt` est chargé uniquement depuis la racine de l’origine et s’applique à toutes les autres
   ressources, y compris un chemin imbriqué se terminant lui-même par `/robots.txt` ;
 - une opération de téléchargement partage un budget d’octets et une deadline uniques entre
-  `robots.txt`, les redirections et la ressource cible ; les limites de concurrence restent
-  appliquées par la passerelle HTTP ;
+  validation initiale, `robots.txt`, redirections, ressource cible, fallback natif Crawl4AI et
+  validation finale ; les limites de concurrence restent appliquées par la passerelle HTTP ;
 - l’historique de throttling par origine est borné afin qu’un processus long ne conserve pas une
   entrée mémoire pour un nombre illimité d’origines visitées ;
 - le HTML envoyé au fallback natif Crawl4AI neutralise les attributs de chargement de ressources,
@@ -201,6 +218,17 @@ explicite `-PurgeData` ; `-KeepData` reste accepté comme alias de compatibilit�
   d’un bloc actif ou d’une balise de début malformée/non fermée avant le transport `raw://` ;
 - `pdfjs-dist` est fixé à `6.2.108` afin de sortir de la plage affectée par
   `GHSA-hq66-cqwq-w95j` (exécution JavaScript arbitraire sur PDF malveillant).
+
+Le stale fallback Web est réservé aux pannes transitoires : timeout, réseau, HTTP 408/425/429 et
+5xx. Les HTTP permanents 4xx, notamment 400/401/403/404/410, sont propagés sans masquer l’erreur par
+une réponse expirée. Le champ MCP `retryable` applique la même distinction lorsque le statut HTTP
+est disponible.
+
+Le cache SQLite applique d’abord la rétention stale, puis une éviction LRU déterministe globale aux
+namespaces recherche et contenu. Les valeurs par défaut sont 2 000 entrées et 256 Mio de payloads
+JSON sérialisés. Le catalogue exécute son contrôle complet d’intégrité après migrations et avant
+exposition du serveur MCP ; toute incohérence SQLite, FK, current pointer, sections ou FTS bloque le
+démarrage.
 
 ## CI et qualification
 
@@ -250,10 +278,12 @@ toolchain Inno Setup est figée sur la version `6.7.1`.
 
 ## Gouvernance Git post-V2
 
-`master` est la source de vérité. L’historique squashé de la PR #8 ne doit jamais être réintégré via
-un merge brut de l’ancien `develop`. `develop` doit rester explicitement alignée sur le `master`
-qualifié. La PR #27 est supersédée par cette règle. Les branches absorbées n’ont plus vocation à
-porter du travail unique et peuvent être retirées de la liste des branches actives.
+`master` est la source de vérité de release ; `develop` est la branche d’intégration. L’historique
+squashé de la PR #8 ne doit jamais être réintégré via un merge brut d’un ancien historique
+`develop`. Une évolution qualifiée peut avancer sur `develop` sans être attribuée à `master` avant
+une intégration de release distincte. La PR #27 est supersédée par cette règle. Les branches
+absorbées n’ont plus vocation à porter du travail unique et peuvent être retirées de la liste des
+branches actives.
 
 ## Réconciliation de qualification — audit du 7 août 2026
 

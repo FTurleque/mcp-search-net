@@ -33,8 +33,17 @@ du FTS et les lignes FTS orphelines ou devenues non recherchables. Le JSON expos
 `currentSections`, `indexedSections`, les codes stables et le contexte source/document/section. La
 commande retourne un code non nul lorsque le statut est `FAILED`.
 
-`catalog rebuild-index` reste une opération explicite de récupération. Une ingestion ou une sync
-réussie n'en dépend pas : l'index est mis à jour dans la transaction de révision.
+Le serveur exécute la même source de vérité immédiatement après les migrations et avant de créer
+ou connecter le serveur MCP. Une base vide saine démarre ; toute corruption SQLite, violation de
+clé étrangère, incohérence de version courante ou dérive FTS provoque un démarrage fail-closed.
+`integrity_check` parcourt la base et son coût croît avec sa taille ; ce contrôle complet est
+intentionnel au démarrage du catalogue durable.
+
+`catalog rebuild-index` reste une opération explicite de récupération. Les commandes
+administratives ouvrent le catalogue sans le garde de démarrage MCP afin qu’un index FTS dérivé
+incohérent puisse encore être reconstruit ; le redémarrage serveur vérifie ensuite le résultat.
+Une ingestion ou une sync réussie n'en dépend pas : l'index est mis à jour dans la transaction de
+révision.
 
 Le registre `catalog_schema_migrations` protège les migrations appliquées par SHA-256. Une erreur
 `CATALOG_MIGRATION_CHECKSUM_MISMATCH` doit être traitée comme une dérive du logiciel ou du package,

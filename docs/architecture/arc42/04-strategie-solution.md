@@ -59,9 +59,9 @@ bootstrap  →  tout (point de composition unique)
 | Attribut           | Mécanisme                                                                                                                                                             |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Sécurité**       | `PublicUrlSecurityPolicy` : blocklist IP, validation DNS, re-validation post-redirect, limitation des ports ; `PreparedHtmlSanitizer` : neutralisation avant Crawl4AI |
-| **Fiabilité**      | `SafeCacheRepository` : wrapping avec fallback sur `DisabledCacheRepository` si erreur SQLite ; stale fallback en cas de panne provider ; codes d'erreur stables      |
+| **Fiabilité**      | `SafeCacheRepository` : fallback contrôlé si erreur SQLite ; stale réservé aux pannes transitoires ; catalogue vérifié fail-closed ; codes d'erreur stables           |
 | **Maintenabilité** | Architecture hexagonale, ports injectables, tests par couche, `npm run check` automatisé                                                                              |
-| **Performance**    | Cache SQLite avec TTL différenciés (1 h recherche, 24 h documentation) ; FTS5 BM25 p95 < 20 ms ; index de pagination C008                                             |
+| **Performance**    | Cache SQLite TTL + LRU global borné en entrées/octet ; FTS5 BM25 p95 < 20 ms ; index C008 ; chunks C009 exhaustifs                                                    |
 | **Portabilité**    | ZIP Windows auto-extractible avec Node.js 24 embarqué, installateur Inno Setup, configuration 100 % par variables d'environnement                                     |
 | **Auditabilité**   | Logs structurés JSON sur `stderr`, `requestId` de corrélation, codes d'erreur publics stables, `schemaVersion` dans chaque réponse                                    |
 

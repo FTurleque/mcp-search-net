@@ -47,7 +47,9 @@ La priorité est : valeurs internes sûres, YAML, variables d'environnement, pui
 - `searxng` et `crawl4ai` : URL et délai ;
 - `cache.enabled` : active ou désactive SQLite ;
 - `cache.continueOnError` : poursuit avec `cacheStatus: DISABLED` si SQLite devient indisponible ;
-- `cache` : chemin SQLite, rétention stale, nombre maximal d’entrées et TTL (recherche 60 min, documentation 24 h, README 6 h, sitemap 24 h) ;
+- `cache` : chemin SQLite, rétention stale, TTL (recherche 60 min, documentation 24 h,
+  README 6 h, sitemap 24 h), nombre global maximal d’entrées (`maxEntries: 2000`) et volume
+  global maximal des payloads JSON sérialisés (`maxBytes: 268435456`, soit 256 Mio) ;
 - `limits` : budgets des résultats, extraits, Markdown et liens ;
 - `security.allowedPorts` : ports Web publics acceptés ;
 - `security.allowHttp` : autorisation de HTTP ;
@@ -58,11 +60,17 @@ La priorité est : valeurs internes sûres, YAML, variables d'environnement, pui
 - `officialSourcesPath` : registre YAML relatif à la configuration ;
 - `logging.level` : niveau de log structuré sur `stderr`.
 
-La configuration est validée par Zod au démarrage. Les maxima absolus sont 10 résultats, 10 sections, 30 000 caractères, 50 liens, 10 Mio, 5 redirections et 20 secondes. Une valeur invalide arrête le processus avec un message structuré.
+La configuration est validée par Zod au démarrage. Les maxima absolus sont 10 résultats,
+10 sections, 30 000 caractères, 50 liens, 10 Mio par téléchargement, 2 Gio de payloads cache,
+5 redirections et 20 secondes. Une valeur invalide arrête le processus avec un message structuré.
 
 ## Registre officiel
 
-Chaque source définit un identifiant, un domaine, une URL de base, la gestion des sous-domaines, des mots-clés et une priorité. Utiliser `pathPrefix` lorsqu’un domaine partagé comme `github.com` ne doit être officiel que pour un dépôt précis.
+Chaque source définit un identifiant, un domaine, une URL de base HTTPS, la gestion des
+sous-domaines, des mots-clés et une priorité. Une URL résultat HTTP n’est jamais
+`VERIFIED_OFFICIAL`, même lorsque son hostname, son chemin ou son organisation GitHub correspond au
+registre. Utiliser `pathPrefix` lorsqu’un domaine partagé comme `github.com` ne doit être officiel
+que pour un dépôt précis.
 
 `githubOrganizations` permet aussi de reconnaître une ou plusieurs organisations GitHub contrôlées. La comparaison porte uniquement sur le domaine exact `github.com` et sur le premier segment complet du chemin ; une organisation au nom ressemblant ou un faux sous-domaine ne correspond pas.
 
