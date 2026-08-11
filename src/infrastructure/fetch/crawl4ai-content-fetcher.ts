@@ -190,6 +190,7 @@ async function approveCanonicalUrl(
 ): Promise<string> {
   if (candidate === undefined || candidate === fallback) return fallback;
   try {
+    if (new URL(candidate).origin === new URL(fallback).origin) return candidate;
     return (await gateway.approveUrl(candidate, context, timeoutMs)).value;
   } catch (error) {
     if (error instanceof RequestTimeoutError) throw error;
