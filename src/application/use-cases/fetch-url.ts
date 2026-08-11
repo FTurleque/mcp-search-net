@@ -9,7 +9,9 @@ import type { FetchRequest, FetchResponse, FetchedContent } from '../../domain/m
 import {
   ApplicationError,
   HttpError,
+  isTransientHttpStatus,
   InternalApplicationError,
+  RequestTimeoutError,
 } from '../../domain/errors/domain-errors.js';
 import type { SourceStatus } from '../../domain/models/search.js';
 import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
@@ -44,12 +46,16 @@ export class FetchUrl {
     request: FetchRequest,
     context: OperationContext = {},
   ): Promise<ToolExecution<FetchResponse>> {
+    const deadline = performance.now() + this.options.timeoutMs;
     const securityContext = {
       ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
       tool: 'fetch_url' as const,
     };
     const requestedUrl = WebUrl.createTransport(request.url);
-    const approved = await this.securityPolicy.assertAllowed(requestedUrl.value, securityContext);
+    const approved = await withOperationDeadline(
+      this.securityPolicy.assertAllowed(requestedUrl.value, securityContext),
+      deadline,
+    );
     // Cache identity must preserve the exact approved transport query. Canonical URL normalization
     // is reserved for search-result deduplication and must never collapse transport semantics.
     const key = createHash('sha256')
@@ -83,6 +89,7 @@ export class FetchUrl {
             url: WebUrl.createTransport(approved.value),
             renderMode: request.renderMode,
             timeoutMs: this.options.timeoutMs,
+            deadline,
             maxResponseBytes: this.options.maxResponseBytes,
             maxRedirects: this.options.maxRedirects,
           },
@@ -139,12 +146,16 @@ export class FetchUrl {
         });
       }
     }
-    const final = await this.securityPolicy.assertAllowed(content.finalUrl, securityContext);
+    const final = await withOperationDeadline(
+      this.securityPolicy.assertAllowed(content.finalUrl, securityContext),
+      deadline,
+    );
     const canonical = await safeApprovedUrl(
       content.canonicalUrl,
       final.value,
       this.securityPolicy,
       securityContext,
+      deadline,
     );
 
     const selected = selectRelevantContent(
@@ -158,6 +169,7 @@ export class FetchUrl {
       this.options.maxLinks,
       this.securityPolicy,
       securityContext,
+      deadline,
     );
     const sourceStatus = classifySource(final.value, this.officialSources);
     const data: FetchResponse = {
@@ -253,7 +265,7 @@ function isTransientProviderError(error: unknown): boolean {
     return true;
   if (!(error instanceof HttpError)) return false;
   if (error.status === undefined) return true;
-  return [408, 425, 429].includes(error.status) || error.status >= 500;
+  return isTransientHttpStatus(error.status);
 }
 
 async function safeApprovedUrl(
@@ -261,10 +273,12 @@ async function safeApprovedUrl(
   fallback: string,
   policy: UrlSecurityPolicy,
   context: NonNullable<Parameters<UrlSecurityPolicy['assertAllowed']>[1]>,
+  deadline: number,
 ): Promise<string> {
   try {
-    return (await policy.assertAllowed(value, context)).value;
-  } catch {
+    return (await withOperationDeadline(policy.assertAllowed(value, context), deadline)).value;
+  } catch (error) {
+    if (error instanceof RequestTimeoutError) throw error;
     return fallback;
   }
 }
@@ -274,6 +288,7 @@ async function filterApprovedLinks(
   maximum: number,
   policy: UrlSecurityPolicy,
   context: NonNullable<Parameters<UrlSecurityPolicy['assertAllowed']>[1]>,
+  operationDeadline: number,
 ): Promise<readonly string[]> {
   const accepted: string[] = [];
   const uniqueValues = [...new Set(values)];
@@ -281,17 +296,22 @@ async function filterApprovedLinks(
     MIN_LINK_INSPECTION_BUDGET,
     maximum * LINK_INSPECTION_MULTIPLIER,
   );
-  const deadline = Date.now() + MAX_LINK_VALIDATION_MS;
+  const deadline = Math.min(operationDeadline, performance.now() + MAX_LINK_VALIDATION_MS);
   let inspected = 0;
 
   for (const value of uniqueValues) {
-    if (accepted.length >= maximum || inspected >= maximumInspections || Date.now() >= deadline)
+    if (
+      accepted.length >= maximum ||
+      inspected >= maximumInspections ||
+      performance.now() >= deadline
+    )
       break;
     inspected += 1;
     try {
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
-      accepted.push((await withTimeout(policy.assertAllowed(value, context), remaining)).value);
+      if (deadline - performance.now() <= 0) break;
+      accepted.push(
+        (await withOperationDeadline(policy.assertAllowed(value, context), deadline)).value,
+      );
     } catch {
       /* Blocked, invalid and over-budget links are never exposed. */
     }
@@ -299,10 +319,12 @@ async function filterApprovedLinks(
   return accepted;
 }
 
-async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+async function withOperationDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
+  const remaining = Math.ceil(deadline - performance.now());
+  if (remaining <= 0) throw new RequestTimeoutError();
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error('LINK_VALIDATION_TIMEOUT')), timeoutMs);
+    timer = setTimeout(() => reject(new RequestTimeoutError()), remaining);
     timer.unref();
   });
   try {
@@ -313,8 +335,9 @@ async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise
 }
 
 function classifySource(url: string, registry: OfficialSourceRegistry): SourceStatus {
-  if (registry.findByUrl(url) !== undefined) return 'VERIFIED_OFFICIAL';
   const parsed = new URL(url);
+  if (parsed.protocol === 'https:' && registry.findByUrl(url) !== undefined)
+    return 'VERIFIED_OFFICIAL';
   if (
     parsed.hostname.startsWith('docs.') ||
     parsed.pathname

@@ -42,6 +42,23 @@ describe('catalog operational CLI', () => {
     };
     expect(restored.status).toBe('healthy');
   });
+
+  it.each([
+    ['catalog', 'src/cli/catalog.ts', ['search', '--query', 'docs', '--limit', '10foobar']],
+    ['catalog-maintain', 'src/cli/catalog-maintain.ts', ['--keep-sync-runs', '500ms']],
+    [
+      'catalog-reranked-search',
+      'src/cli/catalog-reranked-search.ts',
+      ['--query', 'docs', '--candidate-limit', '3abc'],
+    ],
+  ])('rejects partial numeric values in %s', async (_label, entrypoint, arguments_) => {
+    await expect(
+      execFileAsync(process.execPath, ['--import', 'tsx', resolve(entrypoint), ...arguments_], {
+        cwd: resolve('.'),
+        windowsHide: true,
+      }),
+    ).rejects.toMatchObject({ code: 1 });
+  });
 });
 
 async function runCatalog(...arguments_: readonly string[]): Promise<string> {

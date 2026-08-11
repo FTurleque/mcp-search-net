@@ -4,6 +4,7 @@ import { Crawl4aiContentFetcher } from '../../src/infrastructure/fetch/crawl4ai-
 import {
   ExtractionError,
   OcrRequiredNotSupportedError,
+  RequestTimeoutError,
   UnsupportedContentTypeError,
 } from '../../src/domain/errors/domain-errors.js';
 import type { SecureHttpGateway } from '../../src/infrastructure/fetch/secure-http-gateway.js';
@@ -169,6 +170,92 @@ describe('Crawl4aiContentFetcher', () => {
     ).rejects.toMatchObject({
       code: 'CONTENT_PROVIDER_UNAVAILABLE',
     });
+  });
+
+  it('does not renew the download budget before native rendering', async () => {
+    const download = vi.fn(async () => ({
+      requestedUrl: 'https://example.com/app',
+      finalUrl: 'https://example.com/app',
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+      body: new TextEncoder().encode('<html><body>tiny</body></html>'),
+    }));
+    const gateway = {
+      download,
+    } as unknown as SecureHttpGateway;
+    const crawl = vi.fn() as unknown as typeof fetch;
+    const now = vi.spyOn(performance, 'now').mockReturnValueOnce(900).mockReturnValueOnce(1_001);
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway, crawl);
+    try {
+      await expect(
+        fetcher.fetch({ ...fetchRequest('https://example.com/app', 'auto'), deadline: 1_000 }),
+      ).rejects.toBeInstanceOf(RequestTimeoutError);
+      expect(crawl).not.toHaveBeenCalled();
+      expect(download).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ timeoutMs: 100 }),
+      );
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('succeeds when download and native rendering both fit the shared deadline', async () => {
+    const gateway = {
+      download: vi.fn(async () => ({
+        requestedUrl: 'https://example.com/app',
+        finalUrl: 'https://example.com/app',
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+        body: new TextEncoder().encode('<html><body>tiny</body></html>'),
+      })),
+    } as unknown as SecureHttpGateway;
+    const crawl = vi.fn(async () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                success: true,
+                markdown: '# Rendered\n\nUseful rendered content with enough words for success.',
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      ),
+    ) as unknown as typeof fetch;
+    const now = vi.spyOn(performance, 'now').mockReturnValueOnce(900).mockReturnValueOnce(950);
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway, crawl);
+    try {
+      await expect(
+        fetcher.fetch({ ...fetchRequest('https://example.com/app', 'auto'), deadline: 1_000 }),
+      ).resolves.toMatchObject({ extractionMode: 'native-render' });
+      const requestBody = vi.mocked(crawl).mock.calls[0]?.[1]?.body;
+      expect(requestBody).toBeTypeOf('string');
+      if (typeof requestBody !== 'string') throw new Error('Expected string request body');
+      const body = JSON.parse(requestBody) as {
+        crawler_config: { page_timeout: number };
+      };
+      expect(body.crawler_config.page_timeout).toBe(50);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('never invokes native rendering after the download phase times out', async () => {
+    const gateway = {
+      download: vi.fn(async () => Promise.reject(new RequestTimeoutError())),
+    } as unknown as SecureHttpGateway;
+    const crawl = vi.fn() as unknown as typeof fetch;
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway, crawl);
+
+    await expect(
+      fetcher.fetch(fetchRequest('https://example.com/app', 'auto')),
+    ).rejects.toBeInstanceOf(RequestTimeoutError);
+    expect(crawl).not.toHaveBeenCalled();
   });
 
   it('sends safe HTTP validators and maps 304 without re-extracting content', async () => {

@@ -8,6 +8,7 @@ import {
 import { SqliteCatalogMaintenance } from '../infrastructure/catalog/sqlite-catalog-maintenance.js';
 import { StructuredLogger, type LogLevel } from '../infrastructure/logging/structured-logger.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
+import { parseStrictInteger } from './strict-integer.js';
 
 const DEFAULT_KEEP_SYNC_RUNS = 100;
 const DEFAULT_MAX_SYNC_RUN_AGE_DAYS = 90;
@@ -59,21 +60,11 @@ function parseNonNegativeInteger(
   value: string | undefined,
   optionName: string,
 ): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed < 0) {
-    throw new Error(`Invalid ${optionName} ${value}`);
-  }
-  return parsed;
+  return parseStrictInteger(value, optionName, 0);
 }
 
 function parsePositiveInteger(value: string | undefined, optionName: string): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-    throw new Error(`Invalid ${optionName} ${value}`);
-  }
-  return parsed;
+  return parseStrictInteger(value, optionName, 1);
 }
 
 function parseLogLevel(value: string | undefined): LogLevel {

@@ -7,6 +7,7 @@ import type {
   DocumentSectionInput,
   DocumentVersion,
 } from '../domain/models/catalog.js';
+import { scanMarkdownHeadings } from '../domain/services/markdown-structure.js';
 import { WebUrl } from '../domain/value-objects/web-url.js';
 
 const MAX_INGEST_TEXT_BYTES = 16 * 1024 * 1024;
@@ -28,14 +29,6 @@ export interface IngestTextDocumentResult {
   readonly version: DocumentVersion;
   readonly sectionCount: number;
   readonly contentHash: string;
-}
-
-interface MarkdownHeading {
-  readonly lineIndex: number;
-  readonly level: number;
-  readonly title: string;
-  readonly anchor: string;
-  readonly headingPath: string;
 }
 
 export async function ingestTextDocument(
@@ -90,7 +83,7 @@ export function splitMarkdownSections(
   content: string,
 ): readonly DocumentSectionInput[] {
   const lines = content.split(/\r?\n/u);
-  const headings = findHeadings(lines);
+  const headings = scanMarkdownHeadings(lines);
   if (headings.length === 0) {
     return [createSection(0, title, title, 1, 'document', content)];
   }
@@ -116,33 +109,12 @@ export function splitMarkdownSections(
         heading.title,
         heading.headingPath,
         heading.level,
-        heading.anchor,
+        slugify(heading.title),
         sectionContent,
       );
     }),
   );
   return sections;
-}
-
-function findHeadings(lines: readonly string[]): readonly MarkdownHeading[] {
-  const stack: string[] = [];
-  return lines.flatMap((line, lineIndex): MarkdownHeading[] => {
-    const match = /^(#{1,6})\s+(.+)$/u.exec(line.trim());
-    if (match === null) return [];
-
-    const level = match[1]?.length ?? 1;
-    const title = (match[2] ?? '').trim();
-    stack.splice(level - 1, stack.length, title);
-    return [
-      {
-        lineIndex,
-        level,
-        title,
-        anchor: slugify(title),
-        headingPath: stack.slice(0, level).join(' > '),
-      },
-    ];
-  });
 }
 
 function createSection(

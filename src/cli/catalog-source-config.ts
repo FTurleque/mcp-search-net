@@ -9,6 +9,7 @@ import type {
   CatalogSyncStrategy,
   NewCatalogSource,
 } from '../domain/models/catalog.js';
+import { validateNewCatalogSource } from '../domain/services/catalog-source-validation.js';
 
 const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
@@ -62,22 +63,35 @@ function parseCatalogSourceEntry(sourceKey: string, value: unknown): CatalogSour
   if (sourceKey.trim().length === 0) throw new Error('catalog source key must not be empty');
   const source = asRecord(value, `catalog source ${sourceKey}`);
   const language = optionalString(source, 'language') ?? 'fr';
-  const parsedSource: NewCatalogSource = {
-    sourceKey,
-    displayName: requiredString(source, 'display_name', sourceKey),
-    baseUrl: validateHttpUrl(requiredString(source, 'base_url', sourceKey), sourceKey),
-    sourceType: parseSourceType(
-      optionalString(source, 'source_type') ?? 'documentation',
+  let parsedSource: NewCatalogSource;
+  try {
+    parsedSource = validateNewCatalogSource({
       sourceKey,
-    ),
-    language,
-    freshnessPolicy: parseFreshnessPolicy(
-      optionalString(source, 'freshness_policy') ?? 'manual',
-      sourceKey,
-    ),
-    syncStrategy: parseSyncStrategy(optionalString(source, 'sync_strategy') ?? 'manual', sourceKey),
-    enabled: optionalBoolean(source, 'enabled') ?? true,
-  };
+      displayName: requiredString(source, 'display_name', sourceKey),
+      baseUrl: requiredString(source, 'base_url', sourceKey),
+      sourceType: parseSourceType(
+        optionalString(source, 'source_type') ?? 'documentation',
+        sourceKey,
+      ),
+      language,
+      freshnessPolicy: parseFreshnessPolicy(
+        optionalString(source, 'freshness_policy') ?? 'manual',
+        sourceKey,
+      ),
+      syncStrategy: parseSyncStrategy(
+        optionalString(source, 'sync_strategy') ?? 'manual',
+        sourceKey,
+      ),
+      enabled: optionalBoolean(source, 'enabled') ?? true,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'CATALOG_SOURCE_BASE_URL_INVALID') {
+      throw new Error(`catalog source ${sourceKey} base_url must be an HTTP(S) URL`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
   return {
     source: parsedSource,
     documents: parseDocuments(sourceKey, source['documents'], language),

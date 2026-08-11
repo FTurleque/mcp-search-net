@@ -28,6 +28,7 @@ import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-s
 import { SystemClock } from '../infrastructure/time/system-clock.js';
 import { loadCatalogSourceConfig } from './catalog-source-config.js';
 import { ingestTextDocument } from './catalog-ingest-text.js';
+import { parseStrictInteger } from './strict-integer.js';
 
 const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
@@ -429,30 +430,18 @@ function requireOption(argv: readonly string[], name: string): string {
 }
 
 function parseLimit(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const limit = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error(`Invalid limit ${value}`);
-  return limit;
+  return parseStrictInteger(value, 'limit', 1);
 }
 
 function parseKeepPreviousVersions(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const keepPreviousVersions = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(keepPreviousVersions) || keepPreviousVersions < 0) {
-    throw new Error(`Invalid keep ${value}`);
-  }
-  return keepPreviousVersions;
+  return parseStrictInteger(value, 'keep', 0);
 }
 
 function parseNonNegativeInteger(
   value: string | undefined,
   optionName: string,
 ): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed < 0)
-    throw new Error(`Invalid ${optionName} ${value}`);
-  return parsed;
+  return parseStrictInteger(value, optionName, 0);
 }
 
 function parseResumeAfter(

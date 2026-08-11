@@ -112,6 +112,18 @@ describe('catalog text ingestion', () => {
     ]);
   });
 
+  it('shares fenced-code heading semantics with runtime content selection', () => {
+    const sections = splitMarkdownSections(
+      'Guide',
+      '# Guide\n\n~~~sh\n# comment\n~~~\n\n````md\n```\n## hidden\n````\n\n## Visible\n\nText.',
+    );
+
+    expect(sections.map(({ heading, headingPath }) => ({ heading, headingPath }))).toEqual([
+      { heading: 'Guide', headingPath: 'Guide' },
+      { heading: 'Visible', headingPath: 'Guide > Visible' },
+    ]);
+  });
+
   it.each(['', '   ', '\r\n\r\n'])('keeps an empty document representable', (content) => {
     expect(splitMarkdownSections('Empty', content)).toMatchObject([
       {

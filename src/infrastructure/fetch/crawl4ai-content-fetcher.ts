@@ -12,6 +12,7 @@ import {
   ContentProviderUnavailableError,
   ExtractionError,
   OcrRequiredNotSupportedError,
+  RequestTimeoutError,
   UnsupportedContentTypeError,
 } from '../../domain/errors/domain-errors.js';
 import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
@@ -55,6 +56,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     request: ContentFetchRequest,
     context: ContentFetchContext = {},
   ): Promise<ContentFetchResult> {
+    const deadline = request.deadline ?? performance.now() + request.timeoutMs;
     const resource = await this.gateway.download(
       request.url.value,
       createConditionalHeaders(context.cacheValidators),
@@ -63,7 +65,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
         tool: 'fetch_url',
       },
       {
-        timeoutMs: request.timeoutMs,
+        timeoutMs: remainingTimeoutMs(deadline),
         maxBytes: request.maxResponseBytes,
         maxRedirects: request.maxRedirects,
       },
@@ -82,7 +84,10 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     let extractionMode: FetchedContent['extractionMode'] = 'static';
 
     if (request.renderMode === 'auto' && isHtml(contentType) && !isUseful(markdown)) {
-      const rendered = await this.renderPreparedHtml(decoded.safeHtml ?? '', request.timeoutMs);
+      const rendered = await this.renderPreparedHtml(
+        decoded.safeHtml ?? '',
+        remainingTimeoutMs(deadline),
+      );
       if (isUseful(rendered)) markdown = rendered;
       extractionMode = 'native-render';
     }
@@ -156,6 +161,12 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     if (typeof result.markdown === 'string') return result.markdown;
     return result.markdown?.fit_markdown ?? result.markdown?.raw_markdown ?? '';
   }
+}
+
+function remainingTimeoutMs(deadline: number): number {
+  const remaining = Math.ceil(deadline - performance.now());
+  if (remaining <= 0) throw new RequestTimeoutError('fetch_url operation deadline exceeded');
+  return remaining;
 }
 
 function createConditionalHeaders(

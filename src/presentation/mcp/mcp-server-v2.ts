@@ -9,7 +9,6 @@ import type {
 import { InvalidArgumentError, ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
 import type { CatalogDocument } from '../../domain/models/catalog.js';
 import type { ToolResponse, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
-import type { ApplicationConfig } from '../../infrastructure/config/application-config.js';
 import type { Logger } from '../../application/ports/logger.js';
 import { registerCatalogResources } from './catalog-resources.js';
 import type { McpServerDependencies as V1McpServerDependencies } from './mcp-server.js';
@@ -22,7 +21,6 @@ import { executeToolCall } from './tool-call.js';
 export interface McpServerV2Dependencies extends V1McpServerDependencies {
   readonly catalogRepository: CatalogRepository;
   readonly searchCatalogDocuments: SearchCatalogDocuments;
-  readonly config: ApplicationConfig;
   readonly logger: Logger;
 }
 

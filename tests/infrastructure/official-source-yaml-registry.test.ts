@@ -31,6 +31,7 @@ describe('OfficialSourceYamlRegistry', () => {
     expect(
       registry.findByUrl('https://github.com.attacker.test/ExampleOrg/project'),
     ).toBeUndefined();
+    expect(registry.findByUrl('http://github.com/ExampleOrg/project')).toBeUndefined();
   });
 
   it('loads every benchmark source from the project registry', async () => {
@@ -59,5 +60,7 @@ describe('OfficialSourceYamlRegistry', () => {
     expect(registry.findByUrl('https://v2.docs.example.com/sdk/a')?.id).toBe('example');
     expect(registry.findByUrl('https://docs.example.com/other')).toBeUndefined();
     expect(registry.findByUrl('https://docs.example.com.attacker.test/sdk/a')).toBeUndefined();
+    expect(registry.findByUrl('http://docs.example.com/sdk/a')).toBeUndefined();
+    expect(registry.findByUrl('http://v2.docs.example.com/sdk/a')).toBeUndefined();
   });
 });

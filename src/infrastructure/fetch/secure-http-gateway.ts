@@ -94,7 +94,7 @@ export class SecureHttpGateway {
     requestedLimits?: SecureDownloadLimits,
   ): Promise<DownloadedResource> {
     const limits = this.validateLimits(requestedLimits);
-    const deadline = Date.now() + limits.timeoutMs;
+    const deadline = performance.now() + limits.timeoutMs;
     const budget: DownloadBudget = { remainingBytes: limits.maxBytes };
     await this.acquire(deadline);
     try {
@@ -226,7 +226,7 @@ export class SecureHttpGateway {
       } catch (error) {
         if (!isRetryablePinnedConnectionError(error)) throw error;
         lastConnectionError = error;
-        if (Date.now() >= deadline) throw new RequestTimeoutError();
+        if (performance.now() >= deadline) throw new RequestTimeoutError();
       }
     }
 
@@ -243,7 +243,7 @@ export class SecureHttpGateway {
     budget: DownloadBudget,
   ): Promise<PinnedResponse> {
     const url = new URL(approvedUrl);
-    const remaining = deadline - Date.now();
+    const remaining = Math.ceil(deadline - performance.now());
     if (remaining <= 0) throw new RequestTimeoutError();
     const request = url.protocol === 'https:' ? requestHttps : requestHttp;
     const family = isIP(address) as 4 | 6;
@@ -369,7 +369,7 @@ export class SecureHttpGateway {
         0,
         (this.lastRequestByOrigin.get(origin) ?? 0) + this.options.minimumDelayMs - Date.now(),
       );
-      if (Date.now() + wait >= deadline) throw new RequestTimeoutError();
+      if (performance.now() + wait >= deadline) throw new RequestTimeoutError();
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
       this.rememberOriginRequest(origin, Date.now());
     } finally {
@@ -395,7 +395,7 @@ export class SecureHttpGateway {
       this.active += 1;
       return;
     }
-    const remaining = deadline - Date.now();
+    const remaining = Math.ceil(deadline - performance.now());
     if (remaining <= 0) throw new RequestTimeoutError();
     await new Promise<void>((resolve, reject) => {
       const waiter = (): void => {
@@ -420,7 +420,7 @@ export class SecureHttpGateway {
 }
 
 async function withDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
-  const remaining = deadline - Date.now();
+  const remaining = Math.ceil(deadline - performance.now());
   if (remaining <= 0) throw new RequestTimeoutError();
 
   let timer: NodeJS.Timeout | undefined;

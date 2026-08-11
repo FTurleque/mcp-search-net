@@ -19,6 +19,9 @@ describe('V1 value objects', () => {
     expect(domain.value).toBe('jetbrains.com');
     expect(domain.matches('www.jetbrains.com')).toBe(true);
     expect(domain.matches('jetbrains.com.example.org')).toBe(false);
+    expect(DomainName.create('127.0.0.1').matches('127.0.0.2')).toBe(false);
+    expect(DomainName.create('[2001:db8::1]').matches('2001:db8::1')).toBe(true);
+    expect(DomainName.create('::ffff:192.0.2.1').matches('::ffff:192.0.2.1')).toBe(true);
   });
 
   it('normalizes search queries and rejects control characters', () => {

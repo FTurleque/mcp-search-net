@@ -85,6 +85,17 @@ describe('result ranking', () => {
     expect(create('https://developer.vendor.test/reference')).toBe('LIKELY_OFFICIAL');
     expect(create('https://stackoverflow.com/questions/1')).toBe('THIRD_PARTY');
     expect(create('https://example.net/page')).toBe('UNKNOWN');
+
+    const insecureOfficial = toSearchResult(
+      {
+        title: 'Insecure official host',
+        url: 'http://docs.example.com/guide',
+        snippet: '',
+        engines: [],
+      },
+      { query: 'result', officialSource },
+    );
+    expect(insecureOfficial?.sourceStatus).not.toBe('VERIFIED_OFFICIAL');
   });
 
   it('uses a stable title and URL order when scores are equal', () => {

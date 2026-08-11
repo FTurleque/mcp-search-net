@@ -33,6 +33,8 @@ import type {
   DocumentVersionInput,
   NewCatalogSource,
 } from '../../domain/models/catalog.js';
+import { ConfigurationError } from '../../domain/errors/domain-errors.js';
+import { validateNewCatalogSource } from '../../domain/services/catalog-source-validation.js';
 import { openCatalogDatabase } from './catalog-database.js';
 import { verifyCatalogIntegrity } from './catalog-integrity.js';
 import { CatalogMigrationRunner } from './catalog-migration-runner.js';
@@ -51,6 +53,10 @@ import { SqliteCatalogSyncStore } from './sqlite-catalog-sync-store.js';
 const MAX_PERSISTED_SECTION_CHARACTERS = 12_000;
 const SECTION_CHUNK_OVERLAP_CHARACTERS = 400;
 
+export interface SqliteCatalogRepositoryOptions {
+  readonly verifyIntegrityOnOpen?: boolean;
+}
+
 /**
  * Stable CatalogRepository facade over one SQLite connection.
  *
@@ -65,9 +71,23 @@ export class SqliteCatalogRepository implements CatalogRepository {
   private readonly revisions: SqliteCatalogRevisionWriter;
   private readonly search: SqliteCatalogSearch;
 
-  public constructor(path: string, clock: Clock) {
-    this.database = openCatalogDatabase(path);
-    new CatalogMigrationRunner(this.database, clock).apply();
+  public constructor(path: string, clock: Clock, options: SqliteCatalogRepositoryOptions = {}) {
+    let database: Database.Database | undefined;
+    try {
+      database = openCatalogDatabase(path);
+      new CatalogMigrationRunner(database, clock).apply();
+      if (options.verifyIntegrityOnOpen === true) {
+        const integrity = verifyCatalogIntegrity(database);
+        if (integrity.issues.length > 0) {
+          throw new ConfigurationError('Catalog integrity verification failed');
+        }
+      }
+    } catch (error) {
+      if (database?.open === true) database.close();
+      if (error instanceof ConfigurationError) throw error;
+      throw new ConfigurationError('Catalog integrity verification failed', { cause: error });
+    }
+    this.database = database;
     this.sources = new SqliteCatalogSourceStore(this.database, clock);
     this.readModel = new SqliteCatalogReadModel(this.database);
     this.syncStore = new SqliteCatalogSyncStore(this.database);
@@ -76,11 +96,11 @@ export class SqliteCatalogRepository implements CatalogRepository {
   }
 
   public addSource(source: NewCatalogSource): Promise<CatalogSource> {
-    return this.asPromise(() => this.sources.add(source));
+    return this.asPromise(() => this.sources.add(validateNewCatalogSource(source)));
   }
 
   public updateSource(source: NewCatalogSource): Promise<CatalogSource> {
-    return this.asPromise(() => this.sources.update(source));
+    return this.asPromise(() => this.sources.update(validateNewCatalogSource(source)));
   }
 
   public getSourceByKey(sourceKey: string): Promise<CatalogSource | undefined> {
@@ -268,8 +288,6 @@ function chunkDocumentSections(
   if (!requiresChunking) return sections;
 
   const bounded: DocumentSectionInput[] = [];
-  const seenChunkContentHashes = new Set<string>();
-
   for (const section of sections) {
     const characters = Array.from(section.content);
     if (characters.length <= MAX_PERSISTED_SECTION_CHARACTERS) {
@@ -286,19 +304,16 @@ function chunkDocumentSections(
         .trim();
       if (content !== '') {
         const contentHash = createHash('sha256').update(content).digest('hex');
-        if (!seenChunkContentHashes.has(contentHash)) {
-          seenChunkContentHashes.add(contentHash);
-          const suffix = part <= 1 ? '' : `-part-${part}`;
-          bounded.push({
-            ...section,
-            ordinal: bounded.length,
-            ...(section.anchor === undefined ? {} : { anchor: `${section.anchor}${suffix}` }),
-            content,
-            contentHash,
-            characterCount: Array.from(content).length,
-            tokenCount: content.trim().split(/\s+/u).filter(Boolean).length,
-          });
-        }
+        const suffix = part <= 1 ? '' : `-part-${part}`;
+        bounded.push({
+          ...section,
+          ordinal: bounded.length,
+          ...(section.anchor === undefined ? {} : { anchor: `${section.anchor}${suffix}` }),
+          content,
+          contentHash,
+          characterCount: Array.from(content).length,
+          tokenCount: content.trim().split(/\s+/u).filter(Boolean).length,
+        });
       }
       part += 1;
       if (start + MAX_PERSISTED_SECTION_CHARACTERS >= characters.length) break;
@@ -309,13 +324,8 @@ function chunkDocumentSections(
 
 function validateSectionIdentity(sections: readonly DocumentSectionInput[]): void {
   const seenOrdinals = new Set<number>();
-  const seenContentHashes = new Set<string>();
   for (const section of sections) {
     if (seenOrdinals.has(section.ordinal)) throw new Error('Duplicate document section ordinal');
-    if (seenContentHashes.has(section.contentHash)) {
-      throw new Error('Duplicate document section content hash');
-    }
     seenOrdinals.add(section.ordinal);
-    seenContentHashes.add(section.contentHash);
   }
 }

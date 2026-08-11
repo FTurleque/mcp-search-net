@@ -14,7 +14,13 @@ import type {
   ToolResponseStatus,
   ToolWarningDescriptor,
 } from '../../domain/models/tool-response.js';
-import { ApplicationError, RequestTimeoutError } from '../../domain/errors/domain-errors.js';
+import {
+  ApplicationError,
+  HttpError,
+  isTransientHttpStatus,
+  RequestTimeoutError,
+  SearchProviderUnavailableError,
+} from '../../domain/errors/domain-errors.js';
 import { SearchQuery } from '../../domain/value-objects/search-query.js';
 import {
   matchesDomain,
@@ -302,10 +308,14 @@ function staleExecution(value: CachedSearchValue): ToolExecution<SearchResponse>
 }
 
 function isTransientProviderError(error: unknown): boolean {
-  return (
-    error instanceof ApplicationError &&
-    ['SEARCH_PROVIDER_UNAVAILABLE', 'REQUEST_TIMEOUT', 'HTTP_ERROR'].includes(error.code)
-  );
+  if (error instanceof RequestTimeoutError) return true;
+  if (error instanceof SearchProviderUnavailableError) {
+    return error.status === undefined || isTransientHttpStatus(error.status);
+  }
+  if (error instanceof HttpError) {
+    return error.status === undefined || isTransientHttpStatus(error.status);
+  }
+  return error instanceof ApplicationError && error.code === 'SEARCH_PROVIDER_UNAVAILABLE';
 }
 
 function mergeUnresponsiveEngines(
