@@ -14,6 +14,7 @@ import type {
   DocumentVersionInput,
 } from '../../domain/models/catalog.js';
 import {
+  MAX_CATALOG_VERSION_LABEL_CHARACTERS,
   MAX_EXTERNAL_ANCHOR_CHARACTERS,
   MAX_EXTERNAL_HEADING_CHARACTERS,
   MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
@@ -39,15 +40,31 @@ import {
   SELECT_DOCUMENT_VERSION_BY_HASH_SQL,
   SET_DOCUMENT_CURRENT_VERSION_SQL,
   UPSERT_DOCUMENT_SQL,
-  UPSERT_DOCUMENT_VERSION_SQL,
 } from './catalog-sql.js';
 import type { SqliteCatalogSyncStore } from './sqlite-catalog-sync-store.js';
 
 const TOUCH_DOCUMENT_OBSERVATION_SQL = 'UPDATE documents SET last_seen_at = ? WHERE id = ?';
 const SELECT_DOCUMENT_VERSION_STATE_SQL =
-  'SELECT document_id, is_current FROM document_versions WHERE id = ?';
+  'SELECT document_id, is_current, pending_current FROM document_versions WHERE id = ?';
 const MARK_DOCUMENT_VERSION_CURRENT_SQL =
-  'UPDATE document_versions SET is_current = 1 WHERE id = ?';
+  'UPDATE document_versions SET is_current = 1, pending_current = 0 WHERE id = ?';
+const UPSERT_DOCUMENT_VERSION_WITH_PENDING_SQL = `
+  INSERT INTO document_versions (
+    document_id, version_label, content_hash, etag, last_modified,
+    published_at, fetched_at, is_current, pending_current, extraction_mode, content_type, metadata_json
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(document_id, content_hash) DO UPDATE SET
+    version_label = excluded.version_label,
+    etag = excluded.etag,
+    last_modified = excluded.last_modified,
+    published_at = excluded.published_at,
+    fetched_at = excluded.fetched_at,
+    is_current = excluded.is_current,
+    pending_current = excluded.pending_current,
+    extraction_mode = excluded.extraction_mode,
+    content_type = excluded.content_type,
+    metadata_json = excluded.metadata_json
+`;
 
 type UpsertDocumentParams = [
   string,
@@ -73,6 +90,7 @@ type UpsertDocumentVersionParams = [
   number | null,
   number,
   number,
+  number,
   'static' | 'native-render',
   string,
   string,
@@ -94,11 +112,10 @@ type InsertDocumentSectionParams = [
 interface DocumentVersionStateRow {
   readonly document_id: number;
   readonly is_current: number;
+  readonly pending_current: number;
 }
 
 export class SqliteCatalogRevisionWriter {
-  private readonly pendingCurrentVersionIds = new Set<number>();
-
   public constructor(
     private readonly database: Database.Database,
     private readonly clock: Clock,
@@ -119,11 +136,14 @@ export class SqliteCatalogRevisionWriter {
         .run(documentRow.id);
       this.database.prepare<[number]>(CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL).run(documentRow.id);
 
-      const versionRow = this.upsertDocumentVersionRow({
-        ...revision.version,
-        documentId: documentRow.id,
-        isCurrent: true,
-      });
+      const versionRow = this.upsertDocumentVersionRow(
+        {
+          ...revision.version,
+          documentId: documentRow.id,
+          isCurrent: true,
+        },
+        false,
+      );
       const sectionRows = this.replaceDocumentSectionRows(versionRow.id, revision.sections);
 
       this.database.prepare<[number]>(INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL).run(versionRow.id);
@@ -143,9 +163,7 @@ export class SqliteCatalogRevisionWriter {
       };
     });
 
-    const committed = transaction();
-    this.pendingCurrentVersionIds.delete(committed.version.id);
-    return committed;
+    return transaction();
   }
 
   public upsertDocument(
@@ -208,14 +226,13 @@ export class SqliteCatalogRevisionWriter {
         .prepare<[number, string], DocumentVersionRow>(SELECT_DOCUMENT_VERSION_BY_HASH_SQL)
         .get(version.documentId, version.contentHash);
       if (existing?.is_current === 1) {
-        return this.upsertDocumentVersionRow({ ...version, isCurrent: true });
+        return this.upsertDocumentVersionRow({ ...version, isCurrent: true }, false);
       }
 
-      const row = this.upsertDocumentVersionRow(
+      return this.upsertDocumentVersionRow(
         version.isCurrent ? { ...version, isCurrent: false } : version,
+        version.isCurrent,
       );
-      if (version.isCurrent) this.pendingCurrentVersionIds.add(row.id);
-      return row;
     });
 
     return toDocumentVersion(transaction());
@@ -225,12 +242,12 @@ export class SqliteCatalogRevisionWriter {
     documentVersionId: number,
     sections: readonly DocumentSectionInput[],
   ): readonly DocumentSection[] {
-    const pendingPromotion = this.pendingCurrentVersionIds.has(documentVersionId);
     const transaction = this.database.transaction((): readonly DocumentSectionRow[] => {
       const version = this.database
         .prepare<[number], DocumentVersionStateRow>(SELECT_DOCUMENT_VERSION_STATE_SQL)
         .get(documentVersionId);
       if (version === undefined) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
+      const pendingPromotion = version.pending_current === 1;
       if ((pendingPromotion || version.is_current === 1) && sections.length === 0) {
         throw new Error('CATALOG_CURRENT_REVISION_REQUIRES_SECTIONS');
       }
@@ -260,9 +277,7 @@ export class SqliteCatalogRevisionWriter {
       }
       return rows;
     });
-    const rows = transaction();
-    if (pendingPromotion) this.pendingCurrentVersionIds.delete(documentVersionId);
-    return rows.map(toDocumentSection);
+    return transaction().map(toDocumentSection);
   }
 
   private now(): number {
@@ -298,18 +313,22 @@ export class SqliteCatalogRevisionWriter {
     return stableRow;
   }
 
-  private upsertDocumentVersionRow(version: DocumentVersionInput): DocumentVersionRow {
+  private upsertDocumentVersionRow(
+    version: DocumentVersionInput,
+    pendingCurrent: boolean,
+  ): DocumentVersionRow {
     this.database
-      .prepare<UpsertDocumentVersionParams>(UPSERT_DOCUMENT_VERSION_SQL)
+      .prepare<UpsertDocumentVersionParams>(UPSERT_DOCUMENT_VERSION_WITH_PENDING_SQL)
       .run(
         version.documentId,
-        version.versionLabel ?? null,
+        boundOptionalText(version.versionLabel, MAX_CATALOG_VERSION_LABEL_CHARACTERS) ?? null,
         version.contentHash,
         version.etag ?? null,
         version.lastModified ?? null,
         version.publishedAt?.getTime() ?? null,
         this.now(),
         version.isCurrent ? 1 : 0,
+        pendingCurrent ? 1 : 0,
         version.extractionMode,
         version.contentType,
         version.metadataJson,

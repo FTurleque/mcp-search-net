@@ -1,23 +1,26 @@
 import { z } from 'zod/v4';
 
 import {
-  countUnicodeCharacters,
   MAX_EXTERNAL_ANCHOR_CHARACTERS,
+  MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
   MAX_EXTERNAL_HEADING_CHARACTERS,
   MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
   MAX_EXTERNAL_LANGUAGE_CHARACTERS,
+  MAX_EXTERNAL_SOURCE_KEY_CHARACTERS,
+  MAX_EXTERNAL_SOURCE_NAME_CHARACTERS,
   MAX_EXTERNAL_TITLE_CHARACTERS,
 } from '../../../domain/services/bounded-text.js';
 import { containsControlCharacters } from '../../../domain/services/text-validation.js';
 import { acceptInvalidToolInput } from './invalid-tool-input.js';
 import { createToolResponseSchema } from './tool-response-schema.js';
+import { unicodeBoundedString } from './unicode-bounded-string.js';
 
 export function createSearchDocsSchemas(defaultResults: number, maximumResults: number) {
   const sourceKey = z
     .string()
     .trim()
     .min(1)
-    .max(128)
+    .max(MAX_EXTERNAL_SOURCE_KEY_CHARACTERS)
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/u)
     .describe('Optional catalog source key filter');
   const input = acceptInvalidToolInput(
@@ -49,11 +52,11 @@ export function createSearchDocsSchemas(defaultResults: number, maximumResults: 
 
   const result = z
     .object({
-      sourceKey: z.string().min(1).max(128),
-      sourceName: unicodeBoundedString(200).pipe(z.string().min(1)),
-      documentPublicId: z.string().min(1).max(128),
+      sourceKey: z.string().min(1).max(MAX_EXTERNAL_SOURCE_KEY_CHARACTERS),
+      sourceName: unicodeBoundedString(MAX_EXTERNAL_SOURCE_NAME_CHARACTERS, 1),
+      documentPublicId: z.string().min(1).max(MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS),
       sectionId: z.number().int().positive(),
-      title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS).pipe(z.string().min(1)),
+      title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS, 1),
       url: z.url(),
       language: z.string().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS),
       heading: unicodeBoundedString(MAX_EXTERNAL_HEADING_CHARACTERS).optional(),
@@ -72,10 +75,4 @@ export function createSearchDocsSchemas(defaultResults: number, maximumResults: 
     .strict();
 
   return { input, data, output: createToolResponseSchema('search_docs', data) } as const;
-}
-
-function unicodeBoundedString(maximumCharacters: number) {
-  return z.string().refine((value) => countUnicodeCharacters(value) <= maximumCharacters, {
-    message: `Must contain at most ${maximumCharacters} Unicode characters`,
-  });
 }

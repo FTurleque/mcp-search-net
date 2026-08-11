@@ -11,19 +11,20 @@ export interface CacheRecord<T> extends CacheValidators {
   readonly stale: boolean;
 }
 
-export interface CacheGetOptions {
+export interface CacheGetOptions<T = unknown> {
   readonly allowStale?: boolean;
+  readonly decode?: (value: unknown) => T | undefined;
 }
 
 export interface CacheRepository {
-  getSearch<T>(key: string, options?: CacheGetOptions): Promise<CacheRecord<T> | undefined>;
+  getSearch<T>(key: string, options?: CacheGetOptions<T>): Promise<CacheRecord<T> | undefined>;
   setSearch<T>(
     key: string,
     value: T,
     ttlMs: number,
     validators?: CacheValidators,
   ): Promise<boolean>;
-  getContent<T>(key: string, options?: CacheGetOptions): Promise<CacheRecord<T> | undefined>;
+  getContent<T>(key: string, options?: CacheGetOptions<T>): Promise<CacheRecord<T> | undefined>;
   setContent<T>(
     key: string,
     value: T,

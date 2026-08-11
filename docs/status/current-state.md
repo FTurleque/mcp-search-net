@@ -109,6 +109,7 @@ Les migrations catalogue appliquées dans l’ordre sont :
 - `C008__add_catalog_pagination_indexes.sql`
 - `C009__allow_repeated_section_content.sql`
 - `C010__add_sync_run_kind.sql`
+- `C011__persist_pending_version_promotion.sql`
 
 Une migration appliquée est immuable. Toute évolution crée une nouvelle migration.
 
@@ -120,6 +121,11 @@ présents et recherchables.
 `C010` ajoute `sync_runs.run_kind` avec les valeurs `EXECUTION` et `PLAN`. Les historiques existants
 sont baselinés en `EXECUTION`; un dry-run est enregistré comme `PLAN`, ce qui permet de le séparer
 d’une vraie annulation sans casser les statuts terminaux historiques.
+
+`C011` ajoute `document_versions.pending_current` pour persister l’intention de promotion des
+primitives legacy dépréciées. Une version candidate reste non courante tant que ses sections ne sont
+pas remplacées ; cette intention survit désormais à une fermeture ou un redémarrage du repository et
+est consommée atomiquement lors de la promotion avec les sections, le FTS et le pointeur courant.
 
 Le découpage Markdown du fetch et l’ingestion CLI utilisent le même scanner de headings/fences. Les
 fences backtick ou tilde se ferment uniquement avec le même caractère et une longueur compatible ;
@@ -133,8 +139,11 @@ validation de `NewCatalogSource`, dont une base URL HTTP(S) obligatoire.
 `SqliteCatalogRepository` est une façade stable construite autour d’une connexion SQLite unique et
 sépare les responsabilités source/read-model/révision/recherche/synchronisation. Une révision
 courante reste une transaction atomique couvrant document, version, sections, FTS, pointeur courant
-et observations. Les primitives legacy dépréciées stage désormais une version candidate non courante
-puis ne la promeuvent qu’au moment où ses sections peuvent être remplacées dans la même transaction.
+et observations. Les métadonnées documentaires passent par un invariant central avant persistance ;
+les projections MCP restent défensives pour les anciennes bases qui peuvent contenir des valeurs
+plus larges que les contrats externes. Les primitives legacy dépréciées stagient une version
+candidate non courante puis ne la promeuvent qu’au moment où ses sections peuvent être remplacées
+dans la même transaction.
 
 FTS5 reste une dépendance fonctionnelle explicite. La qualification N-API vérifie en plus la version
 SQLite embarquée, une vraie requête FTS5 et le verrouillage writer entre connexions. Les suites
@@ -235,7 +244,9 @@ est disponible.
 
 Le cache SQLite applique d’abord la rétention stale, puis une éviction LRU déterministe globale aux
 namespaces recherche et contenu. Les valeurs par défaut sont 2 000 entrées et 256 Mio de payloads
-JSON sérialisés. Le catalogue exécute son contrôle complet d’intégrité après migrations et avant
+JSON sérialisés. Une valeur JSON syntaxiquement valide mais incompatible avec le contrat attendu est
+supprimée lors de la lecture et traitée comme un cache miss ; les stale fallbacks utilisent les mêmes
+décodeurs runtime. Le catalogue exécute son contrôle complet d’intégrité après migrations et avant
 exposition du serveur MCP ; toute incohérence SQLite, FK, current pointer, sections ou FTS bloque le
 démarrage.
 

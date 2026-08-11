@@ -2,28 +2,31 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 
 import type { CatalogRepository } from '../../application/ports/catalog-repository.js';
+import type { Logger } from '../../application/ports/logger.js';
 import type {
   SearchCatalogDocuments,
   SearchCatalogDocumentsOutput,
 } from '../../application/use-cases/search-catalog-documents.js';
 import { InvalidArgumentError, ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
 import type { CatalogDocument } from '../../domain/models/catalog.js';
+import type { ToolResponse, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import {
   countUnicodeCharacters,
+  MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
   MAX_EXTERNAL_HEADING_CHARACTERS,
   MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
   MAX_EXTERNAL_LANGUAGE_CHARACTERS,
+  MAX_EXTERNAL_SOURCE_KEY_CHARACTERS,
   MAX_EXTERNAL_TITLE_CHARACTERS,
   truncateUnicode,
 } from '../../domain/services/bounded-text.js';
-import type { ToolResponse, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
-import type { Logger } from '../../application/ports/logger.js';
 import { registerCatalogResources } from './catalog-resources.js';
 import type { McpServerDependencies as V1McpServerDependencies } from './mcp-server.js';
 import { createMcpServer as createV1McpServer } from './mcp-server.js';
 import { isInvalidToolInput } from './schemas/invalid-tool-input.js';
 import { createSearchDocsSchemas } from './schemas/search-docs-schema.js';
 import { createToolResponseSchema } from './schemas/tool-response-schema.js';
+import { unicodeBoundedString } from './schemas/unicode-bounded-string.js';
 import { executeToolCall } from './tool-call.js';
 
 export interface McpServerV2Dependencies extends V1McpServerDependencies {
@@ -39,8 +42,8 @@ const MAX_LIST_DOCS_DATA_CHARACTERS = 20_000;
 const compactDocumentSchema = z
   .object({
     id: z.number().int().positive(),
-    publicId: z.string().min(1),
-    sourceKey: z.string().min(1),
+    publicId: z.string().min(1).max(MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS),
+    sourceKey: z.string().min(1).max(MAX_EXTERNAL_SOURCE_KEY_CHARACTERS),
     title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS, 1),
     url: z.url(),
     language: z.string().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS),
@@ -51,7 +54,7 @@ const compactDocumentSchema = z
 
 const listDocsInputSchema = z
   .object({
-    sourceKey: z.string().trim().min(1).max(128).optional(),
+    sourceKey: z.string().trim().min(1).max(MAX_EXTERNAL_SOURCE_KEY_CHARACTERS).optional(),
     language: z.string().trim().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS).optional(),
     status: z.enum(['ACTIVE', 'STALE', 'REDIRECTED', 'REMOVED', 'UNAVAILABLE']).optional(),
     limit: z.number().int().min(1).max(50).default(20),
@@ -85,8 +88,8 @@ const readDocSectionInputSchema = z
 const sectionDocumentSchema = z
   .object({
     id: z.number().int().positive(),
-    publicId: z.string().min(1),
-    sourceKey: z.string().min(1),
+    publicId: z.string().min(1).max(MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS),
+    sourceKey: z.string().min(1).max(MAX_EXTERNAL_SOURCE_KEY_CHARACTERS),
     title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS, 1),
     url: z.url(),
   })
@@ -354,6 +357,11 @@ async function readDocSection(
     };
   }
   const content = truncateUnicode(entry.section.content, input.maxCharacters);
+  const publicId = boundedNonEmpty(
+    entry.document.publicId,
+    MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+    `document-${entry.document.id}`,
+  );
   return {
     sectionId: input.sectionId,
     found: true,
@@ -361,25 +369,40 @@ async function readDocSection(
     characterCount: countUnicodeCharacters(content),
     document: {
       id: entry.document.id,
-      publicId: entry.document.publicId,
-      sourceKey: entry.source.sourceKey,
-      title: truncateUnicode(entry.document.title, MAX_EXTERNAL_TITLE_CHARACTERS),
+      publicId,
+      sourceKey: boundedNonEmpty(
+        entry.source.sourceKey,
+        MAX_EXTERNAL_SOURCE_KEY_CHARACTERS,
+        'catalog',
+      ),
+      title: boundedNonEmpty(entry.document.title, MAX_EXTERNAL_TITLE_CHARACTERS, publicId),
       url: entry.document.canonicalUrl,
     },
-    heading: entry.section.heading ?? null,
-    headingPath: entry.section.headingPath ?? null,
+    heading:
+      entry.section.heading === undefined
+        ? null
+        : truncateUnicode(entry.section.heading, MAX_EXTERNAL_HEADING_CHARACTERS),
+    headingPath:
+      entry.section.headingPath === undefined
+        ? null
+        : truncateUnicode(entry.section.headingPath, MAX_EXTERNAL_HEADING_PATH_CHARACTERS),
     content,
   };
 }
 
 function toCompactDocument(document: CatalogDocument, sourceKey: string) {
+  const publicId = boundedNonEmpty(
+    document.publicId,
+    MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+    `document-${document.id}`,
+  );
   return {
     id: document.id,
-    publicId: document.publicId,
-    sourceKey,
-    title: truncateUnicode(document.title, MAX_EXTERNAL_TITLE_CHARACTERS),
+    publicId,
+    sourceKey: boundedNonEmpty(sourceKey, MAX_EXTERNAL_SOURCE_KEY_CHARACTERS, 'catalog'),
+    title: boundedNonEmpty(document.title, MAX_EXTERNAL_TITLE_CHARACTERS, publicId),
     url: document.canonicalUrl,
-    language: document.language,
+    language: boundedNonEmpty(document.language, MAX_EXTERNAL_LANGUAGE_CHARACTERS, 'und'),
     status: document.status,
     currentVersionId: document.currentVersionId ?? null,
   };
@@ -439,13 +462,7 @@ function searchDocsWarnings(data: SearchDocsData): readonly ToolWarningDescripto
   ];
 }
 
-function unicodeBoundedString(maximumCharacters: number, minimumCharacters = 0) {
-  return z
-    .string()
-    .refine((value) => countUnicodeCharacters(value) >= minimumCharacters, {
-      message: `Must contain at least ${minimumCharacters} Unicode characters`,
-    })
-    .refine((value) => countUnicodeCharacters(value) <= maximumCharacters, {
-      message: `Must contain at most ${maximumCharacters} Unicode characters`,
-    });
+function boundedNonEmpty(value: string, maximumCharacters: number, fallback: string): string {
+  const trimmed = value.trim();
+  return truncateUnicode(trimmed === '' ? fallback : trimmed, maximumCharacters);
 }

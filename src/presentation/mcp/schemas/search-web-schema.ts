@@ -1,7 +1,6 @@
 import { z } from 'zod/v4';
 
 import {
-  countUnicodeCharacters,
   MAX_EXTERNAL_ENGINE_NAME_CHARACTERS,
   MAX_EXTERNAL_LANGUAGE_CHARACTERS,
   MAX_EXTERNAL_TITLE_CHARACTERS,
@@ -9,6 +8,7 @@ import {
 import { containsControlCharacters } from '../../../domain/services/text-validation.js';
 import { acceptInvalidToolInput } from './invalid-tool-input.js';
 import { createToolResponseSchema } from './tool-response-schema.js';
+import { unicodeBoundedString } from './unicode-bounded-string.js';
 
 export function createSearchWebSchemas(defaultResults: number, maximumResults: number) {
   const domain = z
@@ -80,10 +80,4 @@ export function createSearchWebSchemas(defaultResults: number, maximumResults: n
   const output = createToolResponseSchema('search_web', data);
 
   return { input, data, output } as const;
-}
-
-function unicodeBoundedString(maximumCharacters: number) {
-  return z.string().refine((value) => countUnicodeCharacters(value) <= maximumCharacters, {
-    message: `Must contain at most ${maximumCharacters} Unicode characters`,
-  });
 }

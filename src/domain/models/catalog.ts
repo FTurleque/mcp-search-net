@@ -176,7 +176,7 @@ export interface CatalogSearchIndexRebuildResult {
 export interface CatalogSyncRun {
   readonly id: number;
   readonly sourceId?: number;
-  readonly runKind?: CatalogSyncRunKind;
+  readonly runKind: CatalogSyncRunKind;
   readonly startedAt: Date;
   readonly completedAt?: Date;
   readonly status: CatalogSyncRunStatus;
@@ -190,9 +190,17 @@ export interface CatalogSyncRun {
 
 export interface CatalogSyncRunStartInput {
   readonly sourceId?: number;
-  readonly runKind?: CatalogSyncRunKind;
+  readonly runKind: CatalogSyncRunKind;
   readonly startedAt: Date;
 }
+
+/**
+ * Compatibility request accepted at the repository boundary. Legacy execution callers may omit
+ * runKind; persistence normalizes that case to EXECUTION before a CatalogSyncRun is returned.
+ */
+export type CatalogSyncRunStartRequest = Omit<CatalogSyncRunStartInput, 'runKind'> & {
+  readonly runKind?: CatalogSyncRunKind;
+};
 
 export interface CatalogSyncRunCompletionInput {
   readonly completedAt: Date;

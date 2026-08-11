@@ -162,7 +162,7 @@ describe('MCP V2 in-memory contracts', () => {
 
       for (let index = 0; index < 50; index += 1) {
         await container.catalog.upsertDocument({
-          publicId: `bulk-${index}-${'p'.repeat(300)}`,
+          publicId: `bulk-${index}-${'p'.repeat(100)}`,
           sourceId: source.id,
           canonicalUrl: `https://example.test/bulk/${index}`,
           stableKey: `bulk-${index}`,

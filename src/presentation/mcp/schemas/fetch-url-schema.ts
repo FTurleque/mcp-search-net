@@ -1,13 +1,13 @@
 import { z } from 'zod/v4';
 
 import {
-  countUnicodeCharacters,
   MAX_EXTERNAL_DOCUMENT_SECTIONS,
   MAX_EXTERNAL_HEADING_CHARACTERS,
   MAX_EXTERNAL_TITLE_CHARACTERS,
 } from '../../../domain/services/bounded-text.js';
 import { acceptInvalidToolInput } from './invalid-tool-input.js';
 import { createToolResponseSchema } from './tool-response-schema.js';
+import { unicodeBoundedString } from './unicode-bounded-string.js';
 
 export function createFetchUrlSchemas(
   defaultCharacters: number,
@@ -65,10 +65,4 @@ export function createFetchUrlSchemas(
     })
     .strict();
   return { input, data, output: createToolResponseSchema('fetch_url', data) } as const;
-}
-
-function unicodeBoundedString(maximumCharacters: number) {
-  return z.string().refine((value) => countUnicodeCharacters(value) <= maximumCharacters, {
-    message: `Must contain at most ${maximumCharacters} Unicode characters`,
-  });
 }
