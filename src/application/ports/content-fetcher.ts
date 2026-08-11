@@ -6,6 +6,8 @@ export interface ContentFetchRequest {
   readonly url: WebUrl;
   readonly renderMode: RenderMode;
   readonly timeoutMs: number;
+  /** Absolute operation deadline expressed in monotonic performance milliseconds. */
+  readonly deadline?: number;
   readonly maxResponseBytes: number;
   readonly maxRedirects: number;
 }

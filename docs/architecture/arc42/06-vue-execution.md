@@ -183,7 +183,11 @@ sequenceDiagram
     Cfg-->>Main: LoadedConfiguration
     Main->>Cnt: createContainer(loaded)
     Cnt->>Cnt: SqliteCacheRepository.open()
-    Cnt->>Cnt: SqliteCatalogRepository.open() + migrations C001-C008
+    Cnt->>Cnt: SqliteCatalogRepository.open() + migrations C001-C009
+    Cnt->>Cnt: integrity_check + foreign_key_check + invariants current/FTS
+    alt catalogue incohérent
+        Cnt-->>Main: ConfigurationError (fail-closed)
+    end
     Cnt->>Cnt: createMcpServer() V1 + V2 tools + resources
     Cnt-->>Main: {cache, catalog, logger, mcpServer}
     Main->>Main: register SIGINT / SIGTERM / uncaughtException

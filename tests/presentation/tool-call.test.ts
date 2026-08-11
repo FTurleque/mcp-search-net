@@ -218,6 +218,32 @@ describe('stable tool error mapping', () => {
     expect(new Set(TOOL_ERROR_CODES).size).toBe(TOOL_ERROR_CODES.length);
     expect(TOOL_ERROR_CODES).toHaveLength(17);
   });
+
+  it.each([
+    ['HTTP 403', new HttpError('forbidden', 403), false],
+    ['HTTP 404', new HttpError('missing', 404), false],
+    ['HTTP 410', new HttpError('gone', 410), false],
+    ['HTTP 408', new HttpError('timeout', 408), true],
+    ['HTTP 425', new HttpError('too early', 425), true],
+    ['HTTP 429', new HttpError('limited', 429), true],
+    ['HTTP 500', new HttpError('failure', 500), true],
+    ['request timeout', new RequestTimeoutError(), true],
+    ['DNS failure', new UrlSecurityError('dns', 'DNS_RESOLUTION_FAILED'), true],
+    ['cache failure', new CacheUnavailableError(), true],
+    ['internal failure', new Error('internal detail'), false],
+  ])('sets MCP retryable from the original %s error', async (_label, error, retryable) => {
+    const result = await executeToolCall({
+      tool: 'fetch_url',
+      logger: new StructuredLogger('error'),
+      requestIdFactory: () => '00000000-0000-4000-8000-000000000099',
+      monotonicNow: timeSequence(1, 2),
+      execute: async () => Promise.reject(error),
+      validateResponse: (response) => response,
+      formatText: () => 'unused',
+    });
+
+    expect(result._meta?.['mcp-search-net/error']).toMatchObject({ retryable });
+  });
 });
 
 function timeSequence(...values: number[]): () => number {

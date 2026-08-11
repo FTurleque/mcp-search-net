@@ -18,7 +18,13 @@ describe('application configuration precedence and limits', () => {
     const config = applicationConfigSchema.parse({});
     expect(config).toMatchObject({
       application: { profile: 'development' },
-      cache: { enabled: true, searchTtlMs: 3_600_000, documentationTtlMs: 86_400_000 },
+      cache: {
+        enabled: true,
+        searchTtlMs: 3_600_000,
+        documentationTtlMs: 86_400_000,
+        maxEntries: 2_000,
+        maxBytes: 268_435_456,
+      },
       limits: {
         defaultSearchResults: 5,
         maxSearchResults: 10,
@@ -37,6 +43,10 @@ describe('application configuration precedence and limits', () => {
       false,
     );
     expect(applicationConfigSchema.safeParse({ security: { maxRedirects: 6 } }).success).toBe(
+      false,
+    );
+    expect(applicationConfigSchema.safeParse({ cache: { maxBytes: -1 } }).success).toBe(false);
+    expect(applicationConfigSchema.safeParse({ cache: { maxBytes: 2_147_483_649 } }).success).toBe(
       false,
     );
   });

@@ -4,7 +4,12 @@ import { performance } from 'node:perf_hooks';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { ZodError } from 'zod/v4';
 
-import { ApplicationError } from '../../domain/errors/domain-errors.js';
+import {
+  ApplicationError,
+  HttpError,
+  isTransientHttpStatus,
+  SearchProviderUnavailableError,
+} from '../../domain/errors/domain-errors.js';
 import type {
   ToolErrorCode,
   ToolErrorResponse,
@@ -87,7 +92,7 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
       schemaVersion: '1.0',
       requestId,
       ...publicError,
-      retryable: isRetryable(publicError.code),
+      retryable: isRetryable(error, publicError.code),
     };
     options.logger.record('tool_call_failed', {
       requestId,
@@ -113,11 +118,16 @@ function formatExternalContentText(text: string): string {
   return `[${EXTERNAL_CONTENT_TRUST}] ${EXTERNAL_CONTENT_SAFETY_NOTICE}\n\n${text}`;
 }
 
-function isRetryable(code: ToolErrorCode): boolean {
+function isRetryable(error: unknown, code: ToolErrorCode): boolean {
+  if (error instanceof HttpError) {
+    return error.status === undefined || isTransientHttpStatus(error.status);
+  }
+  if (error instanceof SearchProviderUnavailableError && error.status !== undefined) {
+    return isTransientHttpStatus(error.status);
+  }
   return [
     'DNS_RESOLUTION_FAILED',
     'REQUEST_TIMEOUT',
-    'HTTP_ERROR',
     'SEARCH_PROVIDER_UNAVAILABLE',
     'CONTENT_PROVIDER_UNAVAILABLE',
     'CACHE_UNAVAILABLE',

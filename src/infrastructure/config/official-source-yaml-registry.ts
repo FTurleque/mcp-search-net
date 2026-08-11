@@ -62,6 +62,7 @@ export class OfficialSourceYamlRegistry implements OfficialSourceRegistry {
     } catch {
       return undefined;
     }
+    if (url.protocol !== 'https:') return undefined;
     return this.sources
       .filter((source) => source.enabled)
       .find(

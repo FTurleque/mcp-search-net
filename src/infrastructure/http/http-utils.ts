@@ -98,6 +98,6 @@ function providerUnavailable(
   cause: unknown,
 ): ExternalServiceError {
   return service === 'searxng'
-    ? new SearchProviderUnavailableError(message, { cause })
+    ? new SearchProviderUnavailableError(message, undefined, { cause })
     : new ContentProviderUnavailableError(message, { cause });
 }

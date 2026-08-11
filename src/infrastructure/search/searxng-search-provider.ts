@@ -8,6 +8,7 @@ import type {
 import {
   ExternalServiceError,
   HttpError,
+  isTransientHttpStatus,
   RequestTimeoutError,
   SearchProviderUnavailableError,
 } from '../../domain/errors/domain-errors.js';
@@ -106,12 +107,15 @@ export class SearxngSearchProvider implements SearchProvider {
       } catch (error) {
         const retryable =
           error instanceof HttpError &&
-          (error.status === 429 || (error.status !== undefined && error.status >= 500));
+          error.status !== undefined &&
+          isTransientHttpStatus(error.status);
         if (retryable && attempt === 0) continue;
         if (error instanceof HttpError) {
-          throw new SearchProviderUnavailableError('searxng rejected the search request', {
-            cause: error,
-          });
+          throw new SearchProviderUnavailableError(
+            'searxng rejected the search request',
+            error.status,
+            { cause: error },
+          );
         }
         throw error;
       }

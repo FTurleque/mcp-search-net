@@ -92,7 +92,13 @@ function createCache(
   if (!config.enabled) return new DisabledCacheRepository();
   try {
     return new SafeCacheRepository(
-      new SqliteCacheRepository(config.path, clock, config.maxEntries, config.staleRetentionMs),
+      new SqliteCacheRepository(
+        config.path,
+        clock,
+        config.maxEntries,
+        config.maxBytes,
+        config.staleRetentionMs,
+      ),
       config.continueOnError,
       logger,
     );
@@ -108,5 +114,5 @@ function createCache(
 }
 
 function createCatalog(loaded: LoadedConfiguration, clock: SystemClock): CatalogRepository {
-  return new SqliteCatalogRepository(loaded.catalogPath, clock);
+  return new SqliteCatalogRepository(loaded.catalogPath, clock, { verifyIntegrityOnOpen: true });
 }

@@ -21,6 +21,12 @@ interface CacheRow {
   readonly content_hash: string | null;
 }
 
+interface CacheUsageRow {
+  readonly kind: CacheKind;
+  readonly cache_key: string;
+  readonly size_bytes: number;
+}
+
 type CacheKind = 'search' | 'content';
 
 const CACHE_TABLES: Readonly<Record<CacheKind, string>> = {
@@ -61,8 +67,13 @@ export class SqliteCacheRepository implements CacheRepository {
     path: string,
     private readonly clock: Clock,
     private readonly maxEntries: number,
+    private readonly maxBytes: number,
     private readonly staleRetentionMs: number,
   ) {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries <= 0)
+      throw new Error('CACHE_MAX_ENTRIES_INVALID');
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)
+      throw new Error('CACHE_MAX_BYTES_INVALID');
     mkdirSync(dirname(path), { recursive: true });
     this.database = new Database(path);
     this.database.pragma('journal_mode = WAL');
@@ -235,14 +246,30 @@ export class SqliteCacheRepository implements CacheRepository {
       changes += this.database
         .prepare(`DELETE FROM ${table} WHERE expires_at <= ?`)
         .run(now - this.staleRetentionMs).changes;
-      changes += this.database
-        .prepare(
-          `DELETE FROM ${table} WHERE rowid IN (
-            SELECT rowid FROM ${table}
-            ORDER BY last_accessed_at DESC LIMIT -1 OFFSET ?
-          )`,
-        )
-        .run(this.maxEntries).changes;
+    }
+
+    const rows = this.database
+      .prepare<[], CacheUsageRow>(
+        `
+          SELECT kind, cache_key, size_bytes
+          FROM (
+            SELECT 'search' AS kind, cache_key, size_bytes, last_accessed_at, created_at
+            FROM search_cache
+            UNION ALL
+            SELECT 'content' AS kind, cache_key, size_bytes, last_accessed_at, created_at
+            FROM content_cache
+          )
+          ORDER BY last_accessed_at, created_at, kind, cache_key
+        `,
+      )
+      .all();
+    let remainingEntries = rows.length;
+    let remainingBytes = rows.reduce((total, row) => total + row.size_bytes, 0);
+    for (const row of rows) {
+      if (remainingEntries <= this.maxEntries && remainingBytes <= this.maxBytes) break;
+      changes += this.deleteStatements[row.kind].run(row.cache_key).changes;
+      remainingEntries -= 1;
+      remainingBytes -= row.size_bytes;
     }
     return changes;
   }

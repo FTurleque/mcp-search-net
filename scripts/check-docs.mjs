@@ -244,8 +244,13 @@ function validatePostMergeTruth() {
   );
   requireText(
     currentState,
-    'Branche de référence : `master`',
-    `${currentStatePath}: master absent`,
+    'Branche de release et source de vérité publiée : `master`',
+    `${currentStatePath}: branche de release master absente`,
+  );
+  requireText(
+    currentState,
+    'Branche d’intégration courante : `develop`',
+    `${currentStatePath}: branche d’intégration develop absente`,
   );
   requireText(
     readme,

@@ -52,7 +52,7 @@ describe('SqliteCatalogRepository', () => {
     database.close();
 
     expect(tables).toEqual(EXPECTED_CATALOG_TABLES);
-    expect(migrations.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(migrations.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(migrations.every(({ checksum }) => /^[a-f0-9]{64}$/u.test(checksum))).toBe(true);
   });
 
@@ -383,7 +383,7 @@ describe('SqliteCatalogRepository', () => {
     const clock = { now: () => new Date(now) };
     const cachePath = join(root, '.data', 'cache.db');
     const catalogPath = join(root, '.data', 'catalog.db');
-    const cache = new SqliteCacheRepository(cachePath, clock, 100, 10_000);
+    const cache = new SqliteCacheRepository(cachePath, clock, 100, 1_000_000, 10_000);
     const catalog = new SqliteCatalogRepository(catalogPath, clock);
     caches.push(cache);
     catalogs.push(catalog);
@@ -403,8 +403,20 @@ describe('SqliteCatalogRepository', () => {
     catalogDatabase.close();
   });
 
-  it('enforces source uniqueness and rolls back failed section replacement', async () => {
+  it('enforces source uniqueness and preserves repeated section occurrences', async () => {
     const fixture = createCatalogRepository();
+    await expect(
+      fixture.catalog.addSource({
+        sourceKey: 'invalid-source',
+        displayName: 'Invalid source',
+        baseUrl: 'file:///tmp/docs',
+        sourceType: 'documentation',
+        language: 'en',
+        freshnessPolicy: 'manual',
+        syncStrategy: 'manual',
+        enabled: true,
+      }),
+    ).rejects.toThrow('CATALOG_SOURCE_BASE_URL_INVALID');
     const source = await fixture.catalog.addSource({
       sourceKey: 'typescript-docs',
       displayName: 'TypeScript Documentation',
@@ -459,24 +471,27 @@ describe('SqliteCatalogRepository', () => {
       fixture.catalog.replaceDocumentSections(version.id, [
         {
           ordinal: 1,
-          content: 'Duplicate content A.',
+          content: 'Repeated content.',
           contentHash: 'duplicate-section',
-          characterCount: 20,
+          characterCount: 17,
         },
         {
           ordinal: 2,
-          content: 'Duplicate content B.',
+          content: 'Repeated content.',
           contentHash: 'duplicate-section',
-          characterCount: 20,
+          characterCount: 17,
         },
       ]),
-    ).rejects.toThrow();
+    ).resolves.toHaveLength(2);
 
     const database = new Database(fixture.path, { readonly: true });
     const rows = database
       .prepare('SELECT ordinal, content_hash FROM document_sections ORDER BY ordinal')
       .all() as { ordinal: number; content_hash: string }[];
-    expect(rows).toEqual([{ ordinal: 1, content_hash: 'existing-section' }]);
+    expect(rows).toEqual([
+      { ordinal: 1, content_hash: 'duplicate-section' },
+      { ordinal: 2, content_hash: 'duplicate-section' },
+    ]);
     database.close();
   });
 

@@ -21,6 +21,10 @@ Cela ferme la fenêtre de DNS rebinding entre la validation MCP et la connexion 
 adresses publiques ont été approuvées, la passerelle peut essayer l’adresse suivante après un échec
 de connexion, sans jamais refaire une résolution DNS non validée.
 
+La classification officielle est plus stricte que l’autorisation réseau : seul HTTPS peut produire
+`VERIFIED_OFFICIAL`, après correspondance exacte au registre. HTTP peut rester autorisé dans un
+profil de développement sans jamais hériter de ce statut.
+
 ## Défense en profondeur
 
 - réseau backend Docker interne par défaut ; l'overlay hôte publie les providers uniquement sur
@@ -29,7 +33,9 @@ de connexion, sans jamais refaire une résolution DNS non validée.
 - capacités Linux supprimées et `no-new-privileges` dans Compose ;
 - SearXNG en lecture seule avec répertoire temporaire borné ;
 - schémas Zod et budgets stricts ;
-- cinq redirections, 10 Mio et 20 secondes maximum par téléchargement ;
+- cinq redirections, 10 Mio et 20 secondes maximum par opération `fetch_url` ; la deadline
+  monotone est créée une fois et partagée entre validation URL, `robots.txt`, redirections,
+  téléchargement, fallback natif Crawl4AI et validation finale ;
 - quatre téléchargements concurrents, temporisation par origine et respect de `robots.txt`, avec
   séparation correcte des groupes `User-agent` et priorité aux groupes spécifiques ;
 - requêtes SQLite préparées ;

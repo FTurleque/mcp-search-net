@@ -87,6 +87,84 @@ describe('SqliteCacheRepository', () => {
     database.close();
   });
 
+  it('stores exact UTF-8 payload sizes without pruning below the global byte limit', async () => {
+    const fixture = createRepository(10, 10_000, 1_000);
+    const value = { markdown: 'é'.repeat(20) };
+    await fixture.cache.setContent('doc', value, 10_000);
+
+    const database = new Database(fixture.path, { readonly: true });
+    const row = database
+      .prepare('SELECT size_bytes FROM content_cache WHERE cache_key = ?')
+      .get('doc') as { size_bytes: number };
+    database.close();
+
+    expect(row.size_bytes).toBe(Buffer.byteLength(JSON.stringify(value)));
+    await expect(fixture.cache.getContent('doc')).resolves.toMatchObject({ value });
+  });
+
+  it('prunes the global least-recently-used entry across search and content namespaces', async () => {
+    const searchValue = { value: 's'.repeat(30) };
+    const contentValue = { value: 'c'.repeat(30) };
+    const maxBytes =
+      Buffer.byteLength(JSON.stringify(searchValue)) +
+      Buffer.byteLength(JSON.stringify(contentValue)) -
+      1;
+    const fixture = createRepository(10, 10_000, maxBytes);
+    fixture.setNow(1);
+    await fixture.cache.setSearch('old-search', searchValue, 10_000);
+    fixture.setNow(2);
+    await fixture.cache.setContent('new-content', contentValue, 10_000);
+
+    await expect(fixture.cache.getSearch('old-search')).resolves.toBeUndefined();
+    await expect(fixture.cache.getContent('new-content')).resolves.toMatchObject({
+      value: contentValue,
+    });
+  });
+
+  it('removes one oversized entry and enforces entry and byte limits simultaneously', async () => {
+    const fixture = createRepository(2, 10_000, 70);
+    await fixture.cache.setContent('oversized', { value: 'x'.repeat(100) }, 10_000);
+    await expect(fixture.cache.getContent('oversized')).resolves.toBeUndefined();
+
+    fixture.setNow(1);
+    await fixture.cache.setSearch('one', { value: '1'.repeat(10) }, 10_000);
+    fixture.setNow(2);
+    await fixture.cache.setContent('two', { value: '2'.repeat(10) }, 10_000);
+    fixture.setNow(3);
+    await fixture.cache.setSearch('three', { value: '3'.repeat(10) }, 10_000);
+
+    const database = new Database(fixture.path, { readonly: true });
+    const usage = database
+      .prepare(
+        `SELECT count(*) AS count, coalesce(sum(size_bytes), 0) AS bytes
+         FROM (SELECT size_bytes FROM search_cache UNION ALL SELECT size_bytes FROM content_cache)`,
+      )
+      .get() as { count: number; bytes: number };
+    database.close();
+    expect(usage.count).toBeLessThanOrEqual(2);
+    expect(usage.bytes).toBeLessThanOrEqual(70);
+    await expect(fixture.cache.getSearch('one')).resolves.toBeUndefined();
+  });
+
+  it('retains the bounded cache state after SQLite reopen', async () => {
+    const fixture = createRepository(2, 10_000, 100);
+    await fixture.cache.setSearch('one', { value: 'one' }, 10_000);
+    await fixture.cache.setContent('two', { value: 'two' }, 10_000);
+    fixture.cache.close();
+    caches.splice(caches.indexOf(fixture.cache), 1);
+
+    const reopened = new SqliteCacheRepository(
+      fixture.path,
+      { now: () => new Date(0) },
+      2,
+      100,
+      10_000,
+    );
+    caches.push(reopened);
+    await expect(reopened.getSearch('one')).resolves.toBeDefined();
+    await expect(reopened.getContent('two')).resolves.toBeDefined();
+  });
+
   it('continues with cache disabled after an operational failure', async () => {
     const failing: CacheRepository = {
       async getSearch() {
@@ -115,7 +193,7 @@ describe('SqliteCacheRepository', () => {
   });
 });
 
-function createRepository(maxEntries = 100, staleRetentionMs = 10_000) {
+function createRepository(maxEntries = 100, staleRetentionMs = 10_000, maxBytes = 1_000_000) {
   const root = mkdtempSync(join(tmpdir(), 'mcp-cache-'));
   roots.push(root);
   const path = join(root, 'cache.sqlite');
@@ -124,6 +202,7 @@ function createRepository(maxEntries = 100, staleRetentionMs = 10_000) {
     path,
     { now: () => new Date(now) },
     maxEntries,
+    maxBytes,
     staleRetentionMs,
   );
   caches.push(cache);

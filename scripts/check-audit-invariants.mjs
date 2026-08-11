@@ -20,6 +20,10 @@ const installerTemplate = readText('packaging/windows/mcp-search-net-installer.i
 const configureInstall = readText('packaging/windows/configure-install.ps1');
 const runtimeGuard = readText('scripts/check-node-version.mjs');
 const repositoryFacade = readText('src/infrastructure/catalog/sqlite-catalog-repository.ts');
+const catalogMigrationC009 = readText(
+  'catalog-migrations/C009__allow_repeated_section_content.sql',
+);
+const catalogIntegrity = readText('src/infrastructure/catalog/catalog-integrity.ts');
 const revisionWriter = readText('src/infrastructure/catalog/sqlite-catalog-revision-writer.ts');
 const sourceLoader = readText('src/application/use-cases/load-catalog-sources.ts');
 const syncDocuments = readText('src/application/use-cases/sync-catalog-documents.ts');
@@ -27,6 +31,12 @@ const ingestText = readText('src/cli/catalog-ingest-text.ts');
 const versionPurger = readText('src/infrastructure/catalog/sqlite-catalog-version-purger.ts');
 const secureHttpGateway = readText('src/infrastructure/fetch/secure-http-gateway.ts');
 const fetchUrl = readText('src/application/use-cases/fetch-url.ts');
+const contentFetcher = readText('src/infrastructure/fetch/crawl4ai-content-fetcher.ts');
+const officialSourceRegistry = readText(
+  'src/infrastructure/config/official-source-yaml-registry.ts',
+);
+const sqliteCache = readText('src/infrastructure/cache/sqlite-cache-repository.ts');
+const markdownStructure = readText('src/domain/services/markdown-structure.ts');
 const httpUtils = readText('src/infrastructure/http/http-utils.ts');
 const clientReporter = readText('scripts/generate-client-contract-report.mjs');
 const querySet = readJson('benchmarks/v2-search-quality/queries.json');
@@ -233,9 +243,28 @@ for (const invariant of [
   'MAX_PERSISTED_SECTION_CHARACTERS = 12_000',
   'SECTION_CHUNK_OVERLAP_CHARACTERS = 400',
   'chunkDocumentSections(revision.sections)',
-  'seenContentHashes',
 ]) {
   requireText(repositoryFacade, invariant, `catalog facade: chunking borné absent ${invariant}`);
+}
+assert(
+  !repositoryFacade.includes('seenChunkContentHashes') &&
+    !repositoryFacade.includes('Duplicate document section content hash'),
+  'catalog facade: une occurrence de section ne doit pas être dédupliquée par content_hash',
+);
+requireText(
+  catalogMigrationC009,
+  'UNIQUE (document_version_id, ordinal)',
+  'C009: unicité des ordinaux absente',
+);
+assert(
+  !catalogMigrationC009.includes('UNIQUE (document_version_id, content_hash)'),
+  'C009: unicité artificielle par content_hash encore présente',
+);
+for (const invariant of ['verifyCatalogIntegrity(database)', 'integrity.issues.length > 0']) {
+  requireText(repositoryFacade, invariant, `catalog startup: gate intégrité absent ${invariant}`);
+}
+for (const invariant of ['PRAGMA integrity_check', 'PRAGMA foreign_key_check']) {
+  requireText(catalogIntegrity, invariant, `catalog integrity: contrôle absent ${invariant}`);
 }
 for (const invariant of [
   "CatalogSourceLoadStatus = 'created' | 'updated' | 'skipped'",
@@ -293,6 +322,22 @@ for (const invariant of [
 ]) {
   requireText(fetchUrl, invariant, `fetch_url: transport/cache/liens non bornés ${invariant}`);
 }
+for (const invariant of ['request.deadline ??', 'remainingTimeoutMs(deadline)']) {
+  requireText(contentFetcher, invariant, `fetch_url: deadline end-to-end absente ${invariant}`);
+}
+requireText(
+  officialSourceRegistry,
+  "url.protocol !== 'https:'",
+  'sources officielles: garde HTTPS absente',
+);
+for (const invariant of ['private readonly maxBytes', 'remainingBytes <= this.maxBytes']) {
+  requireText(sqliteCache, invariant, `cache: borne globale en octets absente ${invariant}`);
+}
+requireText(
+  markdownStructure,
+  'sequence.length >= fence.length',
+  'Markdown: scanner de fences compatible absent',
+);
 for (const invariant of [
   'DEFAULT_MAX_PROVIDER_JSON_BYTES = 16 * 1024 * 1024',
   'readJsonWithLimit',
@@ -399,6 +444,11 @@ process.stdout.write(
       boundedLinkValidation: true,
       boundedProviderJson: true,
       boundedCatalogSections: true,
+      repeatedCatalogSectionsPreserved: true,
+      catalogStartupIntegrityGate: true,
+      officialSourcesRequireHttps: true,
+      boundedCacheBytes: true,
+      sharedMarkdownFenceScanner: true,
       reconciledCatalogSources: true,
       safeWindowsUninstall: true,
       exactHeadReleaseGate: true,

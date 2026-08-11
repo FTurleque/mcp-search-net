@@ -57,8 +57,13 @@ describe('SearxngSearchProvider', () => {
 
   it.each([
     [403, 1],
+    [404, 1],
+    [410, 1],
+    [408, 2],
+    [425, 2],
     [429, 2],
     [500, 2],
+    [503, 2],
   ])('maps HTTP %i and retries at most once when temporary', async (status, expectedCalls) => {
     const fetchMock = vi.fn(
       async () => new Response('failure', { status }),
@@ -67,7 +72,7 @@ describe('SearxngSearchProvider', () => {
 
     await expect(
       provider.search({ query: SearchQuery.create('mcp sdk'), maxResults: 5 }),
-    ).rejects.toMatchObject({ code: 'SEARCH_PROVIDER_UNAVAILABLE' });
+    ).rejects.toMatchObject({ code: 'SEARCH_PROVIDER_UNAVAILABLE', status });
     expect(fetchMock).toHaveBeenCalledTimes(expectedCalls);
   });
 });

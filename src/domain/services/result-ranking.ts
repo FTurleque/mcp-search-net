@@ -75,7 +75,7 @@ export function matchesDomain(hostname: string, domains: readonly string[]): boo
 }
 
 function classifySource(url: URL, officialSource: OfficialSource | undefined): SourceStatus {
-  if (officialSource !== undefined) return 'VERIFIED_OFFICIAL';
+  if (url.protocol === 'https:' && officialSource !== undefined) return 'VERIFIED_OFFICIAL';
   if (matchesDomain(url.hostname, THIRD_PARTY_DOMAINS) || looksThirdParty(url)) {
     return 'THIRD_PARTY';
   }

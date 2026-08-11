@@ -48,6 +48,7 @@ export const applicationConfigSchema = z
         sitemapTtlMs: durationSchema.default(86_400_000),
         staleRetentionMs: durationSchema.default(604_800_000),
         maxEntries: z.number().int().min(10).max(100_000).default(2_000),
+        maxBytes: z.number().int().min(1_048_576).max(2_147_483_648).default(268_435_456),
       })
       .strict()
       .default({
@@ -60,6 +61,7 @@ export const applicationConfigSchema = z
         sitemapTtlMs: 86_400_000,
         staleRetentionMs: 604_800_000,
         maxEntries: 2_000,
+        maxBytes: 268_435_456,
       }),
     limits: z
       .object({

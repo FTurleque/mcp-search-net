@@ -112,7 +112,16 @@ describe('audit P2/P3 remediations', () => {
   });
 
   it('shares one SearXNG deadline across the retry', async () => {
-    const fetchMock = vi.fn(delayedHttpFailure(25)) as unknown as typeof fetch;
+    vi.spyOn(Date, 'now')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(25)
+      .mockReturnValue(25);
+    const delayedFailure = delayedHttpFailure(25);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('failure', { status: 500 }))
+      .mockImplementation(delayedFailure) as unknown as typeof fetch;
     const provider = new SearxngSearchProvider('http://127.0.0.1:8888', 35, fetchMock);
     const started = performance.now();
 

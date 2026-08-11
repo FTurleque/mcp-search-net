@@ -1,4 +1,5 @@
 import type { ContentSection, SelectedContent } from '../models/content.js';
+import { scanMarkdownHeadings } from './markdown-structure.js';
 
 interface MarkdownSection {
   readonly heading: string;
@@ -96,33 +97,48 @@ function lexicalRelevance(section: MarkdownSection, terms: readonly string[]): n
 }
 
 function splitMarkdown(markdown: string): readonly MarkdownSection[] {
-  const sections: MarkdownSection[] = [];
-  let heading = '';
-  let body: string[] = [];
-  let inCode = false;
-  const flush = (): void => {
-    const value = body.join('\n').trim();
-    if (heading !== '' || value !== '') {
-      sections.push({
-        heading,
-        body: value,
-        index: sections.length,
-        tokens: tokenize(`${heading} ${value}`),
-      });
-    }
-    body = [];
-  };
-  for (const line of markdown.split('\n')) {
-    if (/^\s*```/u.test(line)) inCode = !inCode;
-    const match = inCode ? null : /^(#{1,6})\s+(.+)$/u.exec(line);
-    if (match === null) body.push(line);
-    else {
-      flush();
-      heading = `${match[1] ?? '#'} ${match[2]?.trim() ?? ''}`;
-    }
+  const lines = markdown.split('\n');
+  const headings = scanMarkdownHeadings(lines);
+  if (headings.length === 0) {
+    const section = createMarkdownSection('', markdown, 0);
+    return section === undefined ? [] : [section];
   }
-  flush();
+
+  const sections: MarkdownSection[] = [];
+  const firstHeading = headings[0];
+  const preamble = lines
+    .slice(0, firstHeading?.lineIndex ?? 0)
+    .join('\n')
+    .trim();
+  if (preamble !== '') {
+    const section = createMarkdownSection('', preamble, sections.length);
+    if (section !== undefined) sections.push(section);
+  }
+
+  headings.forEach((heading, index) => {
+    const nextHeading = headings[index + 1];
+    const body = lines
+      .slice(heading.lineIndex + 1, nextHeading?.lineIndex ?? lines.length)
+      .join('\n')
+      .trim();
+    const section = createMarkdownSection(
+      `${'#'.repeat(heading.level)} ${heading.title}`,
+      body,
+      sections.length,
+    );
+    if (section !== undefined) sections.push(section);
+  });
   return sections;
+}
+
+function createMarkdownSection(
+  heading: string,
+  body: string,
+  index: number,
+): MarkdownSection | undefined {
+  const value = body.trim();
+  if (heading === '' && value === '') return undefined;
+  return { heading, body: value, index, tokens: tokenize(`${heading} ${value}`) };
 }
 
 function tokenize(value: string): readonly string[] {
