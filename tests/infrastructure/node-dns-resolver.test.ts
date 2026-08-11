@@ -18,13 +18,14 @@ describe('NodeDnsResolver', () => {
 
   it('bounds unresolved OS lookups instead of accumulating work after caller timeouts', async () => {
     const releases: Array<() => void> = [];
-    const resolver = new NodeDnsResolver(
-      2,
-      () =>
-        new Promise((resolve) => {
-          releases.push(() => resolve([{ address: '203.0.113.10' }]));
-        }),
-    );
+    let calls = 0;
+    const resolver = new NodeDnsResolver(2, () => {
+      calls += 1;
+      if (calls > 2) return Promise.resolve([{ address: '203.0.113.10' }]);
+      return new Promise((resolve) => {
+        releases.push(() => resolve([{ address: '203.0.113.10' }]));
+      });
+    });
 
     const first = resolver.resolve('first.example.test');
     const second = resolver.resolve('second.example.test');
