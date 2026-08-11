@@ -271,10 +271,10 @@ function normalizeSnippetText(value: string): NormalizedSnippetText {
     const originalEnd = originalStart + character.length;
     const normalizedCharacter = character.normalize('NFD').toLowerCase().replace(/\p{M}/gu, '');
     normalizedValue += normalizedCharacter;
-    for (let index = 0; index < normalizedCharacter.length; index += 1) {
+    normalizedCharacter.split('').forEach(() => {
       originalStarts.push(originalStart);
       originalEnds.push(originalEnd);
-    }
+    });
     originalStart = originalEnd;
   }
 
