@@ -21,6 +21,7 @@ import {
   RequestTimeoutError,
   SearchProviderUnavailableError,
 } from '../../domain/errors/domain-errors.js';
+import { MAX_EXTERNAL_TITLE_CHARACTERS, truncateUnicode } from '../../domain/services/bounded-text.js';
 import { SearchQuery } from '../../domain/value-objects/search-query.js';
 import {
   matchesDomain,
@@ -117,7 +118,8 @@ export class SearchWeb {
         if (mapped === undefined) return undefined;
         return {
           ...mapped,
-          snippet: truncate(mapped.snippet, this.options.maxSnippetChars),
+          title: truncateUnicode(mapped.title, MAX_EXTERNAL_TITLE_CHARACTERS),
+          snippet: truncateUnicode(mapped.snippet, this.options.maxSnippetChars),
         };
       })
       .filter((result) => result !== undefined)
@@ -329,12 +331,6 @@ function mergeUnresponsiveEngines(
 
 function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function truncate(value: string, maxChars: number): string {
-  return value.length <= maxChars
-    ? value
-    : `${value.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
 async function withDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
