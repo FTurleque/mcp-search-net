@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 
 import {
+  countUnicodeCharacters,
   MAX_EXTERNAL_ANCHOR_CHARACTERS,
   MAX_EXTERNAL_HEADING_CHARACTERS,
   MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
@@ -49,16 +50,16 @@ export function createSearchDocsSchemas(defaultResults: number, maximumResults: 
   const result = z
     .object({
       sourceKey: z.string().min(1).max(128),
-      sourceName: z.string().min(1).max(200),
+      sourceName: unicodeBoundedString(200).pipe(z.string().min(1)),
       documentPublicId: z.string().min(1).max(128),
       sectionId: z.number().int().positive(),
-      title: z.string().min(1).max(MAX_EXTERNAL_TITLE_CHARACTERS),
+      title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS).pipe(z.string().min(1)),
       url: z.url(),
       language: z.string().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS),
-      heading: z.string().max(MAX_EXTERNAL_HEADING_CHARACTERS).optional(),
-      headingPath: z.string().max(MAX_EXTERNAL_HEADING_PATH_CHARACTERS).optional(),
-      anchor: z.string().max(MAX_EXTERNAL_ANCHOR_CHARACTERS).optional(),
-      snippet: z.string().max(500),
+      heading: unicodeBoundedString(MAX_EXTERNAL_HEADING_CHARACTERS).optional(),
+      headingPath: unicodeBoundedString(MAX_EXTERNAL_HEADING_PATH_CHARACTERS).optional(),
+      anchor: unicodeBoundedString(MAX_EXTERNAL_ANCHOR_CHARACTERS).optional(),
+      snippet: unicodeBoundedString(500),
       score: z.number().nonnegative(),
     })
     .strict();
@@ -71,4 +72,10 @@ export function createSearchDocsSchemas(defaultResults: number, maximumResults: 
     .strict();
 
   return { input, data, output: createToolResponseSchema('search_docs', data) } as const;
+}
+
+function unicodeBoundedString(maximumCharacters: number) {
+  return z.string().refine((value) => countUnicodeCharacters(value) <= maximumCharacters, {
+    message: `Must contain at most ${maximumCharacters} Unicode characters`,
+  });
 }
