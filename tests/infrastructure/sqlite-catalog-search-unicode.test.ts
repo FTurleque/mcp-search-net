@@ -32,34 +32,34 @@ describe('SqliteCatalogSearch Unicode snippets', () => {
       syncStrategy: 'manual',
       enabled: true,
     });
-    const document = await catalog.upsertDocument({
-      publicId: 'unicode-offsets',
-      sourceId: source.id,
-      canonicalUrl: 'https://example.test/unicode-offsets',
-      stableKey: 'unicode-offsets',
-      title: 'Unicode offsets',
-      mimeType: 'text/markdown',
-      language: 'en',
-      status: 'ACTIVE',
-    });
-    const version = await catalog.addDocumentVersion({
-      documentId: document.id,
-      contentHash: 'unicode-offsets-v1',
-      isCurrent: true,
-      extractionMode: 'static',
-      contentType: 'text/markdown',
-      metadataJson: '{}',
-    });
     const content = `${'😀'.repeat(220)} needle appears near the end of this section.`;
-    await catalog.replaceDocumentSections(version.id, [
-      {
-        ordinal: 0,
-        heading: 'Unicode regression',
-        content,
-        contentHash: 'unicode-offset-section',
-        characterCount: Array.from(content).length,
+    await catalog.commitDocumentRevision({
+      document: {
+        publicId: 'unicode-offsets',
+        sourceId: source.id,
+        canonicalUrl: 'https://example.test/unicode-offsets',
+        stableKey: 'unicode-offsets',
+        title: 'Unicode offsets',
+        mimeType: 'text/markdown',
+        language: 'en',
+        status: 'ACTIVE',
       },
-    ]);
+      version: {
+        contentHash: 'unicode-offsets-v1',
+        extractionMode: 'static',
+        contentType: 'text/markdown',
+        metadataJson: '{}',
+      },
+      sections: [
+        {
+          ordinal: 0,
+          heading: 'Unicode regression',
+          content,
+          contentHash: 'unicode-offset-section',
+          characterCount: Array.from(content).length,
+        },
+      ],
+    });
 
     const results = await catalog.searchDocuments({ query: 'needle', limit: 10 });
 
