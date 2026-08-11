@@ -87,6 +87,20 @@ export class SecureHttpGateway {
     this.maxTrackedOrigins = maxTrackedOrigins;
   }
 
+  public async approveUrl(
+    value: string,
+    context: { readonly requestId?: string; readonly tool?: 'fetch_url' } = {},
+    timeoutMs: number = this.options.timeoutMs,
+  ): Promise<Awaited<ReturnType<UrlSecurityPolicy['assertAllowed']>>> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > this.options.timeoutMs) {
+      throw new ApplicationError('Unsafe URL approval timeout was requested', 'INTERNAL_ERROR');
+    }
+    return withDeadline(
+      this.securityPolicy.assertAllowed(value, context),
+      performance.now() + timeoutMs,
+    );
+  }
+
   public async download(
     value: string,
     conditionalHeaders: Readonly<Record<string, string>> = {},
