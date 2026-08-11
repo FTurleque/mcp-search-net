@@ -269,9 +269,19 @@ for (const invariant of ['PRAGMA integrity_check', 'PRAGMA foreign_key_check']) 
 for (const invariant of [
   "CatalogSourceLoadStatus = 'created' | 'updated' | 'skipped'",
   'repository.updateSource(source)',
-  'await this.repository.rebuildSearchIndex()',
 ]) {
   requireText(sourceLoader, invariant, `catalog sources: réconciliation absente ${invariant}`);
+}
+for (const invariant of [
+  'const transaction = this.database.transaction((): CatalogSource => {',
+  'const updatedSource = this.sources.update(validatedSource);',
+  'this.rebuildSearchIndexNow();',
+]) {
+  requireText(
+    repositoryFacade,
+    invariant,
+    `catalog sources: update/FTS atomique absent ${invariant}`,
+  );
 }
 for (const invariant of [
   'WebUrl.createTransport(document.url)',

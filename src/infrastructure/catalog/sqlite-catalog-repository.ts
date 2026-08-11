@@ -101,7 +101,15 @@ export class SqliteCatalogRepository implements CatalogRepository {
   }
 
   public updateSource(source: NewCatalogSource): Promise<CatalogSource> {
-    return this.asPromise(() => this.sources.update(validateNewCatalogSource(source)));
+    return this.asPromise(() => {
+      const validatedSource = validateNewCatalogSource(source);
+      const transaction = this.database.transaction((): CatalogSource => {
+        const updatedSource = this.sources.update(validatedSource);
+        this.rebuildSearchIndexNow();
+        return updatedSource;
+      });
+      return transaction();
+    });
   }
 
   public getSourceByKey(sourceKey: string): Promise<CatalogSource | undefined> {
@@ -246,12 +254,9 @@ export class SqliteCatalogRepository implements CatalogRepository {
 
   public rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult> {
     return this.asPromise(() => {
-      const transaction = this.database.transaction((): CatalogSearchIndexRebuildResult => {
-        this.database.prepare(DELETE_DOCUMENT_SECTION_FTS_SQL).run();
-        this.database.prepare(INSERT_CURRENT_DOCUMENT_SECTIONS_FTS_SQL).run();
-        const row = this.database.prepare<[], CountRow>(COUNT_DOCUMENT_SECTION_FTS_SQL).get();
-        return { indexedSections: row?.count ?? 0 };
-      });
+      const transaction = this.database.transaction(
+        (): CatalogSearchIndexRebuildResult => this.rebuildSearchIndexNow(),
+      );
       return transaction();
     });
   }
@@ -275,6 +280,13 @@ export class SqliteCatalogRepository implements CatalogRepository {
 
   public close(): void {
     if (this.database.open) this.database.close();
+  }
+
+  private rebuildSearchIndexNow(): CatalogSearchIndexRebuildResult {
+    this.database.prepare(DELETE_DOCUMENT_SECTION_FTS_SQL).run();
+    this.database.prepare(INSERT_CURRENT_DOCUMENT_SECTIONS_FTS_SQL).run();
+    const row = this.database.prepare<[], CountRow>(COUNT_DOCUMENT_SECTION_FTS_SQL).get();
+    return { indexedSections: row?.count ?? 0 };
   }
 
   private asPromise<T>(operation: () => T): Promise<T> {

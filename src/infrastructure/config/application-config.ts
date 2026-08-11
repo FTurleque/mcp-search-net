@@ -2,8 +2,12 @@ import { z } from 'zod/v4';
 
 const durationSchema = z.number().int().positive();
 const httpUrlSchema = z.url().refine((value) => {
-  const protocol = new URL(value).protocol;
-  return protocol === 'http:' || protocol === 'https:';
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
 }, 'Expected an HTTP or HTTPS URL');
 const publicPortsEnvironmentSchema = z
   .string()

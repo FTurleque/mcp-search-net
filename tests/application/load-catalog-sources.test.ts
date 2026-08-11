@@ -6,7 +6,6 @@ import type { CatalogSource, NewCatalogSource } from '../../src/domain/models/ca
 class CatalogSourceRepositoryStub {
   private nextId = 1;
   private readonly sources = new Map<string, CatalogSource>();
-  public rebuildCount = 0;
 
   public async addSource(source: NewCatalogSource): Promise<CatalogSource> {
     const createdSource: CatalogSource = {
@@ -34,11 +33,6 @@ class CatalogSourceRepositoryStub {
 
   public async getSourceByKey(sourceKey: string): Promise<CatalogSource | undefined> {
     return this.sources.get(sourceKey);
-  }
-
-  public async rebuildSearchIndex(): Promise<{ indexedSections: number }> {
-    this.rebuildCount += 1;
-    return { indexedSections: 0 };
   }
 }
 
@@ -99,10 +93,9 @@ describe('LoadCatalogSources', () => {
         },
       ],
     });
-    expect(repository.rebuildCount).toBe(0);
   });
 
-  it('reconciles changed source configuration and rebuilds the derived search index', async () => {
+  it('delegates changed source reconciliation to the repository', async () => {
     const repository = new CatalogSourceRepositoryStub();
     await repository.addSource({
       sourceKey: 'docs',
@@ -143,6 +136,5 @@ describe('LoadCatalogSources', () => {
       syncStrategy: 'polling',
       enabled: false,
     });
-    expect(repository.rebuildCount).toBe(1);
   });
 });
