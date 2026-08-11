@@ -41,7 +41,7 @@ const compactDocumentSchema = z
     id: z.number().int().positive(),
     publicId: z.string().min(1),
     sourceKey: z.string().min(1),
-    title: z.string().min(1).max(MAX_EXTERNAL_TITLE_CHARACTERS),
+    title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS, 1),
     url: z.url(),
     language: z.string().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS),
     status: z.string().min(1),
@@ -87,7 +87,7 @@ const sectionDocumentSchema = z
     id: z.number().int().positive(),
     publicId: z.string().min(1),
     sourceKey: z.string().min(1),
-    title: z.string().min(1).max(MAX_EXTERNAL_TITLE_CHARACTERS),
+    title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS, 1),
     url: z.url(),
   })
   .strict();
@@ -99,8 +99,8 @@ const readDocSectionDataSchema = z
     truncated: z.boolean(),
     characterCount: z.number().int().nonnegative(),
     document: sectionDocumentSchema.nullable(),
-    heading: z.string().max(MAX_EXTERNAL_HEADING_CHARACTERS).nullable(),
-    headingPath: z.string().max(MAX_EXTERNAL_HEADING_PATH_CHARACTERS).nullable(),
+    heading: unicodeBoundedString(MAX_EXTERNAL_HEADING_CHARACTERS).nullable(),
+    headingPath: unicodeBoundedString(MAX_EXTERNAL_HEADING_PATH_CHARACTERS).nullable(),
     content: z.string(),
   })
   .strict();
@@ -438,4 +438,15 @@ function searchDocsWarnings(data: SearchDocsData): readonly ToolWarningDescripto
       message: 'No catalog document matched the query',
     },
   ];
+}
+
+function unicodeBoundedString(maximumCharacters: number, minimumCharacters = 0) {
+  return z
+    .string()
+    .refine((value) => countUnicodeCharacters(value) >= minimumCharacters, {
+      message: `Must contain at least ${minimumCharacters} Unicode characters`,
+    })
+    .refine((value) => countUnicodeCharacters(value) <= maximumCharacters, {
+      message: `Must contain at most ${maximumCharacters} Unicode characters`,
+    });
 }
