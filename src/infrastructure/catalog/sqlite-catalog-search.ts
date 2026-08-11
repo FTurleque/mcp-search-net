@@ -37,6 +37,7 @@ type SearchCurrentDocumentSectionsFtsParams = [
   string,
   string,
   string,
+  string,
   string | null,
   string | null,
   string | null,
