@@ -21,7 +21,10 @@ import {
   RequestTimeoutError,
   SearchProviderUnavailableError,
 } from '../../domain/errors/domain-errors.js';
-import { MAX_EXTERNAL_TITLE_CHARACTERS, truncateUnicode } from '../../domain/services/bounded-text.js';
+import {
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 import { SearchQuery } from '../../domain/value-objects/search-query.js';
 import {
   matchesDomain,
