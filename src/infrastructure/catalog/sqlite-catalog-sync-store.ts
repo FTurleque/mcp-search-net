@@ -5,7 +5,7 @@ import type {
   CatalogSyncRun,
   CatalogSyncRunCompletionInput,
   CatalogSyncRunKind,
-  CatalogSyncRunStartInput,
+  CatalogSyncRunStartRequest,
   CatalogSyncRunStatus,
 } from '../../domain/models/catalog.js';
 import type { CatalogSyncRunRow } from './catalog-row-mappers.js';
@@ -65,7 +65,7 @@ type CompleteCatalogSyncRunParams = [
 export class SqliteCatalogSyncStore {
   public constructor(private readonly database: Database.Database) {}
 
-  public start(input: CatalogSyncRunStartInput): CatalogSyncRun {
+  public start(input: CatalogSyncRunStartRequest): CatalogSyncRun {
     const info = this.database
       .prepare<InsertCatalogSyncRunParams>(INSERT_CATALOG_SYNC_RUN_SQL)
       .run(input.sourceId ?? null, input.runKind ?? 'EXECUTION', input.startedAt.getTime());
