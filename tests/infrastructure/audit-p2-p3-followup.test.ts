@@ -24,9 +24,9 @@ describe('P2/P3 follow-up regressions', () => {
     expect(() =>
       applicationEnvironmentSchema.safeParse({ MCP_SEARXNG_URL: 'not-a-url' }),
     ).not.toThrow();
-    expect(
-      applicationEnvironmentSchema.safeParse({ MCP_SEARXNG_URL: 'not-a-url' }).success,
-    ).toBe(false);
+    expect(applicationEnvironmentSchema.safeParse({ MCP_SEARXNG_URL: 'not-a-url' }).success).toBe(
+      false,
+    );
 
     expect(() =>
       applicationConfigSchema.safeParse({ crawl4ai: { baseUrl: '://broken' } }),
@@ -67,7 +67,9 @@ describe('P2/P3 follow-up regressions', () => {
       ],
     });
 
-    await expect(fixture.catalog.searchDocuments({ query: 'consistency' })).resolves.toHaveLength(1);
+    await expect(fixture.catalog.searchDocuments({ query: 'consistency' })).resolves.toHaveLength(
+      1,
+    );
 
     await fixture.catalog.updateSource(sourceInput(false));
 
