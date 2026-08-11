@@ -2,6 +2,10 @@ import type { CacheRepository } from '../ports/cache-repository.js';
 import type { OperationContext, Telemetry } from '../ports/telemetry.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
 import type { SearchProvider, SearchProviderResponse } from '../ports/search-provider.js';
+import {
+  decodeSearchCacheValue,
+  type SearchCacheValue,
+} from '../services/cache-value-validation.js';
 import { createSearchCacheKey, normalizeSearchRequest } from '../services/search-request.js';
 import type {
   NormalizedSearchRequest,
@@ -41,12 +45,6 @@ export interface SearchWebOptions {
   readonly providerTimeoutMs?: number;
 }
 
-interface CachedSearchValue {
-  readonly status: ToolResponseStatus;
-  readonly warnings: readonly ToolWarningDescriptor[];
-  readonly data: SearchResponse;
-}
-
 export class SearchWeb {
   public constructor(
     private readonly provider: SearchProvider,
@@ -65,7 +63,10 @@ export class SearchWeb {
       providerOversampling: this.options.providerOversampling,
       maxSnippetChars: this.options.maxSnippetChars,
     });
-    const cached = await this.cache.getSearch<CachedSearchValue>(key, { allowStale: true });
+    const cached = await this.cache.getSearch<SearchCacheValue>(key, {
+      allowStale: true,
+      decode: decodeSearchCacheValue,
+    });
 
     if (cached !== undefined && !cached.stale) {
       this.telemetry?.record('cache_hit', {
@@ -145,7 +146,7 @@ export class SearchWeb {
       results,
       unresponsiveEngines,
     });
-    const value: CachedSearchValue = {
+    const value: SearchCacheValue = {
       status: warnings.some((warning) =>
         [
           'FALLBACK_LANGUAGE_USED',
@@ -285,7 +286,7 @@ function createWarnings(context: {
 }
 
 function execution(
-  value: CachedSearchValue,
+  value: SearchCacheValue,
   cacheStatus: 'HIT' | 'MISS' | 'DISABLED',
 ): ToolExecution<SearchResponse> {
   return {
@@ -297,7 +298,7 @@ function execution(
   };
 }
 
-function staleExecution(value: CachedSearchValue): ToolExecution<SearchResponse> {
+function staleExecution(value: SearchCacheValue): ToolExecution<SearchResponse> {
   return {
     ...execution(value, 'MISS'),
     status: 'partial',
