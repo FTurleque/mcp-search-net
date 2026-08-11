@@ -5,6 +5,7 @@ export const MAX_EXTERNAL_HEADING_CHARACTERS = 256;
 export const MAX_EXTERNAL_HEADING_PATH_CHARACTERS = 1_024;
 export const MAX_EXTERNAL_ANCHOR_CHARACTERS = 256;
 export const MAX_EXTERNAL_DOCUMENT_SECTIONS = 256;
+export const MAX_PERSISTED_DOCUMENT_SECTIONS = 1_024;
 export const MAX_MARKDOWN_STRUCTURAL_LINES = 20_000;
 
 export function countUnicodeCharacters(value: string): number {
