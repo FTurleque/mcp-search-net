@@ -5,25 +5,37 @@ import { describe, expect, it } from 'vitest';
 const releaseWorkflow = readFileSync('.github/workflows/release-windows.yml', 'utf8');
 
 describe('Windows release workflow token scope', () => {
-  it('does not persist checkout credentials or expose GH_TOKEN to the full job', () => {
+  it('keeps workflow defaults read-only and checkout credentials non-persistent', () => {
+    expect(releaseWorkflow).toContain('permissions:\n  contents: read\n  actions: read');
     expect(releaseWorkflow).toContain('persist-credentials: false');
-
-    const jobEnvironmentStart = releaseWorkflow.indexOf('    env:\n');
-    const stepsStart = releaseWorkflow.indexOf('    steps:\n');
-    expect(jobEnvironmentStart).toBeGreaterThanOrEqual(0);
-    expect(stepsStart).toBeGreaterThan(jobEnvironmentStart);
-    expect(releaseWorkflow.slice(jobEnvironmentStart, stepsStart)).not.toContain('GH_TOKEN');
+    expect(releaseWorkflow.match(/contents:\s*write/gu) ?? []).toHaveLength(1);
   });
 
-  it('provides GH_TOKEN only to the two steps that call authenticated gh commands', () => {
-    const tokenAssignments = releaseWorkflow.match(/GH_TOKEN:\s*\$\{\{ github\.token \}\}/gu) ?? [];
-    expect(tokenAssignments).toHaveLength(2);
+  it('isolates write permission in a publish-only job without repository code execution', () => {
+    const publishStart = releaseWorkflow.indexOf('\n  publish:\n');
+    expect(publishStart).toBeGreaterThanOrEqual(0);
+    const publishJob = releaseWorkflow.slice(publishStart);
 
+    expect(publishJob).toContain('permissions:\n      contents: write\n      actions: read');
+    expect(publishJob).not.toContain('actions/checkout@');
+    expect(publishJob).not.toContain('publish-windows-release.ps1');
+    expect(publishJob).toContain('gh run download');
+    expect(publishJob).toContain('gh release create');
+  });
+
+  it('qualifies artifacts before publication and scopes GH_TOKEN to authenticated gh steps', () => {
+    const publishStart = releaseWorkflow.indexOf('\n  publish:\n');
+    const qualifyJob = releaseWorkflow.slice(0, publishStart);
+    const tokenAssignments = releaseWorkflow.match(/GH_TOKEN:\s*\$\{\{ github\.token \}\}/gu) ?? [];
+
+    expect(qualifyJob).toContain('publish-windows-release.ps1');
+    expect(qualifyJob).toContain('-ValidateOnly');
+    expect(tokenAssignments).toHaveLength(2);
     expect(releaseWorkflow).toMatch(
       /- name: Vérifier la CI exact-head avant publication[\s\S]*?env:\s*\n\s*GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*?gh api/u,
     );
     expect(releaseWorkflow).toMatch(
-      /- name: Construire, qualifier et publier la GitHub Release \(master\)[\s\S]*?env:\s*\n\s*GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*?publish-windows-release\.ps1/u,
+      /- name: Publier uniquement les artefacts déjà qualifiés[\s\S]*?env:\s*\n\s*GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*?gh run download[\s\S]*?gh release create/u,
     );
   });
 });
