@@ -3,6 +3,17 @@ import type {
   CatalogDocumentSearchQuery,
   CatalogDocumentSearchResult,
 } from '../../domain/models/catalog.js';
+import {
+  MAX_EXTERNAL_ANCHOR_CHARACTERS,
+  MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+  MAX_EXTERNAL_HEADING_CHARACTERS,
+  MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
+  MAX_EXTERNAL_LANGUAGE_CHARACTERS,
+  MAX_EXTERNAL_SOURCE_KEY_CHARACTERS,
+  MAX_EXTERNAL_SOURCE_NAME_CHARACTERS,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 
 export interface SearchCatalogDocumentsInput {
   readonly query: string;
@@ -58,20 +69,48 @@ export class SearchCatalogDocuments {
 }
 
 function toOutputItem(result: CatalogDocumentSearchResult): SearchCatalogDocumentsItem {
+  const sourceKey = boundedNonEmpty(
+    result.source.sourceKey,
+    MAX_EXTERNAL_SOURCE_KEY_CHARACTERS,
+    'catalog',
+  );
+  const publicId = boundedNonEmpty(
+    result.document.publicId,
+    MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+    `document-${result.document.id}`,
+  );
   return {
-    sourceKey: result.source.sourceKey,
-    sourceName: result.source.displayName,
-    documentPublicId: result.document.publicId,
+    sourceKey,
+    sourceName: boundedNonEmpty(
+      result.source.displayName,
+      MAX_EXTERNAL_SOURCE_NAME_CHARACTERS,
+      sourceKey,
+    ),
+    documentPublicId: publicId,
     sectionId: result.section.id,
-    title: result.document.title,
+    title: boundedNonEmpty(result.document.title, MAX_EXTERNAL_TITLE_CHARACTERS, publicId),
     url: result.document.canonicalUrl,
-    language: result.document.language,
-    ...(result.section.heading === undefined ? {} : { heading: result.section.heading }),
+    language: boundedNonEmpty(result.document.language, MAX_EXTERNAL_LANGUAGE_CHARACTERS, 'und'),
+    ...(result.section.heading === undefined
+      ? {}
+      : { heading: truncateUnicode(result.section.heading, MAX_EXTERNAL_HEADING_CHARACTERS) }),
     ...(result.section.headingPath === undefined
       ? {}
-      : { headingPath: result.section.headingPath }),
-    ...(result.section.anchor === undefined ? {} : { anchor: result.section.anchor }),
+      : {
+          headingPath: truncateUnicode(
+            result.section.headingPath,
+            MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
+          ),
+        }),
+    ...(result.section.anchor === undefined
+      ? {}
+      : { anchor: truncateUnicode(result.section.anchor, MAX_EXTERNAL_ANCHOR_CHARACTERS) }),
     snippet: result.snippet,
     score: result.score,
   };
+}
+
+function boundedNonEmpty(value: string, maximumCharacters: number, fallback: string): string {
+  const trimmed = value.trim();
+  return truncateUnicode(trimmed === '' ? fallback : trimmed, maximumCharacters);
 }
