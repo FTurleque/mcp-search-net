@@ -357,8 +357,7 @@ async function readDocSection(
   return {
     sectionId: input.sectionId,
     found: true,
-    truncated:
-      countUnicodeCharacters(content) < countUnicodeCharacters(entry.section.content),
+    truncated: countUnicodeCharacters(content) < countUnicodeCharacters(entry.section.content),
     characterCount: countUnicodeCharacters(content),
     document: {
       id: entry.document.id,
