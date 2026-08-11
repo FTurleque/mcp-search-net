@@ -126,7 +126,13 @@ describe('final develop audit regressions', () => {
 
   it('deletes semantically invalid JSON cache entries when a decoder rejects them', async () => {
     const root = createRoot('cache-shape');
-    const cache = new SqliteCacheRepository(join(root, 'cache.sqlite'), clock, 100, 1_000_000, 60_000);
+    const cache = new SqliteCacheRepository(
+      join(root, 'cache.sqlite'),
+      clock,
+      100,
+      1_000_000,
+      60_000,
+    );
     caches.push(cache);
     await cache.setSearch('shape-key', { syntactically: 'valid', semantically: 'wrong' }, 60_000);
 
