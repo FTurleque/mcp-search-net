@@ -14,10 +14,7 @@ import {
   EXTERNAL_CONTENT_SAFETY_NOTICE,
   EXTERNAL_CONTENT_TRUST,
 } from '../../domain/models/tool-response.js';
-import {
-  countUnicodeCharacters,
-  truncateUnicode,
-} from '../../domain/services/bounded-text.js';
+import { countUnicodeCharacters, truncateUnicode } from '../../domain/services/bounded-text.js';
 
 const RESOURCE_MIME_TYPE = 'application/json';
 const CATALOG_RESOURCE_PAGE_LIMIT = 20;
@@ -411,7 +408,8 @@ function toResourceDocumentEntry(entry: CatalogDocumentEntry) {
 }
 
 function toResourceDocumentVersion(version: DocumentVersion) {
-  const metadataTruncated = countUnicodeCharacters(version.metadataJson) > MAX_RESOURCE_METADATA_CHARACTERS;
+  const metadataTruncated =
+    countUnicodeCharacters(version.metadataJson) > MAX_RESOURCE_METADATA_CHARACTERS;
   return {
     id: version.id,
     documentId: version.documentId,

@@ -152,9 +152,9 @@ describe('CatalogMigrationRunner', () => {
           "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'document_sections'",
         )
         .get() as { sql: string };
-      const legacyRun = database
-        .prepare('SELECT run_kind FROM sync_runs LIMIT 1')
-        .get() as { run_kind: string };
+      const legacyRun = database.prepare('SELECT run_kind FROM sync_runs LIMIT 1').get() as {
+        run_kind: string;
+      };
       expect(versions.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
       expect(sectionSql.sql).not.toContain('UNIQUE (document_version_id, content_hash)');
       expect(legacyRun.run_kind).toBe('EXECUTION');

@@ -258,11 +258,12 @@ describe('follow-up audit regression coverage', () => {
         redirectChain: [],
       })),
     } as unknown as SecureHttpGateway;
-    const renderer = vi.fn(async () =>
-      new Response(
-        JSON.stringify({ results: [{ success: true, markdown: 'still tiny' }] }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
+    const renderer = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ results: [{ success: true, markdown: 'still tiny' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
     ) as unknown as typeof fetch;
     const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway, renderer);
 

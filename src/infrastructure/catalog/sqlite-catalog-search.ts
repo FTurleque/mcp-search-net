@@ -139,10 +139,7 @@ function createSnippet(content: string, term: string): string {
   const snippetLength = SEARCH_SNIPPET_RADIUS * 2;
   const requestedStart = findBestMultiTermSnippetStart(content, term, snippetLength);
   const start = previousUnicodeBoundary(content, requestedStart);
-  const end = previousUnicodeBoundary(
-    content,
-    Math.min(content.length, start + snippetLength * 2),
-  );
+  const end = previousUnicodeBoundary(content, Math.min(content.length, start + snippetLength * 2));
   const prefix = start > 0 ? '…' : '';
   const raw = content.slice(start, end).trim();
   const body = truncateUnicode(raw, snippetLength);

@@ -50,7 +50,7 @@ describe.runIf(live)('live provider services', () => {
     expect(envelope.results?.[0]?.markdown?.raw_markdown).toContain('Integration proof');
   });
 
-  it('uses the real Crawl4AI adapter from the host in auto mode', async () => {
+  it('uses the real Crawl4AI adapter without mislabeling discarded render output', async () => {
     const gateway = {
       download: async () => ({
         requestedUrl: 'https://example.com/dynamic',
@@ -74,7 +74,7 @@ describe.runIf(live)('live provider services', () => {
         maxRedirects: 5,
       }),
     ).resolves.toMatchObject({
-      extractionMode: 'native-render',
+      extractionMode: 'static',
     });
   });
 });

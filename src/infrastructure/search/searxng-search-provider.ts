@@ -81,7 +81,9 @@ export class SearxngSearchProvider implements SearchProvider {
       results: parsed.data.results.slice(0, request.maxResults).map((result) => {
         const publishedAt = toPublishedAt(result.publishedDate ?? result.pubdate);
         const updatedAt = toPublishedAt(result.updatedDate);
-        const detectedLanguage = normalizeDetectedLanguage(result.language ?? result.lang ?? undefined);
+        const detectedLanguage = normalizeDetectedLanguage(
+          result.language ?? result.lang ?? undefined,
+        );
         const engines = result.engines ?? (result.engine === undefined ? [] : [result.engine]);
         return {
           title: truncateUnicode(decodeSnippet(result.title), MAX_EXTERNAL_TITLE_CHARACTERS),
