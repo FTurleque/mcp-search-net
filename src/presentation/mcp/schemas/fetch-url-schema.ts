@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 
 import {
+  countUnicodeCharacters,
   MAX_EXTERNAL_DOCUMENT_SECTIONS,
   MAX_EXTERNAL_HEADING_CHARACTERS,
   MAX_EXTERNAL_TITLE_CHARACTERS,
@@ -39,7 +40,7 @@ export function createFetchUrlSchemas(
 
   const section = z
     .object({
-      heading: z.string().max(MAX_EXTERNAL_HEADING_CHARACTERS),
+      heading: unicodeBoundedString(MAX_EXTERNAL_HEADING_CHARACTERS),
       markdown: z.string(),
       score: z.number().min(0).max(1),
       truncated: z.boolean(),
@@ -51,7 +52,7 @@ export function createFetchUrlSchemas(
       finalUrl: z.url(),
       canonicalUrl: z.url(),
       domain: z.string().min(1),
-      title: z.string().max(MAX_EXTERNAL_TITLE_CHARACTERS).optional(),
+      title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS).optional(),
       contentType: z.string().min(1),
       sourceStatus: z.enum(['VERIFIED_OFFICIAL', 'LIKELY_OFFICIAL', 'THIRD_PARTY', 'UNKNOWN']),
       fetchedAt: z.iso.datetime(),
@@ -64,4 +65,10 @@ export function createFetchUrlSchemas(
     })
     .strict();
   return { input, data, output: createToolResponseSchema('fetch_url', data) } as const;
+}
+
+function unicodeBoundedString(maximumCharacters: number) {
+  return z.string().refine((value) => countUnicodeCharacters(value) <= maximumCharacters, {
+    message: `Must contain at most ${maximumCharacters} Unicode characters`,
+  });
 }
