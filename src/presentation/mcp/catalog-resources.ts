@@ -2,10 +2,6 @@ import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/sdk/serv
 
 import type { CatalogPage, CatalogRepository } from '../../application/ports/catalog-repository.js';
 import { ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
-import {
-  EXTERNAL_CONTENT_SAFETY_NOTICE,
-  EXTERNAL_CONTENT_TRUST,
-} from '../../domain/models/tool-response.js';
 import type {
   CatalogCurrentDocumentSection,
   CatalogDocument,
@@ -14,6 +10,11 @@ import type {
   DocumentSection,
   DocumentVersion,
 } from '../../domain/models/catalog.js';
+import {
+  EXTERNAL_CONTENT_SAFETY_NOTICE,
+  EXTERNAL_CONTENT_TRUST,
+} from '../../domain/models/tool-response.js';
+import { countUnicodeCharacters, truncateUnicode } from '../../domain/services/bounded-text.js';
 
 const RESOURCE_MIME_TYPE = 'application/json';
 const CATALOG_RESOURCE_PAGE_LIMIT = 20;
@@ -324,7 +325,7 @@ async function createSectionResource(repository: CatalogRepository, uri: URL) {
 
 function jsonResource(uri: URL, value: unknown) {
   const text = JSON.stringify(withContentTrust(value), null, 2);
-  if (text.length > MAX_CATALOG_RESOURCE_CHARACTERS) {
+  if (countUnicodeCharacters(text) > MAX_CATALOG_RESOURCE_CHARACTERS) {
     throw new ResponseTooLargeError('The catalog resource exceeds its response budget');
   }
   return {
@@ -407,7 +408,8 @@ function toResourceDocumentEntry(entry: CatalogDocumentEntry) {
 }
 
 function toResourceDocumentVersion(version: DocumentVersion) {
-  const metadataTruncated = version.metadataJson.length > MAX_RESOURCE_METADATA_CHARACTERS;
+  const metadataTruncated =
+    countUnicodeCharacters(version.metadataJson) > MAX_RESOURCE_METADATA_CHARACTERS;
   return {
     id: version.id,
     documentId: version.documentId,
@@ -470,13 +472,12 @@ function toResourceSection(section: DocumentSection) {
   return {
     ...toResourceSectionSummary(section),
     content,
-    contentTruncated: content.length < section.content.length,
+    contentTruncated: countUnicodeCharacters(content) < countUnicodeCharacters(section.content),
   };
 }
 
 function truncateResourceText(value: string, maxCharacters: number): string {
-  if (value.length <= maxCharacters) return value;
-  return `${value.slice(0, maxCharacters - 1)}…`;
+  return truncateUnicode(value, maxCharacters);
 }
 
 function parseNumericResourceId(

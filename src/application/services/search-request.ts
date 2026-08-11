@@ -55,7 +55,7 @@ export function createSearchCacheKey(
     officialSourcesVersion,
     providerOversampling: behavior.providerOversampling,
     maxSnippetChars: behavior.maxSnippetChars,
-    contractVersion: 2,
+    contractVersion: 3,
   };
   return createHash('sha256').update(JSON.stringify(material)).digest('hex');
 }

@@ -1,3 +1,10 @@
+import {
+  MAX_EXTERNAL_DOCUMENT_SECTIONS,
+  MAX_EXTERNAL_HEADING_CHARACTERS,
+  MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
+  truncateUnicode,
+} from './bounded-text.js';
+
 export interface MarkdownHeading {
   readonly lineIndex: number;
   readonly level: number;
@@ -10,36 +17,47 @@ interface MarkdownFence {
   readonly length: number;
 }
 
-export function scanMarkdownHeadings(lines: readonly string[]): readonly MarkdownHeading[] {
+export function scanMarkdownHeadings(
+  lines: readonly string[],
+  maximumHeadings = MAX_EXTERNAL_DOCUMENT_SECTIONS,
+): readonly MarkdownHeading[] {
+  if (!Number.isSafeInteger(maximumHeadings) || maximumHeadings <= 0) return [];
+
   const headings: MarkdownHeading[] = [];
   const stack: string[] = [];
   let fence: MarkdownFence | undefined;
 
-  lines.forEach((line, lineIndex) => {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    if (headings.length >= maximumHeadings) break;
+    const line = lines[lineIndex] ?? '';
     if (fence !== undefined) {
       if (isClosingFence(line, fence)) fence = undefined;
-      return;
+      continue;
     }
 
     const openingFence = parseOpeningFence(line);
     if (openingFence !== undefined) {
       fence = openingFence;
-      return;
+      continue;
     }
 
     const match = /^ {0,3}(#{1,6})[\t ]+(.+?)\s*$/u.exec(line);
-    if (match === null) return;
+    if (match === null) continue;
     const level = match[1]?.length ?? 1;
-    const title = (match[2] ?? '').replace(/[\t ]+#+[\t ]*$/u, '').trim();
-    if (title === '') return;
+    const rawTitle = (match[2] ?? '').replace(/[\t ]+#+[\t ]*$/u, '').trim();
+    if (rawTitle === '') continue;
+    const title = truncateUnicode(rawTitle, MAX_EXTERNAL_HEADING_CHARACTERS);
     stack.splice(level - 1, stack.length, title);
     headings.push({
       lineIndex,
       level,
       title,
-      headingPath: stack.slice(0, level).join(' > '),
+      headingPath: truncateUnicode(
+        stack.slice(0, level).join(' > '),
+        MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
+      ),
     });
-  });
+  }
 
   return headings;
 }

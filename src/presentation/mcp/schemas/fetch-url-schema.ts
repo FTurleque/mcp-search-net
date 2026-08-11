@@ -1,5 +1,11 @@
 import { z } from 'zod/v4';
 
+import {
+  countUnicodeCharacters,
+  MAX_EXTERNAL_DOCUMENT_SECTIONS,
+  MAX_EXTERNAL_HEADING_CHARACTERS,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+} from '../../../domain/services/bounded-text.js';
 import { acceptInvalidToolInput } from './invalid-tool-input.js';
 import { createToolResponseSchema } from './tool-response-schema.js';
 
@@ -34,7 +40,7 @@ export function createFetchUrlSchemas(
 
   const section = z
     .object({
-      heading: z.string(),
+      heading: unicodeBoundedString(MAX_EXTERNAL_HEADING_CHARACTERS),
       markdown: z.string(),
       score: z.number().min(0).max(1),
       truncated: z.boolean(),
@@ -46,17 +52,23 @@ export function createFetchUrlSchemas(
       finalUrl: z.url(),
       canonicalUrl: z.url(),
       domain: z.string().min(1),
-      title: z.string().optional(),
+      title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS).optional(),
       contentType: z.string().min(1),
       sourceStatus: z.enum(['VERIFIED_OFFICIAL', 'LIKELY_OFFICIAL', 'THIRD_PARTY', 'UNKNOWN']),
       fetchedAt: z.iso.datetime(),
       extractionMode: z.enum(['static', 'native-render']),
       truncated: z.boolean(),
-      sectionCount: z.number().int().nonnegative(),
-      sections: z.array(section),
+      sectionCount: z.number().int().nonnegative().max(MAX_EXTERNAL_DOCUMENT_SECTIONS),
+      sections: z.array(section).max(MAX_EXTERNAL_DOCUMENT_SECTIONS),
       markdown: z.string(),
       links: z.array(z.url()),
     })
     .strict();
   return { input, data, output: createToolResponseSchema('fetch_url', data) } as const;
+}
+
+function unicodeBoundedString(maximumCharacters: number) {
+  return z.string().refine((value) => countUnicodeCharacters(value) <= maximumCharacters, {
+    message: `Must contain at most ${maximumCharacters} Unicode characters`,
+  });
 }

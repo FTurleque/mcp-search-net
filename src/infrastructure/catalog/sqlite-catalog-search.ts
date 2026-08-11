@@ -4,6 +4,7 @@ import type {
   CatalogDocumentSearchQuery,
   CatalogDocumentSearchResult,
 } from '../../domain/models/catalog.js';
+import { truncateUnicode } from '../../domain/services/bounded-text.js';
 import {
   SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL,
   SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL,
@@ -136,11 +137,24 @@ function createFtsQuery(value: string): string | undefined {
 
 function createSnippet(content: string, term: string): string {
   const snippetLength = SEARCH_SNIPPET_RADIUS * 2;
-  const start = findBestMultiTermSnippetStart(content, term, snippetLength);
-  const end = Math.min(content.length, start + snippetLength);
+  const requestedStart = findBestMultiTermSnippetStart(content, term, snippetLength);
+  const start = previousUnicodeBoundary(content, requestedStart);
+  const end = previousUnicodeBoundary(content, Math.min(content.length, start + snippetLength * 2));
   const prefix = start > 0 ? '…' : '';
-  const suffix = end < content.length ? '…' : '';
-  return `${prefix}${content.slice(start, end).trim()}${suffix}`;
+  const raw = content.slice(start, end).trim();
+  const body = truncateUnicode(raw, snippetLength);
+  const suffix = end < content.length && !body.endsWith('…') ? '…' : '';
+  return `${prefix}${body}${suffix}`;
+}
+
+function previousUnicodeBoundary(value: string, index: number): number {
+  const bounded = Math.min(Math.max(index, 0), value.length);
+  if (bounded <= 0 || bounded >= value.length) return bounded;
+  const current = value.charCodeAt(bounded);
+  const previous = value.charCodeAt(bounded - 1);
+  return current >= 0xdc00 && current <= 0xdfff && previous >= 0xd800 && previous <= 0xdbff
+    ? bounded - 1
+    : bounded;
 }
 
 function findBestMultiTermSnippetStart(

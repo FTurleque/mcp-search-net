@@ -87,7 +87,7 @@ describe('MCP STDIO server', () => {
 
     expect(listDocsTool?.inputSchema).toMatchObject({
       properties: {
-        language: { type: 'string', maxLength: 32 },
+        language: { type: 'string', maxLength: 35 },
         status: {
           enum: ['ACTIVE', 'STALE', 'REDIRECTED', 'REMOVED', 'UNAVAILABLE'],
         },

@@ -6,6 +6,8 @@ export type CatalogFreshnessPolicy = 'manual' | 'daily' | 'weekly' | 'monthly';
 
 export type CatalogSyncStrategy = 'manual' | 'polling';
 
+export type CatalogSyncRunKind = 'EXECUTION' | 'PLAN';
+
 export type CatalogSyncRunStatus = 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'CANCELLED';
 
 export type CatalogSyncRunTerminalStatus = Exclude<CatalogSyncRunStatus, 'RUNNING'>;
@@ -174,6 +176,7 @@ export interface CatalogSearchIndexRebuildResult {
 export interface CatalogSyncRun {
   readonly id: number;
   readonly sourceId?: number;
+  readonly runKind?: CatalogSyncRunKind;
   readonly startedAt: Date;
   readonly completedAt?: Date;
   readonly status: CatalogSyncRunStatus;
@@ -187,6 +190,7 @@ export interface CatalogSyncRun {
 
 export interface CatalogSyncRunStartInput {
   readonly sourceId?: number;
+  readonly runKind?: CatalogSyncRunKind;
   readonly startedAt: Date;
 }
 

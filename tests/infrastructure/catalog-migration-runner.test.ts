@@ -78,13 +78,17 @@ describe('CatalogMigrationRunner', () => {
     const ftsDefinition = database
       .prepare("SELECT sql FROM sqlite_master WHERE name = 'document_section_fts'")
       .get() as { sql: string };
-    expect(applied.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const syncColumns = database
+      .prepare("SELECT name FROM pragma_table_info('sync_runs') ORDER BY cid")
+      .all() as { name: string }[];
+    expect(applied.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(applied.every(({ checksum }) => checksum.length === 64)).toBe(true);
     expect(ftsDefinition.sql).toContain('contentless_delete = 1');
+    expect(syncColumns.map(({ name }) => name)).toContain('run_kind');
     database.close();
   });
 
-  it('upgrades C008 in place, preserves section ids and rebuilds searchable FTS', async () => {
+  it('upgrades C008 in place, preserves section ids, rebuilds FTS and adds run kind', async () => {
     const root = mkdtempSync(join(tmpdir(), 'catalog-c009-upgrade-'));
     const path = join(root, 'catalog.db');
     let database = new Database(path);
@@ -121,6 +125,11 @@ describe('CatalogMigrationRunner', () => {
           title, heading, heading_path, content
         ) VALUES (30, 30, 10, 'legacy', 'en', 'Legacy guide', 'Legacy', 'Legacy',
           'migration searchable sentinel');
+        INSERT INTO sync_runs(
+          source_id, started_at, completed_at, status,
+          documents_checked, documents_added, documents_updated,
+          documents_unchanged, documents_failed, error_summary
+        ) VALUES (1, 1, 2, 'SUCCESS', 1, 1, 0, 0, 0, NULL);
       `);
       database.close();
 
@@ -143,8 +152,12 @@ describe('CatalogMigrationRunner', () => {
           "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'document_sections'",
         )
         .get() as { sql: string };
-      expect(versions.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      const legacyRun = database.prepare('SELECT run_kind FROM sync_runs LIMIT 1').get() as {
+        run_kind: string;
+      };
+      expect(versions.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
       expect(sectionSql.sql).not.toContain('UNIQUE (document_version_id, content_hash)');
+      expect(legacyRun.run_kind).toBe('EXECUTION');
     } finally {
       if (database.open) database.close();
       rmSync(root, { recursive: true, force: true });
