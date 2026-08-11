@@ -121,7 +121,7 @@ function parseDocument(
     sourceKey,
     stableKey,
     title: requiredString(document, 'title', sourceKey),
-    url: validateHttpUrl(requiredString(document, 'url', sourceKey), sourceKey),
+    url: validateDocumentUrl(requiredString(document, 'url', sourceKey), sourceKey, index),
     language: optionalString(document, 'language') ?? sourceLanguage,
     mimeType: optionalString(document, 'mime_type') ?? 'text/html',
     enabled: optionalBoolean(document, 'enabled') ?? true,
@@ -164,7 +164,7 @@ function optionalBoolean(
   return value;
 }
 
-function validateHttpUrl(value: string, sourceKey: string): string {
+function validateDocumentUrl(value: string, sourceKey: string, index: number): string {
   try {
     const url = new URL(value);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -172,7 +172,9 @@ function validateHttpUrl(value: string, sourceKey: string): string {
     }
     return url.toString();
   } catch {
-    throw new Error(`catalog source ${sourceKey} base_url must be an HTTP(S) URL`);
+    throw new Error(
+      `catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`,
+    );
   }
 }
 
