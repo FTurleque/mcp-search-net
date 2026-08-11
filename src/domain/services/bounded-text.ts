@@ -15,5 +15,8 @@ export function truncateUnicode(value: string, maxCharacters: number): string {
   if (maxCharacters === 0) return '';
   if (maxCharacters === 1) return '…';
 
-  return `${characters.slice(0, maxCharacters - 1).join('').trimEnd()}…`;
+  return `${characters
+    .slice(0, maxCharacters - 1)
+    .join('')
+    .trimEnd()}…`;
 }
