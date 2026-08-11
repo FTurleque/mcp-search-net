@@ -117,7 +117,12 @@ const redirectSchema = z
   .object({
     fromUrl: httpUrlSchema,
     toUrl: httpUrlSchema,
-    status: z.number().int().min(300).max(399).refine((status) => status !== 304),
+    status: z
+      .number()
+      .int()
+      .min(300)
+      .max(399)
+      .refine((status) => status !== 304),
     permanent: z.boolean(),
   })
   .strict();
