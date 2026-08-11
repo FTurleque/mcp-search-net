@@ -14,13 +14,29 @@ import {
   EXTERNAL_CONTENT_SAFETY_NOTICE,
   EXTERNAL_CONTENT_TRUST,
 } from '../../domain/models/tool-response.js';
-import { countUnicodeCharacters, truncateUnicode } from '../../domain/services/bounded-text.js';
+import {
+  countUnicodeCharacters,
+  MAX_CATALOG_MIME_TYPE_CHARACTERS,
+  MAX_CATALOG_STABLE_KEY_CHARACTERS,
+  MAX_CATALOG_URL_CHARACTERS,
+  MAX_CATALOG_VERSION_LABEL_CHARACTERS,
+  MAX_EXTERNAL_ANCHOR_CHARACTERS,
+  MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+  MAX_EXTERNAL_HEADING_CHARACTERS,
+  MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
+  MAX_EXTERNAL_LANGUAGE_CHARACTERS,
+  MAX_EXTERNAL_SOURCE_KEY_CHARACTERS,
+  MAX_EXTERNAL_SOURCE_NAME_CHARACTERS,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 
 const RESOURCE_MIME_TYPE = 'application/json';
 const CATALOG_RESOURCE_PAGE_LIMIT = 20;
 const MAX_CATALOG_RESOURCE_CHARACTERS = 24_000;
 const MAX_RESOURCE_SECTION_CONTENT_CHARACTERS = 8_000;
 const MAX_RESOURCE_METADATA_CHARACTERS = 2_000;
+const MAX_RESOURCE_METADATA_FIELD_CHARACTERS = 1_024;
 
 const CATALOG_RESOURCE_URIS = {
   catalog: 'mcp-search-net://catalog',
@@ -368,11 +384,11 @@ function paginationData<T>(page: CatalogPage<T>, collectionUri: string) {
 function toResourceSource(source: CatalogSource) {
   return {
     id: source.id,
-    sourceKey: source.sourceKey,
-    displayName: source.displayName,
-    baseUrl: source.baseUrl,
+    sourceKey: boundedResourceText(source.sourceKey, MAX_EXTERNAL_SOURCE_KEY_CHARACTERS),
+    displayName: boundedResourceText(source.displayName, MAX_EXTERNAL_SOURCE_NAME_CHARACTERS),
+    baseUrl: boundedResourceText(source.baseUrl, MAX_CATALOG_URL_CHARACTERS),
     sourceType: source.sourceType,
-    language: source.language,
+    language: boundedResourceText(source.language, MAX_EXTERNAL_LANGUAGE_CHARACTERS),
     freshnessPolicy: source.freshnessPolicy,
     syncStrategy: source.syncStrategy,
     enabled: source.enabled,
@@ -384,13 +400,16 @@ function toResourceSource(source: CatalogSource) {
 function toResourceDocument(document: CatalogDocument) {
   return {
     id: document.id,
-    publicId: document.publicId,
+    publicId: boundedResourceText(
+      document.publicId,
+      MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+    ),
     sourceId: document.sourceId,
-    canonicalUrl: document.canonicalUrl,
-    stableKey: document.stableKey,
-    title: document.title,
-    mimeType: document.mimeType,
-    language: document.language,
+    canonicalUrl: boundedResourceText(document.canonicalUrl, MAX_CATALOG_URL_CHARACTERS),
+    stableKey: boundedResourceText(document.stableKey, MAX_CATALOG_STABLE_KEY_CHARACTERS),
+    title: boundedResourceText(document.title, MAX_EXTERNAL_TITLE_CHARACTERS),
+    mimeType: boundedResourceText(document.mimeType, MAX_CATALOG_MIME_TYPE_CHARACTERS),
+    language: boundedResourceText(document.language, MAX_EXTERNAL_LANGUAGE_CHARACTERS),
     status: document.status,
     currentVersionId: document.currentVersionId ?? null,
     firstSeenAt: document.firstSeenAt.toISOString(),
@@ -403,7 +422,7 @@ function toResourceDocument(document: CatalogDocument) {
 function toResourceDocumentEntry(entry: CatalogDocumentEntry) {
   return {
     ...toResourceDocument(entry.document),
-    sourceKey: entry.source.sourceKey,
+    sourceKey: boundedResourceText(entry.source.sourceKey, MAX_EXTERNAL_SOURCE_KEY_CHARACTERS),
   };
 }
 
@@ -413,15 +432,24 @@ function toResourceDocumentVersion(version: DocumentVersion) {
   return {
     id: version.id,
     documentId: version.documentId,
-    versionLabel: version.versionLabel ?? null,
-    contentHash: version.contentHash,
-    etag: version.etag ?? null,
-    lastModified: version.lastModified ?? null,
+    versionLabel:
+      version.versionLabel === undefined
+        ? null
+        : boundedResourceText(version.versionLabel, MAX_CATALOG_VERSION_LABEL_CHARACTERS),
+    contentHash: boundedResourceText(version.contentHash, MAX_RESOURCE_METADATA_FIELD_CHARACTERS),
+    etag:
+      version.etag === undefined
+        ? null
+        : boundedResourceText(version.etag, MAX_RESOURCE_METADATA_FIELD_CHARACTERS),
+    lastModified:
+      version.lastModified === undefined
+        ? null
+        : boundedResourceText(version.lastModified, MAX_RESOURCE_METADATA_FIELD_CHARACTERS),
     publishedAt: version.publishedAt?.toISOString() ?? null,
     fetchedAt: version.fetchedAt.toISOString(),
     isCurrent: version.isCurrent,
     extractionMode: version.extractionMode,
-    contentType: version.contentType,
+    contentType: boundedResourceText(version.contentType, MAX_CATALOG_MIME_TYPE_CHARACTERS),
     metadataJson: metadataTruncated ? null : version.metadataJson,
     metadataTruncated,
   };
@@ -431,14 +459,20 @@ function toCompactSectionEntry(entry: CatalogCurrentDocumentSection) {
   return {
     source: {
       id: entry.source.id,
-      sourceKey: entry.source.sourceKey,
-      displayName: entry.source.displayName,
+      sourceKey: boundedResourceText(entry.source.sourceKey, MAX_EXTERNAL_SOURCE_KEY_CHARACTERS),
+      displayName: boundedResourceText(
+        entry.source.displayName,
+        MAX_EXTERNAL_SOURCE_NAME_CHARACTERS,
+      ),
     },
     document: {
       id: entry.document.id,
-      publicId: entry.document.publicId,
-      title: entry.document.title,
-      url: entry.document.canonicalUrl,
+      publicId: boundedResourceText(
+        entry.document.publicId,
+        MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+      ),
+      title: boundedResourceText(entry.document.title, MAX_EXTERNAL_TITLE_CHARACTERS),
+      url: boundedResourceText(entry.document.canonicalUrl, MAX_CATALOG_URL_CHARACTERS),
     },
     section: toResourceSectionSummary(entry.section),
   };
@@ -457,11 +491,20 @@ function toResourceSectionSummary(section: DocumentSection) {
     id: section.id,
     documentVersionId: section.documentVersionId,
     ordinal: section.ordinal,
-    heading: section.heading ?? null,
-    headingPath: section.headingPath ?? null,
+    heading:
+      section.heading === undefined
+        ? null
+        : boundedResourceText(section.heading, MAX_EXTERNAL_HEADING_CHARACTERS),
+    headingPath:
+      section.headingPath === undefined
+        ? null
+        : boundedResourceText(section.headingPath, MAX_EXTERNAL_HEADING_PATH_CHARACTERS),
     headingLevel: section.headingLevel ?? null,
-    anchor: section.anchor ?? null,
-    contentHash: section.contentHash,
+    anchor:
+      section.anchor === undefined
+        ? null
+        : boundedResourceText(section.anchor, MAX_EXTERNAL_ANCHOR_CHARACTERS),
+    contentHash: boundedResourceText(section.contentHash, MAX_RESOURCE_METADATA_FIELD_CHARACTERS),
     characterCount: section.characterCount,
     tokenCount: section.tokenCount ?? null,
   };
@@ -474,6 +517,10 @@ function toResourceSection(section: DocumentSection) {
     content,
     contentTruncated: countUnicodeCharacters(content) < countUnicodeCharacters(section.content),
   };
+}
+
+function boundedResourceText(value: string, maxCharacters: number): string {
+  return truncateUnicode(value, maxCharacters);
 }
 
 function truncateResourceText(value: string, maxCharacters: number): string {
