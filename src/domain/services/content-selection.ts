@@ -1,5 +1,9 @@
 import type { ContentSection, SelectedContent } from '../models/content.js';
-import { countUnicodeCharacters } from './bounded-text.js';
+import {
+  countUnicodeCharacters,
+  MAX_EXTERNAL_DOCUMENT_SECTIONS,
+  MAX_MARKDOWN_STRUCTURAL_LINES,
+} from './bounded-text.js';
 import { scanMarkdownHeadings } from './markdown-structure.js';
 
 interface MarkdownSection {
@@ -10,6 +14,8 @@ interface MarkdownSection {
 }
 
 const MAX_SECTION_CHARACTERS = 5_000;
+const MAX_SECTION_TOKENS = 2_048;
+const MAX_QUERY_TOKENS = 64;
 
 export function extractDocumentSections(
   markdown: string,
@@ -27,7 +33,7 @@ export function selectRelevantContent(
   maxSections: number,
 ): SelectedContent {
   const sections = splitMarkdown(normalizeMarkdown(markdown));
-  const terms = tokenize(query ?? '');
+  const terms = tokenize(query ?? '', MAX_QUERY_TOKENS);
 
   const rankedCandidates = sections
     .map((section) => ({
@@ -85,7 +91,7 @@ export function selectRelevantContent(
 
 function lexicalRelevance(section: MarkdownSection, terms: readonly string[]): number {
   const uniqueTerms = [...new Set(terms)];
-  const headingTokens = tokenize(section.heading);
+  const headingTokens = tokenize(section.heading, MAX_QUERY_TOKENS);
   const hasCode = /```[\s\S]*?```/u.test(section.body);
   const matchedScore = uniqueTerms.reduce((score, term) => {
     if (!section.tokens.includes(term)) return score;
@@ -99,8 +105,8 @@ function lexicalRelevance(section: MarkdownSection, terms: readonly string[]): n
 }
 
 function splitMarkdown(markdown: string): readonly MarkdownSection[] {
-  const lines = markdown.split('\n');
-  const headings = scanMarkdownHeadings(lines);
+  const lines = splitMarkdownLines(markdown, MAX_MARKDOWN_STRUCTURAL_LINES);
+  const headings = scanMarkdownHeadings(lines, MAX_EXTERNAL_DOCUMENT_SECTIONS);
   if (headings.length === 0) {
     const section = createMarkdownSection('', markdown, 0);
     return section === undefined ? [] : [section];
@@ -117,7 +123,10 @@ function splitMarkdown(markdown: string): readonly MarkdownSection[] {
     if (section !== undefined) sections.push(section);
   }
 
-  headings.forEach((heading, index) => {
+  for (let index = 0; index < headings.length; index += 1) {
+    if (sections.length >= MAX_EXTERNAL_DOCUMENT_SECTIONS) break;
+    const heading = headings[index];
+    if (heading === undefined) continue;
     const nextHeading = headings[index + 1];
     const body = lines
       .slice(heading.lineIndex + 1, nextHeading?.lineIndex ?? lines.length)
@@ -129,8 +138,22 @@ function splitMarkdown(markdown: string): readonly MarkdownSection[] {
       sections.length,
     );
     if (section !== undefined) sections.push(section);
-  });
+  }
   return sections;
+}
+
+function splitMarkdownLines(value: string, maximumLines: number): readonly string[] {
+  if (value === '') return [''];
+  const lines: string[] = [];
+  let start = 0;
+  while (lines.length < maximumLines - 1) {
+    const end = value.indexOf('\n', start);
+    if (end < 0) break;
+    lines.push(value.slice(start, end));
+    start = end + 1;
+  }
+  lines.push(value.slice(start));
+  return lines;
 }
 
 function createMarkdownSection(
@@ -140,16 +163,27 @@ function createMarkdownSection(
 ): MarkdownSection | undefined {
   const value = body.trim();
   if (heading === '' && value === '') return undefined;
-  return { heading, body: value, index, tokens: tokenize(`${heading} ${value}`) };
+  return {
+    heading,
+    body: value,
+    index,
+    tokens: tokenize(`${heading} ${value}`, MAX_SECTION_TOKENS),
+  };
 }
 
-function tokenize(value: string): readonly string[] {
-  return value
+function tokenize(value: string, maximumTokens: number): readonly string[] {
+  const normalized = value
     .normalize('NFKD')
     .toLocaleLowerCase()
-    .replace(/[\u0300-\u036f]/gu, '')
-    .split(/[^\p{L}\p{N}.]+/u)
-    .filter((term) => term.length >= 2);
+    .replace(/[\u0300-\u036f]/gu, '');
+  const tokens: string[] = [];
+  for (const match of normalized.matchAll(/[\p{L}\p{N}.]+/gu)) {
+    const term = match[0];
+    if (term.length < 2) continue;
+    tokens.push(term);
+    if (tokens.length >= maximumTokens) break;
+  }
+  return tokens;
 }
 
 function renderSection(section: MarkdownSection): string {
