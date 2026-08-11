@@ -20,12 +20,14 @@ describe('Windows release workflow token scope', () => {
     expect(publishJob).not.toContain('actions/checkout@');
     expect(publishJob).not.toContain('publish-windows-release.ps1');
     expect(publishJob).toContain('gh run download');
-    expect(publishJob).toContain('gh release create');
+    expect(publishJob).toContain("'release', 'create', $tag");
+    expect(publishJob).toContain('& gh @releaseArgs');
   });
 
   it('qualifies artifacts before publication and scopes GH_TOKEN to authenticated gh steps', () => {
     const publishStart = releaseWorkflow.indexOf('\n  publish:\n');
     const qualifyJob = releaseWorkflow.slice(0, publishStart);
+    const publishJob = releaseWorkflow.slice(publishStart);
     const tokenAssignments = releaseWorkflow.match(/GH_TOKEN:\s*\$\{\{ github\.token \}\}/gu) ?? [];
 
     expect(qualifyJob).toContain('publish-windows-release.ps1');
@@ -34,8 +36,10 @@ describe('Windows release workflow token scope', () => {
     expect(releaseWorkflow).toMatch(
       /- name: Vérifier la CI exact-head avant publication[\s\S]*?env:\s*\n\s*GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*?gh api/u,
     );
-    expect(releaseWorkflow).toMatch(
-      /- name: Publier uniquement les artefacts déjà qualifiés[\s\S]*?env:\s*\n\s*GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*?gh run download[\s\S]*?gh release create/u,
+    expect(publishJob).toMatch(
+      /- name: Publier uniquement les artefacts déjà qualifiés[\s\S]*?env:\s*\n\s*GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*?gh run download/u,
     );
+    expect(publishJob).toContain("'release', 'create', $tag");
+    expect(publishJob).toContain('& gh @releaseArgs');
   });
 });
