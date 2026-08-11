@@ -17,7 +17,7 @@ describe('NodeDnsResolver', () => {
   });
 
   it('bounds unresolved OS lookups instead of accumulating work after caller timeouts', async () => {
-    const releases: Array<() => void> = [];
+    const releases: (() => void)[] = [];
     let calls = 0;
     const resolver = new NodeDnsResolver(2, () => {
       calls += 1;
