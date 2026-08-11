@@ -86,10 +86,7 @@ describe('cache value semantic validation', () => {
       { ...base, etag: 'unsafe\r\nheader' },
       {
         ...base,
-        documentSections: Array.from(
-          { length: MAX_EXTERNAL_DOCUMENT_SECTIONS + 1 },
-          () => section,
-        ),
+        documentSections: Array.from({ length: MAX_EXTERNAL_DOCUMENT_SECTIONS + 1 }, () => section),
       },
       {
         ...base,
