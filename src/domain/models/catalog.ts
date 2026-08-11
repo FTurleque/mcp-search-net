@@ -102,7 +102,6 @@ export interface DocumentVersionInput {
   readonly etag?: string;
   readonly lastModified?: string;
   readonly publishedAt?: Date;
-  readonly fetchedAt?: Date;
   readonly isCurrent: boolean;
   readonly extractionMode: 'static' | 'native-render';
   readonly contentType: string;
