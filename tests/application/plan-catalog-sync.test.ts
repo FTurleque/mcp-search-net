@@ -65,6 +65,7 @@ describe('PlanCatalogSync', () => {
 
     expect(result.syncRun).toEqual({
       id: 1,
+      runKind: 'PLAN',
       startedAt: now,
       completedAt: now,
       status: 'CANCELLED',
@@ -143,6 +144,7 @@ describe('PlanCatalogSync', () => {
     expect(result.plannedDocumentCount).toBe(1);
     expect(result.skippedDocumentCount).toBe(1);
     expect(result.syncRun).toMatchObject({
+      runKind: 'PLAN',
       status: 'CANCELLED',
       documentsChecked: 0,
       errorSummary: 'DRY_RUN_PLAN',
@@ -184,6 +186,7 @@ describe('PlanCatalogSync', () => {
     expect(result.syncRun).toMatchObject({
       id: 1,
       sourceId: enabledSource.id,
+      runKind: 'PLAN',
       status: 'CANCELLED',
       errorSummary: 'DRY_RUN_PLAN',
     });
@@ -205,6 +208,7 @@ describe('PlanCatalogSync', () => {
     }).execute({});
 
     expect(result.syncRun).toMatchObject({
+      runKind: 'PLAN',
       startedAt: new Date(1_000),
       completedAt: new Date(2_000),
       status: 'CANCELLED',
