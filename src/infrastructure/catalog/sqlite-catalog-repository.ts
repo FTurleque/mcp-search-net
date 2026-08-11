@@ -26,7 +26,7 @@ import type {
   CatalogSource,
   CatalogSyncRun,
   CatalogSyncRunCompletionInput,
-  CatalogSyncRunStartInput,
+  CatalogSyncRunStartRequest,
   DocumentSection,
   DocumentSectionInput,
   DocumentVersion,
@@ -256,7 +256,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
     });
   }
 
-  public startCatalogSyncRun(input: CatalogSyncRunStartInput): Promise<CatalogSyncRun> {
+  public startCatalogSyncRun(input: CatalogSyncRunStartRequest): Promise<CatalogSyncRun> {
     return this.asPromise(() => this.syncStore.start(input));
   }
 
