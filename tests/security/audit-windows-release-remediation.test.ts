@@ -33,7 +33,9 @@ describe('audit Windows and release remediation', () => {
     expect(releaseWorkflow).toContain('--require-checksums');
 
     const exactHeadGate = releaseWorkflow.indexOf('CI_EXACT_HEAD_QUALIFIED');
-    const qualificationStep = releaseWorkflow.indexOf('Construire et qualifier les artefacts Windows');
+    const qualificationStep = releaseWorkflow.indexOf(
+      'Construire et qualifier les artefacts Windows',
+    );
     const publishJob = releaseWorkflow.indexOf('\n  publish:\n');
     expect(exactHeadGate).toBeGreaterThanOrEqual(0);
     expect(qualificationStep).toBeGreaterThan(exactHeadGate);
