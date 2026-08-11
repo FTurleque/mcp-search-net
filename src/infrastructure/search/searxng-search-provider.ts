@@ -13,7 +13,9 @@ import {
   SearchProviderUnavailableError,
 } from '../../domain/errors/domain-errors.js';
 import {
+  countUnicodeCharacters,
   MAX_EXTERNAL_ENGINE_NAME_CHARACTERS,
+  MAX_EXTERNAL_LANGUAGE_CHARACTERS,
   MAX_EXTERNAL_TITLE_CHARACTERS,
   truncateUnicode,
 } from '../../domain/services/bounded-text.js';
@@ -79,7 +81,7 @@ export class SearxngSearchProvider implements SearchProvider {
       results: parsed.data.results.slice(0, request.maxResults).map((result) => {
         const publishedAt = toPublishedAt(result.publishedDate ?? result.pubdate);
         const updatedAt = toPublishedAt(result.updatedDate);
-        const detectedLanguage = result.language ?? result.lang ?? undefined;
+        const detectedLanguage = normalizeDetectedLanguage(result.language ?? result.lang ?? undefined);
         const engines = result.engines ?? (result.engine === undefined ? [] : [result.engine]);
         return {
           title: truncateUnicode(decodeSnippet(result.title), MAX_EXTERNAL_TITLE_CHARACTERS),
@@ -150,6 +152,22 @@ function decodeSnippet(value: string): string {
     .replace(/&#39;/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeDetectedLanguage(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const candidate = value.trim();
+  if (
+    candidate === '' ||
+    countUnicodeCharacters(candidate) > MAX_EXTERNAL_LANGUAGE_CHARACTERS
+  ) {
+    return undefined;
+  }
+  try {
+    return Intl.getCanonicalLocales(candidate)[0];
+  } catch {
+    return undefined;
+  }
 }
 
 function toPublishedAt(value: string | Date | null | undefined): string | undefined {
