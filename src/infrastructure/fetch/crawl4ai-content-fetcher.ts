@@ -258,7 +258,9 @@ async function decodeResource(
 }
 
 function decodeHtml(html: string, baseUrl: string): DecodedContent {
-  const rawTitle = decodeEntities(/<title\b[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '').trim();
+  const rawTitle = decodeEntities(
+    /<title\b[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '',
+  ).trim();
   const title =
     rawTitle === '' ? undefined : truncateUnicode(rawTitle, MAX_EXTERNAL_TITLE_CHARACTERS);
   const canonical =
