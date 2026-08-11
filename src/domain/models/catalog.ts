@@ -102,6 +102,7 @@ export interface DocumentVersionInput {
   readonly etag?: string;
   readonly lastModified?: string;
   readonly publishedAt?: Date;
+  readonly fetchedAt?: Date;
   readonly isCurrent: boolean;
   readonly extractionMode: 'static' | 'native-render';
   readonly contentType: string;
@@ -176,7 +177,7 @@ export interface CatalogSearchIndexRebuildResult {
 export interface CatalogSyncRun {
   readonly id: number;
   readonly sourceId?: number;
-  readonly runKind?: CatalogSyncRunKind;
+  readonly runKind: CatalogSyncRunKind;
   readonly startedAt: Date;
   readonly completedAt?: Date;
   readonly status: CatalogSyncRunStatus;
@@ -190,7 +191,7 @@ export interface CatalogSyncRun {
 
 export interface CatalogSyncRunStartInput {
   readonly sourceId?: number;
-  readonly runKind?: CatalogSyncRunKind;
+  readonly runKind: CatalogSyncRunKind;
   readonly startedAt: Date;
 }
 
