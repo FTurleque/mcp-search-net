@@ -52,7 +52,7 @@ describe('SqliteCatalogRepository', () => {
     database.close();
 
     expect(tables).toEqual(EXPECTED_CATALOG_TABLES);
-    expect(migrations.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(migrations.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(migrations.every(({ checksum }) => /^[a-f0-9]{64}$/u.test(checksum))).toBe(true);
   });
 
@@ -154,6 +154,14 @@ describe('SqliteCatalogRepository', () => {
       contentType: 'text/html',
       metadataJson: '{}',
     });
+    await fixture.catalog.replaceDocumentSections(oldVersion.id, [
+      {
+        ordinal: 0,
+        content: 'Old synchronized content.',
+        contentHash: 'old-section',
+        characterCount: 25,
+      },
+    ]);
     const currentVersion = await fixture.catalog.addDocumentVersion({
       documentId: document.id,
       contentHash: 'hash-v2',
@@ -165,6 +173,14 @@ describe('SqliteCatalogRepository', () => {
       contentType: 'text/html',
       metadataJson: '{"source":"sync"}',
     });
+    await fixture.catalog.replaceDocumentSections(currentVersion.id, [
+      {
+        ordinal: 0,
+        content: 'Current synchronized content.',
+        contentHash: 'current-section',
+        characterCount: 29,
+      },
+    ]);
 
     await expect(fixture.catalog.getCurrentDocumentVersion(document.id)).resolves.toMatchObject({
       id: currentVersion.id,
@@ -500,6 +516,7 @@ describe('SqliteCatalogRepository', () => {
     const running = await fixture.catalog.startCatalogSyncRun({ startedAt: new Date(1_000) });
 
     expect(running).toMatchObject({
+      runKind: 'EXECUTION',
       status: 'RUNNING',
       startedAt: new Date(1_000),
       documentsChecked: 0,
@@ -519,6 +536,7 @@ describe('SqliteCatalogRepository', () => {
     });
     expect(completed).toMatchObject({
       id: running.id,
+      runKind: 'EXECUTION',
       startedAt: new Date(1_000),
       completedAt: new Date(2_000),
       status: 'PARTIAL',
