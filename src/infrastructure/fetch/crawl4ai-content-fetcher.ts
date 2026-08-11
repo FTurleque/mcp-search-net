@@ -15,6 +15,10 @@ import {
   RequestTimeoutError,
   UnsupportedContentTypeError,
 } from '../../domain/errors/domain-errors.js';
+import {
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
 import { extractDocumentSections } from '../../domain/services/content-selection.js';
 import { fetchJson } from '../http/http-utils.js';
@@ -79,7 +83,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       };
     }
     const contentType = detectContentType(resource);
-    const decoded = await decodeResource(resource, contentType);
+    const decoded = await decodeResource(resource, contentType, deadline);
     let markdown = decoded.markdown;
     let extractionMode: FetchedContent['extractionMode'] = 'static';
 
@@ -193,8 +197,9 @@ interface DecodedContent {
 async function decodeResource(
   resource: DownloadedResource,
   contentType: string,
+  deadline: number,
 ): Promise<DecodedContent> {
-  if (contentType === 'application/pdf') return decodePdf(resource.body);
+  if (contentType === 'application/pdf') return decodePdf(resource.body, deadline);
   if (contentType.startsWith('image/')) {
     throw new OcrRequiredNotSupportedError();
   }
@@ -228,8 +233,9 @@ async function decodeResource(
 }
 
 function decodeHtml(html: string, baseUrl: string): DecodedContent {
+  const rawTitle = decodeEntities(/<title\b[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '').trim();
   const title =
-    decodeEntities(/<title\b[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '').trim() || undefined;
+    rawTitle === '' ? undefined : truncateUnicode(rawTitle, MAX_EXTERNAL_TITLE_CHARACTERS);
   const canonical =
     /<link\b[^>]*rel=["'][^"']*canonical[^"']*["'][^>]*href=["']([^"']+)["']/iu.exec(html)?.[1] ??
     /<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["'][^"']*canonical[^"']*["']/iu.exec(html)?.[1];
@@ -338,8 +344,8 @@ function decodeEntities(value: string): string {
     .replace(/&#39;/gu, "'");
 }
 
-async function decodePdf(body: Uint8Array): Promise<DecodedContent> {
-  const decoded = await extractPdfText(body);
+async function decodePdf(body: Uint8Array, deadline: number): Promise<DecodedContent> {
+  const decoded = await extractPdfText(body, deadline);
   return { markdown: decoded, links: collectPlainLinks(decoded, 'https://example.invalid/') };
 }
 
