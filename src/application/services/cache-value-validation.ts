@@ -37,14 +37,17 @@ const unicodeBoundedString = (maximum: number) =>
 const httpUrlSchema = z
   .url()
   .max(MAX_CATALOG_URL_CHARACTERS)
-  .refine((value) => {
-    const url = new URL(value);
-    return (
-      (url.protocol === 'http:' || url.protocol === 'https:') &&
-      url.username === '' &&
-      url.password === ''
-    );
-  }, 'Expected an HTTP(S) URL without credentials');
+  .refine(
+    (value) => {
+      const url = new URL(value);
+      return (
+        (url.protocol === 'http:' || url.protocol === 'https:') &&
+        url.username === '' &&
+        url.password === ''
+      );
+    },
+    'Expected an HTTP(S) URL without credentials',
+  );
 
 const isoDateTimeSchema = z.iso.datetime();
 const sourceStatusSchema = z.enum([
@@ -81,7 +84,7 @@ const searchResponseSchema = z
     results: z.array(searchResultSchema).max(MAX_SEARCH_RESULTS),
     metadata: z
       .object({
-        total: z.number().finite(),
+        total: z.number(),
         returned: z.number().int().nonnegative(),
         unresponsiveEngines: z
           .array(unicodeBoundedString(MAX_EXTERNAL_ENGINE_NAME_CHARACTERS))
@@ -114,7 +117,12 @@ const redirectSchema = z
   .object({
     fromUrl: httpUrlSchema,
     toUrl: httpUrlSchema,
-    status: z.number().int().min(300).max(399).refine((status) => status !== 304),
+    status: z
+      .number()
+      .int()
+      .min(300)
+      .max(399)
+      .refine((status) => status !== 304),
     permanent: z.boolean(),
   })
   .strict();
