@@ -37,17 +37,14 @@ const unicodeBoundedString = (maximum: number) =>
 const httpUrlSchema = z
   .url()
   .max(MAX_CATALOG_URL_CHARACTERS)
-  .refine(
-    (value) => {
-      const url = new URL(value);
-      return (
-        (url.protocol === 'http:' || url.protocol === 'https:') &&
-        url.username === '' &&
-        url.password === ''
-      );
-    },
-    'Expected an HTTP(S) URL without credentials',
-  );
+  .refine((value) => {
+    const url = new URL(value);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      url.username === '' &&
+      url.password === ''
+    );
+  }, 'Expected an HTTP(S) URL without credentials');
 
 const isoDateTimeSchema = z.iso.datetime();
 const sourceStatusSchema = z.enum([
@@ -137,10 +134,7 @@ const fetchedContentSchema = z
     canonicalUrl: httpUrlSchema,
     title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS).optional(),
     markdown: z.string().min(1),
-    documentSections: z
-      .array(documentSectionSchema)
-      .min(1)
-      .max(MAX_EXTERNAL_DOCUMENT_SECTIONS),
+    documentSections: z.array(documentSectionSchema).min(1).max(MAX_EXTERNAL_DOCUMENT_SECTIONS),
     contentType: z.string().min(1),
     fetchedAt: isoDateTimeSchema,
     extractionMode: z.enum(['static', 'native-render']),

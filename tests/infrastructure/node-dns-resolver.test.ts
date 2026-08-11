@@ -38,9 +38,7 @@ describe('NodeDnsResolver', () => {
       ['203.0.113.10'],
     ]);
 
-    await expect(resolver.resolve('after-release.example.test')).resolves.toEqual([
-      '203.0.113.10',
-    ]);
+    await expect(resolver.resolve('after-release.example.test')).resolves.toEqual(['203.0.113.10']);
   });
 
   it('rejects invalid concurrency limits', () => {
