@@ -400,10 +400,7 @@ function toResourceSource(source: CatalogSource) {
 function toResourceDocument(document: CatalogDocument) {
   return {
     id: document.id,
-    publicId: boundedResourceText(
-      document.publicId,
-      MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
-    ),
+    publicId: boundedResourceText(document.publicId, MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS),
     sourceId: document.sourceId,
     canonicalUrl: boundedResourceText(document.canonicalUrl, MAX_CATALOG_URL_CHARACTERS),
     stableKey: boundedResourceText(document.stableKey, MAX_CATALOG_STABLE_KEY_CHARACTERS),
