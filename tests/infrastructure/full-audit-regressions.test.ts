@@ -181,7 +181,7 @@ describe('full audit regression coverage', () => {
     expect(logger.messages).toContain('cache_recovered');
   });
 
-  it('keeps the legacy current-version FTS view synchronized after every mutation', async () => {
+  it('keeps the legacy current-version FTS view atomic while staging a replacement', async () => {
     const root = mkdtempSync(join(tmpdir(), 'mcp-full-audit-'));
     roots.push(root);
     const catalog = new SqliteCatalogRepository(join(root, 'catalog.db'), {
@@ -234,7 +234,8 @@ describe('full audit regression coverage', () => {
       contentType: 'text/html',
       metadataJson: '{}',
     });
-    await expect(catalog.searchDocuments({ query: 'old marker' })).resolves.toEqual([]);
+    expect(second.isCurrent).toBe(false);
+    await expect(catalog.searchDocuments({ query: 'old marker' })).resolves.toHaveLength(1);
 
     await catalog.replaceDocumentSections(second.id, [
       {
@@ -246,6 +247,10 @@ describe('full audit regression coverage', () => {
     ]);
     await expect(catalog.searchDocuments({ query: 'new marker' })).resolves.toHaveLength(1);
     await expect(catalog.searchDocuments({ query: 'old marker' })).resolves.toEqual([]);
+    await expect(catalog.replaceDocumentSections(second.id, [])).rejects.toThrow(
+      'CATALOG_CURRENT_REVISION_REQUIRES_SECTIONS',
+    );
+    await expect(catalog.searchDocuments({ query: 'new marker' })).resolves.toHaveLength(1);
   });
 
   it('reports the actual invalid catalog document URL field', () => {
