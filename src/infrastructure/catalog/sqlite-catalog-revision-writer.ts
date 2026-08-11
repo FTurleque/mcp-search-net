@@ -39,6 +39,7 @@ import type { SqliteCatalogSyncStore } from './sqlite-catalog-sync-store.js';
 const TOUCH_DOCUMENT_OBSERVATION_SQL = 'UPDATE documents SET last_seen_at = ? WHERE id = ?';
 const SELECT_DOCUMENT_VERSION_STATE_SQL =
   'SELECT document_id, is_current FROM document_versions WHERE id = ?';
+const MARK_DOCUMENT_VERSION_CURRENT_SQL = 'UPDATE document_versions SET is_current = 1 WHERE id = ?';
 
 type UpsertDocumentParams = [
   string,
@@ -88,6 +89,8 @@ interface DocumentVersionStateRow {
 }
 
 export class SqliteCatalogRevisionWriter {
+  private readonly pendingCurrentVersionIds = new Set<number>();
+
   public constructor(
     private readonly database: Database.Database,
     private readonly clock: Clock,
@@ -121,6 +124,7 @@ export class SqliteCatalogRevisionWriter {
         .prepare<[number, number, number]>(SET_DOCUMENT_CURRENT_VERSION_SQL)
         .run(versionRow.id, now, documentRow.id);
       this.syncStore.persistObservation(documentRow.id, observation, now);
+      this.pendingCurrentVersionIds.delete(versionRow.id);
 
       const currentDocumentRow = this.selectDocumentByPublicId(revision.document.publicId);
       if (currentDocumentRow === undefined) throw new Error('CATALOG_DOCUMENT_COMMIT_FAILED');
@@ -190,28 +194,18 @@ export class SqliteCatalogRevisionWriter {
   }
 
   public addDocumentVersion(version: DocumentVersionInput): DocumentVersion {
-    const now = this.now();
     const transaction = this.database.transaction((): DocumentVersionRow => {
-      if (version.isCurrent) {
-        this.database
-          .prepare<[number]>(DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL)
-          .run(version.documentId);
-        this.database
-          .prepare<[number]>(CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL)
-          .run(version.documentId);
+      const existing = this.database
+        .prepare<[number, string], DocumentVersionRow>(SELECT_DOCUMENT_VERSION_BY_HASH_SQL)
+        .get(version.documentId, version.contentHash);
+      if (version.isCurrent && existing?.is_current === 1) {
+        return this.upsertDocumentVersionRow(version);
       }
 
-      const row = this.upsertDocumentVersionRow(version);
-
-      if (version.isCurrent) {
-        this.database
-          .prepare<[number, number, number]>(SET_DOCUMENT_CURRENT_VERSION_SQL)
-          .run(row.id, now, version.documentId);
-        // Legacy callers may upsert an already-populated version. Keep the derived index
-        // synchronized in the same transaction even though commit() remains preferred.
-        this.database.prepare<[number]>(INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL).run(row.id);
-      }
-
+      const row = this.upsertDocumentVersionRow(
+        version.isCurrent ? { ...version, isCurrent: false } : version,
+      );
+      if (version.isCurrent) this.pendingCurrentVersionIds.add(row.id);
       return row;
     });
 
@@ -222,14 +216,32 @@ export class SqliteCatalogRevisionWriter {
     documentVersionId: number,
     sections: readonly DocumentSectionInput[],
   ): readonly DocumentSection[] {
+    const pendingPromotion = this.pendingCurrentVersionIds.has(documentVersionId);
     const transaction = this.database.transaction((): readonly DocumentSectionRow[] => {
       const version = this.database
         .prepare<[number], DocumentVersionStateRow>(SELECT_DOCUMENT_VERSION_STATE_SQL)
         .get(documentVersionId);
       if (version === undefined) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
+      if ((pendingPromotion || version.is_current === 1) && sections.length === 0) {
+        throw new Error('CATALOG_CURRENT_REVISION_REQUIRES_SECTIONS');
+      }
 
       const rows = this.replaceDocumentSectionRows(documentVersionId, sections);
-      if (version.is_current === 1) {
+      if (pendingPromotion) {
+        this.database
+          .prepare<[number]>(DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL)
+          .run(version.document_id);
+        this.database
+          .prepare<[number]>(CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL)
+          .run(version.document_id);
+        this.database.prepare<[number]>(MARK_DOCUMENT_VERSION_CURRENT_SQL).run(documentVersionId);
+        this.database
+          .prepare<[number]>(INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL)
+          .run(documentVersionId);
+        this.database
+          .prepare<[number, number, number]>(SET_DOCUMENT_CURRENT_VERSION_SQL)
+          .run(documentVersionId, this.now(), version.document_id);
+      } else if (version.is_current === 1) {
         this.database
           .prepare<[number]>(DELETE_DOCUMENT_SECTION_FTS_BY_DOCUMENT_SQL)
           .run(version.document_id);
@@ -239,7 +251,9 @@ export class SqliteCatalogRevisionWriter {
       }
       return rows;
     });
-    return transaction().map(toDocumentSection);
+    const rows = transaction();
+    if (pendingPromotion) this.pendingCurrentVersionIds.delete(documentVersionId);
+    return rows.map(toDocumentSection);
   }
 
   private now(): number {
