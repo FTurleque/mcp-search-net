@@ -25,11 +25,7 @@ import type {
   DocumentSectionRow,
   DocumentVersionRow,
 } from './catalog-row-mappers.js';
-import {
-  toCatalogDocument,
-  toDocumentSection,
-  toDocumentVersion,
-} from './catalog-row-mappers.js';
+import { toCatalogDocument, toDocumentSection, toDocumentVersion } from './catalog-row-mappers.js';
 import {
   CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL,
   DELETE_DOCUMENT_SECTIONS_SQL,
@@ -50,7 +46,8 @@ import type { SqliteCatalogSyncStore } from './sqlite-catalog-sync-store.js';
 const TOUCH_DOCUMENT_OBSERVATION_SQL = 'UPDATE documents SET last_seen_at = ? WHERE id = ?';
 const SELECT_DOCUMENT_VERSION_STATE_SQL =
   'SELECT document_id, is_current FROM document_versions WHERE id = ?';
-const MARK_DOCUMENT_VERSION_CURRENT_SQL = 'UPDATE document_versions SET is_current = 1 WHERE id = ?';
+const MARK_DOCUMENT_VERSION_CURRENT_SQL =
+  'UPDATE document_versions SET is_current = 1 WHERE id = ?';
 
 type UpsertDocumentParams = [
   string,
@@ -362,6 +359,9 @@ export class SqliteCatalogRevisionWriter {
   }
 }
 
-function boundOptionalText(value: string | undefined, maximumCharacters: number): string | undefined {
+function boundOptionalText(
+  value: string | undefined,
+  maximumCharacters: number,
+): string | undefined {
   return value === undefined ? undefined : truncateUnicode(value, maximumCharacters);
 }
