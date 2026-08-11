@@ -84,10 +84,7 @@ export class SearxngSearchProvider implements SearchProvider {
         return {
           title: truncateUnicode(decodeSnippet(result.title), MAX_EXTERNAL_TITLE_CHARACTERS),
           url: result.url,
-          snippet: truncateUnicode(
-            decodeSnippet(result.content),
-            MAX_PROVIDER_SNIPPET_CHARACTERS,
-          ),
+          snippet: truncateUnicode(decodeSnippet(result.content), MAX_PROVIDER_SNIPPET_CHARACTERS),
           ...(result.score === undefined ? {} : { score: result.score }),
           engines: engines
             .slice(0, MAX_PROVIDER_ENGINES)
