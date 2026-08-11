@@ -22,6 +22,7 @@ import {
   EXTERNAL_CONTENT_TRUST,
   isToolErrorCode,
 } from '../../domain/models/tool-response.js';
+import { countUnicodeCharacters } from '../../domain/services/bounded-text.js';
 import type { Logger } from '../../application/ports/logger.js';
 
 export interface ToolCallOptions<T> {
@@ -141,7 +142,7 @@ function summarizeData(value: unknown): Readonly<Record<string, unknown>> {
     ...(Array.isArray(record['results']) ? { resultCount: record['results'].length } : {}),
     ...(Array.isArray(record['sections']) ? { sectionCount: record['sections'].length } : {}),
     ...(typeof record['markdown'] === 'string'
-      ? { outputCharacters: record['markdown'].length }
+      ? { outputCharacters: countUnicodeCharacters(record['markdown']) }
       : {}),
     ...(typeof record['domain'] === 'string' ? { domain: record['domain'] } : {}),
   };
