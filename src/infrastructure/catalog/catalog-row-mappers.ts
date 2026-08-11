@@ -53,6 +53,7 @@ export interface DocumentVersionRow {
   readonly published_at: number | null;
   readonly fetched_at: number;
   readonly is_current: number;
+  readonly pending_current: number;
   readonly extraction_mode: 'static' | 'native-render';
   readonly content_type: string;
   readonly metadata_json: string;
