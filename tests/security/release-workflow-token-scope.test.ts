@@ -5,8 +5,15 @@ import { describe, expect, it } from 'vitest';
 const releaseWorkflow = readFileSync('.github/workflows/release-windows.yml', 'utf8');
 
 describe('Windows release workflow token scope', () => {
-  it('keeps workflow defaults read-only and checkout credentials non-persistent', () => {
-    expect(releaseWorkflow).toContain('permissions:\n  contents: read\n  actions: read');
+  it('scopes read permissions to the qualification job and keeps checkout credentials non-persistent', () => {
+    const jobsStart = releaseWorkflow.indexOf('\njobs:\n');
+    const workflowLevel = releaseWorkflow.slice(0, jobsStart);
+    const qualifyStart = releaseWorkflow.indexOf('\n  qualify:\n');
+    const publishStart = releaseWorkflow.indexOf('\n  publish:\n');
+    const qualifyJob = releaseWorkflow.slice(qualifyStart, publishStart);
+
+    expect(workflowLevel).not.toContain('\npermissions:\n');
+    expect(qualifyJob).toContain('permissions:\n      contents: read\n      actions: read');
     expect(releaseWorkflow).toContain('persist-credentials: false');
     expect(releaseWorkflow.match(/contents:\s*write/gu) ?? []).toHaveLength(1);
   });
