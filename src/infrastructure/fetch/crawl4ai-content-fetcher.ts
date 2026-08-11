@@ -104,7 +104,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       resource.finalUrl,
       this.gateway,
       securityContext,
-      remainingTimeoutMs(deadline),
+      deadline,
     );
     const redirectChain = resource.redirectChain ?? [];
     const redirectedPermanently = redirectChain.some((redirect) => redirect.permanent);
@@ -186,12 +186,12 @@ async function approveCanonicalUrl(
   fallback: string,
   gateway: SecureHttpGateway,
   context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
-  timeoutMs: number,
+  deadline: number,
 ): Promise<string> {
   if (candidate === undefined || candidate === fallback) return fallback;
   try {
     if (new URL(candidate).origin === new URL(fallback).origin) return candidate;
-    return (await gateway.approveUrl(candidate, context, timeoutMs)).value;
+    return (await gateway.approveUrl(candidate, context, remainingTimeoutMs(deadline))).value;
   } catch (error) {
     if (error instanceof RequestTimeoutError) throw error;
     return fallback;
