@@ -93,8 +93,10 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
         decoded.safeHtml ?? '',
         remainingTimeoutMs(deadline),
       );
-      if (isUseful(rendered)) markdown = rendered;
-      extractionMode = 'native-render';
+      if (isUseful(rendered)) {
+        markdown = rendered;
+        extractionMode = 'native-render';
+      }
     }
     if (markdown.trim() === '')
       throw new ExtractionError('No usable textual content was extracted');
