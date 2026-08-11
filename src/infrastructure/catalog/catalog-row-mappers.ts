@@ -1,14 +1,6 @@
 import type {
-  CatalogDocument,
-  CatalogFreshnessPolicy,
-  CatalogSource,
-  CatalogSourceType,
-  CatalogSyncRun,
-  CatalogSyncRunKind,
-  CatalogSyncRunStatus,
-  CatalogSyncStrategy,
-  DocumentSection,
-  DocumentStatus,
+  CatalogDocument, CatalogFreshnessPolicy, CatalogSource, CatalogSourceType, CatalogSyncRun,
+  CatalogSyncRunKind, CatalogSyncRunStatus, CatalogSyncStrategy, DocumentSection, DocumentStatus,
   DocumentVersion,
 } from '../../domain/models/catalog.js';
 
