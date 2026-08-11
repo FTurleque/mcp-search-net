@@ -176,7 +176,7 @@ export interface CatalogSearchIndexRebuildResult {
 export interface CatalogSyncRun {
   readonly id: number;
   readonly sourceId?: number;
-  readonly runKind: CatalogSyncRunKind;
+  readonly runKind?: CatalogSyncRunKind;
   readonly startedAt: Date;
   readonly completedAt?: Date;
   readonly status: CatalogSyncRunStatus;
