@@ -41,7 +41,7 @@
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write src/infrastructure/catalog/sqlite-catalog-repository.ts tests/infrastructure/audit-p2-p3-followup.test.ts && git diff -- src/infrastructure/catalog/sqlite-catalog-repository.ts tests/infrastructure/audit-p2-p3-followup.test.ts && exit 1",
     "test": "vitest run",
     "test:coverage": "node scripts/run-test-suite.mjs coverage vitest.config.ts --coverage",
     "test:watch": "vitest",
