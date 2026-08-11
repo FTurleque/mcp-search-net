@@ -254,8 +254,8 @@ export class SqliteCatalogRepository implements CatalogRepository {
 
   public rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult> {
     return this.asPromise(() => {
-      const transaction = this.database.transaction((): CatalogSearchIndexRebuildResult =>
-        this.rebuildSearchIndexNow(),
+      const transaction = this.database.transaction(
+        (): CatalogSearchIndexRebuildResult => this.rebuildSearchIndexNow(),
       );
       return transaction();
     });
