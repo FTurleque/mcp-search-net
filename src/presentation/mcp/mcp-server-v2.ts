@@ -54,12 +54,7 @@ const compactDocumentSchema = z
 
 const listDocsInputSchema = z
   .object({
-    sourceKey: z
-      .string()
-      .trim()
-      .min(1)
-      .max(MAX_EXTERNAL_SOURCE_KEY_CHARACTERS)
-      .optional(),
+    sourceKey: z.string().trim().min(1).max(MAX_EXTERNAL_SOURCE_KEY_CHARACTERS).optional(),
     language: z.string().trim().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS).optional(),
     status: z.enum(['ACTIVE', 'STALE', 'REDIRECTED', 'REMOVED', 'UNAVAILABLE']).optional(),
     limit: z.number().int().min(1).max(50).default(20),
@@ -270,9 +265,7 @@ function formatSearchDocsText(response: ToolResponse<SearchDocsData>): string {
       `   ${result.snippet}`,
     );
   });
-  response.warnings.forEach((warning) =>
-    lines.push(`Warning ${warning.code}: ${warning.message}`),
-  );
+  response.warnings.forEach((warning) => lines.push(`Warning ${warning.code}: ${warning.message}`));
   return lines.join('\n');
 }
 
