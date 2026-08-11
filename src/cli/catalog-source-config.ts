@@ -172,9 +172,7 @@ function validateDocumentUrl(value: string, sourceKey: string, index: number): s
     }
     return url.toString();
   } catch {
-    throw new Error(
-      `catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`,
-    );
+    throw new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`);
   }
 }
 
