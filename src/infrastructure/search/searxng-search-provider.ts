@@ -157,10 +157,7 @@ function decodeSnippet(value: string): string {
 function normalizeDetectedLanguage(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   const candidate = value.trim();
-  if (
-    candidate === '' ||
-    countUnicodeCharacters(candidate) > MAX_EXTERNAL_LANGUAGE_CHARACTERS
-  ) {
+  if (candidate === '' || countUnicodeCharacters(candidate) > MAX_EXTERNAL_LANGUAGE_CHARACTERS) {
     return undefined;
   }
   try {
