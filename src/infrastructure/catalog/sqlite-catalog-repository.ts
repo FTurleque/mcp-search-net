@@ -34,6 +34,7 @@ import type {
   NewCatalogSource,
 } from '../../domain/models/catalog.js';
 import { ConfigurationError } from '../../domain/errors/domain-errors.js';
+import { normalizeCatalogDocumentInput } from '../../domain/services/catalog-document-validation.js';
 import { validateNewCatalogSource } from '../../domain/services/catalog-source-validation.js';
 import { openCatalogDatabase } from './catalog-database.js';
 import { verifyCatalogIntegrity } from './catalog-integrity.js';
@@ -130,6 +131,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
     return this.asPromise(() => {
       const boundedRevision: CatalogDocumentRevisionInput = {
         ...revision,
+        document: normalizeCatalogDocumentInput(revision.document),
         sections: chunkDocumentSections(revision.sections),
       };
       return this.revisions.commit(boundedRevision, observation);
@@ -140,7 +142,9 @@ export class SqliteCatalogRepository implements CatalogRepository {
     document: CatalogDocumentInput,
     observation?: CatalogDocumentObservationInput,
   ): Promise<CatalogDocument> {
-    return this.asPromise(() => this.revisions.upsertDocument(document, observation));
+    return this.asPromise(() =>
+      this.revisions.upsertDocument(normalizeCatalogDocumentInput(document), observation),
+    );
   }
 
   public touchDocumentObservation(
