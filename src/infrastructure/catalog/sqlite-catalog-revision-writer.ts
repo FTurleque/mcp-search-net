@@ -25,7 +25,11 @@ import type {
   DocumentSectionRow,
   DocumentVersionRow,
 } from './catalog-row-mappers.js';
-import { toCatalogDocument, toDocumentSection, toDocumentVersion } from './catalog-row-mappers.js';
+import {
+  toCatalogDocument,
+  toDocumentSection,
+  toDocumentVersion,
+} from './catalog-row-mappers.js';
 import {
   CLEAR_CURRENT_DOCUMENT_VERSIONS_SQL,
   DELETE_DOCUMENT_SECTIONS_SQL,
