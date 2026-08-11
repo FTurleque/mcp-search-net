@@ -12,7 +12,7 @@ import type {
   CatalogSource,
   CatalogSyncRun,
   CatalogSyncRunCompletionInput,
-  CatalogSyncRunStartInput,
+  CatalogSyncRunStartRequest,
   DocumentVersion,
   DocumentStatus,
   NewCatalogSource,
@@ -127,7 +127,7 @@ export interface CatalogRepository {
   countCurrentDocumentSections(filters?: CatalogDocumentFilters): Promise<number>;
   verifyIntegrity(): Promise<CatalogIntegrityReport>;
   rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult>;
-  startCatalogSyncRun(input: CatalogSyncRunStartInput): Promise<CatalogSyncRun>;
+  startCatalogSyncRun(input: CatalogSyncRunStartRequest): Promise<CatalogSyncRun>;
   completeCatalogSyncRun(
     syncRunId: number,
     input: CatalogSyncRunCompletionInput,
