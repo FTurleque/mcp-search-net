@@ -18,7 +18,7 @@ import {
   MAX_EXTERNAL_TITLE_CHARACTERS,
   truncateUnicode,
 } from '../../src/domain/services/bounded-text.js';
-import { BlockedAddressError, RequestTimeoutError } from '../../src/domain/errors/domain-errors.js';
+import { RequestTimeoutError } from '../../src/domain/errors/domain-errors.js';
 import { SearchQuery } from '../../src/domain/value-objects/search-query.js';
 import { WebUrl } from '../../src/domain/value-objects/web-url.js';
 import { parseCatalogSourceConfig } from '../../src/cli/catalog-source-config.js';
@@ -33,7 +33,10 @@ import {
   type SecureDownloadLimits,
 } from '../../src/infrastructure/fetch/secure-http-gateway.js';
 import { SearxngSearchProvider } from '../../src/infrastructure/search/searxng-search-provider.js';
-import { PublicUrlSecurityPolicy, isPublicAddress } from '../../src/infrastructure/security/public-url-security-policy.js';
+import {
+  PublicUrlSecurityPolicy,
+  isPublicAddress,
+} from '../../src/infrastructure/security/public-url-security-policy.js';
 
 const roots: string[] = [];
 const catalogs: SqliteCatalogRepository[] = [];
@@ -358,5 +361,3 @@ class RecordingLogger implements Logger {
 
   public record(): void {}
 }
-
-void BlockedAddressError;
