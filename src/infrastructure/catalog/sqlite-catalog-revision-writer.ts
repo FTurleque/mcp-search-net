@@ -131,7 +131,6 @@ export class SqliteCatalogRevisionWriter {
         .prepare<[number, number, number]>(SET_DOCUMENT_CURRENT_VERSION_SQL)
         .run(versionRow.id, now, documentRow.id);
       this.syncStore.persistObservation(documentRow.id, observation, now);
-      this.pendingCurrentVersionIds.delete(versionRow.id);
 
       const currentDocumentRow = this.selectDocumentByPublicId(revision.document.publicId);
       if (currentDocumentRow === undefined) throw new Error('CATALOG_DOCUMENT_COMMIT_FAILED');
@@ -143,7 +142,9 @@ export class SqliteCatalogRevisionWriter {
       };
     });
 
-    return transaction();
+    const committed = transaction();
+    this.pendingCurrentVersionIds.delete(committed.version.id);
+    return committed;
   }
 
   public upsertDocument(
@@ -205,8 +206,8 @@ export class SqliteCatalogRevisionWriter {
       const existing = this.database
         .prepare<[number, string], DocumentVersionRow>(SELECT_DOCUMENT_VERSION_BY_HASH_SQL)
         .get(version.documentId, version.contentHash);
-      if (version.isCurrent && existing?.is_current === 1) {
-        return this.upsertDocumentVersionRow(version);
+      if (existing?.is_current === 1) {
+        return this.upsertDocumentVersionRow({ ...version, isCurrent: true });
       }
 
       const row = this.upsertDocumentVersionRow(
