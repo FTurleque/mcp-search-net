@@ -1,10 +1,21 @@
+import { z } from 'zod/v4';
+
 import type { FetchedContent } from '../../domain/models/content.js';
-import type { SearchResponse, SearchResult, SourceStatus } from '../../domain/models/search.js';
+import type { SearchResponse } from '../../domain/models/search.js';
 import {
   TOOL_WARNING_CODES,
   type ToolResponseStatus,
   type ToolWarningDescriptor,
 } from '../../domain/models/tool-response.js';
+import {
+  countUnicodeCharacters,
+  MAX_CATALOG_URL_CHARACTERS,
+  MAX_EXTERNAL_DOCUMENT_SECTIONS,
+  MAX_EXTERNAL_ENGINE_NAME_CHARACTERS,
+  MAX_EXTERNAL_HEADING_CHARACTERS,
+  MAX_EXTERNAL_LANGUAGE_CHARACTERS,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+} from '../../domain/services/bounded-text.js';
 
 export interface SearchCacheValue {
   readonly status: ToolResponseStatus;
@@ -12,118 +23,141 @@ export interface SearchCacheValue {
   readonly data: SearchResponse;
 }
 
-const SOURCE_STATUSES = new Set<SourceStatus>([
+const MAX_SEARCH_RESULTS = 10;
+const MAX_SEARCH_SNIPPET_CHARACTERS = 500;
+const MAX_SEARCH_ENGINES = 32;
+const MAX_REDIRECTS = 5;
+const MAX_CACHE_VALIDATOR_CHARACTERS = 1_024;
+
+const unicodeBoundedString = (maximum: number) =>
+  z.string().refine((value) => countUnicodeCharacters(value) <= maximum, {
+    message: `Expected at most ${maximum} Unicode characters`,
+  });
+
+const httpUrlSchema = z
+  .url()
+  .max(MAX_CATALOG_URL_CHARACTERS)
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return (
+        (url.protocol === 'http:' || url.protocol === 'https:') &&
+        url.username === '' &&
+        url.password === ''
+      );
+    } catch {
+      return false;
+    }
+  }, 'Expected an HTTP(S) URL without credentials');
+
+const isoDateTimeSchema = z.iso.datetime();
+const sourceStatusSchema = z.enum([
   'VERIFIED_OFFICIAL',
   'LIKELY_OFFICIAL',
   'THIRD_PARTY',
   'UNKNOWN',
 ]);
-const WARNING_CODES = new Set<string>(TOOL_WARNING_CODES);
+const warningSchema = z
+  .object({
+    code: z.enum(TOOL_WARNING_CODES),
+    message: z.string().min(1),
+  })
+  .strict();
+const searchResultSchema = z
+  .object({
+    title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS),
+    url: httpUrlSchema,
+    domain: z.string().min(1).max(253),
+    snippet: unicodeBoundedString(MAX_SEARCH_SNIPPET_CHARACTERS),
+    sourceStatus: sourceStatusSchema,
+    engines: z
+      .array(unicodeBoundedString(MAX_EXTERNAL_ENGINE_NAME_CHARACTERS))
+      .max(MAX_SEARCH_ENGINES),
+    publishedAt: isoDateTimeSchema.optional(),
+    updatedAt: isoDateTimeSchema.optional(),
+    detectedLanguage: unicodeBoundedString(MAX_EXTERNAL_LANGUAGE_CHARACTERS).optional(),
+    score: z.number().min(0).max(1),
+  })
+  .strict();
+const searchResponseSchema = z
+  .object({
+    query: z.string().trim().min(2).max(500),
+    results: z.array(searchResultSchema).max(MAX_SEARCH_RESULTS),
+    metadata: z
+      .object({
+        total: z.number(),
+        returned: z.number().int().nonnegative(),
+        unresponsiveEngines: z
+          .array(unicodeBoundedString(MAX_EXTERNAL_ENGINE_NAME_CHARACTERS))
+          .max(MAX_SEARCH_ENGINES),
+        sourceProvider: z.literal('searxng'),
+        retrievedAt: isoDateTimeSchema,
+      })
+      .strict(),
+  })
+  .strict()
+  .refine((value) => value.metadata.returned === value.results.length, {
+    message: 'Cached returned count must match the result array length',
+    path: ['metadata', 'returned'],
+  });
+const searchCacheValueSchema = z
+  .object({
+    status: z.enum(['success', 'partial']),
+    warnings: z.array(warningSchema),
+    data: searchResponseSchema,
+  })
+  .strict();
+
+const documentSectionSchema = z
+  .object({
+    heading: unicodeBoundedString(MAX_EXTERNAL_HEADING_CHARACTERS),
+    markdown: z.string(),
+  })
+  .strict();
+const redirectSchema = z
+  .object({
+    fromUrl: httpUrlSchema,
+    toUrl: httpUrlSchema,
+    status: z
+      .number()
+      .int()
+      .min(300)
+      .max(399)
+      .refine((status) => status !== 304),
+    permanent: z.boolean(),
+  })
+  .strict();
+const safeValidatorSchema = z
+  .string()
+  .max(MAX_CACHE_VALIDATOR_CHARACTERS)
+  .refine((value) => !/[\r\n]/u.test(value), 'Header validators must not contain CR/LF');
+const fetchedContentSchema = z
+  .object({
+    requestedUrl: httpUrlSchema,
+    finalUrl: httpUrlSchema,
+    canonicalUrl: httpUrlSchema,
+    title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS).optional(),
+    markdown: z.string().min(1),
+    documentSections: z.array(documentSectionSchema).min(1).max(MAX_EXTERNAL_DOCUMENT_SECTIONS),
+    contentType: z.string().min(1),
+    fetchedAt: isoDateTimeSchema,
+    extractionMode: z.enum(['static', 'native-render']),
+    statusCode: z.number().int().min(200).max(299),
+    etag: safeValidatorSchema.optional(),
+    lastModified: safeValidatorSchema.optional(),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/u),
+    redirectChain: z.array(redirectSchema).max(MAX_REDIRECTS),
+    metadata: z.record(z.string(), z.unknown()),
+    links: z.array(httpUrlSchema),
+  })
+  .strict();
 
 export function decodeSearchCacheValue(value: unknown): SearchCacheValue | undefined {
-  if (!isRecord(value)) return undefined;
-  if (value['status'] !== 'success' && value['status'] !== 'partial') return undefined;
-  if (!Array.isArray(value['warnings']) || !value['warnings'].every(isWarning)) return undefined;
-  if (!isSearchResponse(value['data'])) return undefined;
-  return value as unknown as SearchCacheValue;
+  const parsed = searchCacheValueSchema.safeParse(value);
+  return parsed.success ? (parsed.data as SearchCacheValue) : undefined;
 }
 
 export function decodeFetchedContent(value: unknown): FetchedContent | undefined {
-  if (!isRecord(value)) return undefined;
-  if (
-    !isString(value['requestedUrl']) ||
-    !isString(value['finalUrl']) ||
-    !isString(value['canonicalUrl']) ||
-    !isString(value['markdown']) ||
-    !isString(value['contentType']) ||
-    !isString(value['fetchedAt']) ||
-    !isString(value['contentHash']) ||
-    !Number.isInteger(value['statusCode']) ||
-    (value['extractionMode'] !== 'static' && value['extractionMode'] !== 'native-render') ||
-    !Array.isArray(value['documentSections']) ||
-    !value['documentSections'].every(isDocumentSection) ||
-    !Array.isArray(value['redirectChain']) ||
-    !value['redirectChain'].every(isRedirect) ||
-    !isRecord(value['metadata']) ||
-    !Array.isArray(value['links']) ||
-    !value['links'].every(isString)
-  ) {
-    return undefined;
-  }
-  if (value['title'] !== undefined && !isString(value['title'])) return undefined;
-  if (value['etag'] !== undefined && !isString(value['etag'])) return undefined;
-  if (value['lastModified'] !== undefined && !isString(value['lastModified'])) return undefined;
-  return value as unknown as FetchedContent;
-}
-
-function isSearchResponse(value: unknown): value is SearchResponse {
-  if (!isRecord(value) || !isString(value['query']) || !Array.isArray(value['results'])) {
-    return false;
-  }
-  if (!value['results'].every(isSearchResult)) return false;
-  const metadata = value['metadata'];
-  return (
-    isRecord(metadata) &&
-    isFiniteNumber(metadata['total']) &&
-    isFiniteNumber(metadata['returned']) &&
-    Array.isArray(metadata['unresponsiveEngines']) &&
-    metadata['unresponsiveEngines'].every(isString) &&
-    metadata['sourceProvider'] === 'searxng' &&
-    isString(metadata['retrievedAt'])
-  );
-}
-
-function isSearchResult(value: unknown): value is SearchResult {
-  if (!isRecord(value)) return false;
-  if (
-    !isString(value['title']) ||
-    !isString(value['url']) ||
-    !isString(value['domain']) ||
-    !isString(value['snippet']) ||
-    !SOURCE_STATUSES.has(value['sourceStatus'] as SourceStatus) ||
-    !Array.isArray(value['engines']) ||
-    !value['engines'].every(isString) ||
-    !isFiniteNumber(value['score'])
-  ) {
-    return false;
-  }
-  if (value['publishedAt'] !== undefined && !isString(value['publishedAt'])) return false;
-  if (value['updatedAt'] !== undefined && !isString(value['updatedAt'])) return false;
-  if (value['detectedLanguage'] !== undefined && !isString(value['detectedLanguage'])) return false;
-  return true;
-}
-
-function isWarning(value: unknown): value is ToolWarningDescriptor {
-  return (
-    isRecord(value) &&
-    isString(value['code']) &&
-    WARNING_CODES.has(value['code']) &&
-    isString(value['message'])
-  );
-}
-
-function isDocumentSection(value: unknown): boolean {
-  return isRecord(value) && isString(value['heading']) && isString(value['markdown']);
-}
-
-function isRedirect(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    isString(value['fromUrl']) &&
-    isString(value['toUrl']) &&
-    Number.isInteger(value['status']) &&
-    typeof value['permanent'] === 'boolean'
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isString(value: unknown): value is string {
-  return typeof value === 'string';
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
+  const parsed = fetchedContentSchema.safeParse(value);
+  return parsed.success ? (parsed.data as FetchedContent) : undefined;
 }
