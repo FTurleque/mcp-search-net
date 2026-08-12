@@ -163,7 +163,7 @@ export class SyncCatalogDocuments {
         createFetchContext(currentVersion),
       );
       if ('notModified' in fetched) {
-        return this.reconcileNotModified(
+        return await this.reconcileNotModified(
           document,
           existingDocument,
           currentVersion,
@@ -171,7 +171,7 @@ export class SyncCatalogDocuments {
           syncRunId,
         );
       }
-      return this.reconcileFetched(
+      return await this.reconcileFetched(
         document,
         source.id,
         publicId,
@@ -266,16 +266,14 @@ export class SyncCatalogDocuments {
       syncRunId,
     );
     const contentUnchanged = currentVersion?.contentHash === fetched.contentHash;
-    const publishedAt = contentUnchanged
-      ? currentVersion?.publishedAt
-      : new Date(fetched.fetchedAt);
+    const publishedAt = contentUnchanged ? currentVersion.publishedAt : new Date(fetched.fetchedAt);
     const redirectMetadata = createRedirectVersionMetadata(fetched);
     const revision = await this.repository.commitDocumentRevision(
       {
         document: documentInput,
         version: {
           contentHash: fetched.contentHash,
-          ...(contentUnchanged && currentVersion?.versionLabel !== undefined
+          ...(contentUnchanged && currentVersion.versionLabel !== undefined
             ? { versionLabel: currentVersion.versionLabel }
             : {}),
           ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
