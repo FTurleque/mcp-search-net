@@ -206,7 +206,8 @@ export class SyncCatalogDocuments {
     const redirectTarget = normalizedPermanentRedirectTarget(fetched.redirectChain);
     const redirectChanged =
       redirectTarget !== undefined &&
-      (existingDocument.canonicalUrl !== redirectTarget || existingDocument.status !== 'REDIRECTED');
+      (existingDocument.canonicalUrl !== redirectTarget ||
+        existingDocument.status !== 'REDIRECTED');
     let storedDocument: CatalogDocument;
     if (redirectChanged) {
       storedDocument = await this.repository.upsertDocument(
@@ -445,8 +446,7 @@ function createExecutionPlan(
     .filter((document) => document.enabled);
   const resumedDocuments = applyResumeCursor(configuredDocuments, options.resumeAfter);
   const selectedDocuments = applyLimit(resumedDocuments, options.limit);
-  const limited =
-    options.limit !== undefined && resumedDocuments.length > selectedDocuments.length;
+  const limited = options.limit !== undefined && resumedDocuments.length > selectedDocuments.length;
   const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter;
   const scopedSource =
     options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
@@ -481,7 +481,7 @@ function syncedDocumentStatus(
   return contentUnchanged ? 'unchanged' : 'updated';
 }
 
-function completedRunStatus(counts: SyncEntryCounts): CatalogSyncRun['status'] {
+function completedRunStatus(counts: SyncEntryCounts): 'SUCCESS' | 'PARTIAL' | 'FAILED' {
   if (counts.failedCount === 0) return 'SUCCESS';
   if (counts.checkedCount === counts.failedCount) return 'FAILED';
   return 'PARTIAL';
