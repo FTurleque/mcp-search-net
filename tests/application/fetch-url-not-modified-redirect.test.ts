@@ -208,7 +208,7 @@ function createCache(content: FetchedContent, validatorUrl: string): Revalidatio
 
 function createUseCase(
   cache: RevalidationCache,
-  fetch: () => ContentFetchResult | Promise<ContentFetchResult>,
+  fetch: () => Promise<ContentFetchResult>,
 ): FetchUrl {
   return new FetchUrl(
     { fetch },
