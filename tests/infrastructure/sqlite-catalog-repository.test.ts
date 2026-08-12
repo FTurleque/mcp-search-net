@@ -324,7 +324,7 @@ describe('SqliteCatalogRepository', () => {
     const results = await fixture.catalog.searchDocuments({
       query: 'STREAM',
       sourceKey: 'nodejs-docs',
-      language: 'en-US',
+      language: 'en-us',
       limit: 5,
     });
 
@@ -407,6 +407,7 @@ describe('SqliteCatalogRepository', () => {
     const cacheDatabase = new Database(cachePath, { readonly: true });
     const catalogDatabase = new Database(catalogPath, { readonly: true });
     expect(readTables(cacheDatabase)).toEqual([
+      'cache_usage',
       'content_cache',
       'schema_migrations',
       'search_cache',
