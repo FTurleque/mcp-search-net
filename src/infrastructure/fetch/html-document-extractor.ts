@@ -129,8 +129,14 @@ function extractMetadata(html: string, baseUrl: string): HtmlMetadata {
   for (;;) {
     const tag = nextTag(html, cursor);
     const textEnd = tag?.start ?? html.length;
-    if (ignoredContainer === undefined && titleDepth > 0 && titleSource.length < MAX_TITLE_SOURCE_CHARACTERS) {
-      titleSource += html.slice(cursor, textEnd).slice(0, MAX_TITLE_SOURCE_CHARACTERS - titleSource.length);
+    if (
+      ignoredContainer === undefined &&
+      titleDepth > 0 &&
+      titleSource.length < MAX_TITLE_SOURCE_CHARACTERS
+    ) {
+      titleSource += html
+        .slice(cursor, textEnd)
+        .slice(0, MAX_TITLE_SOURCE_CHARACTERS - titleSource.length);
     }
     if (tag === undefined) break;
     cursor = tag.end;
@@ -449,7 +455,13 @@ function isExplicitlySelfClosing(raw: string): boolean {
 }
 
 function isHtmlSpace(character: string | undefined): boolean {
-  return character === ' ' || character === '\n' || character === '\r' || character === '\t' || character === '\f';
+  return (
+    character === ' ' ||
+    character === '\n' ||
+    character === '\r' ||
+    character === '\t' ||
+    character === '\f'
+  );
 }
 
 function isAsciiLetter(character: string): boolean {
