@@ -10,7 +10,9 @@ import type {
   CatalogDocument,
   CatalogDocumentAliasObservationInput,
   CatalogDocumentAliasType,
+  CatalogDocumentInput,
   CatalogDocumentObservationInput,
+  CatalogDocumentRevisionInput,
   CatalogStalenessEventObservationInput,
   CatalogSyncRun,
   DocumentSectionInput,
@@ -23,6 +25,8 @@ import {
   permanentRedirectTarget as redirectTargetFromChain,
 } from '../../domain/services/redirect-chain.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
+
+const CATALOG_EXTRACTION_CONTRACT_VERSION = 1;
 
 export interface SyncCatalogResumeCursor {
   readonly sourceKey: string;
@@ -208,46 +212,31 @@ export class SyncCatalogDocuments {
             fetched,
             runningSyncRun.id,
           );
+          const revisionInput = createCatalogRevisionInput(
+            documentInput,
+            document.sourceKey,
+            fetched.title ?? document.title,
+            fetched,
+          );
 
           if (currentVersion?.contentHash === fetched.contentHash) {
-            const storedDocument = await this.repository.upsertDocument(documentInput, observation);
+            // A 200 with identical upstream bytes is still authoritative for representation
+            // metadata and extraction. Re-upserting the same version keeps its identity and version
+            // count stable while atomically refreshing validators, metadata, sections and FTS.
+            const revision = await this.repository.commitDocumentRevision(revisionInput, observation);
             entries.push({
               sourceKey: document.sourceKey,
               stableKey: document.stableKey,
               title: fetched.title ?? document.title,
               url: document.url,
               status: 'unchanged',
-              document: storedDocument,
+              document: revision.document,
+              sectionCount: revision.sections.length,
             });
             continue;
           }
 
-          const redirectMetadata = createRedirectVersionMetadata(fetched);
-          const revision = await this.repository.commitDocumentRevision(
-            {
-              document: documentInput,
-              version: {
-                contentHash: fetched.contentHash,
-                ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
-                ...(fetched.lastModified === undefined
-                  ? {}
-                  : { lastModified: fetched.lastModified }),
-                publishedAt: new Date(fetched.fetchedAt),
-                extractionMode: fetched.extractionMode,
-                contentType: fetched.contentType,
-                metadataJson: JSON.stringify({
-                  ingestion: 'catalog-sync',
-                  sourceKey: document.sourceKey,
-                  requestedUrl: fetched.requestedUrl,
-                  finalUrl: fetched.finalUrl,
-                  statusCode: fetched.statusCode,
-                  ...redirectMetadata,
-                }),
-              },
-              sections: createSections(fetched.title ?? document.title, fetched),
-            },
-            observation,
-          );
+          const revision = await this.repository.commitDocumentRevision(revisionInput, observation);
           entries.push({
             sourceKey: document.sourceKey,
             stableKey: document.stableKey,
@@ -398,23 +387,40 @@ function createFetchContext(version: DocumentVersion | undefined): ContentFetchC
 }
 
 function createCacheValidators(version: DocumentVersion): CacheValidators {
-  const validatorUrl = versionValidatorUrl(version);
+  const contractIsCurrent =
+    versionExtractionContractVersion(version) === CATALOG_EXTRACTION_CONTRACT_VERSION;
+  const validatorUrl = contractIsCurrent ? versionValidatorUrl(version) : undefined;
   return {
     contentHash: version.contentHash,
-    ...(version.etag === undefined ? {} : { etag: version.etag }),
-    ...(version.lastModified === undefined ? {} : { lastModified: version.lastModified }),
+    ...(contractIsCurrent && version.etag !== undefined ? { etag: version.etag } : {}),
+    ...(contractIsCurrent && version.lastModified !== undefined
+      ? { lastModified: version.lastModified }
+      : {}),
     ...(validatorUrl === undefined ? {} : { validatorUrl }),
   };
 }
 
 function versionValidatorUrl(version: DocumentVersion): string | undefined {
   if (version.etag === undefined && version.lastModified === undefined) return undefined;
+  const metadata = versionMetadata(version);
+  if (metadata === undefined) return undefined;
+  const finalUrl = metadata['finalUrl'];
+  return typeof finalUrl === 'string' ? WebUrl.createTransport(finalUrl).value : undefined;
+}
+
+function versionExtractionContractVersion(version: DocumentVersion): number {
+  const metadata = versionMetadata(version);
+  const value = metadata?.['extractionContractVersion'];
+  // Versions written before this field existed used the current V1 extraction contract.
+  return Number.isSafeInteger(value) && typeof value === 'number' && value > 0 ? value : 1;
+}
+
+function versionMetadata(version: DocumentVersion): Readonly<Record<string, unknown>> | undefined {
   try {
     const metadata = JSON.parse(version.metadataJson) as unknown;
-    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata))
-      return undefined;
-    const finalUrl = (metadata as Record<string, unknown>)['finalUrl'];
-    return typeof finalUrl === 'string' ? WebUrl.createTransport(finalUrl).value : undefined;
+    return typeof metadata === 'object' && metadata !== null && !Array.isArray(metadata)
+      ? (metadata as Readonly<Record<string, unknown>>)
+      : undefined;
   } catch {
     return undefined;
   }
@@ -528,6 +534,36 @@ function createNotModifiedObservation(
     aliases,
     events,
     ...(Object.keys(currentVersionValidators).length === 0 ? {} : { currentVersionValidators }),
+  };
+}
+
+function createCatalogRevisionInput(
+  document: CatalogDocumentInput,
+  sourceKey: string,
+  title: string,
+  fetched: FetchedContent,
+): CatalogDocumentRevisionInput {
+  const redirectMetadata = createRedirectVersionMetadata(fetched);
+  return {
+    document,
+    version: {
+      contentHash: fetched.contentHash,
+      ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
+      ...(fetched.lastModified === undefined ? {} : { lastModified: fetched.lastModified }),
+      publishedAt: new Date(fetched.fetchedAt),
+      extractionMode: fetched.extractionMode,
+      contentType: fetched.contentType,
+      metadataJson: JSON.stringify({
+        ingestion: 'catalog-sync',
+        sourceKey,
+        requestedUrl: fetched.requestedUrl,
+        finalUrl: fetched.finalUrl,
+        statusCode: fetched.statusCode,
+        extractionContractVersion: CATALOG_EXTRACTION_CONTRACT_VERSION,
+        ...redirectMetadata,
+      }),
+    },
+    sections: createSections(title, fetched),
   };
 }
 
