@@ -1,6 +1,11 @@
 ALTER TABLE search_cache ADD COLUMN validator_url TEXT;
 ALTER TABLE content_cache ADD COLUMN validator_url TEXT;
 
+-- Cached content created before validator_url existed cannot prove which response URI emitted its
+-- validators and may also contain redirect metadata produced by the older mixed-chain semantics.
+-- Content cache is disposable, so invalidate it once instead of attempting an unsafe backfill.
+DELETE FROM content_cache;
+
 CREATE TABLE cache_usage (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   entry_count INTEGER NOT NULL CHECK (entry_count >= 0),
