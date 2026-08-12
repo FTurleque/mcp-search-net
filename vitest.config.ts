@@ -9,10 +9,10 @@ export default defineConfig({
       reporter: ['text', 'json-summary', 'html', 'lcov'],
       reportsDirectory: 'coverage',
       thresholds: {
-        statements: 70,
-        branches: 58,
-        functions: 75,
-        lines: 72,
+        statements: 80,
+        branches: 70,
+        functions: 85,
+        lines: 83,
         'src/infrastructure/security/public-url-security-policy.ts': {
           statements: 85,
           branches: 70,
