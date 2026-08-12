@@ -10,7 +10,10 @@ const SPEC = {
 describe('strict CLI argument validation', () => {
   it('accepts known flags and value options', () => {
     expect(() =>
-      assertStrictCliArguments(['--path', 'catalog.db', '--keep', '3', '--dry-run'], SPEC),
+      assertStrictCliArguments(
+        ['--path', 'catalog.db', '--keep', '3', '--dry-run'],
+        SPEC,
+      ),
     ).not.toThrow();
   });
 
