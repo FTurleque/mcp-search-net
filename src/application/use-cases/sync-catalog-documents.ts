@@ -18,6 +18,10 @@ import type {
   DocumentVersion,
 } from '../../domain/models/catalog.js';
 import type { FetchedContent, NotModifiedContent } from '../../domain/models/content.js';
+import {
+  permanentRedirectPrefix,
+  permanentRedirectTarget as redirectTargetFromChain,
+} from '../../domain/services/redirect-chain.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
 
 export interface SyncCatalogResumeCursor {
@@ -158,7 +162,7 @@ export class SyncCatalogDocuments {
               fetched,
               runningSyncRun.id,
             );
-            const redirectTarget = permanentRedirectTarget(fetched);
+            const redirectTarget = normalizedPermanentRedirectTarget(fetched.redirectChain);
             const storedDocument =
               redirectTarget !== undefined &&
               (existingDocument.canonicalUrl !== redirectTarget ||
@@ -394,11 +398,26 @@ function createFetchContext(version: DocumentVersion | undefined): ContentFetchC
 }
 
 function createCacheValidators(version: DocumentVersion): CacheValidators {
+  const validatorUrl = versionValidatorUrl(version);
   return {
     contentHash: version.contentHash,
     ...(version.etag === undefined ? {} : { etag: version.etag }),
     ...(version.lastModified === undefined ? {} : { lastModified: version.lastModified }),
+    ...(validatorUrl === undefined ? {} : { validatorUrl }),
   };
+}
+
+function versionValidatorUrl(version: DocumentVersion): string | undefined {
+  if (version.etag === undefined && version.lastModified === undefined) return undefined;
+  try {
+    const metadata = JSON.parse(version.metadataJson) as unknown;
+    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata))
+      return undefined;
+    const finalUrl = (metadata as Record<string, unknown>)['finalUrl'];
+    return typeof finalUrl === 'string' ? WebUrl.createTransport(finalUrl).value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 interface SyncEntryCounts {
@@ -432,7 +451,7 @@ function createFetchedDocumentObservation(
   fetched: FetchedContent,
   syncRunId: number,
 ): CatalogDocumentObservationInput {
-  const permanentRedirects = fetched.redirectChain.filter((redirect) => redirect.permanent);
+  const permanentRedirects = permanentRedirectPrefix(fetched.redirectChain);
   const aliases = collectAliases(fetched.canonicalUrl, [
     ...(existingDocument === undefined || existingDocument.canonicalUrl === fetched.canonicalUrl
       ? []
@@ -477,8 +496,8 @@ function createNotModifiedObservation(
   fetched: NotModifiedContent,
   syncRunId: number,
 ): CatalogDocumentObservationInput {
-  const permanentRedirects = fetched.redirectChain.filter((redirect) => redirect.permanent);
-  const redirectTarget = permanentRedirectTarget(fetched);
+  const permanentRedirects = permanentRedirectPrefix(fetched.redirectChain);
+  const redirectTarget = normalizedPermanentRedirectTarget(fetched.redirectChain);
   const aliases = collectAliases(redirectTarget ?? existingDocument.canonicalUrl, [
     ...(redirectTarget === undefined || redirectTarget === existingDocument.canonicalUrl
       ? []
@@ -500,7 +519,16 @@ function createNotModifiedObservation(
       }),
     );
   }
-  return { syncRunId, aliases, events };
+  const currentVersionValidators = {
+    ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
+    ...(fetched.lastModified === undefined ? {} : { lastModified: fetched.lastModified }),
+  };
+  return {
+    syncRunId,
+    aliases,
+    events,
+    ...(Object.keys(currentVersionValidators).length === 0 ? {} : { currentVersionValidators }),
+  };
 }
 
 function createHttpMissingObservation(
@@ -565,27 +593,30 @@ function collectAliases(
 }
 
 function documentStatusFor(fetched: FetchedContent): DocumentStatus {
-  return isPermanentlyRedirected(fetched) ? 'REDIRECTED' : 'ACTIVE';
+  return normalizedPermanentRedirectTarget(fetched.redirectChain) === undefined
+    ? 'ACTIVE'
+    : 'REDIRECTED';
 }
 
-function isPermanentlyRedirected(fetched: FetchedContent): boolean {
-  return fetched.redirectChain.some((redirect) => redirect.permanent);
-}
-
-function permanentRedirectTarget(
-  fetched: Pick<NotModifiedContent, 'finalUrl' | 'redirectChain'>,
+function normalizedPermanentRedirectTarget(
+  redirectChain: NotModifiedContent['redirectChain'],
 ): string | undefined {
-  return fetched.redirectChain.some((redirect) => redirect.permanent)
-    ? WebUrl.tryCreate(fetched.finalUrl)?.value
-    : undefined;
+  const target = redirectTargetFromChain(redirectChain);
+  if (target === undefined) return undefined;
+  try {
+    return WebUrl.createTransport(target).value;
+  } catch {
+    return undefined;
+  }
 }
 
 function createRedirectVersionMetadata(fetched: FetchedContent): Readonly<Record<string, unknown>> {
+  const permanentTarget = normalizedPermanentRedirectTarget(fetched.redirectChain);
   return fetched.redirectChain.length === 0
     ? {}
     : {
         redirectChain: fetched.redirectChain,
-        ...(isPermanentlyRedirected(fetched) ? { redirectedPermanently: true } : {}),
+        ...(permanentTarget === undefined ? {} : { redirectedPermanently: true }),
       };
 }
 

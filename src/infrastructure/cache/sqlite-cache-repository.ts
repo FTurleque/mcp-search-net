@@ -19,6 +19,7 @@ interface CacheRow {
   readonly etag: string | null;
   readonly last_modified: string | null;
   readonly content_hash: string | null;
+  readonly validator_url: string | null;
 }
 
 interface CacheUsageRow {
@@ -30,6 +31,15 @@ interface CacheUsageRow {
 interface CacheUsageSummaryRow {
   readonly entry_count: number;
   readonly total_bytes: number;
+}
+
+interface CacheEvictionState {
+  readonly remainingEntries: number;
+  readonly remainingBytes: number;
+}
+
+interface CacheEvictionBatchResult extends CacheEvictionState {
+  readonly changes: number;
 }
 
 interface CacheMigrationRow {
@@ -70,10 +80,13 @@ export class SqliteCacheRepository implements CacheRepository {
           string | null,
           string | null,
           string | null,
+          string | null,
         ]
       >
     >
   >;
+  private readonly usageStatement: Database.Statement<[], CacheUsageSummaryRow>;
+  private readonly evictionCandidatesStatement: Database.Statement<[number], CacheUsageRow>;
 
   public constructor(
     path: string,
@@ -100,7 +113,7 @@ export class SqliteCacheRepository implements CacheRepository {
     }
     this.selectStatements = this.createStatements(
       (table) =>
-        `SELECT payload, created_at, expires_at, etag, last_modified, content_hash FROM ${table} WHERE cache_key = ?`,
+        `SELECT payload, created_at, expires_at, etag, last_modified, content_hash, validator_url FROM ${table} WHERE cache_key = ?`,
     );
     this.touchStatements = this.createStatements(
       (table) => `UPDATE ${table} SET last_accessed_at = ? WHERE cache_key = ?`,
@@ -112,8 +125,8 @@ export class SqliteCacheRepository implements CacheRepository {
       (table) => `
         INSERT INTO ${table} (
           cache_key, payload, created_at, expires_at, last_accessed_at, size_bytes,
-          etag, last_modified, content_hash
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          etag, last_modified, content_hash, validator_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(cache_key) DO UPDATE SET
           payload = excluded.payload,
           created_at = excluded.created_at,
@@ -122,7 +135,25 @@ export class SqliteCacheRepository implements CacheRepository {
           size_bytes = excluded.size_bytes,
           etag = excluded.etag,
           last_modified = excluded.last_modified,
-          content_hash = excluded.content_hash
+          content_hash = excluded.content_hash,
+          validator_url = excluded.validator_url
+      `,
+    );
+    this.usageStatement = this.database.prepare<[], CacheUsageSummaryRow>(
+      'SELECT entry_count, total_bytes FROM cache_usage WHERE id = 1',
+    );
+    this.evictionCandidatesStatement = this.database.prepare<[number], CacheUsageRow>(
+      `
+        SELECT kind, cache_key, size_bytes
+        FROM (
+          SELECT 'search' AS kind, cache_key, size_bytes, last_accessed_at, created_at
+          FROM search_cache
+          UNION ALL
+          SELECT 'content' AS kind, cache_key, size_bytes, last_accessed_at, created_at
+          FROM content_cache
+        )
+        ORDER BY last_accessed_at, created_at, kind, cache_key
+        LIMIT ?
       `,
     );
   }
@@ -205,6 +236,7 @@ export class SqliteCacheRepository implements CacheRepository {
       ...(row.etag === null ? {} : { etag: row.etag }),
       ...(row.last_modified === null ? {} : { lastModified: row.last_modified }),
       ...(row.content_hash === null ? {} : { contentHash: row.content_hash }),
+      ...(row.validator_url === null ? {} : { validatorUrl: row.validator_url }),
     });
   }
 
@@ -228,6 +260,7 @@ export class SqliteCacheRepository implements CacheRepository {
         validators.etag ?? null,
         validators.lastModified ?? null,
         validators.contentHash ?? null,
+        validators.validatorUrl ?? null,
       );
       this.pruneSync(now);
     })();
@@ -305,59 +338,66 @@ export class SqliteCacheRepository implements CacheRepository {
   }
 
   private pruneSync(now: number): number {
+    const expiredChanges = this.deleteRetainedExpired(now);
+    const usage = this.readUsage();
+    if (this.isWithinLimits(usage.entry_count, usage.total_bytes)) return expiredChanges;
+    return expiredChanges + this.evictOverflow(usage);
+  }
+
+  private deleteRetainedExpired(now: number): number {
     let changes = 0;
     for (const table of Object.values(CACHE_TABLES)) {
       changes += this.database
         .prepare(`DELETE FROM ${table} WHERE expires_at <= ?`)
         .run(now - this.staleRetentionMs).changes;
     }
+    return changes;
+  }
 
-    const usage = this.database
-      .prepare<[], CacheUsageSummaryRow>(
-        `
-          SELECT count(*) AS entry_count, coalesce(sum(size_bytes), 0) AS total_bytes
-          FROM (
-            SELECT size_bytes FROM search_cache
-            UNION ALL
-            SELECT size_bytes FROM content_cache
-          )
-        `,
-      )
-      .get();
-    let remainingEntries = usage?.entry_count ?? 0;
-    let remainingBytes = usage?.total_bytes ?? 0;
-    if (remainingEntries <= this.maxEntries && remainingBytes <= this.maxBytes) return changes;
+  private readUsage(): CacheUsageSummaryRow {
+    const usage = this.usageStatement.get();
+    if (usage === undefined) throw new Error('CACHE_USAGE_STATE_MISSING');
+    return usage;
+  }
 
-    const selectEvictionCandidates = this.database.prepare<[number], CacheUsageRow>(
-      `
-        SELECT kind, cache_key, size_bytes
-        FROM (
-          SELECT 'search' AS kind, cache_key, size_bytes, last_accessed_at, created_at
-          FROM search_cache
-          UNION ALL
-          SELECT 'content' AS kind, cache_key, size_bytes, last_accessed_at, created_at
-          FROM content_cache
-        )
-        ORDER BY last_accessed_at, created_at, kind, cache_key
-        LIMIT ?
-      `,
-    );
+  private isWithinLimits(remainingEntries: number, remainingBytes: number): boolean {
+    return remainingEntries <= this.maxEntries && remainingBytes <= this.maxBytes;
+  }
 
-    while (remainingEntries > this.maxEntries || remainingBytes > this.maxBytes) {
-      const rows = selectEvictionCandidates.all(CACHE_EVICTION_BATCH_SIZE);
+  private evictOverflow(usage: CacheUsageSummaryRow): number {
+    let state: CacheEvictionState = {
+      remainingEntries: usage.entry_count,
+      remainingBytes: usage.total_bytes,
+    };
+    let changes = 0;
+
+    while (!this.isWithinLimits(state.remainingEntries, state.remainingBytes)) {
+      const rows = this.evictionCandidatesStatement.all(CACHE_EVICTION_BATCH_SIZE);
       if (rows.length === 0) break;
-      let deletedInBatch = 0;
-      for (const row of rows) {
-        if (remainingEntries <= this.maxEntries && remainingBytes <= this.maxBytes) break;
-        const deleted = this.deleteStatements[row.kind].run(row.cache_key).changes;
-        if (deleted === 0) continue;
-        changes += deleted;
-        deletedInBatch += deleted;
-        remainingEntries -= 1;
-        remainingBytes -= row.size_bytes;
-      }
-      if (deletedInBatch === 0) break;
+      const batch = this.evictBatch(rows, state);
+      changes += batch.changes;
+      state = batch;
+      if (batch.changes === 0) break;
     }
     return changes;
+  }
+
+  private evictBatch(
+    rows: readonly CacheUsageRow[],
+    state: CacheEvictionState,
+  ): CacheEvictionBatchResult {
+    let remainingEntries = state.remainingEntries;
+    let remainingBytes = state.remainingBytes;
+    let changes = 0;
+
+    for (const row of rows) {
+      if (this.isWithinLimits(remainingEntries, remainingBytes)) break;
+      const deleted = this.deleteStatements[row.kind].run(row.cache_key).changes;
+      if (deleted === 0) continue;
+      changes += deleted;
+      remainingEntries -= 1;
+      remainingBytes -= row.size_bytes;
+    }
+    return { changes, remainingEntries, remainingBytes };
   }
 }

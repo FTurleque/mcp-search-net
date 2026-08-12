@@ -5,10 +5,10 @@ import {
   MAX_CATALOG_STABLE_KEY_CHARACTERS,
   MAX_CATALOG_URL_CHARACTERS,
   MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
-  MAX_EXTERNAL_LANGUAGE_CHARACTERS,
   MAX_EXTERNAL_TITLE_CHARACTERS,
   truncateUnicode,
 } from './bounded-text.js';
+import { normalizeLanguageTag } from './language-tag.js';
 import { containsControlCharacters } from './text-validation.js';
 
 const DOCUMENT_STATUSES = new Set<DocumentStatus>([
@@ -18,7 +18,6 @@ const DOCUMENT_STATUSES = new Set<DocumentStatus>([
   'REMOVED',
   'UNAVAILABLE',
 ]);
-const LANGUAGE_PATTERN = /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/u;
 
 export function normalizeCatalogDocumentInput(input: CatalogDocumentInput): CatalogDocumentInput {
   if (!Number.isSafeInteger(input.sourceId) || input.sourceId <= 0) {
@@ -40,13 +39,7 @@ export function normalizeCatalogDocumentInput(input: CatalogDocumentInput): Cata
     MAX_CATALOG_MIME_TYPE_CHARACTERS,
     'CATALOG_DOCUMENT_MIME_TYPE_INVALID',
   );
-  const language = input.language.trim();
-  if (
-    !LANGUAGE_PATTERN.test(language) ||
-    countUnicodeCharacters(language) > MAX_EXTERNAL_LANGUAGE_CHARACTERS
-  ) {
-    throw new Error('CATALOG_DOCUMENT_LANGUAGE_INVALID');
-  }
+  const language = normalizeLanguageTag(input.language, 'CATALOG_DOCUMENT_LANGUAGE_INVALID');
 
   const title = input.title.trim();
   if (title === '' || containsControlCharacters(title)) {

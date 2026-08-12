@@ -76,6 +76,45 @@ describe('Crawl4aiContentFetcher', () => {
     });
   });
 
+  it('keeps a temporary final hop out of canonical identity after a permanent redirect', async () => {
+    const redirectChain = [
+      {
+        fromUrl: 'https://example.com/docs',
+        toUrl: 'https://example.com/stable-docs',
+        status: 301,
+        permanent: true,
+      },
+      {
+        fromUrl: 'https://example.com/stable-docs',
+        toUrl: 'https://example.com/preview-docs',
+        status: 302,
+        permanent: false,
+      },
+    ];
+    const gateway = {
+      download: vi.fn(async () => ({
+        requestedUrl: 'https://example.com/docs',
+        finalUrl: 'https://example.com/preview-docs',
+        status: 200,
+        headers: { 'content-type': 'text/html' },
+        body: new TextEncoder().encode(
+          '<html><head><title>Preview Docs</title></head><body><h1>Preview</h1><p>Useful documentation content served through a temporary final redirect.</p></body></html>',
+        ),
+        redirectChain,
+      })),
+    } as unknown as SecureHttpGateway;
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
+
+    const result = await fetcher.fetch(fetchRequest('https://example.com/docs', 'static'));
+
+    if ('notModified' in result) throw new Error('Expected fetched content');
+    expect(result).toMatchObject({
+      finalUrl: 'https://example.com/preview-docs',
+      canonicalUrl: 'https://example.com/stable-docs',
+      metadata: { redirectChain, redirectedPermanently: true },
+    });
+  });
+
   it.each([
     ['application/json', '{"ok":true}', '```json'],
     ['application/xml', '<root>value</root>', '```xml'],
@@ -258,12 +297,15 @@ describe('Crawl4aiContentFetcher', () => {
     expect(crawl).not.toHaveBeenCalled();
   });
 
-  it('sends safe HTTP validators and maps 304 without re-extracting content', async () => {
+  it('sends validators only to their exact URI and maps refreshed 304 headers', async () => {
     const download = vi.fn(async () => ({
       requestedUrl: 'https://example.com/docs',
       finalUrl: 'https://example.com/docs',
       status: 304,
-      headers: {},
+      headers: {
+        etag: '"v2"',
+        'last-modified': 'Wed, 12 Aug 2026 08:00:00 GMT',
+      },
       body: new Uint8Array(),
       redirectChain: [],
     }));
@@ -275,6 +317,7 @@ describe('Crawl4aiContentFetcher', () => {
           etag: '"v1"',
           lastModified: 'Sun, 21 Jun 2026 00:00:00 GMT',
           contentHash: 'abc',
+          validatorUrl: 'https://example.com/docs',
         },
       }),
     ).resolves.toEqual({
@@ -282,10 +325,48 @@ describe('Crawl4aiContentFetcher', () => {
       requestedUrl: 'https://example.com/docs',
       finalUrl: 'https://example.com/docs',
       redirectChain: [],
+      etag: '"v2"',
+      lastModified: 'Wed, 12 Aug 2026 08:00:00 GMT',
     });
     expect(download).toHaveBeenCalledWith(
       'https://example.com/docs',
       { 'if-none-match': '"v1"', 'if-modified-since': 'Sun, 21 Jun 2026 00:00:00 GMT' },
+      { tool: 'fetch_url' },
+      { timeoutMs: 1_000, maxBytes: 1_000_000, maxRedirects: 5 },
+    );
+  });
+
+  it('does not send validators when they belong to a different URI', async () => {
+    const download = vi.fn(async () => ({
+      requestedUrl: 'https://example.com/old-docs',
+      finalUrl: 'https://example.com/new-docs',
+      status: 200,
+      headers: { 'content-type': 'text/plain' },
+      body: new TextEncoder().encode(
+        'Useful documentation content returned after redirect change.',
+      ),
+      redirectChain: [
+        {
+          fromUrl: 'https://example.com/old-docs',
+          toUrl: 'https://example.com/new-docs',
+          status: 302,
+          permanent: false,
+        },
+      ],
+    }));
+    const gateway = { download } as unknown as SecureHttpGateway;
+    const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
+
+    await fetcher.fetch(fetchRequest('https://example.com/old-docs', 'static'), {
+      cacheValidators: {
+        etag: '"v1"',
+        validatorUrl: 'https://example.com/new-docs',
+      },
+    });
+
+    expect(download).toHaveBeenCalledWith(
+      'https://example.com/old-docs',
+      {},
       { tool: 'fetch_url' },
       { timeoutMs: 1_000, maxBytes: 1_000_000, maxRedirects: 5 },
     );

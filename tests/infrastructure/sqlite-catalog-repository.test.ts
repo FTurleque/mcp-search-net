@@ -52,7 +52,9 @@ describe('SqliteCatalogRepository', () => {
     database.close();
 
     expect(tables).toEqual(EXPECTED_CATALOG_TABLES);
-    expect(migrations.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(migrations.map(({ version }) => version)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+    ]);
     expect(migrations.every(({ checksum }) => /^[a-f0-9]{64}$/u.test(checksum))).toBe(true);
   });
 
@@ -324,7 +326,7 @@ describe('SqliteCatalogRepository', () => {
     const results = await fixture.catalog.searchDocuments({
       query: 'STREAM',
       sourceKey: 'nodejs-docs',
-      language: 'en-US',
+      language: 'en-us',
       limit: 5,
     });
 
@@ -407,6 +409,7 @@ describe('SqliteCatalogRepository', () => {
     const cacheDatabase = new Database(cachePath, { readonly: true });
     const catalogDatabase = new Database(catalogPath, { readonly: true });
     expect(readTables(cacheDatabase)).toEqual([
+      'cache_usage',
       'content_cache',
       'schema_migrations',
       'search_cache',

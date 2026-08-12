@@ -223,8 +223,14 @@ export interface CatalogStalenessEventObservationInput {
   readonly detailsJson: string;
 }
 
+export interface CatalogCurrentVersionValidatorRefreshInput {
+  readonly etag?: string;
+  readonly lastModified?: string;
+}
+
 export interface CatalogDocumentObservationInput {
   readonly syncRunId: number;
   readonly aliases?: readonly CatalogDocumentAliasObservationInput[];
   readonly events?: readonly CatalogStalenessEventObservationInput[];
+  readonly currentVersionValidators?: CatalogCurrentVersionValidatorRefreshInput;
 }

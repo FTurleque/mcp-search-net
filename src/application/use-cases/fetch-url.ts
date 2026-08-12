@@ -27,6 +27,7 @@ import {
   truncateUnicode,
 } from '../../domain/services/bounded-text.js';
 import { selectRelevantContent } from '../../domain/services/content-selection.js';
+import { permanentRedirectTarget } from '../../domain/services/redirect-chain.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
 
 const MIN_LINK_INSPECTION_BUDGET = 32;
@@ -71,7 +72,7 @@ export class FetchUrl {
     // is reserved for search-result deduplication and must never collapse transport semantics.
     const key = createHash('sha256')
       .update(
-        JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 4 }),
+        JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 5 }),
       )
       .digest('hex');
     const cached = await this.cache.getContent<FetchedContent>(key, {
@@ -113,6 +114,7 @@ export class FetchUrl {
               ...(cached?.etag === undefined ? {} : { etag: cached.etag }),
               ...(cached?.lastModified === undefined ? {} : { lastModified: cached.lastModified }),
               ...(cached?.contentHash === undefined ? {} : { contentHash: cached.contentHash }),
+              ...(cached?.validatorUrl === undefined ? {} : { validatorUrl: cached.validatorUrl }),
             },
           },
         );
@@ -139,6 +141,9 @@ export class FetchUrl {
           ...(content.etag === undefined ? {} : { etag: content.etag }),
           ...(content.lastModified === undefined ? {} : { lastModified: content.lastModified }),
           contentHash: content.contentHash,
+          ...(content.etag === undefined && content.lastModified === undefined
+            ? {}
+            : { validatorUrl: content.finalUrl }),
         });
         if (!stored) cacheStatus = 'DISABLED';
       } catch (error) {
@@ -274,13 +279,24 @@ function mergeNotModifiedContent(
   cached: FetchedContent,
   notModified: NotModifiedContent,
 ): FetchedContent {
-  const permanentRedirect = notModified.redirectChain.some((redirect) => redirect.permanent);
+  const permanentTarget = permanentRedirectTarget(notModified.redirectChain);
   return {
     ...cached,
     requestedUrl: notModified.requestedUrl,
     finalUrl: notModified.finalUrl,
-    canonicalUrl: permanentRedirect ? notModified.finalUrl : cached.canonicalUrl,
+    canonicalUrl: permanentTarget ?? cached.canonicalUrl,
     redirectChain: notModified.redirectChain,
+    ...(notModified.etag === undefined ? {} : { etag: notModified.etag }),
+    ...(notModified.lastModified === undefined ? {} : { lastModified: notModified.lastModified }),
+    metadata: {
+      ...cached.metadata,
+      ...(notModified.etag === undefined ? {} : { etag: notModified.etag }),
+      ...(notModified.lastModified === undefined ? {} : { lastModified: notModified.lastModified }),
+      ...(notModified.redirectChain.length === 0
+        ? {}
+        : { redirectChain: notModified.redirectChain }),
+      ...(permanentTarget === undefined ? {} : { redirectedPermanently: true }),
+    },
   };
 }
 

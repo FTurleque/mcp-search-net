@@ -49,6 +49,14 @@ const INSERT_STALENESS_EVENT_SQL = `
   ) VALUES (?, ?, ?, ?, ?)
 `;
 
+const REFRESH_CURRENT_VERSION_VALIDATORS_SQL = `
+  UPDATE document_versions
+  SET etag = coalesce(?, etag),
+      last_modified = coalesce(?, last_modified),
+      fetched_at = ?
+  WHERE id = (SELECT current_version_id FROM documents WHERE id = ?)
+`;
+
 type InsertCatalogSyncRunParams = [number | null, CatalogSyncRunKind, number];
 type CompleteCatalogSyncRunParams = [
   number,
@@ -118,6 +126,8 @@ export class SqliteCatalogSyncStore {
   ): void {
     if (observation === undefined) return;
 
+    this.refreshCurrentVersionValidators(documentId, observation, observedAt);
+
     const aliasStatement =
       this.database.prepare<[number, string, string, number, number]>(UPSERT_DOCUMENT_ALIAS_SQL);
     for (const alias of observation.aliases ?? []) {
@@ -137,6 +147,21 @@ export class SqliteCatalogSyncStore {
         event.detailsJson,
       );
     }
+  }
+
+  private refreshCurrentVersionValidators(
+    documentId: number,
+    observation: CatalogDocumentObservationInput,
+    observedAt: number,
+  ): void {
+    const validators = observation.currentVersionValidators;
+    if (validators === undefined) return;
+    const result = this.database
+      .prepare<
+        [string | null, string | null, number, number]
+      >(REFRESH_CURRENT_VERSION_VALIDATORS_SQL)
+      .run(validators.etag ?? null, validators.lastModified ?? null, observedAt, documentId);
+    if (result.changes !== 1) throw new Error('CATALOG_CURRENT_VERSION_VALIDATOR_REFRESH_FAILED');
   }
 }
 

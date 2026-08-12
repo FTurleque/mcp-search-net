@@ -110,6 +110,7 @@ Les migrations catalogue appliquées dans l’ordre sont :
 - `C009__allow_repeated_section_content.sql`
 - `C010__add_sync_run_kind.sql`
 - `C011__persist_pending_version_promotion.sql`
+- `C012__make_language_indexes_nocase.sql`
 
 Une migration appliquée est immuable. Toute évolution crée une nouvelle migration.
 
@@ -126,6 +127,10 @@ d’une vraie annulation sans casser les statuts terminaux historiques.
 primitives legacy dépréciées. Une version candidate reste non courante tant que ses sections ne sont
 pas remplacées ; cette intention survit désormais à une fermeture ou un redémarrage du repository et
 est consommée atomiquement lors de la promotion avec les sections, le FTS et le pointeur courant.
+
+`C012` recrée les index de langue catalogue existants avec `COLLATE NOCASE`. Les filtres BCP-47
+restent ainsi insensibles à la casse sans perdre l’utilisation des index SQLite pour la pagination
+et les comptages filtrés.
 
 Le découpage Markdown du fetch et l’ingestion CLI utilisent le même scanner de headings/fences. Les
 fences backtick ou tilde se ferment uniquement avec le même caractère et une longueur compatible ;
