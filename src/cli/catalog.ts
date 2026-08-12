@@ -37,6 +37,12 @@ const SYNC_STRATEGIES = ['manual', 'polling'] as const;
 
 const DEFAULT_KEEP_PREVIOUS_VERSIONS = 3;
 const MAX_CATALOG_SYNC_RATE_LIMIT_MS = 10_000;
+const DRY_RUN_UNSUPPORTED_SYNC_OPTIONS = [
+  '--config',
+  '--limit',
+  '--rate-limit-ms',
+  '--resume-after',
+] as const;
 
 type CatalogCommand =
   | 'init'
@@ -389,6 +395,13 @@ function parseLoadSources(argv: readonly string[], path: string): CatalogCommand
 }
 
 function parseSync(argv: readonly string[], path: string): CatalogCommandOptions {
+  const dryRun = argv.includes('--dry-run');
+  if (dryRun) {
+    const unsupported = DRY_RUN_UNSUPPORTED_SYNC_OPTIONS.find((option) => argv.includes(option));
+    if (unsupported !== undefined) {
+      throw new Error(`${unsupported} is not supported with catalog sync --dry-run`);
+    }
+  }
   const sourceKey = getOption(argv, '--source-key') ?? getOption(argv, '--source');
   const filePath = getOption(argv, '--file');
   const limit = parseLimit(getOption(argv, '--limit'));
@@ -402,7 +415,7 @@ function parseSync(argv: readonly string[], path: string): CatalogCommandOptions
     command: 'sync',
     path: resolve(path),
     sync: {
-      dryRun: argv.includes('--dry-run'),
+      dryRun,
       configPath: resolve(getOption(argv, '--config') ?? 'config/application.yml'),
       ...(limit === undefined ? {} : { limit }),
       ...(rateLimitMs === undefined ? {} : { rateLimitMs }),
