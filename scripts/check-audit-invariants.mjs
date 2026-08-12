@@ -337,7 +337,11 @@ for (const invariant of [
   'MAX_LINK_VALIDATION_MS = 2_000',
   'inspected >= maximumInspections',
 ]) {
-  requireText(fetchUrl, invariant, `fetch_url: transport/cache/redirection/liens non bornés ${invariant}`);
+  requireText(
+    fetchUrl,
+    invariant,
+    `fetch_url: transport/cache/redirection/liens non bornés ${invariant}`,
+  );
 }
 for (const invariant of [
   'request.deadline ??',
@@ -347,17 +351,15 @@ for (const invariant of [
 ]) {
   requireText(contentFetcher, invariant, `fetch_url: deadline/validation 304 absente ${invariant}`);
 }
-for (const invariant of [
-  'if (!redirect.permanent) break',
-  'target = redirect.toUrl',
-]) {
+for (const invariant of ['if (!redirect.permanent) break', 'target = redirect.toUrl']) {
   requireText(redirectChain, invariant, `redirections: préfixe permanent absent ${invariant}`);
 }
-for (const invariant of [
-  'Intl.getCanonicalLocales',
-  'MAX_EXTERNAL_LANGUAGE_CHARACTERS',
-]) {
-  requireText(languageTag, invariant, `langues catalogue: canonicalisation BCP-47 absente ${invariant}`);
+for (const invariant of ['Intl.getCanonicalLocales', 'MAX_EXTERNAL_LANGUAGE_CHARACTERS']) {
+  requireText(
+    languageTag,
+    invariant,
+    `langues catalogue: canonicalisation BCP-47 absente ${invariant}`,
+  );
 }
 requireText(
   catalogSql,
@@ -377,7 +379,9 @@ for (const invariant of [
   requireText(sqliteCache, invariant, `cache: borne/compteurs globaux absents ${invariant}`);
 }
 assert(
-  !sqliteCache.includes('SELECT count(*) AS entry_count, coalesce(sum(size_bytes), 0) AS total_bytes'),
+  !sqliteCache.includes(
+    'SELECT count(*) AS entry_count, coalesce(sum(size_bytes), 0) AS total_bytes',
+  ),
   'cache: agrégation O(N) encore exécutée par le repository',
 );
 requireText(
