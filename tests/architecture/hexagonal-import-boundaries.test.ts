@@ -95,7 +95,6 @@ function moduleSpecifiers(source: string, path: string): readonly string[] {
     } else if (
       ts.isImportEqualsDeclaration(node) &&
       ts.isExternalModuleReference(node.moduleReference) &&
-      node.moduleReference.expression !== undefined &&
       ts.isStringLiteralLike(node.moduleReference.expression)
     ) {
       specifiers.push(node.moduleReference.expression.text);
