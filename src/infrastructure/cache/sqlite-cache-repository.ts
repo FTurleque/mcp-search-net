@@ -33,6 +33,15 @@ interface CacheUsageSummaryRow {
   readonly total_bytes: number;
 }
 
+interface CacheEvictionState {
+  readonly remainingEntries: number;
+  readonly remainingBytes: number;
+}
+
+interface CacheEvictionBatchResult extends CacheEvictionState {
+  readonly changes: number;
+}
+
 interface CacheMigrationRow {
   readonly version: number;
   readonly name: string | null;
@@ -329,34 +338,66 @@ export class SqliteCacheRepository implements CacheRepository {
   }
 
   private pruneSync(now: number): number {
+    const expiredChanges = this.deleteRetainedExpired(now);
+    const usage = this.readUsage();
+    if (this.isWithinLimits(usage.entry_count, usage.total_bytes)) return expiredChanges;
+    return expiredChanges + this.evictOverflow(usage);
+  }
+
+  private deleteRetainedExpired(now: number): number {
     let changes = 0;
     for (const table of Object.values(CACHE_TABLES)) {
       changes += this.database
         .prepare(`DELETE FROM ${table} WHERE expires_at <= ?`)
         .run(now - this.staleRetentionMs).changes;
     }
+    return changes;
+  }
 
+  private readUsage(): CacheUsageSummaryRow {
     const usage = this.usageStatement.get();
     if (usage === undefined) throw new Error('CACHE_USAGE_STATE_MISSING');
-    let remainingEntries = usage.entry_count;
-    let remainingBytes = usage.total_bytes;
-    if (remainingEntries <= this.maxEntries && remainingBytes <= this.maxBytes) return changes;
+    return usage;
+  }
 
-    while (remainingEntries > this.maxEntries || remainingBytes > this.maxBytes) {
+  private isWithinLimits(remainingEntries: number, remainingBytes: number): boolean {
+    return remainingEntries <= this.maxEntries && remainingBytes <= this.maxBytes;
+  }
+
+  private evictOverflow(usage: CacheUsageSummaryRow): number {
+    let state: CacheEvictionState = {
+      remainingEntries: usage.entry_count,
+      remainingBytes: usage.total_bytes,
+    };
+    let changes = 0;
+
+    while (!this.isWithinLimits(state.remainingEntries, state.remainingBytes)) {
       const rows = this.evictionCandidatesStatement.all(CACHE_EVICTION_BATCH_SIZE);
       if (rows.length === 0) break;
-      let deletedInBatch = 0;
-      for (const row of rows) {
-        if (remainingEntries <= this.maxEntries && remainingBytes <= this.maxBytes) break;
-        const deleted = this.deleteStatements[row.kind].run(row.cache_key).changes;
-        if (deleted === 0) continue;
-        changes += deleted;
-        deletedInBatch += deleted;
-        remainingEntries -= 1;
-        remainingBytes -= row.size_bytes;
-      }
-      if (deletedInBatch === 0) break;
+      const batch = this.evictBatch(rows, state);
+      changes += batch.changes;
+      state = batch;
+      if (batch.changes === 0) break;
     }
     return changes;
+  }
+
+  private evictBatch(
+    rows: readonly CacheUsageRow[],
+    state: CacheEvictionState,
+  ): CacheEvictionBatchResult {
+    let remainingEntries = state.remainingEntries;
+    let remainingBytes = state.remainingBytes;
+    let changes = 0;
+
+    for (const row of rows) {
+      if (this.isWithinLimits(remainingEntries, remainingBytes)) break;
+      const deleted = this.deleteStatements[row.kind].run(row.cache_key).changes;
+      if (deleted === 0) continue;
+      changes += deleted;
+      remainingEntries -= 1;
+      remainingBytes -= row.size_bytes;
+    }
+    return { changes, remainingEntries, remainingBytes };
   }
 }
