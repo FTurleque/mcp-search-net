@@ -26,8 +26,11 @@ describe('SqliteCacheRepository migration integrity', () => {
         .prepare('SELECT version, name, checksum FROM schema_migrations ORDER BY version')
         .all() as { version: number; name: string | null; checksum: string | null }[];
       expect(rows).toHaveLength(4);
-      expect(rows.every((row) => row.name?.startsWith(`V${String(row.version).padStart(3, '0')}__`)))
-        .toBe(true);
+      expect(
+        rows.every((row) =>
+          row.name?.startsWith(`V${String(row.version).padStart(3, '0')}__`),
+        ),
+      ).toBe(true);
       expect(rows.every((row) => /^[a-f0-9]{64}$/u.test(row.checksum ?? ''))).toBe(true);
 
       database
