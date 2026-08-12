@@ -8,7 +8,10 @@ import { CacheUnavailableError } from '../domain/errors/domain-errors.js';
 import { SafeCacheRepository } from '../infrastructure/cache/safe-cache-repository.js';
 import { SqliteCacheRepository } from '../infrastructure/cache/sqlite-cache-repository.js';
 import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
-import type { LoadedConfiguration } from '../infrastructure/config/load-configuration.js';
+import {
+  assertDistinctDatabasePaths,
+  type LoadedConfiguration,
+} from '../infrastructure/config/load-configuration.js';
 import { Crawl4aiContentFetcher } from '../infrastructure/fetch/crawl4ai-content-fetcher.js';
 import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.js';
 import { StructuredLogger } from '../infrastructure/logging/structured-logger.js';
@@ -22,6 +25,14 @@ export function createContainer(loaded: LoadedConfiguration) {
   const logger = new StructuredLogger(config.logging.level);
   const clock = new SystemClock();
   const cache = createCache(loaded, clock, logger);
+  try {
+    // Re-check after the cache has been opened. This closes the gap between configuration-time
+    // canonicalization and SQLite creation when symlinks/junctions or hard links are involved.
+    assertDistinctDatabasePaths(config.cache.path, loaded.catalogPath);
+  } catch (error) {
+    cache.close();
+    throw error;
+  }
   const catalog = createCatalog(loaded, clock);
   const securityPolicy = new PublicUrlSecurityPolicy(config.security, undefined, logger);
   const secureGateway = new SecureHttpGateway(securityPolicy, {
