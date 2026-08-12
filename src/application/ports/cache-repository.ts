@@ -2,6 +2,8 @@ export interface CacheValidators {
   readonly etag?: string;
   readonly lastModified?: string;
   readonly contentHash?: string;
+  /** Exact transport URL whose representation emitted the HTTP validators. */
+  readonly validatorUrl?: string;
 }
 
 export interface CacheRecord<T> extends CacheValidators {
