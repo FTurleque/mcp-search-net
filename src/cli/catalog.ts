@@ -28,6 +28,7 @@ import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-s
 import { SystemClock } from '../infrastructure/time/system-clock.js';
 import { loadCatalogSourceConfig } from './catalog-source-config.js';
 import { ingestTextDocument } from './catalog-ingest-text.js';
+import { assertStrictCliArguments, type StrictCliArgumentSpec } from './strict-cli-arguments.js';
 import { parseStrictInteger } from './strict-integer.js';
 
 const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
@@ -50,6 +51,63 @@ type CatalogCommand =
   | 'verify'
   | 'rebuild-index'
   | 'purge-versions';
+
+const CATALOG_ARGUMENT_SPECS: Readonly<Record<CatalogCommand, StrictCliArgumentSpec>> = {
+  init: { valueOptions: ['--path'] },
+  status: { valueOptions: ['--path'] },
+  health: { valueOptions: ['--path'] },
+  backup: { valueOptions: ['--path', '--output'] },
+  'list-sources': { valueOptions: ['--path'] },
+  'load-sources': { valueOptions: ['--path', '--file'] },
+  sync: {
+    valueOptions: [
+      '--path',
+      '--source-key',
+      '--source',
+      '--file',
+      '--config',
+      '--limit',
+      '--rate-limit-ms',
+      '--resume-after',
+    ],
+    flags: ['--dry-run'],
+  },
+  'add-source': {
+    valueOptions: [
+      '--path',
+      '--key',
+      '--name',
+      '--base-url',
+      '--type',
+      '--language',
+      '--freshness',
+      '--sync',
+    ],
+    flags: ['--disabled'],
+  },
+  'ingest-text': {
+    valueOptions: [
+      '--path',
+      '--source-key',
+      '--file',
+      '--url',
+      '--title',
+      '--language',
+      '--mime-type',
+      '--stable-key',
+      '--version-label',
+    ],
+  },
+  search: {
+    valueOptions: ['--path', '--query', '--source-key', '--language', '--limit'],
+  },
+  verify: { valueOptions: ['--path'] },
+  'rebuild-index': { valueOptions: ['--path'] },
+  'purge-versions': {
+    valueOptions: ['--path', '--source-key', '--source', '--keep', '--keep-previous'],
+    flags: ['--dry-run'],
+  },
+};
 
 interface CatalogCommandOptions {
   readonly command: CatalogCommand;
@@ -275,6 +333,7 @@ async function main(argv: readonly string[]): Promise<void> {
 
 function parseArguments(argv: readonly string[]): CatalogCommandOptions {
   const command = parseCommand(argv[0]);
+  assertStrictCliArguments(argv.slice(1), CATALOG_ARGUMENT_SPECS[command]);
   const path = getOption(argv, '--path') ?? defaultCatalogPath();
   if (command === 'load-sources') return parseLoadSources(argv, path);
   if (command === 'sync') return parseSync(argv, path);

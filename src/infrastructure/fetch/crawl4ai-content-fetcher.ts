@@ -15,16 +15,12 @@ import {
   RequestTimeoutError,
   UnsupportedContentTypeError,
 } from '../../domain/errors/domain-errors.js';
-import {
-  MAX_EXTERNAL_TITLE_CHARACTERS,
-  truncateUnicode,
-} from '../../domain/services/bounded-text.js';
 import { extractDocumentSections } from '../../domain/services/content-selection.js';
 import { permanentRedirectTarget } from '../../domain/services/redirect-chain.js';
 import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
 import { fetchJson } from '../http/http-utils.js';
+import { extractHtmlDocument } from './html-document-extractor.js';
 import { extractPdfText } from './pdf-text-extractor.js';
-import { sanitizePreparedHtml } from './prepared-html-sanitizer.js';
 import type { DownloadedResource } from './secure-http-gateway.js';
 import type { SecureHttpGateway } from './secure-http-gateway.js';
 
@@ -299,7 +295,7 @@ async function decodeResource(
     throw new OcrRequiredNotSupportedError();
   }
   const text = new TextDecoder('utf-8', { fatal: false }).decode(resource.body).replace(/\0/gu, '');
-  if (isHtml(contentType)) return decodeHtml(text, resource.finalUrl);
+  if (isHtml(contentType)) return extractHtmlDocument(text, resource.finalUrl);
   if (contentType === 'application/json' || contentType.endsWith('+json')) {
     try {
       return {
@@ -327,66 +323,6 @@ async function decodeResource(
   throw new UnsupportedContentTypeError(`Unsupported content type: ${contentType}`);
 }
 
-function decodeHtml(html: string, baseUrl: string): DecodedContent {
-  const rawTitle = decodeEntities(
-    /<title\b[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '',
-  ).trim();
-  const title =
-    rawTitle === '' ? undefined : truncateUnicode(rawTitle, MAX_EXTERNAL_TITLE_CHARACTERS);
-  const canonical =
-    /<link\b[^>]*rel=["'][^"']*canonical[^"']*["'][^>]*href=["']([^"']+)["']/iu.exec(html)?.[1] ??
-    /<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["'][^"']*canonical[^"']*["']/iu.exec(html)?.[1];
-  const safeHtml = sanitizePreparedHtml(removeNoisyBlocks(html));
-  const links = [...safeHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["']/giu)].flatMap((match) =>
-    normalizeLink(match[1] ?? '', baseUrl),
-  );
-  let markdown = safeHtml
-    .replace(
-      /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/giu,
-      (_all, level: string, body: string) =>
-        `\n\n${'#'.repeat(Number(level))} ${stripTags(body)}\n\n`,
-    )
-    .replace(
-      /<pre\b[^>]*>([\s\S]*?)<\/pre>/giu,
-      (_all, body: string) => `\n\n\`\`\`\n${decodeEntities(stripTags(body)).trim()}\n\`\`\`\n\n`,
-    )
-    .replace(
-      /<code\b[^>]*>([\s\S]*?)<\/code>/giu,
-      (_all, body: string) => `\`${decodeEntities(stripTags(body)).trim()}\``,
-    )
-    .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/giu, (_all, body: string) => `\n- ${stripTags(body)}`)
-    .replace(
-      /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/giu,
-      (_all, href: string, body: string) => formatMarkdownLink(href, body, baseUrl),
-    )
-    .replace(/<(br|p|div|section|article|main|header|footer|table|tr)\b[^>]*>/giu, '\n')
-    .replace(/<[^>]+>/gu, ' ');
-  markdown = decodeEntities(markdown)
-    .replace(/[ \t]+/gu, ' ')
-    .replace(/\n[ \t]+/gu, '\n')
-    .replace(/\n{3,}/gu, '\n\n')
-    .trim();
-  return {
-    markdown,
-    ...(title === undefined ? {} : { title }),
-    ...(canonical === undefined ? {} : { canonicalUrl: normalizeLink(canonical, baseUrl)[0] }),
-    links: [...new Set(links)],
-    safeHtml,
-  };
-}
-
-function removeNoisyBlocks(value: string): string {
-  let cleaned = value;
-  const noisyAttribute = '(?:class|id|aria-label|role|data-testid|data-test|data-component)';
-  const noisyPattern =
-    String.raw`<([a-z][\w:-]*)\b[^>]*${noisyAttribute}\s*=\s*["'][^"']*(?:` +
-    String.raw`cookie|consent|banner|modal|dialog|sidebar|breadcrumb|pagination|advert|promo|tracking|analytics|footer|header|nav|menu|share|social|newsletter|subscribe|search)[^"']*["'][^>]*>[\s\S]*?<\/\1>`;
-  for (let index = 0; index < 3; index += 1) {
-    cleaned = cleaned.replace(new RegExp(noisyPattern, 'giu'), ' ');
-  }
-  return cleaned;
-}
-
 function collectPlainLinks(text: string, baseUrl: string): readonly string[] {
   const urls = [...text.matchAll(/https?:\/\/[^\s)>'"]+/giu)].flatMap((match) =>
     normalizeLink(match[0], baseUrl),
@@ -403,19 +339,6 @@ function normalizeLink(value: string, baseUrl: string): readonly string[] {
   }
 }
 
-function formatMarkdownLink(href: string, body: string, baseUrl: string): string {
-  const text = stripTags(body);
-  try {
-    return `[${text}](${new URL(href, baseUrl).toString()})`;
-  } catch {
-    return text;
-  }
-}
-
-function stripTags(value: string): string {
-  return value.replace(/<[^>]+>/gu, ' ');
-}
-
 function detectContentType(resource: DownloadedResource): string {
   return (
     (resource.headers['content-type'] ?? 'text/plain').split(';')[0]?.trim().toLowerCase() ??
@@ -429,16 +352,6 @@ function isHtml(contentType: string): boolean {
 
 function isUseful(markdown: string): boolean {
   return markdown.trim().split(/\s+/u).filter(Boolean).length >= 8;
-}
-
-function decodeEntities(value: string): string {
-  return value
-    .replace(/&nbsp;/gu, ' ')
-    .replace(/&amp;/gu, '&')
-    .replace(/&lt;/gu, '<')
-    .replace(/&gt;/gu, '>')
-    .replace(/&quot;/gu, '"')
-    .replace(/&#39;/gu, "'");
 }
 
 async function decodePdf(body: Uint8Array, deadline: number): Promise<DecodedContent> {
