@@ -24,6 +24,8 @@ import {
 } from '../../domain/services/redirect-chain.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
 
+const CATALOG_EXTRACTION_CONTRACT_VERSION = 1;
+
 export interface SyncCatalogResumeCursor {
   readonly sourceKey: string;
   readonly stableKey: string;
@@ -208,20 +210,7 @@ export class SyncCatalogDocuments {
             fetched,
             runningSyncRun.id,
           );
-
-          if (currentVersion?.contentHash === fetched.contentHash) {
-            const storedDocument = await this.repository.upsertDocument(documentInput, observation);
-            entries.push({
-              sourceKey: document.sourceKey,
-              stableKey: document.stableKey,
-              title: fetched.title ?? document.title,
-              url: document.url,
-              status: 'unchanged',
-              document: storedDocument,
-            });
-            continue;
-          }
-
+          const contentUnchanged = currentVersion?.contentHash === fetched.contentHash;
           const redirectMetadata = createRedirectVersionMetadata(fetched);
           const revision = await this.repository.commitDocumentRevision(
             {
@@ -237,6 +226,7 @@ export class SyncCatalogDocuments {
                 contentType: fetched.contentType,
                 metadataJson: JSON.stringify({
                   ingestion: 'catalog-sync',
+                  extractionContractVersion: CATALOG_EXTRACTION_CONTRACT_VERSION,
                   sourceKey: document.sourceKey,
                   requestedUrl: fetched.requestedUrl,
                   finalUrl: fetched.finalUrl,
@@ -253,7 +243,8 @@ export class SyncCatalogDocuments {
             stableKey: document.stableKey,
             title: fetched.title ?? document.title,
             url: document.url,
-            status: existingDocument === undefined ? 'added' : 'updated',
+            status:
+              existingDocument === undefined ? 'added' : contentUnchanged ? 'unchanged' : 'updated',
             document: revision.document,
             sectionCount: revision.sections.length,
           });
@@ -392,9 +383,24 @@ function normalizeRateLimit(value: number | undefined): number {
 }
 
 function createFetchContext(version: DocumentVersion | undefined): ContentFetchContext | undefined {
-  if (version === undefined) return undefined;
+  if (version === undefined || !usesCurrentExtractionContract(version)) return undefined;
   const cacheValidators = createCacheValidators(version);
   return Object.keys(cacheValidators).length === 0 ? undefined : { cacheValidators };
+}
+
+function usesCurrentExtractionContract(version: DocumentVersion): boolean {
+  try {
+    const metadata = JSON.parse(version.metadataJson) as unknown;
+    return (
+      typeof metadata === 'object' &&
+      metadata !== null &&
+      !Array.isArray(metadata) &&
+      (metadata as Record<string, unknown>)['extractionContractVersion'] ===
+        CATALOG_EXTRACTION_CONTRACT_VERSION
+    );
+  } catch {
+    return false;
+  }
 }
 
 function createCacheValidators(version: DocumentVersion): CacheValidators {
