@@ -54,7 +54,7 @@ const version: DocumentVersion = {
   isCurrent: true,
   extractionMode: 'static',
   contentType: 'text/html',
-  metadataJson: JSON.stringify({ finalUrl: documentUrl }),
+  metadataJson: JSON.stringify({ extractionContractVersion: 1, finalUrl: documentUrl }),
 };
 
 describe('SyncCatalogDocuments 304 validator refresh', () => {
