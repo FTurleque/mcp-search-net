@@ -84,9 +84,7 @@ export function assertDistinctDatabasePaths(cachePath: string, catalogPath: stri
     process.platform === 'win32' ? path.toLowerCase() : path;
   const canonicalCachePath = canonicalizePotentialPath(cachePath);
   const canonicalCatalogPath = canonicalizePotentialPath(catalogPath);
-  if (
-    normalizeForComparison(canonicalCachePath) === normalizeForComparison(canonicalCatalogPath)
-  ) {
+  if (normalizeForComparison(canonicalCachePath) === normalizeForComparison(canonicalCatalogPath)) {
     throw new ConfigurationError('Cache and catalog paths must be different');
   }
 
