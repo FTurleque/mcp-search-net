@@ -59,6 +59,26 @@ describe('final audit catalog reconciliation', () => {
       ]),
     );
 
+    const [documentAfterFirstSync] = await repository.listDocuments();
+    expect(documentAfterFirstSync).toBeDefined();
+    const [versionAfterFirstSync] = await repository.listDocumentVersions(documentAfterFirstSync!.id);
+    expect(versionAfterFirstSync).toBeDefined();
+    const preservedPublishedAt = new Date('2026-08-11T09:00:00.000Z');
+    await repository.addDocumentVersion({
+      documentId: versionAfterFirstSync!.documentId,
+      versionLabel: 'release-1',
+      contentHash: versionAfterFirstSync!.contentHash,
+      ...(versionAfterFirstSync!.etag === undefined ? {} : { etag: versionAfterFirstSync!.etag }),
+      ...(versionAfterFirstSync!.lastModified === undefined
+        ? {}
+        : { lastModified: versionAfterFirstSync!.lastModified }),
+      publishedAt: preservedPublishedAt,
+      isCurrent: true,
+      extractionMode: versionAfterFirstSync!.extractionMode,
+      contentType: versionAfterFirstSync!.contentType,
+      metadataJson: versionAfterFirstSync!.metadataJson,
+    });
+
     const secondFetcher = new QueueFetcher([
       fetched({
         etag: '"v2"',
@@ -76,10 +96,12 @@ describe('final audit catalog reconciliation', () => {
     const versions = await repository.listDocumentVersions(storedDocument!.id);
     expect(versions).toHaveLength(1);
     expect(versions[0]).toMatchObject({
+      versionLabel: 'release-1',
       contentHash: 'same-payload-hash',
       etag: '"v2"',
       contentType: 'text/html',
     });
+    expect(versions[0]?.publishedAt?.toISOString()).toBe(preservedPublishedAt.toISOString());
     expect(versions[0]?.lastModified).toBeUndefined();
     expect(JSON.parse(versions[0]!.metadataJson)).toMatchObject({
       extractionContractVersion: 1,
