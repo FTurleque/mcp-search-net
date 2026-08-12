@@ -55,6 +55,40 @@ describe('SearxngSearchProvider', () => {
     expect(response.unresponsiveEngines).toEqual(['google']);
   });
 
+  it('aborts the HTTP request at an earlier search_web operation deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      let receivedSignal: AbortSignal | undefined;
+      const fetchMock = vi.fn(
+        async (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            receivedSignal = init?.signal ?? undefined;
+            receivedSignal?.addEventListener(
+              'abort',
+              () => reject(new DOMException('Aborted', 'AbortError')),
+              { once: true },
+            );
+          }),
+      ) as unknown as typeof fetch;
+      const provider = new SearxngSearchProvider('http://127.0.0.1:8888', 10_000, fetchMock);
+      const deadlineMs = Date.now() + 50;
+
+      const search = provider.search({
+        query: SearchQuery.create('mcp sdk'),
+        maxResults: 5,
+        deadlineMs,
+      });
+      const assertion = expect(search).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
+      await vi.advanceTimersByTimeAsync(60);
+      await assertion;
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(receivedSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     [403, 1],
     [404, 1],
