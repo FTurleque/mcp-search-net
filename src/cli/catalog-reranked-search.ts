@@ -4,7 +4,12 @@ import process from 'node:process';
 import { RerankedSearchCatalogDocuments } from '../application/use-cases/reranked-search-catalog-documents.js';
 import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
+import { assertStrictCliArguments } from './strict-cli-arguments.js';
 import { parseStrictInteger } from './strict-integer.js';
+
+const CATALOG_RERANKED_SEARCH_ARGUMENTS = {
+  valueOptions: ['--path', '--query', '--source-key', '--language', '--limit', '--candidate-limit'],
+} as const;
 
 interface CatalogRerankedSearchOptions {
   readonly path: string;
@@ -28,6 +33,7 @@ async function main(argv: readonly string[]): Promise<void> {
 
 function parseArguments(argv: readonly string[]): CatalogRerankedSearchOptions {
   if (argv.includes('--help') || argv.includes('-h')) throw new Error(usage());
+  assertStrictCliArguments(argv, CATALOG_RERANKED_SEARCH_ARGUMENTS);
   const sourceKey = normalizeCliText(getOption(argv, '--source-key'));
   const language = normalizeCliText(getOption(argv, '--language'));
   const limit = parsePositiveInteger(getOption(argv, '--limit'), '--limit');
