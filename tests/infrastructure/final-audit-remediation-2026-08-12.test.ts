@@ -89,16 +89,16 @@ describe('final audit infrastructure remediation', () => {
     });
 
     const gateway = createGateway(policyFor(server.port));
-    await expect(gateway.download(`http://same.invalid:${server.port}/start`)).rejects.toMatchObject({
+    await expect(
+      gateway.download(`http://same.invalid:${server.port}/start`),
+    ).rejects.toMatchObject({
       code: 'BLOCKED_ADDRESS',
     });
     expect(privateRequests).toBe(0);
   });
 });
 
-async function listen(
-  handler: RequestListener,
-): Promise<{ url: string; port: number }> {
+async function listen(handler: RequestListener): Promise<{ url: string; port: number }> {
   const server = createServer(handler);
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
