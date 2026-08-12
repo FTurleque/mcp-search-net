@@ -519,7 +519,16 @@ function createNotModifiedObservation(
       }),
     );
   }
-  return { syncRunId, aliases, events };
+  const currentVersionValidators = {
+    ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
+    ...(fetched.lastModified === undefined ? {} : { lastModified: fetched.lastModified }),
+  };
+  return {
+    syncRunId,
+    aliases,
+    events,
+    ...(Object.keys(currentVersionValidators).length === 0 ? {} : { currentVersionValidators }),
+  };
 }
 
 function createHttpMissingObservation(
