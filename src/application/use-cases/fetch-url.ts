@@ -114,7 +114,9 @@ export class FetchUrl {
               ...(cached?.etag === undefined ? {} : { etag: cached.etag }),
               ...(cached?.lastModified === undefined ? {} : { lastModified: cached.lastModified }),
               ...(cached?.contentHash === undefined ? {} : { contentHash: cached.contentHash }),
-              ...(cached?.validatorUrl === undefined ? {} : { validatorUrl: cached.validatorUrl }),
+              ...(cached?.validatorUrl === undefined
+                ? {}
+                : { validatorUrl: cached.validatorUrl }),
             },
           },
         );
