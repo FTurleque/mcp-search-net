@@ -10,10 +10,7 @@ const SPEC = {
 describe('strict CLI argument validation', () => {
   it('accepts known flags and value options', () => {
     expect(() =>
-      assertStrictCliArguments(
-        ['--path', 'catalog.db', '--keep', '3', '--dry-run'],
-        SPEC,
-      ),
+      assertStrictCliArguments(['--path', 'catalog.db', '--keep', '3', '--dry-run'], SPEC),
     ).not.toThrow();
   });
 
@@ -22,9 +19,9 @@ describe('strict CLI argument validation', () => {
   });
 
   it('rejects duplicate options', () => {
-    expect(() =>
-      assertStrictCliArguments(['--path', 'one.db', '--path', 'two.db'], SPEC),
-    ).toThrow('Duplicate option --path');
+    expect(() => assertStrictCliArguments(['--path', 'one.db', '--path', 'two.db'], SPEC)).toThrow(
+      'Duplicate option --path',
+    );
   });
 
   it('rejects a value option whose value is another option', () => {
