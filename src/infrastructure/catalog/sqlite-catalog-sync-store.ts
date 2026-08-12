@@ -51,7 +51,9 @@ const INSERT_STALENESS_EVENT_SQL = `
 
 const REFRESH_CURRENT_VERSION_VALIDATORS_SQL = `
   UPDATE document_versions
-  SET etag = ?, last_modified = ?, fetched_at = ?
+  SET etag = coalesce(?, etag),
+      last_modified = coalesce(?, last_modified),
+      fetched_at = ?
   WHERE id = (SELECT current_version_id FROM documents WHERE id = ?)
 `;
 
