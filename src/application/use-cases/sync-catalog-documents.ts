@@ -412,7 +412,7 @@ function versionExtractionContractVersion(version: DocumentVersion): number {
   const metadata = versionMetadata(version);
   const value = metadata?.['extractionContractVersion'];
   // Versions written before this field existed used the current V1 extraction contract.
-  return Number.isSafeInteger(value) && typeof value === 'number' && value > 0 ? value : 1;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : 1;
 }
 
 function versionMetadata(version: DocumentVersion): Readonly<Record<string, unknown>> | undefined {
