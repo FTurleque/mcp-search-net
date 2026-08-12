@@ -217,11 +217,18 @@ export class SyncCatalogDocuments {
               document: documentInput,
               version: {
                 contentHash: fetched.contentHash,
+                ...(contentUnchanged && currentVersion?.versionLabel !== undefined
+                  ? { versionLabel: currentVersion.versionLabel }
+                  : {}),
                 ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
                 ...(fetched.lastModified === undefined
                   ? {}
                   : { lastModified: fetched.lastModified }),
-                publishedAt: new Date(fetched.fetchedAt),
+                ...(contentUnchanged
+                  ? currentVersion?.publishedAt === undefined
+                    ? {}
+                    : { publishedAt: currentVersion.publishedAt }
+                  : { publishedAt: new Date(fetched.fetchedAt) }),
                 extractionMode: fetched.extractionMode,
                 contentType: fetched.contentType,
                 metadataJson: JSON.stringify({
