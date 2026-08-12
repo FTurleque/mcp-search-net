@@ -103,7 +103,6 @@ function moduleSpecifiers(source: string, path: string): readonly string[] {
       const [argument] = node.arguments;
       if (
         node.arguments.length === 1 &&
-        argument !== undefined &&
         ts.isStringLiteralLike(argument) &&
         (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
           (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
