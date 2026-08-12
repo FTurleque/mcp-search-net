@@ -19,6 +19,27 @@ describe('linear HTML document extractor', () => {
     expect(result.safeHtml).not.toContain('cookie-banner');
   });
 
+  it('decodes decimal, hexadecimal and common named entities in metadata, links and text', () => {
+    const result = extractHtmlDocument(
+      '<html><head><title>R&amp;D &#38; &#x1F680; &copy;</title><link rel="canonical" href="/canonical?a=1&#38;b=2"></head><body><p>One &mdash; two &#169;.</p><a href="/next?a=1&#x26;b=2">Next</a></body></html>',
+      'https://example.com/docs',
+    );
+
+    expect(result.title).toBe('R&D & 🚀 ©');
+    expect(result.canonicalUrl).toBe('https://example.com/canonical?a=1&b=2');
+    expect(result.markdown).toContain('One — two ©.');
+    expect(result.links).toEqual(['https://example.com/next?a=1&b=2']);
+  });
+
+  it('replaces invalid numeric character references without throwing', () => {
+    const result = extractHtmlDocument(
+      '<p>Invalid: &#0; &#xD800; &#1114112;.</p>',
+      'https://example.com/docs',
+    );
+
+    expect(result.markdown).toContain('Invalid: � � �.');
+  });
+
   it('discards the remainder conservatively when a noisy container is never closed', () => {
     const result = extractHtmlDocument(
       '<main><h1>Visible</h1><p>Useful text before noise.</p><div class="cookie-banner"><p>noise<h1>Hidden</h1>',
