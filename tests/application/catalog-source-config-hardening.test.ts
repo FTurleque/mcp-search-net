@@ -13,6 +13,6 @@ sources:
     base_url: https://example.test/docs/
   duplicate: *source
 `),
-    ).toThrow(/alias/i);
+    ).toThrow('Cannot materialize YAML document: catalog-sources.yml');
   });
 });
