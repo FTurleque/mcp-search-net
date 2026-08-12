@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 
+import * as ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const sourceRoot = resolve('src');
@@ -39,6 +40,26 @@ describe('hexagonal import boundaries', () => {
       forbiddenImports('presentation', (specifier) => referencesLayer(specifier, 'infrastructure')),
     ).toEqual([]);
   });
+
+  it('detects static, side-effect, re-export, dynamic and require module loading syntax', () => {
+    const source = [
+      "import value from './static.js';",
+      "import './side-effect.js';",
+      "export * from './re-export.js';",
+      "const dynamic = import('./dynamic.js');",
+      "const legacy = require('./legacy.cjs');",
+      "import alias = require('./import-equals.cjs');",
+    ].join('\n');
+
+    expect(moduleSpecifiers(source, 'architecture-fixture.ts')).toEqual([
+      './static.js',
+      './side-effect.js',
+      './re-export.js',
+      './dynamic.js',
+      './legacy.cjs',
+      './import-equals.cjs',
+    ]);
+  });
 });
 
 function forbiddenImports(
@@ -48,11 +69,52 @@ function forbiddenImports(
   const layerRoot = join(sourceRoot, layer);
   return typescriptFiles(layerRoot).flatMap((path) => {
     const source = readFileSync(path, 'utf8');
-    return [...source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/gu)]
-      .map((match) => match[1] ?? '')
+    return moduleSpecifiers(source, path)
       .filter(predicate)
       .map((specifier) => `${relative(sourceRoot, path)} -> ${specifier}`);
   });
+}
+
+function moduleSpecifiers(source: string, path: string): readonly string[] {
+  const sourceFile = ts.createSourceFile(
+    path,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const specifiers: string[] = [];
+
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier !== undefined &&
+      ts.isStringLiteralLike(node.moduleSpecifier)
+    ) {
+      specifiers.push(node.moduleSpecifier.text);
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      ts.isStringLiteralLike(node.moduleReference.expression)
+    ) {
+      specifiers.push(node.moduleReference.expression.text);
+    } else if (ts.isCallExpression(node)) {
+      const [argument] = node.arguments;
+      if (
+        node.arguments.length === 1 &&
+        argument !== undefined &&
+        ts.isStringLiteralLike(argument) &&
+        (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+          (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
+      ) {
+        specifiers.push(argument.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  visit(sourceFile);
+  return specifiers;
 }
 
 function typescriptFiles(root: string): readonly string[] {

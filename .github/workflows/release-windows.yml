@@ -41,18 +41,33 @@ jobs:
           node-version: 24.18.0
           cache: npm
 
-      - name: Installer Inno Setup 6.7.1
+      - name: Installer Inno Setup 6.7.1 vérifié
         shell: pwsh
         run: |
-          choco install innosetup --version=6.7.1 --yes --no-progress --require-checksums
+          $innoVersion = '6.7.1'
+          $innoUrl = 'https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe'
+          $innoSha256 = '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0'
+          $innoInstaller = Join-Path $env:RUNNER_TEMP "innosetup-$innoVersion.exe"
+
+          Invoke-WebRequest -Uri $innoUrl -OutFile $innoInstaller -UseBasicParsing
+          .\scripts\windows\verify-file-sha256.ps1 `
+            -Path $innoInstaller `
+            -ExpectedSha256 $innoSha256
+
+          $install = Start-Process `
+            -FilePath $innoInstaller `
+            -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/ALLUSERS') `
+            -Wait `
+            -PassThru
+          if ($install.ExitCode -ne 0) {
+            throw "Installation Inno Setup échouée (exit=$($install.ExitCode))"
+          }
+          Remove-Item -LiteralPath $innoInstaller -Force
+
           $iscc = @(
-            (Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
-            'C:\Program Files (x86)\Inno Setup 7\ISCC.exe',
-            'C:\Program Files\Inno Setup 7\ISCC.exe',
             'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
-            'C:\Program Files\Inno Setup 6\ISCC.exe',
-            'C:\ProgramData\chocolatey\bin\ISCC.exe'
-          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+            'C:\Program Files\Inno Setup 6\ISCC.exe'
+          ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (-not $iscc) { throw 'ISCC.exe introuvable après installation Inno Setup.' }
           $isccVersion = (Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion
           if ([string]::IsNullOrWhiteSpace($isccVersion) -or -not $isccVersion.StartsWith('6.7.1', [System.StringComparison]::Ordinal)) {

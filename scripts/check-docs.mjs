@@ -307,11 +307,17 @@ function validateReleaseAndInstallerHardening() {
       `publish-windows-release.ps1: invariant version absent: ${needle}`,
     );
   }
-  requireText(
-    releaseWorkflow,
-    'choco install innosetup --version=6.7.1',
-    'release-windows.yml: Inno Setup non figé en 6.7.1',
-  );
+  for (const needle of [
+    "$innoVersion = '6.7.1'",
+    "$innoUrl = 'https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe'",
+    "$innoSha256 = '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0'",
+    '.\\scripts\\windows\\verify-file-sha256.ps1',
+  ]) {
+    requireText(releaseWorkflow, needle, `release-windows.yml: pinning Inno absent: ${needle}`);
+  }
+  if (releaseWorkflow.includes('choco install innosetup')) {
+    failures.push('release-windows.yml: installation Inno mutable via Chocolatey encore présente');
+  }
   requireText(
     toolCall,
     'formatExternalContentText(options.formatText(validated))',
