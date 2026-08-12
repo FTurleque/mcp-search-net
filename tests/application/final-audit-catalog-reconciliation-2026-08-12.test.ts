@@ -45,22 +45,29 @@ describe('final audit catalog reconciliation', () => {
       enabled: true,
     });
 
-    await sync(repository, new QueueFetcher([fetched({
-      etag: '"v1"',
-      lastModified: 'Tue, 11 Aug 2026 10:00:00 GMT',
-      contentType: 'text/plain',
-      finalUrl: 'https://docs.example/guide',
-      markdown: 'Old representation',
-      documentSections: [{ heading: 'Old', markdown: 'Old representation' }],
-    })]));
+    await sync(
+      repository,
+      new QueueFetcher([
+        fetched({
+          etag: '"v1"',
+          lastModified: 'Tue, 11 Aug 2026 10:00:00 GMT',
+          contentType: 'text/plain',
+          finalUrl: 'https://docs.example/guide',
+          markdown: 'Old representation',
+          documentSections: [{ heading: 'Old', markdown: 'Old representation' }],
+        }),
+      ]),
+    );
 
-    const secondFetcher = new QueueFetcher([fetched({
-      etag: '"v2"',
-      contentType: 'text/html',
-      finalUrl: 'https://cdn.example/guide',
-      markdown: '## New\n\nNew representation',
-      documentSections: [{ heading: 'New', markdown: '## New\n\nNew representation' }],
-    })]);
+    const secondFetcher = new QueueFetcher([
+      fetched({
+        etag: '"v2"',
+        contentType: 'text/html',
+        finalUrl: 'https://cdn.example/guide',
+        markdown: '## New\n\nNew representation',
+        documentSections: [{ heading: 'New', markdown: '## New\n\nNew representation' }],
+      }),
+    ]);
     const result = await sync(repository, secondFetcher);
 
     expect(result).toMatchObject({ unchangedCount: 1, updatedCount: 0, failedCount: 0 });
@@ -80,7 +87,10 @@ describe('final audit catalog reconciliation', () => {
     });
     const sections = await repository.listCurrentDocumentSections();
     expect(sections).toHaveLength(1);
-    expect(sections[0]?.section).toMatchObject({ heading: 'New', content: '## New\n\nNew representation' });
+    expect(sections[0]?.section).toMatchObject({
+      heading: 'New',
+      content: '## New\n\nNew representation',
+    });
     expect(secondFetcher.contexts[0]?.cacheValidators).toMatchObject({
       etag: '"v1"',
       validatorUrl: 'https://docs.example/guide',
@@ -101,7 +111,7 @@ describe('final audit catalog reconciliation', () => {
     });
     await repository.commitDocumentRevision({
       document: {
-        publicId: 'doc_33de0d043416e86cb18abf23',
+        publicId: 'doc_244bee4b5e494c2dacff675d',
         sourceId: source.id,
         canonicalUrl: document.url,
         stableKey: document.stableKey,
