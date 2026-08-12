@@ -1,8 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { parse } from 'yaml';
-
 import type {
   CatalogFreshnessPolicy,
   CatalogSourceType,
@@ -10,6 +8,7 @@ import type {
   NewCatalogSource,
 } from '../domain/models/catalog.js';
 import { validateNewCatalogSource } from '../domain/services/catalog-source-validation.js';
+import { parseStrictYaml } from '../infrastructure/config/yaml-loader.js';
 
 const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
@@ -56,7 +55,7 @@ export async function loadCatalogSourceConfig(filePath: string): Promise<Catalog
 }
 
 export function parseCatalogSourceConfig(content: string): CatalogSourceConfig {
-  const document = parse(content) as unknown;
+  const document = parseStrictYaml(content, 'catalog-sources.yml');
   const root = asRecord(document, 'catalog source config');
   assertOnlyProperties(root, ROOT_PROPERTIES, 'catalog source config');
   const schemaVersion = root['schema_version'];
