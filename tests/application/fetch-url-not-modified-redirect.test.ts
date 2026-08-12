@@ -18,7 +18,12 @@ class RevalidationCache implements CacheRepository {
     return undefined;
   }
 
-  public async setSearch<T>(): Promise<boolean> {
+  public async setSearch<T>(
+    _key: string,
+    _value: T,
+    _ttlMs: number,
+    _validators?: CacheValidators,
+  ): Promise<boolean> {
     return true;
   }
 
@@ -35,7 +40,7 @@ class RevalidationCache implements CacheRepository {
     _ttlMs: number,
     _validators?: CacheValidators,
   ): Promise<boolean> {
-    this.stored = value as FetchedContent;
+    this.stored = value as unknown as FetchedContent;
     return true;
   }
 
