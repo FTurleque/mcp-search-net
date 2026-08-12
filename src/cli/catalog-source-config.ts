@@ -14,6 +14,25 @@ import { validateNewCatalogSource } from '../domain/services/catalog-source-vali
 const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
 const SYNC_STRATEGIES = ['manual', 'polling'] as const;
+const ROOT_PROPERTIES = new Set(['schema_version', 'sources']);
+const SOURCE_PROPERTIES = new Set([
+  'display_name',
+  'base_url',
+  'source_type',
+  'language',
+  'freshness_policy',
+  'sync_strategy',
+  'enabled',
+  'documents',
+]);
+const DOCUMENT_PROPERTIES = new Set([
+  'stable_key',
+  'title',
+  'url',
+  'language',
+  'mime_type',
+  'enabled',
+]);
 
 export interface CatalogSourceDocumentConfig {
   readonly sourceKey: string;
@@ -39,6 +58,7 @@ export async function loadCatalogSourceConfig(filePath: string): Promise<Catalog
 export function parseCatalogSourceConfig(content: string): CatalogSourceConfig {
   const document = parse(content) as unknown;
   const root = asRecord(document, 'catalog source config');
+  assertOnlyProperties(root, ROOT_PROPERTIES, 'catalog source config');
   const schemaVersion = root['schema_version'];
   if (schemaVersion !== 1) throw new Error('catalog-sources.yml schema_version must be 1');
 
@@ -62,6 +82,7 @@ interface CatalogSourceConfigEntry {
 function parseCatalogSourceEntry(sourceKey: string, value: unknown): CatalogSourceConfigEntry {
   if (sourceKey.trim().length === 0) throw new Error('catalog source key must not be empty');
   const source = asRecord(value, `catalog source ${sourceKey}`);
+  assertOnlyProperties(source, SOURCE_PROPERTIES, `catalog source ${sourceKey}`);
   const language = optionalString(source, 'language') ?? 'fr';
   let parsedSource: NewCatalogSource;
   try {
@@ -115,7 +136,9 @@ function parseDocument(
   value: unknown,
   sourceLanguage: string,
 ): CatalogSourceDocumentConfig {
-  const document = asRecord(value, `catalog source ${sourceKey} document ${index + 1}`);
+  const context = `catalog source ${sourceKey} document ${index + 1}`;
+  const document = asRecord(value, context);
+  assertOnlyProperties(document, DOCUMENT_PROPERTIES, context);
   const stableKey = requiredString(document, 'stable_key', sourceKey);
   return {
     sourceKey,
@@ -133,6 +156,16 @@ function asRecord(value: unknown, context: string): Record<string, unknown> {
     throw new Error(`${context} must be an object`);
   }
   return value as Record<string, unknown>;
+}
+
+function assertOnlyProperties(
+  source: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+  context: string,
+): void {
+  const unknown = Object.keys(source).filter((property) => !allowed.has(property));
+  if (unknown.length === 0) return;
+  throw new Error(`${context} contains unknown propert${unknown.length === 1 ? 'y' : 'ies'}: ${unknown.join(', ')}`);
 }
 
 function requiredString(
