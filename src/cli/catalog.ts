@@ -101,7 +101,9 @@ const CATALOG_ARGUMENT_SPECS: Readonly<Record<CatalogCommand, StrictCliArgumentS
       '--version-label',
     ],
   },
-  search: { valueOptions: ['--path', '--query', '--source-key', '--language', '--limit'] },
+  search: {
+    valueOptions: ['--path', '--query', '--source-key', '--language', '--limit'],
+  },
   verify: { valueOptions: ['--path'] },
   'rebuild-index': { valueOptions: ['--path'] },
   'purge-versions': {
