@@ -296,7 +296,7 @@ function createCatalogDocumentFilter(filters: CatalogSqlFilters): SqlFilter {
     parameters.push(filters.sourceKey);
   }
   if (filters.language !== undefined) {
-    clauses.push('documents.language = ?');
+    clauses.push('documents.language = ? COLLATE NOCASE');
     parameters.push(filters.language);
   }
   if (filters.status !== undefined) {
@@ -453,7 +453,7 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL = `
     AND catalog_sources.enabled = 1
     AND documents.status = 'ACTIVE'
     AND (? IS NULL OR catalog_sources.source_key = ?)
-    AND (? IS NULL OR documents.language = ?)
+    AND (? IS NULL OR documents.language = ? COLLATE NOCASE)
   ORDER BY rank ASC, score DESC, documents.title COLLATE NOCASE, document_sections.ordinal
   LIMIT ?
 `;
@@ -517,7 +517,7 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL = `
   WHERE catalog_sources.enabled = 1
     AND documents.status = 'ACTIVE'
     AND (? IS NULL OR catalog_sources.source_key = ?)
-    AND (? IS NULL OR documents.language = ?)
+    AND (? IS NULL OR documents.language = ? COLLATE NOCASE)
     AND (
       lower(documents.title) LIKE ? ESCAPE '\\'
       OR lower(document_sections.heading) LIKE ? ESCAPE '\\'
