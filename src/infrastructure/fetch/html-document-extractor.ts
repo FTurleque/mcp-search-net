@@ -81,8 +81,7 @@ const BLOCK_TAGS = new Set([
   'tr',
 ]);
 const MAX_TITLE_SOURCE_CHARACTERS = MAX_EXTERNAL_TITLE_CHARACTERS * 8;
-const HTML_CHARACTER_REFERENCE_PATTERN =
-  /&(?:#[0-9]+|#x[0-9a-f]+|[a-z][a-z0-9]+);/giu;
+const HTML_CHARACTER_REFERENCE_PATTERN = /&(?:#[0-9]+|#x[0-9a-f]+|[a-z][a-z0-9]+);/giu;
 const NAMED_HTML_ENTITIES: Readonly<Record<string, string>> = {
   amp: '&',
   apos: "'",
@@ -531,8 +530,7 @@ function decodeEntities(value: string): string {
 
 function decodeCharacterReference(entity: string): string {
   const body = entity.slice(1, -1);
-  if (body.startsWith('#x') || body.startsWith('#X'))
-    return decodeNumericEntity(body.slice(2), 16);
+  if (body.startsWith('#x') || body.startsWith('#X')) return decodeNumericEntity(body.slice(2), 16);
   if (body.startsWith('#')) return decodeNumericEntity(body.slice(1), 10);
   return NAMED_HTML_ENTITIES[body.toLowerCase()] ?? entity;
 }

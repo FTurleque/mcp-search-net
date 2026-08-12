@@ -94,13 +94,8 @@ describe('Windows installer runtime integrity', () => {
     expect(releaseWorkflow).toContain(
       "$innoSha256 = '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0'",
     );
-    const innoVerification = releaseWorkflow.indexOf(
-      '.\\scripts\\windows\\verify-file-sha256.ps1',
-    );
-    const innoExecution = releaseWorkflow.indexOf(
-      'Start-Process',
-      innoVerification + 1,
-    );
+    const innoVerification = releaseWorkflow.indexOf('.\\scripts\\windows\\verify-file-sha256.ps1');
+    const innoExecution = releaseWorkflow.indexOf('Start-Process', innoVerification + 1);
     expect(innoVerification).toBeGreaterThan(0);
     expect(innoExecution).toBeGreaterThan(innoVerification);
     expect(releaseWorkflow).not.toContain('choco install innosetup');
