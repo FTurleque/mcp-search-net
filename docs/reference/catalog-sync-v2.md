@@ -78,8 +78,10 @@ Options :
 ```
 
 Le dry-run planifie les sources/documents configurés sans fetch réseau. Il persiste néanmoins un
-`sync_run` créé en `RUNNING`, puis clôturé en `SUCCESS` avec les compteurs du plan. `dry-run` signifie
-ici « aucune mutation des documents/versions/sections », et non « aucune écriture d'audit ».
+`sync_run` de type `PLAN`, créé en `RUNNING`, puis clôturé en `CANCELLED` avec les compteurs
+d'exécution à zéro et `errorSummary = DRY_RUN_PLAN`. Les compteurs `planned*` / `skipped*` restent
+dans la sortie du plan et ne sont pas mélangés aux métriques d'exécution. `dry-run` signifie ici
+« aucune mutation des documents/versions/sections », et non « aucune écriture d'audit ».
 
 ### Sync réel
 
@@ -147,7 +149,13 @@ Le fetcher reçoit les validateurs de la version courante quand ils existent :
 
 - `contentHash` ;
 - `ETag` ;
-- `Last-Modified`.
+- `Last-Modified` ;
+- l'URL de représentation `finalUrl` issue des métadonnées de version, quand elle est disponible.
+
+`ETag` et `Last-Modified` ne sont envoyés que lorsque cette URL de représentation correspond
+exactement à l'URL transport demandée. Ils ne sont jamais propagés vers une cible de redirection.
+Une ancienne version sans `finalUrl` exploitable reste sûre : elle est simplement rechargée sans
+requête conditionnelle.
 
 Décisions :
 
@@ -156,6 +164,10 @@ Décisions :
   le statut `REDIRECTED`, les aliases et les événements associés ;
 - hash identique au contenu courant => document `unchanged`, aucune nouvelle version ;
 - hash différent => révision atomique, immédiatement recherchable sans rebuild manuel ;
+- la destination permanente de l'URL d'origine est calculée uniquement à partir du **préfixe
+  contigu de redirections permanentes** : une redirection temporaire (`302`/`307`) coupe cette
+  relation. Ainsi `301 -> 302` conserve la cible du `301` comme identité permanente, tandis que
+  `302 -> 301` ne rend pas l'URL d'origine permanente ;
 - redirection permanente => document `REDIRECTED`, `stableKey` conservé, chaîne de redirection
   stockée en métadonnées, aliases et événements persistés ;
 - 404 sur document existant => document `STALE`, version courante conservée ;
@@ -241,16 +253,18 @@ Un document existant ne perd jamais sa version courante à cause d'un échec ré
 ## Lifecycle et observabilité
 
 Chaque dry-run ou sync réel écrit d'abord un `sync_run` en `RUNNING` avec compteurs nuls, puis le
-clôt une seule fois avec :
+clôt une seule fois :
 
-- source ciblée si applicable ;
-- date de début et de fin ;
-- statut `SUCCESS`, `FAILED` ou `PARTIAL` ;
-- compteurs ajoutés, mis à jour, inchangés et échoués ;
-- résumé d'erreur si nécessaire.
+- un run d'exécution (`runKind = EXECUTION`) termine en `SUCCESS`, `FAILED` ou `PARTIAL` avec ses
+  compteurs ajoutés, mis à jour, inchangés et échoués ;
+- un dry-run (`runKind = PLAN`) termine en `CANCELLED`, conserve les compteurs d'exécution à zéro et
+  porte `errorSummary = DRY_RUN_PLAN` ; les compteurs de planification restent dans la sortie du
+  use case ;
+- la source ciblée et les dates de début/fin sont conservées dans les deux cas.
 
-Une exception qui interrompt la boucle clôt le run en `FAILED` avant d'être propagée. Le schéma
-autorise aussi `CANCELLED`, mais aucun use case du candidat ne produit actuellement cet état.
+Une exception qui interrompt la boucle d'une exécution clôt le run en `FAILED` avant d'être propagée.
+`CANCELLED` est donc actuellement utilisé de manière déterministe pour identifier les dry-runs de
+type `PLAN`, et peut être distingué d'une exécution réelle via `runKind`.
 
 ## Tests couverts
 
@@ -259,14 +273,15 @@ autorise aussi `CANCELLED`, mais aucun use case du candidat ne produit actuellem
 - sync exhaustive sans `--limit` ;
 - rate limiting applicatif ;
 - reprise via curseur et continuation calculée pour un lot limité ;
-- validateurs de version courante ;
+- validateurs de version courante liés à leur URL de représentation ;
 - contenu inchangé ;
 - réponse `notModified` avec touch `last_seen_at` et absence de nouvelle version ;
-- redirection permanente ;
+- redirection permanente et chaînes mixtes permanente/temporaire ;
 - 404 non destructif ;
 - 410 non destructif ;
 - aliases dédupliqués et six types d'événements liés au run ;
 - transition `RUNNING` vers un seul statut terminal ;
+- dry-run `PLAN -> CANCELLED` distinct des métriques d'exécution ;
 - index FTS mis à jour dans la transaction de chaque révision ;
 - chunking borné des sections surdimensionnées ;
 - rollback des écritures si sections ou indexation échouent ;
@@ -276,5 +291,4 @@ autorise aussi `CANCELLED`, mais aucun use case du candidat ne produit actuellem
 
 - aucune découverte automatique ni crawl de domaine ;
 - aucune mutation de synchronisation exposée par MCP ;
-- aucun statut `CANCELLED` émis par les use cases actuels ;
 - aucun hash de contenu normalisé en V2 : cette évolution est reportée à V3.
