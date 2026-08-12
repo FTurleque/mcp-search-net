@@ -49,6 +49,16 @@ const envelopeSchema = z
   .object({ results: z.array(crawlResultSchema).optional(), result: crawlResultSchema.optional() })
   .loose();
 
+type FetchSecurityContext = {
+  readonly requestId?: string;
+  readonly tool: 'fetch_url';
+};
+
+interface ExtractedMarkdown {
+  readonly markdown: string;
+  readonly extractionMode: FetchedContent['extractionMode'];
+}
+
 export class Crawl4aiContentFetcher implements ContentFetcher {
   public constructor(
     private readonly baseUrl: string,
@@ -62,52 +72,13 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     context: ContentFetchContext = {},
   ): Promise<ContentFetchResult> {
     const deadline = request.deadline ?? performance.now() + request.timeoutMs;
-    const securityContext = {
-      ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
-      tool: 'fetch_url' as const,
-    };
-    const resource = await this.gateway.download(
-      request.url.value,
-      validatorsApplyTo(request.url.value, context.cacheValidators)
-        ? createConditionalHeaders(context.cacheValidators)
-        : {},
-      securityContext,
-      {
-        timeoutMs: remainingTimeoutMs(deadline),
-        maxBytes: request.maxResponseBytes,
-        maxRedirects: request.maxRedirects,
-      },
-    );
-    if (resource.status === 304) {
-      return {
-        notModified: true,
-        requestedUrl: resource.requestedUrl,
-        finalUrl: resource.finalUrl,
-        redirectChain: resource.redirectChain ?? [],
-        ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
-        ...(resource.headers['last-modified'] === undefined
-          ? {}
-          : { lastModified: resource.headers['last-modified'] }),
-      };
-    }
+    const securityContext = createSecurityContext(context);
+    const resource = await this.downloadResource(request, context, securityContext, deadline);
+    if (resource.status === 304) return toNotModifiedContent(resource);
+
     const contentType = detectContentType(resource);
     const decoded = await decodeResource(resource, contentType, deadline);
-    let markdown = decoded.markdown;
-    let extractionMode: FetchedContent['extractionMode'] = 'static';
-
-    if (request.renderMode === 'auto' && isHtml(contentType) && !isUseful(markdown)) {
-      const rendered = await this.renderPreparedHtml(
-        decoded.safeHtml ?? '',
-        remainingTimeoutMs(deadline),
-      );
-      if (isUseful(rendered)) {
-        markdown = rendered;
-        extractionMode = 'native-render';
-      }
-    }
-    if (markdown.trim() === '')
-      throw new ExtractionError('No usable textual content was extracted');
-
+    const extracted = await this.extractMarkdown(request, decoded, contentType, deadline);
     const redirectChain = resource.redirectChain ?? [];
     const permanentTarget = permanentRedirectTarget(redirectChain);
     const canonicalUrl = await approveCanonicalUrl(
@@ -118,35 +89,51 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       deadline,
     );
 
-    return {
-      requestedUrl: resource.requestedUrl,
-      finalUrl: resource.finalUrl,
-      canonicalUrl,
-      ...(decoded.title === undefined ? {} : { title: decoded.title }),
-      markdown,
-      documentSections: extractDocumentSections(markdown),
+    return toFetchedContent(
+      resource,
+      decoded,
+      extracted,
       contentType,
-      fetchedAt: new Date().toISOString(),
-      extractionMode,
-      statusCode: resource.status,
-      ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
-      ...(resource.headers['last-modified'] === undefined
-        ? {}
-        : { lastModified: resource.headers['last-modified'] }),
-      contentHash: createHash('sha256').update(resource.body).digest('hex'),
-      redirectChain,
-      metadata: {
-        status: resource.status,
-        bytes: resource.body.byteLength,
-        ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
-        ...(resource.headers['last-modified'] === undefined
-          ? {}
-          : { lastModified: resource.headers['last-modified'] }),
-        ...(redirectChain.length === 0 ? {} : { redirectChain }),
-        ...(permanentTarget === undefined ? {} : { redirectedPermanently: true }),
+      canonicalUrl,
+      permanentTarget,
+    );
+  }
+
+  private downloadResource(
+    request: ContentFetchRequest,
+    context: ContentFetchContext,
+    securityContext: FetchSecurityContext,
+    deadline: number,
+  ): Promise<DownloadedResource> {
+    return this.gateway.download(
+      request.url.value,
+      conditionalHeadersFor(request.url.value, context.cacheValidators),
+      securityContext,
+      {
+        timeoutMs: remainingTimeoutMs(deadline),
+        maxBytes: request.maxResponseBytes,
+        maxRedirects: request.maxRedirects,
       },
-      links: decoded.links,
-    };
+    );
+  }
+
+  private async extractMarkdown(
+    request: ContentFetchRequest,
+    decoded: DecodedContent,
+    contentType: string,
+    deadline: number,
+  ): Promise<ExtractedMarkdown> {
+    if (request.renderMode === 'auto' && isHtml(contentType) && !isUseful(decoded.markdown)) {
+      const rendered = await this.renderPreparedHtml(
+        decoded.safeHtml ?? '',
+        remainingTimeoutMs(deadline),
+      );
+      if (isUseful(rendered)) return { markdown: rendered, extractionMode: 'native-render' };
+    }
+    if (decoded.markdown.trim() === '') {
+      throw new ExtractionError('No usable textual content was extracted');
+    }
+    return { markdown: decoded.markdown, extractionMode: 'static' };
   }
 
   private async renderPreparedHtml(html: string, timeoutMs: number): Promise<string> {
@@ -184,6 +171,66 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
   }
 }
 
+function createSecurityContext(context: ContentFetchContext): FetchSecurityContext {
+  return {
+    ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+    tool: 'fetch_url',
+  };
+}
+
+function toNotModifiedContent(resource: DownloadedResource): ContentFetchResult {
+  return {
+    notModified: true,
+    requestedUrl: resource.requestedUrl,
+    finalUrl: resource.finalUrl,
+    redirectChain: resource.redirectChain ?? [],
+    ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
+    ...(resource.headers['last-modified'] === undefined
+      ? {}
+      : { lastModified: resource.headers['last-modified'] }),
+  };
+}
+
+function toFetchedContent(
+  resource: DownloadedResource,
+  decoded: DecodedContent,
+  extracted: ExtractedMarkdown,
+  contentType: string,
+  canonicalUrl: string,
+  permanentTarget: string | undefined,
+): FetchedContent {
+  const redirectChain = resource.redirectChain ?? [];
+  return {
+    requestedUrl: resource.requestedUrl,
+    finalUrl: resource.finalUrl,
+    canonicalUrl,
+    ...(decoded.title === undefined ? {} : { title: decoded.title }),
+    markdown: extracted.markdown,
+    documentSections: extractDocumentSections(extracted.markdown),
+    contentType,
+    fetchedAt: new Date().toISOString(),
+    extractionMode: extracted.extractionMode,
+    statusCode: resource.status,
+    ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
+    ...(resource.headers['last-modified'] === undefined
+      ? {}
+      : { lastModified: resource.headers['last-modified'] }),
+    contentHash: createHash('sha256').update(resource.body).digest('hex'),
+    redirectChain,
+    metadata: {
+      status: resource.status,
+      bytes: resource.body.byteLength,
+      ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
+      ...(resource.headers['last-modified'] === undefined
+        ? {}
+        : { lastModified: resource.headers['last-modified'] }),
+      ...(redirectChain.length === 0 ? {} : { redirectChain }),
+      ...(permanentTarget === undefined ? {} : { redirectedPermanently: true }),
+    },
+    links: decoded.links,
+  };
+}
+
 function remainingTimeoutMs(deadline: number): number {
   const remaining = Math.ceil(deadline - performance.now());
   if (remaining <= 0) throw new RequestTimeoutError('fetch_url operation deadline exceeded');
@@ -194,7 +241,7 @@ async function approveCanonicalUrl(
   candidate: string | undefined,
   fallback: string,
   gateway: SecureHttpGateway,
-  context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
+  context: FetchSecurityContext,
   deadline: number,
 ): Promise<string> {
   if (candidate === undefined || candidate === fallback) return fallback;
@@ -205,6 +252,13 @@ async function approveCanonicalUrl(
     if (error instanceof RequestTimeoutError) throw error;
     return fallback;
   }
+}
+
+function conditionalHeadersFor(
+  requestedUrl: string,
+  validators: ContentFetchContext['cacheValidators'],
+): Readonly<Record<string, string>> {
+  return validatorsApplyTo(requestedUrl, validators) ? createConditionalHeaders(validators) : {};
 }
 
 function validatorsApplyTo(
