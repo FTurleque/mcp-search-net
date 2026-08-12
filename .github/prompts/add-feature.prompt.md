@@ -6,7 +6,7 @@ description: >-
 mode: agent
 agent: feature-engineer
 owner: mcp-search-net
-version: 1.1.0
+version: 1.1.2
 lastReviewed: '2026-06-21'
 ---
 

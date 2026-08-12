@@ -6,7 +6,7 @@ description: >
   validation. Rend un verdict GO / NO-GO avec la liste des blocants et le chemin
   de remédiation le plus court.
 owner: mcp-search-net
-version: 1.1.0
+version: 1.1.2
 lastReviewed: '2026-06-21'
 tools:
   [

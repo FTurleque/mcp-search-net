@@ -6,7 +6,7 @@ description: >
   jour de dépendances et validation croisée. Délègue aux agents spécialisés et
   réconcilie les preuves pour produire un résultat cohérent.
 owner: mcp-search-net
-version: 1.1.0
+version: 1.1.2
 lastReviewed: '2026-06-21'
 tools:
   [

@@ -20,7 +20,7 @@ describe.runIf(live)('containerized MCP STDIO server', () => {
   });
 
   it('starts through docker compose and exposes the complete read-only tool contract', async () => {
-    client = new Client({ name: 'mcp-search-net-docker-test', version: '1.1.0' });
+    client = new Client({ name: 'mcp-search-net-docker-test', version: '1.1.2' });
     const transport = new StdioClientTransport({
       command: 'docker',
       args: ['compose', 'run', '--rm', '-T', 'mcp-search-net'],

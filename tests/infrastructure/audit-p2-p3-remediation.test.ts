@@ -179,7 +179,7 @@ describe('audit P2/P3 remediations', () => {
       maxConcurrency: 2,
       minimumDelayMs: 80,
       respectRobotsTxt: false,
-      userAgent: 'mcp-search-net/1.1.0',
+      userAgent: 'mcp-search-net/1.1.2',
     });
     const started = performance.now();
 

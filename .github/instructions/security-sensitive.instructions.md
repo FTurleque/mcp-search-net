@@ -6,7 +6,7 @@ description: >
   et non-disclosure. Toute donnée externe est considérée hostile par défaut.
 applyTo: 'src/infrastructure/security/**/*.ts,src/infrastructure/http/**/*.ts,src/infrastructure/fetch/**/*.ts'
 owner: mcp-search-net
-version: 1.1.0
+version: 1.1.2
 lastReviewed: '2026-06-21'
 ---
 

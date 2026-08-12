@@ -7,10 +7,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version SemVer à qualifier/publier, par exemple 1.1.0 ou 1.1.1-rc1'
+        description: 'Version SemVer à qualifier/publier, par exemple 1.1.2 ou 1.1.2-rc1'
         required: true
-        default: '1.1.0'
+        default: '1.1.2'
         type: string
+      validate_only:
+        description: 'Qualifier sans publier (inspection EXE avant release)'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: windows-release-${{ github.ref }}-${{ inputs.version }}
@@ -151,7 +156,7 @@ jobs:
 
   publish:
     name: Publier Windows x64
-    if: github.ref == 'refs/heads/master'
+    if: ${{ !inputs.validate_only && github.ref == 'refs/heads/master' }}
     needs: qualify
     runs-on: windows-latest
     timeout-minutes: 15

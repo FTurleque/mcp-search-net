@@ -8,7 +8,7 @@ description: >
   investigations SSRF/cache/provider, la readiness de release, les échecs CI, les
   problèmes d'installation Docker/Windows et l'alignement de la documentation.
 owner: mcp-search-net
-version: 1.1.0
+version: 1.1.2
 lastReviewed: '2026-06-21'
 ---
 

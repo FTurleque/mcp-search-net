@@ -124,6 +124,6 @@ function createGateway(policy: UrlSecurityPolicy): SecureHttpGateway {
     maxConcurrency: 2,
     minimumDelayMs: 0,
     respectRobotsTxt: true,
-    userAgent: 'mcp-search-net/1.1.0',
+    userAgent: 'mcp-search-net/1.1.2',
   });
 }

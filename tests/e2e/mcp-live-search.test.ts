@@ -27,7 +27,7 @@ describe.runIf(live)('live MCP search', () => {
   });
 
   it('searches through the complete STDIO stack and returns the common envelope', async () => {
-    client = new Client({ name: 'mcp-search-net-live-search-test', version: '1.1.0' });
+    client = new Client({ name: 'mcp-search-net-live-search-test', version: '1.1.2' });
     cacheRoot = mkdtempSync(join(tmpdir(), 'mcp-search-live-cache-'));
     const transport = new StdioClientTransport({
       command: process.execPath,
