@@ -11,9 +11,7 @@ export interface RedirectHop {
  * original URL. A temporary redirect breaks that relationship; permanent redirects observed after
  * it apply to the temporary target, not to the original URL.
  */
-export function permanentRedirectTarget(
-  redirectChain: readonly RedirectHop[],
-): string | undefined {
+export function permanentRedirectTarget(redirectChain: readonly RedirectHop[]): string | undefined {
   let target: string | undefined;
   for (const redirect of redirectChain) {
     if (!redirect.permanent) break;
