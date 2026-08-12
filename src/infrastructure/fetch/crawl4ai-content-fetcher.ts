@@ -49,10 +49,10 @@ const envelopeSchema = z
   .object({ results: z.array(crawlResultSchema).optional(), result: crawlResultSchema.optional() })
   .loose();
 
-type FetchSecurityContext = {
+interface FetchSecurityContext {
   readonly requestId?: string;
   readonly tool: 'fetch_url';
-};
+}
 
 interface ExtractedMarkdown {
   readonly markdown: string;
