@@ -87,6 +87,34 @@ describe('SqliteCacheRepository', () => {
     database.close();
   });
 
+  it('records and verifies cache migration checksums', () => {
+    const fixture = createRepository();
+    fixture.cache.close();
+    caches.splice(caches.indexOf(fixture.cache), 1);
+
+    const database = new Database(fixture.path);
+    const migrations = database
+      .prepare('SELECT name, checksum FROM schema_migrations ORDER BY version')
+      .all() as { name: string | null; checksum: string | null }[];
+    for (const migration of migrations) {
+      expect(migration.name).toMatch(/^V\d{3}__/u);
+      expect(migration.checksum).toMatch(/^[a-f0-9]{64}$/u);
+    }
+    database.prepare("UPDATE schema_migrations SET checksum = 'tampered' WHERE version = 2").run();
+    database.close();
+
+    expect(
+      () =>
+        new SqliteCacheRepository(
+          fixture.path,
+          { now: () => new Date(0) },
+          100,
+          1_000_000,
+          10_000,
+        ),
+    ).toThrow(/CACHE_MIGRATION_CHECKSUM_MISMATCH/u);
+  });
+
   it('stores exact UTF-8 payload sizes without pruning below the global byte limit', async () => {
     const fixture = createRepository(10, 10_000, 1_000);
     const value = { markdown: 'é'.repeat(20) };
