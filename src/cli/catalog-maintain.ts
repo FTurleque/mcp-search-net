@@ -8,11 +8,17 @@ import {
 import { SqliteCatalogMaintenance } from '../infrastructure/catalog/sqlite-catalog-maintenance.js';
 import { StructuredLogger, type LogLevel } from '../infrastructure/logging/structured-logger.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
+import { assertStrictCliArguments } from './strict-cli-arguments.js';
 import { parseStrictInteger } from './strict-integer.js';
 
 const DEFAULT_KEEP_SYNC_RUNS = 100;
 const DEFAULT_MAX_SYNC_RUN_AGE_DAYS = 90;
 const DEFAULT_STALE_LOCK_MS = 10 * 60 * 1_000;
+
+const CATALOG_MAINTAIN_ARGUMENTS = {
+  valueOptions: ['--path', '--keep-sync-runs', '--max-sync-run-age-days', '--stale-lock-ms'],
+  flags: ['--vacuum'],
+} as const;
 
 interface CatalogMaintainOptions extends CatalogMaintenanceInput {
   readonly path: string;
@@ -29,6 +35,7 @@ async function main(argv: readonly string[]): Promise<void> {
 
 function parseArguments(argv: readonly string[]): CatalogMaintainOptions {
   if (argv.includes('--help') || argv.includes('-h')) throw new Error(usage());
+  assertStrictCliArguments(argv, CATALOG_MAINTAIN_ARGUMENTS);
   return {
     path: resolve(
       getOption(argv, '--path') ?? process.env['MCP_CATALOG_PATH'] ?? '.data/catalog.db',
