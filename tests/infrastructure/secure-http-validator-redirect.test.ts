@@ -13,7 +13,9 @@ afterEach(async () => {
     servers.splice(0).map(
       (server) =>
         new Promise<void>((resolve, reject) =>
-          server.close((error) => (error === undefined ? resolve() : reject(error))),
+          server.close((error) =>
+            error === undefined ? resolve() : reject(error),
+          ),
         ),
     ),
   );
