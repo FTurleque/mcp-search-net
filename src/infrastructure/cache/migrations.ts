@@ -19,7 +19,10 @@ export function loadMigrations(): readonly Migration[] {
       if (match === null) return [];
       const version = Number.parseInt(match[1] ?? '', 10);
       if (!Number.isSafeInteger(version)) return [];
-      const sql = readFileSync(new URL(name, new URL('../../../migrations/', import.meta.url)), 'utf8');
+      const sql = readFileSync(
+        new URL(name, new URL('../../../migrations/', import.meta.url)),
+        'utf8',
+      );
       return [
         {
           version,
