@@ -19,8 +19,9 @@ import {
   MAX_EXTERNAL_TITLE_CHARACTERS,
   truncateUnicode,
 } from '../../domain/services/bounded-text.js';
-import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
 import { extractDocumentSections } from '../../domain/services/content-selection.js';
+import { permanentRedirectTarget } from '../../domain/services/redirect-chain.js';
+import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
 import { fetchJson } from '../http/http-utils.js';
 import { extractPdfText } from './pdf-text-extractor.js';
 import { sanitizePreparedHtml } from './prepared-html-sanitizer.js';
@@ -67,7 +68,9 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     };
     const resource = await this.gateway.download(
       request.url.value,
-      createConditionalHeaders(context.cacheValidators),
+      validatorsApplyTo(request.url.value, context.cacheValidators)
+        ? createConditionalHeaders(context.cacheValidators)
+        : {},
       securityContext,
       {
         timeoutMs: remainingTimeoutMs(deadline),
@@ -81,6 +84,10 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
         requestedUrl: resource.requestedUrl,
         finalUrl: resource.finalUrl,
         redirectChain: resource.redirectChain ?? [],
+        ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
+        ...(resource.headers['last-modified'] === undefined
+          ? {}
+          : { lastModified: resource.headers['last-modified'] }),
       };
     }
     const contentType = detectContentType(resource);
@@ -101,15 +108,15 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     if (markdown.trim() === '')
       throw new ExtractionError('No usable textual content was extracted');
 
+    const redirectChain = resource.redirectChain ?? [];
+    const permanentTarget = permanentRedirectTarget(redirectChain);
     const canonicalUrl = await approveCanonicalUrl(
       decoded.canonicalUrl,
-      resource.finalUrl,
+      permanentTarget ?? resource.finalUrl,
       this.gateway,
       securityContext,
       deadline,
     );
-    const redirectChain = resource.redirectChain ?? [];
-    const redirectedPermanently = redirectChain.some((redirect) => redirect.permanent);
 
     return {
       requestedUrl: resource.requestedUrl,
@@ -136,7 +143,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
           ? {}
           : { lastModified: resource.headers['last-modified'] }),
         ...(redirectChain.length === 0 ? {} : { redirectChain }),
-        ...(redirectedPermanently ? { redirectedPermanently: true } : {}),
+        ...(permanentTarget === undefined ? {} : { redirectedPermanently: true }),
       },
       links: decoded.links,
     };
@@ -197,6 +204,18 @@ async function approveCanonicalUrl(
   } catch (error) {
     if (error instanceof RequestTimeoutError) throw error;
     return fallback;
+  }
+}
+
+function validatorsApplyTo(
+  requestedUrl: string,
+  validators: ContentFetchContext['cacheValidators'],
+): boolean {
+  if (validators?.validatorUrl === undefined) return false;
+  try {
+    return new URL(validators.validatorUrl).toString() === new URL(requestedUrl).toString();
+  } catch {
+    return false;
   }
 }
 
