@@ -411,7 +411,8 @@ function versionValidatorUrl(version: DocumentVersion): string | undefined {
   if (version.etag === undefined && version.lastModified === undefined) return undefined;
   try {
     const metadata = JSON.parse(version.metadataJson) as unknown;
-    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) return undefined;
+    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata))
+      return undefined;
     const finalUrl = (metadata as Record<string, unknown>)['finalUrl'];
     return typeof finalUrl === 'string' ? WebUrl.createTransport(finalUrl).value : undefined;
   } catch {
