@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 
 import type { OfficialSourceRegistry } from '../../application/ports/official-source-registry.js';
@@ -104,18 +104,37 @@ export function assertDistinctDatabasePaths(cachePath: string, catalogPath: stri
   }
 }
 
-function canonicalizePotentialPath(path: string): string {
+function canonicalizePotentialPath(path: string, seenLinks = new Set<string>()): string {
   let cursor = resolve(path);
   const missingSegments: string[] = [];
 
   while (!existsSync(cursor)) {
+    try {
+      const statistics = lstatSync(cursor);
+      if (statistics.isSymbolicLink()) {
+        if (seenLinks.has(cursor)) {
+          throw new ConfigurationError('Database path contains a symbolic-link cycle');
+        }
+        seenLinks.add(cursor);
+        const linkTarget = resolve(dirname(cursor), readlinkSync(cursor));
+        return resolve(canonicalizePotentialPath(linkTarget, seenLinks), ...missingSegments);
+      }
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
+    }
+
     const parent = dirname(cursor);
-    if (parent === cursor) return cursor;
+    if (parent === cursor) return resolve(cursor, ...missingSegments);
     missingSegments.unshift(basename(cursor));
     cursor = parent;
   }
 
   return resolve(realpathSync.native(cursor), ...missingSegments);
+}
+
+function isMissingPathError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === 'ENOENT' || code === 'ENOTDIR';
 }
 
 function existingFileIdentity(path: string): ExistingFileIdentity | undefined {
