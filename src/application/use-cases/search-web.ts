@@ -185,6 +185,7 @@ export class SearchWeb {
           language,
           ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
           maxResults: request.maxResults * this.options.providerOversampling,
+          deadlineMs: deadline,
         }),
         deadline,
       );
