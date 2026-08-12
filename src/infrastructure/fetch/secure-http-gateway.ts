@@ -148,11 +148,10 @@ export class SecureHttpGateway {
       deadline,
     );
     await this.throttle(new URL(approved.value).origin, deadline);
-    const sameOrigin = new URL(approved.value).origin === new URL(requestedUrl).origin;
     const response = await this.requestPinned(
       approved,
       deadline,
-      sameOrigin ? conditionalHeaders : {},
+      redirects === 0 ? conditionalHeaders : {},
       budget,
     );
     if (isRedirectStatus(response.status)) {
