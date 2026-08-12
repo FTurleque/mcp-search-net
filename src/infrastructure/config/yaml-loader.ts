@@ -17,27 +17,7 @@ export async function loadYaml<T>(path: string, schema: ZodType<T>): Promise<T> 
     });
   }
 
-  const document = parseDocument(source, {
-    prettyErrors: true,
-    strict: true,
-    uniqueKeys: true,
-  });
-
-  if (document.errors.length > 0) {
-    throw new ConfigurationError(
-      `Invalid YAML in ${absolutePath}: ${document.errors.map((error) => error.message).join('; ')}`,
-    );
-  }
-
-  let value: unknown;
-  try {
-    value = document.toJS({ maxAliasCount: 0 });
-  } catch (error) {
-    throw new ConfigurationError(`Cannot materialize YAML document: ${absolutePath}`, {
-      cause: error,
-    });
-  }
-
+  const value = parseStrictYaml(source, absolutePath);
   const result = schema.safeParse(value);
   if (!result.success) {
     const issues = result.error.issues
@@ -47,4 +27,26 @@ export async function loadYaml<T>(path: string, schema: ZodType<T>): Promise<T> 
   }
 
   return result.data;
+}
+
+export function parseStrictYaml(source: string, context: string): unknown {
+  const document = parseDocument(source, {
+    prettyErrors: true,
+    strict: true,
+    uniqueKeys: true,
+  });
+
+  if (document.errors.length > 0) {
+    throw new ConfigurationError(
+      `Invalid YAML in ${context}: ${document.errors.map((error) => error.message).join('; ')}`,
+    );
+  }
+
+  try {
+    return document.toJS({ maxAliasCount: 0 });
+  } catch (error) {
+    throw new ConfigurationError(`Cannot materialize YAML document: ${context}`, {
+      cause: error,
+    });
+  }
 }
