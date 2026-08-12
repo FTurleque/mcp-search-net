@@ -100,7 +100,9 @@ describe('SqliteCacheRepository', () => {
       expect(migration.name).toMatch(/^V\d{3}__/u);
       expect(migration.checksum).toMatch(/^[a-f0-9]{64}$/u);
     }
-    database.prepare("UPDATE schema_migrations SET checksum = 'tampered' WHERE version = 2").run();
+    database
+      .prepare("UPDATE schema_migrations SET checksum = 'tampered' WHERE version = 2")
+      .run();
     database.close();
 
     expect(
