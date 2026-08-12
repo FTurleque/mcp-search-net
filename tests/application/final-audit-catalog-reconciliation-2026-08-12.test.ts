@@ -65,20 +65,24 @@ describe('final audit catalog reconciliation', () => {
       documentAfterFirstSync!.id,
     );
     expect(versionAfterFirstSync).toBeDefined();
+    const currentSections = await repository.listCurrentDocumentSections();
+    expect(currentSections).toHaveLength(1);
     const preservedPublishedAt = new Date('2026-08-11T09:00:00.000Z');
-    await repository.addDocumentVersion({
-      documentId: versionAfterFirstSync!.documentId,
-      versionLabel: 'release-1',
-      contentHash: versionAfterFirstSync!.contentHash,
-      ...(versionAfterFirstSync!.etag === undefined ? {} : { etag: versionAfterFirstSync!.etag }),
-      ...(versionAfterFirstSync!.lastModified === undefined
-        ? {}
-        : { lastModified: versionAfterFirstSync!.lastModified }),
-      publishedAt: preservedPublishedAt,
-      isCurrent: true,
-      extractionMode: versionAfterFirstSync!.extractionMode,
-      contentType: versionAfterFirstSync!.contentType,
-      metadataJson: versionAfterFirstSync!.metadataJson,
+    await repository.commitDocumentRevision({
+      document: documentAfterFirstSync!,
+      version: {
+        versionLabel: 'release-1',
+        contentHash: versionAfterFirstSync!.contentHash,
+        ...(versionAfterFirstSync!.etag === undefined ? {} : { etag: versionAfterFirstSync!.etag }),
+        ...(versionAfterFirstSync!.lastModified === undefined
+          ? {}
+          : { lastModified: versionAfterFirstSync!.lastModified }),
+        publishedAt: preservedPublishedAt,
+        extractionMode: versionAfterFirstSync!.extractionMode,
+        contentType: versionAfterFirstSync!.contentType,
+        metadataJson: versionAfterFirstSync!.metadataJson,
+      },
+      sections: currentSections.map(({ section }) => section),
     });
 
     const secondFetcher = new QueueFetcher([
