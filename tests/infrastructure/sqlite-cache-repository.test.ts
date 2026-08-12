@@ -24,12 +24,14 @@ describe('SqliteCacheRepository', () => {
       etag: '"v1"',
       lastModified: 'Sun, 21 Jun 2026 00:00:00 GMT',
       contentHash: 'abc',
+      validatorUrl: 'https://example.test/final',
     });
     await expect(fixture.cache.getContent<{ markdown: string }>('doc')).resolves.toMatchObject({
       value: { markdown: 'value' },
       stale: false,
       etag: '"v1"',
       contentHash: 'abc',
+      validatorUrl: 'https://example.test/final',
     });
     fixture.setNow(2_000);
     await expect(fixture.cache.getContent('doc')).resolves.toBeUndefined();
@@ -65,17 +67,18 @@ describe('SqliteCacheRepository', () => {
       (
         database
           .prepare(
-            "SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('search_cache', 'content_cache', 'schema_migrations')",
+            "SELECT count(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('search_cache', 'content_cache', 'cache_usage', 'schema_migrations')",
           )
           .get() as { count: number }
       ).count,
-    ).toBe(3);
+    ).toBe(4);
     const tables = database
       .prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
       )
       .all() as { name: string }[];
     expect(tables.map(({ name }) => name)).toEqual([
+      'cache_usage',
       'content_cache',
       'schema_migrations',
       'search_cache',
@@ -83,7 +86,10 @@ describe('SqliteCacheRepository', () => {
     const versions = database
       .prepare('SELECT version FROM schema_migrations ORDER BY version')
       .all() as { version: number }[];
-    expect(versions.map(({ version }) => version)).toEqual([1, 2, 3, 4]);
+    expect(versions.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5]);
+    expect(
+      database.prepare('SELECT entry_count, total_bytes FROM cache_usage WHERE id = 1').get(),
+    ).toEqual({ entry_count: 0, total_bytes: 0 });
     database.close();
   });
 
@@ -96,9 +102,13 @@ describe('SqliteCacheRepository', () => {
     const row = database
       .prepare('SELECT size_bytes FROM content_cache WHERE cache_key = ?')
       .get('doc') as { size_bytes: number };
+    const usage = database
+      .prepare('SELECT entry_count, total_bytes FROM cache_usage WHERE id = 1')
+      .get() as { entry_count: number; total_bytes: number };
     database.close();
 
     expect(row.size_bytes).toBe(Buffer.byteLength(JSON.stringify(value)));
+    expect(usage).toEqual({ entry_count: 1, total_bytes: row.size_bytes });
     await expect(fixture.cache.getContent('doc')).resolves.toMatchObject({ value });
   });
 
@@ -140,13 +150,17 @@ describe('SqliteCacheRepository', () => {
          FROM (SELECT size_bytes FROM search_cache UNION ALL SELECT size_bytes FROM content_cache)`,
       )
       .get() as { count: number; bytes: number };
+    const trackedUsage = database
+      .prepare('SELECT entry_count, total_bytes FROM cache_usage WHERE id = 1')
+      .get() as { entry_count: number; total_bytes: number };
     database.close();
     expect(usage.count).toBeLessThanOrEqual(2);
     expect(usage.bytes).toBeLessThanOrEqual(70);
+    expect(trackedUsage).toEqual({ entry_count: usage.count, total_bytes: usage.bytes });
     await expect(fixture.cache.getSearch('one')).resolves.toBeUndefined();
   });
 
-  it('retains the bounded cache state after SQLite reopen', async () => {
+  it('retains the bounded cache state and usage counters after SQLite reopen', async () => {
     const fixture = createRepository(2, 10_000, 100);
     await fixture.cache.setSearch('one', { value: 'one' }, 10_000);
     await fixture.cache.setContent('two', { value: 'two' }, 10_000);
@@ -163,6 +177,19 @@ describe('SqliteCacheRepository', () => {
     caches.push(reopened);
     await expect(reopened.getSearch('one')).resolves.toBeDefined();
     await expect(reopened.getContent('two')).resolves.toBeDefined();
+
+    const database = new Database(fixture.path, { readonly: true });
+    const actual = database
+      .prepare(
+        `SELECT count(*) AS entry_count, coalesce(sum(size_bytes), 0) AS total_bytes
+         FROM (SELECT size_bytes FROM search_cache UNION ALL SELECT size_bytes FROM content_cache)`,
+      )
+      .get();
+    const tracked = database
+      .prepare('SELECT entry_count, total_bytes FROM cache_usage WHERE id = 1')
+      .get();
+    database.close();
+    expect(tracked).toEqual(actual);
   });
 
   it('continues with cache disabled after an operational failure', async () => {
