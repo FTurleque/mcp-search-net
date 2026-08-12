@@ -31,6 +31,23 @@ describe('cache and catalog future path isolation', () => {
     );
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'rejects a dangling database symlink that resolves to the other future database path',
+    () => {
+      const root = mkdtempSync(join(tmpdir(), 'mcp-db-dangling-symlink-isolation-'));
+      roots.push(root);
+      const targetPath = join(root, 'shared.db');
+      const aliasPath = join(root, 'alias.db');
+      symlinkSync(targetPath, aliasPath, 'file');
+
+      expect(existsSync(aliasPath)).toBe(false);
+      expect(existsSync(targetPath)).toBe(false);
+      expect(() => assertDistinctDatabasePaths(aliasPath, targetPath)).toThrow(
+        'Cache and catalog paths must be different',
+      );
+    },
+  );
+
   it('allows genuinely distinct database files that do not exist yet', () => {
     const root = mkdtempSync(join(tmpdir(), 'mcp-db-distinct-isolation-'));
     roots.push(root);
