@@ -152,11 +152,7 @@ export class SecureHttpGateway {
       deadline,
     );
     const approvedUrl = new URL(approved.value);
-    if (
-      enforceRobots &&
-      this.options.respectRobotsTxt &&
-      approvedUrl.pathname !== '/robots.txt'
-    ) {
+    if (enforceRobots && this.options.respectRobotsTxt && approvedUrl.pathname !== '/robots.txt') {
       await this.assertRobotsAllowed(
         approved.value,
         deadline,
