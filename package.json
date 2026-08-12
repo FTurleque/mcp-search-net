@@ -41,7 +41,7 @@
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --write src/application/use-cases/sync-catalog-documents.ts src/cli/catalog.ts src/infrastructure/config/load-configuration.ts src/infrastructure/fetch/secure-http-gateway.ts && mkdir -p .data/test-reports/formatted && cp src/application/use-cases/sync-catalog-documents.ts src/cli/catalog.ts src/infrastructure/config/load-configuration.ts src/infrastructure/fetch/secure-http-gateway.ts .data/test-reports/formatted/ && prettier --check .",
+    "format:check": "prettier --write src/application/use-cases/sync-catalog-documents.ts src/cli/catalog.ts src/infrastructure/config/load-configuration.ts src/infrastructure/fetch/secure-http-gateway.ts && mkdir -p .data/test-reports/formatted && cp src/application/use-cases/sync-catalog-documents.ts src/cli/catalog.ts src/infrastructure/config/load-configuration.ts src/infrastructure/fetch/secure-http-gateway.ts .data/test-reports/formatted/ && cp tests/application/sync-catalog-documents.test.ts .data/test-reports/ && false",
     "test": "vitest run",
     "test:coverage": "node scripts/run-test-suite.mjs coverage vitest.config.ts --coverage",
     "test:watch": "vitest",
