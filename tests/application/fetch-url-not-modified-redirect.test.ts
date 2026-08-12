@@ -77,7 +77,7 @@ describe('FetchUrl 304 redirect revalidation', () => {
       createdAt: new Date(0),
       expiresAt: new Date(1),
       stale: true,
-      etag: cachedContent.etag,
+      etag: '"v1"',
       contentHash: cachedContent.contentHash,
     });
     const useCase = new FetchUrl(
