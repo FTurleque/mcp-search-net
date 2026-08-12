@@ -154,6 +154,47 @@ function inIpv4Range(value: number, network: number, bits: number): boolean {
   return (value & mask) === (network & mask);
 }
 
+const ALLOCATED_IPV6_GLOBAL_UNICAST_CIDRS: readonly [string, number][] = [
+  ['2001:200::', 23],
+  ['2001:400::', 23],
+  ['2001:600::', 23],
+  ['2001:800::', 22],
+  ['2001:c00::', 23],
+  ['2001:e00::', 23],
+  ['2001:1200::', 23],
+  ['2001:1400::', 22],
+  ['2001:1800::', 23],
+  ['2001:1a00::', 23],
+  ['2001:1c00::', 22],
+  ['2001:2000::', 19],
+  ['2001:4000::', 23],
+  ['2001:4200::', 23],
+  ['2001:4400::', 23],
+  ['2001:4600::', 23],
+  ['2001:4800::', 23],
+  ['2001:4a00::', 23],
+  ['2001:4c00::', 23],
+  ['2001:5000::', 20],
+  ['2001:8000::', 19],
+  ['2001:a000::', 20],
+  ['2001:b000::', 20],
+  ['2003::', 18],
+  ['2400::', 12],
+  ['2410::', 12],
+  ['2600::', 12],
+  ['2610::', 23],
+  ['2620::', 23],
+  ['2630::', 12],
+  ['2800::', 12],
+  ['2a00::', 12],
+  ['2a10::', 12],
+  ['2c00::', 12],
+];
+
+const BLOCKED_ALLOCATED_IPV6_CIDRS: readonly [string, number][] = [
+  ['2001:db8::', 32], // Documentation range inside 2001:c00::/23.
+];
+
 function isPublicIpv6(address: string): boolean {
   const value = ipv6ToBigInt(address);
   if (value === undefined) return false;
@@ -164,20 +205,15 @@ function isPublicIpv6(address: string): boolean {
     return isPublicIpv4([24, 16, 8, 0].map((shift) => String((ipv4 >>> shift) & 0xff)).join('.'));
   }
 
-  // Fail closed: native IPv6 destinations must live in IANA's currently assignable
-  // Global Unicast space (2000::/3). This rejects reserved, local, multicast and
-  // deprecated spaces such as fec0::/10 without relying on an ever-growing denylist.
-  const globalUnicast = ipv6ToBigInt('2000::'); // NOSONAR - policy network prefix
-  if (globalUnicast === undefined || !inIpv6Range(value, globalUnicast, 3)) return false;
+  // Fail closed against IANA's IPv6 Global Unicast registry. Only ranges explicitly
+  // allocated there are accepted; unlisted space inside 2000::/3 remains reserved.
+  const allocated = ALLOCATED_IPV6_GLOBAL_UNICAST_CIDRS.some(([network, bits]) => {
+    const networkValue = ipv6ToBigInt(network);
+    return networkValue !== undefined && inIpv6Range(value, networkValue, bits);
+  });
+  if (!allocated) return false;
 
-  // Special-purpose ranges inside 2000::/3 that must not be outbound destinations.
-  const blockedCidrs: readonly [string, number][] = [
-    ['2001::', 23], // NOSONAR
-    ['2001:db8::', 32], // NOSONAR
-    ['2002::', 16], // NOSONAR
-    ['3fff::', 20], // NOSONAR
-  ];
-  return !blockedCidrs.some(([network, bits]) => {
+  return !BLOCKED_ALLOCATED_IPV6_CIDRS.some(([network, bits]) => {
     const networkValue = ipv6ToBigInt(network);
     return networkValue === undefined || inIpv6Range(value, networkValue, bits);
   });
