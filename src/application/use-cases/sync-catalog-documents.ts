@@ -11,6 +11,7 @@ import type {
   CatalogDocumentAliasObservationInput,
   CatalogDocumentAliasType,
   CatalogDocumentObservationInput,
+  CatalogSource,
   CatalogStalenessEventObservationInput,
   CatalogSyncRun,
   DocumentSectionInput,
@@ -86,6 +87,14 @@ type SyncCatalogRepository = Pick<
 
 type Delay = (milliseconds: number) => Promise<void>;
 
+interface SyncExecutionPlan {
+  readonly selectedDocuments: readonly CatalogSyncDocumentInput[];
+  readonly continuationCursor?: SyncCatalogResumeCursor;
+  readonly rateLimitMs: number;
+  readonly limited: boolean;
+  readonly scopedSourceId?: number;
+}
+
 export class SyncCatalogDocuments {
   public constructor(
     private readonly repository: SyncCatalogRepository,
@@ -98,249 +107,299 @@ export class SyncCatalogDocuments {
     const startedAt = this.clock.now();
     const sources = await this.repository.listSources();
     const sourceByKey = new Map(sources.map((source) => [source.sourceKey, source]));
-
-    if (options.sourceKey !== undefined && !sourceByKey.has(options.sourceKey)) {
-      throw new Error(`Catalog source ${options.sourceKey} was not found`);
-    }
-
-    const configuredDocuments = options.documents
-      .filter(
-        (document) => options.sourceKey === undefined || document.sourceKey === options.sourceKey,
-      )
-      .filter((document) => document.enabled);
-    const resumedDocuments = applyResumeCursor(configuredDocuments, options.resumeAfter);
-    const selectedDocuments = applyLimit(resumedDocuments, options.limit);
-    const limited =
-      options.limit !== undefined && resumedDocuments.length > selectedDocuments.length;
-    const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter;
-    const rateLimitMs = normalizeRateLimit(options.rateLimitMs);
-    const scopedSource =
-      options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
+    const plan = createExecutionPlan(options, sourceByKey);
     const runningSyncRun = await this.repository.startCatalogSyncRun({
-      ...(scopedSource === undefined ? {} : { sourceId: scopedSource.id }),
+      ...(plan.scopedSourceId === undefined ? {} : { sourceId: plan.scopedSourceId }),
       startedAt,
     });
-
     const entries: SyncedCatalogDocumentEntry[] = [];
+
     try {
-      for (const document of selectedDocuments) {
-        if (entries.length > 0 && rateLimitMs > 0) await this.delay(rateLimitMs);
-
-        const source = sourceByKey.get(document.sourceKey);
-        if (!source?.enabled) {
-          entries.push({
-            sourceKey: document.sourceKey,
-            stableKey: document.stableKey,
-            title: document.title,
-            url: document.url,
-            status: 'skipped',
-            error: source === undefined ? 'SOURCE_NOT_FOUND' : 'SOURCE_DISABLED',
-          });
-          continue;
-        }
-
-        const publicId = publicDocumentId(document.sourceKey, document.stableKey);
-        let existingDocument: CatalogDocument | undefined;
-        let currentVersion: DocumentVersion | undefined;
-        try {
-          existingDocument = await this.repository.getDocumentByPublicId(publicId);
-          currentVersion = await this.getCurrentVersion(existingDocument);
-          const fetched = await this.fetcher.fetch(
-            {
-              url: WebUrl.createTransport(document.url),
-              renderMode: 'auto',
-              timeoutMs: options.timeoutMs,
-              maxResponseBytes: options.maxResponseBytes,
-              maxRedirects: options.maxRedirects,
-            },
-            createFetchContext(currentVersion),
-          );
-          if ('notModified' in fetched) {
-            if (existingDocument === undefined || currentVersion === undefined) {
-              throw new Error('CATALOG_NOT_MODIFIED_WITHOUT_CURRENT_DOCUMENT');
-            }
-            const observation = createNotModifiedObservation(
-              existingDocument,
-              fetched,
-              runningSyncRun.id,
-            );
-            const redirectTarget = normalizedPermanentRedirectTarget(fetched.redirectChain);
-            const storedDocument =
-              redirectTarget !== undefined &&
-              (existingDocument.canonicalUrl !== redirectTarget ||
-                existingDocument.status !== 'REDIRECTED')
-                ? await this.repository.upsertDocument(
-                    {
-                      publicId: existingDocument.publicId,
-                      sourceId: existingDocument.sourceId,
-                      canonicalUrl: redirectTarget,
-                      stableKey: existingDocument.stableKey,
-                      title: existingDocument.title,
-                      mimeType: existingDocument.mimeType,
-                      language: existingDocument.language,
-                      status: 'REDIRECTED',
-                    },
-                    observation,
-                  )
-                : await this.repository.touchDocumentObservation(existingDocument.id, observation);
-            entries.push({
-              sourceKey: document.sourceKey,
-              stableKey: document.stableKey,
-              title: document.title,
-              url: document.url,
-              status: 'unchanged',
-              document: storedDocument,
-            });
-            continue;
-          }
-
-          const documentInput = {
-            publicId,
-            sourceId: source.id,
-            canonicalUrl: fetched.canonicalUrl,
-            stableKey: document.stableKey,
-            title: fetched.title ?? document.title,
-            mimeType: document.mimeType,
-            language: document.language,
-            status: documentStatusFor(fetched),
-          } as const;
-          const observation = createFetchedDocumentObservation(
-            existingDocument,
-            currentVersion,
-            fetched,
-            runningSyncRun.id,
-          );
-          const contentUnchanged = currentVersion?.contentHash === fetched.contentHash;
-          const redirectMetadata = createRedirectVersionMetadata(fetched);
-          const revision = await this.repository.commitDocumentRevision(
-            {
-              document: documentInput,
-              version: {
-                contentHash: fetched.contentHash,
-                ...(contentUnchanged && currentVersion?.versionLabel !== undefined
-                  ? { versionLabel: currentVersion.versionLabel }
-                  : {}),
-                ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
-                ...(fetched.lastModified === undefined
-                  ? {}
-                  : { lastModified: fetched.lastModified }),
-                ...(contentUnchanged
-                  ? currentVersion?.publishedAt === undefined
-                    ? {}
-                    : { publishedAt: currentVersion.publishedAt }
-                  : { publishedAt: new Date(fetched.fetchedAt) }),
-                extractionMode: fetched.extractionMode,
-                contentType: fetched.contentType,
-                metadataJson: JSON.stringify({
-                  ingestion: 'catalog-sync',
-                  extractionContractVersion: CATALOG_EXTRACTION_CONTRACT_VERSION,
-                  sourceKey: document.sourceKey,
-                  requestedUrl: fetched.requestedUrl,
-                  finalUrl: fetched.finalUrl,
-                  statusCode: fetched.statusCode,
-                  ...redirectMetadata,
-                }),
-              },
-              sections: createSections(fetched.title ?? document.title, fetched),
-            },
-            observation,
-          );
-          entries.push({
-            sourceKey: document.sourceKey,
-            stableKey: document.stableKey,
-            title: fetched.title ?? document.title,
-            url: document.url,
-            status:
-              existingDocument === undefined ? 'added' : contentUnchanged ? 'unchanged' : 'updated',
-            document: revision.document,
-            sectionCount: revision.sections.length,
-          });
-        } catch (error) {
-          if (isMissingRemoteHttpError(error) && existingDocument !== undefined) {
-            const missingStatus = documentStatusForMissingRemote(error);
-            const staleDocument = await this.repository.upsertDocument(
-              {
-                publicId,
-                sourceId: source.id,
-                canonicalUrl: existingDocument.canonicalUrl,
-                stableKey: document.stableKey,
-                title: existingDocument.title,
-                mimeType: existingDocument.mimeType,
-                language: existingDocument.language,
-                status: missingStatus,
-              },
-              createHttpMissingObservation(error.status, document.url, runningSyncRun.id),
-            );
-            entries.push({
-              sourceKey: document.sourceKey,
-              stableKey: document.stableKey,
-              title: existingDocument.title,
-              url: document.url,
-              status: 'updated',
-              document: staleDocument,
-              error: `HTTP_${error.status}_${missingStatus}`,
-            });
-            continue;
-          }
-
-          if (existingDocument !== undefined && isSourceUnavailable(error)) {
-            await this.repository.recordDocumentObservation(
-              existingDocument.id,
-              createSourceUnavailableObservation(error, runningSyncRun.id),
-            );
-          }
-          entries.push({
-            sourceKey: document.sourceKey,
-            stableKey: document.stableKey,
-            title: document.title,
-            url: document.url,
-            status: 'failed',
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
+      await this.syncSelectedDocuments(options, plan, sourceByKey, runningSyncRun.id, entries);
     } catch (error) {
-      const counts = countSyncEntries(entries);
-      await this.repository.completeCatalogSyncRun(runningSyncRun.id, {
-        completedAt: this.clock.now(),
-        status: 'FAILED',
-        documentsChecked: counts.checkedCount,
-        documentsAdded: counts.addedCount,
-        documentsUpdated: counts.updatedCount,
-        documentsUnchanged: counts.unchangedCount,
-        documentsFailed: counts.failedCount,
-        errorSummary: 'Synchronization aborted before completion',
-      });
+      await this.completeAbortedRun(runningSyncRun.id, entries);
       throw error;
     }
 
-    const { addedCount, updatedCount, unchangedCount, failedCount, skippedCount, checkedCount } =
-      countSyncEntries(entries);
-    const syncRun = await this.repository.completeCatalogSyncRun(runningSyncRun.id, {
-      completedAt: this.clock.now(),
-      status: failedCount === 0 ? 'SUCCESS' : checkedCount === failedCount ? 'FAILED' : 'PARTIAL',
-      documentsChecked: checkedCount,
-      documentsAdded: addedCount,
-      documentsUpdated: updatedCount,
-      documentsUnchanged: unchangedCount,
-      documentsFailed: failedCount,
-      ...(failedCount === 0 ? {} : { errorSummary: `${failedCount} document(s) failed` }),
-    });
+    return this.completeSuccessfulRun(runningSyncRun.id, entries, plan);
+  }
 
+  private async syncSelectedDocuments(
+    options: SyncCatalogDocumentsOptions,
+    plan: SyncExecutionPlan,
+    sourceByKey: ReadonlyMap<string, CatalogSource>,
+    syncRunId: number,
+    entries: SyncedCatalogDocumentEntry[],
+  ): Promise<void> {
+    for (const document of plan.selectedDocuments) {
+      if (entries.length > 0 && plan.rateLimitMs > 0) await this.delay(plan.rateLimitMs);
+      entries.push(await this.syncDocument(options, document, sourceByKey, syncRunId));
+    }
+  }
+
+  private async syncDocument(
+    options: SyncCatalogDocumentsOptions,
+    document: CatalogSyncDocumentInput,
+    sourceByKey: ReadonlyMap<string, CatalogSource>,
+    syncRunId: number,
+  ): Promise<SyncedCatalogDocumentEntry> {
+    const source = sourceByKey.get(document.sourceKey);
+    if (!source?.enabled) return skippedDocumentEntry(document, source);
+
+    const publicId = publicDocumentId(document.sourceKey, document.stableKey);
+    let existingDocument: CatalogDocument | undefined;
+    let currentVersion: DocumentVersion | undefined;
+    try {
+      existingDocument = await this.repository.getDocumentByPublicId(publicId);
+      currentVersion = await this.getCurrentVersion(existingDocument);
+      const fetched = await this.fetcher.fetch(
+        {
+          url: WebUrl.createTransport(document.url),
+          renderMode: 'auto',
+          timeoutMs: options.timeoutMs,
+          maxResponseBytes: options.maxResponseBytes,
+          maxRedirects: options.maxRedirects,
+        },
+        createFetchContext(currentVersion),
+      );
+      if ('notModified' in fetched) {
+        return this.reconcileNotModified(document, existingDocument, currentVersion, fetched, syncRunId);
+      }
+      return this.reconcileFetched(
+        document,
+        source.id,
+        publicId,
+        existingDocument,
+        currentVersion,
+        fetched,
+        syncRunId,
+      );
+    } catch (error) {
+      return this.handleDocumentFailure(
+        document,
+        source.id,
+        publicId,
+        existingDocument,
+        error,
+        syncRunId,
+      );
+    }
+  }
+
+  private async reconcileNotModified(
+    document: CatalogSyncDocumentInput,
+    existingDocument: CatalogDocument | undefined,
+    currentVersion: DocumentVersion | undefined,
+    fetched: NotModifiedContent,
+    syncRunId: number,
+  ): Promise<SyncedCatalogDocumentEntry> {
+    if (existingDocument === undefined || currentVersion === undefined) {
+      throw new Error('CATALOG_NOT_MODIFIED_WITHOUT_CURRENT_DOCUMENT');
+    }
+    const observation = createNotModifiedObservation(existingDocument, fetched, syncRunId);
+    const redirectTarget = normalizedPermanentRedirectTarget(fetched.redirectChain);
+    const redirectChanged =
+      redirectTarget !== undefined &&
+      (existingDocument.canonicalUrl !== redirectTarget || existingDocument.status !== 'REDIRECTED');
+    let storedDocument: CatalogDocument;
+    if (redirectChanged) {
+      storedDocument = await this.repository.upsertDocument(
+        {
+          publicId: existingDocument.publicId,
+          sourceId: existingDocument.sourceId,
+          canonicalUrl: redirectTarget,
+          stableKey: existingDocument.stableKey,
+          title: existingDocument.title,
+          mimeType: existingDocument.mimeType,
+          language: existingDocument.language,
+          status: 'REDIRECTED',
+        },
+        observation,
+      );
+    } else {
+      storedDocument = await this.repository.touchDocumentObservation(existingDocument.id, observation);
+    }
+    return {
+      sourceKey: document.sourceKey,
+      stableKey: document.stableKey,
+      title: document.title,
+      url: document.url,
+      status: 'unchanged',
+      document: storedDocument,
+    };
+  }
+
+  private async reconcileFetched(
+    document: CatalogSyncDocumentInput,
+    sourceId: number,
+    publicId: string,
+    existingDocument: CatalogDocument | undefined,
+    currentVersion: DocumentVersion | undefined,
+    fetched: FetchedContent,
+    syncRunId: number,
+  ): Promise<SyncedCatalogDocumentEntry> {
+    const title = fetched.title ?? document.title;
+    const documentInput = {
+      publicId,
+      sourceId,
+      canonicalUrl: fetched.canonicalUrl,
+      stableKey: document.stableKey,
+      title,
+      mimeType: document.mimeType,
+      language: document.language,
+      status: documentStatusFor(fetched),
+    } as const;
+    const observation = createFetchedDocumentObservation(
+      existingDocument,
+      currentVersion,
+      fetched,
+      syncRunId,
+    );
+    const contentUnchanged = currentVersion?.contentHash === fetched.contentHash;
+    const publishedAt = contentUnchanged ? currentVersion?.publishedAt : new Date(fetched.fetchedAt);
+    const redirectMetadata = createRedirectVersionMetadata(fetched);
+    const revision = await this.repository.commitDocumentRevision(
+      {
+        document: documentInput,
+        version: {
+          contentHash: fetched.contentHash,
+          ...(contentUnchanged && currentVersion?.versionLabel !== undefined
+            ? { versionLabel: currentVersion.versionLabel }
+            : {}),
+          ...(fetched.etag === undefined ? {} : { etag: fetched.etag }),
+          ...(fetched.lastModified === undefined ? {} : { lastModified: fetched.lastModified }),
+          ...(publishedAt === undefined ? {} : { publishedAt }),
+          extractionMode: fetched.extractionMode,
+          contentType: fetched.contentType,
+          metadataJson: JSON.stringify({
+            ingestion: 'catalog-sync',
+            extractionContractVersion: CATALOG_EXTRACTION_CONTRACT_VERSION,
+            sourceKey: document.sourceKey,
+            requestedUrl: fetched.requestedUrl,
+            finalUrl: fetched.finalUrl,
+            statusCode: fetched.statusCode,
+            ...redirectMetadata,
+          }),
+        },
+        sections: createSections(title, fetched),
+      },
+      observation,
+    );
+    return {
+      sourceKey: document.sourceKey,
+      stableKey: document.stableKey,
+      title,
+      url: document.url,
+      status: syncedDocumentStatus(existingDocument, contentUnchanged),
+      document: revision.document,
+      sectionCount: revision.sections.length,
+    };
+  }
+
+  private async handleDocumentFailure(
+    document: CatalogSyncDocumentInput,
+    sourceId: number,
+    publicId: string,
+    existingDocument: CatalogDocument | undefined,
+    error: unknown,
+    syncRunId: number,
+  ): Promise<SyncedCatalogDocumentEntry> {
+    if (isMissingRemoteHttpError(error) && existingDocument !== undefined) {
+      return this.reconcileMissingRemote(document, sourceId, publicId, existingDocument, error, syncRunId);
+    }
+    if (existingDocument !== undefined && isSourceUnavailable(error)) {
+      await this.repository.recordDocumentObservation(
+        existingDocument.id,
+        createSourceUnavailableObservation(error, syncRunId),
+      );
+    }
+    return {
+      sourceKey: document.sourceKey,
+      stableKey: document.stableKey,
+      title: document.title,
+      url: document.url,
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  private async reconcileMissingRemote(
+    document: CatalogSyncDocumentInput,
+    sourceId: number,
+    publicId: string,
+    existingDocument: CatalogDocument,
+    error: HttpError & { readonly status: 404 | 410 },
+    syncRunId: number,
+  ): Promise<SyncedCatalogDocumentEntry> {
+    const missingStatus = documentStatusForMissingRemote(error);
+    const staleDocument = await this.repository.upsertDocument(
+      {
+        publicId,
+        sourceId,
+        canonicalUrl: existingDocument.canonicalUrl,
+        stableKey: document.stableKey,
+        title: existingDocument.title,
+        mimeType: existingDocument.mimeType,
+        language: existingDocument.language,
+        status: missingStatus,
+      },
+      createHttpMissingObservation(error.status, document.url, syncRunId),
+    );
+    return {
+      sourceKey: document.sourceKey,
+      stableKey: document.stableKey,
+      title: existingDocument.title,
+      url: document.url,
+      status: 'updated',
+      document: staleDocument,
+      error: `HTTP_${error.status}_${missingStatus}`,
+    };
+  }
+
+  private async completeAbortedRun(
+    syncRunId: number,
+    entries: readonly SyncedCatalogDocumentEntry[],
+  ): Promise<void> {
+    const counts = countSyncEntries(entries);
+    await this.repository.completeCatalogSyncRun(syncRunId, {
+      completedAt: this.clock.now(),
+      status: 'FAILED',
+      documentsChecked: counts.checkedCount,
+      documentsAdded: counts.addedCount,
+      documentsUpdated: counts.updatedCount,
+      documentsUnchanged: counts.unchangedCount,
+      documentsFailed: counts.failedCount,
+      errorSummary: 'Synchronization aborted before completion',
+    });
+  }
+
+  private async completeSuccessfulRun(
+    syncRunId: number,
+    entries: readonly SyncedCatalogDocumentEntry[],
+    plan: SyncExecutionPlan,
+  ): Promise<SyncCatalogDocumentsOutput> {
+    const counts = countSyncEntries(entries);
+    const syncRun = await this.repository.completeCatalogSyncRun(syncRunId, {
+      completedAt: this.clock.now(),
+      status: completedRunStatus(counts),
+      documentsChecked: counts.checkedCount,
+      documentsAdded: counts.addedCount,
+      documentsUpdated: counts.updatedCount,
+      documentsUnchanged: counts.unchangedCount,
+      documentsFailed: counts.failedCount,
+      ...(counts.failedCount === 0
+        ? {}
+        : { errorSummary: `${counts.failedCount} document(s) failed` }),
+    });
     return {
       schemaVersion: '1.0',
       dryRun: false,
       syncRun,
-      checkedCount,
-      addedCount,
-      updatedCount,
-      unchangedCount,
-      failedCount,
-      skippedCount,
+      ...counts,
       documents: entries,
-      ...(continuationCursor === undefined ? {} : { resumeAfter: continuationCursor }),
-      rateLimitMs,
-      limited,
+      ...(plan.continuationCursor === undefined ? {} : { resumeAfter: plan.continuationCursor }),
+      rateLimitMs: plan.rateLimitMs,
+      limited: plan.limited,
     };
   }
 
@@ -351,6 +410,61 @@ export class SyncCatalogDocuments {
     if (this.repository.getCurrentDocumentVersion === undefined) return undefined;
     return this.repository.getCurrentDocumentVersion(document.id);
   }
+}
+
+function createExecutionPlan(
+  options: SyncCatalogDocumentsOptions,
+  sourceByKey: ReadonlyMap<string, CatalogSource>,
+): SyncExecutionPlan {
+  if (options.sourceKey !== undefined && !sourceByKey.has(options.sourceKey)) {
+    throw new Error(`Catalog source ${options.sourceKey} was not found`);
+  }
+    const configuredDocuments = options.documents
+      .filter(
+        (document) => options.sourceKey === undefined || document.sourceKey === options.sourceKey,
+      )
+      .filter((document) => document.enabled);
+  const resumedDocuments = applyResumeCursor(configuredDocuments, options.resumeAfter);
+  const selectedDocuments = applyLimit(resumedDocuments, options.limit);
+  const limited = options.limit !== undefined && resumedDocuments.length > selectedDocuments.length;
+  const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter;
+  const scopedSource =
+    options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
+  return {
+    selectedDocuments,
+    ...(continuationCursor === undefined ? {} : { continuationCursor }),
+    rateLimitMs: normalizeRateLimit(options.rateLimitMs),
+    limited,
+    ...(scopedSource === undefined ? {} : { scopedSourceId: scopedSource.id }),
+  };
+}
+
+function skippedDocumentEntry(
+  document: CatalogSyncDocumentInput,
+  source: CatalogSource | undefined,
+): SyncedCatalogDocumentEntry {
+  return {
+    sourceKey: document.sourceKey,
+    stableKey: document.stableKey,
+    title: document.title,
+    url: document.url,
+    status: 'skipped',
+    error: source === undefined ? 'SOURCE_NOT_FOUND' : 'SOURCE_DISABLED',
+  };
+}
+
+function syncedDocumentStatus(
+  existingDocument: CatalogDocument | undefined,
+  contentUnchanged: boolean,
+): SyncedCatalogDocumentStatus {
+  if (existingDocument === undefined) return 'added';
+  return contentUnchanged ? 'unchanged' : 'updated';
+}
+
+function completedRunStatus(counts: SyncEntryCounts): CatalogSyncRun['status'] {
+  if (counts.failedCount === 0) return 'SUCCESS';
+  if (counts.checkedCount === counts.failedCount) return 'FAILED';
+  return 'PARTIAL';
 }
 
 function applyResumeCursor(
