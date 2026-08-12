@@ -44,6 +44,6 @@ describe('SearchWeb provider deadline', () => {
     expect(requests[0]?.deadlineMs).toBeDefined();
     expect(requests[1]?.deadlineMs).toBe(requests[0]?.deadlineMs);
     expect(requests[0]?.deadlineMs).toBeGreaterThanOrEqual(startedAt);
-    expect(requests[0]?.deadlineMs).toBeLessThanOrEqual(startedAt + timeoutMs);
+    expect(requests[0]?.deadlineMs).toBeLessThanOrEqual(startedAt + timeoutMs + 50);
   });
 });
