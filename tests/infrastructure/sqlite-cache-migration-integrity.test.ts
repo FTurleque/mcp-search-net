@@ -25,29 +25,34 @@ describe('SqliteCacheRepository migration integrity', () => {
       const rows = database
         .prepare('SELECT version, name, checksum FROM schema_migrations ORDER BY version')
         .all() as { version: number; name: string | null; checksum: string | null }[];
+      const namesRecorded = rows.every((row) => {
+        const prefix = `V${String(row.version).padStart(3, '0')}__`;
+        return row.name?.startsWith(prefix) === true;
+      });
+      const checksumsRecorded = rows.every((row) =>
+        /^[a-f0-9]{64}$/u.test(row.checksum ?? ''),
+      );
+
       expect(rows).toHaveLength(4);
-      expect(
-        rows.every((row) =>
-          row.name?.startsWith(`V${String(row.version).padStart(3, '0')}__`),
-        ),
-      ).toBe(true);
-      expect(rows.every((row) => /^[a-f0-9]{64}$/u.test(row.checksum ?? ''))).toBe(true);
+      expect(namesRecorded).toBe(true);
+      expect(checksumsRecorded).toBe(true);
 
       database
         .prepare("UPDATE schema_migrations SET checksum = 'tampered' WHERE version = 2")
         .run();
       database.close();
 
-      expect(
-        () =>
-          new SqliteCacheRepository(
-            path,
-            { now: () => new Date(0) },
-            100,
-            1_000_000,
-            10_000,
-          ),
-      ).toThrow('CACHE_MIGRATION_CHECKSUM_MISMATCH:2:V002__create_search_cache.sql');
+      const reopen = () =>
+        new SqliteCacheRepository(
+          path,
+          { now: () => new Date(0) },
+          100,
+          1_000_000,
+          10_000,
+        );
+      expect(reopen).toThrow(
+        'CACHE_MIGRATION_CHECKSUM_MISMATCH:2:V002__create_search_cache.sql',
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
