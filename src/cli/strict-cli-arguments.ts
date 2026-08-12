@@ -2,6 +2,7 @@ export interface StrictCliArgumentSpec {
   readonly valueOptions?: readonly string[];
   readonly flags?: readonly string[];
   readonly positionalArguments?: number;
+  readonly mutuallyExclusiveOptions?: readonly (readonly string[])[];
 }
 
 export function assertStrictCliArguments(
@@ -46,5 +47,12 @@ export function assertStrictCliArguments(
     }
 
     throw new Error(`Unknown option ${argument}`);
+  }
+
+  for (const mutuallyExclusiveOptions of spec.mutuallyExclusiveOptions ?? []) {
+    const presentOptions = mutuallyExclusiveOptions.filter((option) => seenOptions.has(option));
+    if (presentOptions.length > 1) {
+      throw new Error(`Options ${presentOptions.join(' and ')} are mutually exclusive`);
+    }
   }
 }
