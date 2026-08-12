@@ -7,7 +7,7 @@ import type {
   CacheValidators,
 } from '../../src/application/ports/cache-repository.js';
 import { FetchUrl } from '../../src/application/use-cases/fetch-url.js';
-import type { FetchedContent } from '../../src/domain/models/content.js';
+import type { ContentFetchResult, FetchedContent } from '../../src/domain/models/content.js';
 
 class RevalidationCache implements CacheRepository {
   public stored: FetchedContent | undefined;
@@ -208,7 +208,7 @@ function createCache(content: FetchedContent, validatorUrl: string): Revalidatio
 
 function createUseCase(
   cache: RevalidationCache,
-  fetch: () => ReturnType<Parameters<typeof createUseCase>[1]>,
+  fetch: () => ContentFetchResult | Promise<ContentFetchResult>,
 ): FetchUrl {
   return new FetchUrl(
     { fetch },
