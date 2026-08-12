@@ -27,18 +27,32 @@ describe('PublicUrlSecurityPolicy', () => {
     '2001:20::1',
     '2001:db8::1',
     '2002:7f00:1::1',
+    '2200::1',
+    '2d00::1',
+    '2e00::1',
+    '3000::1',
+    '3800::1',
+    '3c00::1',
+    '3e00::1',
+    '3f00::1',
     '3fff::1',
     '5f00::1',
   ])('rejects non-public or special-purpose address %s', (address) => {
     expect(isPublicAddress(address)).toBe(false);
   });
 
-  it.each(['8.8.8.8', '1.1.1.1', '2606:4700:4700::1111', '2001:4860:4860::8888'])(
-    'accepts public address %s',
-    (address) => {
-      expect(isPublicAddress(address)).toBe(true);
-    },
-  );
+  it.each([
+    '8.8.8.8',
+    '1.1.1.1',
+    '2400::1',
+    '2606:4700:4700::1111',
+    '2800::1',
+    '2a00::1',
+    '2c00::1',
+    '2001:4860:4860::8888',
+  ])('accepts public address %s', (address) => {
+    expect(isPublicAddress(address)).toBe(true);
+  });
 
   it('rejects hostnames resolving to a private address', async () => {
     const policy = new PublicUrlSecurityPolicy(options, async () => ['192.168.1.10']);

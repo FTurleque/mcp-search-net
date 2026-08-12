@@ -6,6 +6,8 @@ export interface SearchProviderRequest {
   readonly language?: string;
   readonly timeRange?: SearchTimeRange;
   readonly maxResults: number;
+  /** Absolute Unix epoch deadline shared by the whole search_web operation. */
+  readonly deadlineMs?: number;
 }
 
 export interface SearchProviderResponse {

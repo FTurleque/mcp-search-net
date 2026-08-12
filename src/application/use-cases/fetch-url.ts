@@ -6,7 +6,12 @@ import type { ContentFetcher } from '../ports/content-fetcher.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
 import type { UrlSecurityPolicy } from '../ports/url-security-policy.js';
 import { decodeFetchedContent } from '../services/cache-value-validation.js';
-import type { FetchRequest, FetchResponse, FetchedContent } from '../../domain/models/content.js';
+import type {
+  FetchRequest,
+  FetchResponse,
+  FetchedContent,
+  NotModifiedContent,
+} from '../../domain/models/content.js';
 import {
   ApplicationError,
   HttpError,
@@ -125,7 +130,10 @@ export class FetchUrl {
               ? undefined
               : fetched.metadata['bytes'],
         });
-        content = 'notModified' in fetched ? requireCachedValue(cached) : fetched;
+        content =
+          'notModified' in fetched
+            ? mergeNotModifiedContent(requireCachedValue(cached), fetched)
+            : fetched;
         cacheStatus = 'notModified' in fetched ? 'HIT' : 'MISS';
         const stored = await this.cache.setContent(key, content, cacheTtl(content, this.options), {
           ...(content.etag === undefined ? {} : { etag: content.etag }),
@@ -260,6 +268,20 @@ function requireCachedValue(
   if (record === undefined)
     throw new InternalApplicationError('A 304 response requires a cached value');
   return record.value;
+}
+
+function mergeNotModifiedContent(
+  cached: FetchedContent,
+  notModified: NotModifiedContent,
+): FetchedContent {
+  const permanentRedirect = notModified.redirectChain.some((redirect) => redirect.permanent);
+  return {
+    ...cached,
+    requestedUrl: notModified.requestedUrl,
+    finalUrl: notModified.finalUrl,
+    canonicalUrl: permanentRedirect ? notModified.finalUrl : cached.canonicalUrl,
+    redirectChain: notModified.redirectChain,
+  };
 }
 
 function cacheTtl(content: FetchedContent, options: FetchUrlOptions): number {

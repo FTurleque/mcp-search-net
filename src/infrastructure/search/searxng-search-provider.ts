@@ -59,7 +59,11 @@ export class SearxngSearchProvider implements SearchProvider {
   ) {}
 
   public async search(request: SearchProviderRequest): Promise<SearchProviderResponse> {
-    const deadline = Date.now() + this.timeoutMs;
+    const providerDeadline = Date.now() + this.timeoutMs;
+    const deadline =
+      request.deadlineMs === undefined
+        ? providerDeadline
+        : Math.min(providerDeadline, request.deadlineMs);
     const endpoint = new URL('/search', ensureTrailingSlash(this.baseUrl));
     endpoint.searchParams.set('q', request.query.value);
     endpoint.searchParams.set('format', 'json');
