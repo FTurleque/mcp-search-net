@@ -28,10 +28,7 @@ import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-s
 import { SystemClock } from '../infrastructure/time/system-clock.js';
 import { loadCatalogSourceConfig } from './catalog-source-config.js';
 import { ingestTextDocument } from './catalog-ingest-text.js';
-import {
-  assertStrictCliArguments,
-  type StrictCliArgumentSpec,
-} from './strict-cli-arguments.js';
+import { assertStrictCliArguments, type StrictCliArgumentSpec } from './strict-cli-arguments.js';
 import { parseStrictInteger } from './strict-integer.js';
 
 const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
