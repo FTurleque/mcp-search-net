@@ -24,7 +24,8 @@ const expected = {
   innoSetup: {
     version: '6.7.1',
     url: 'https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe',
-    sha256: '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0',
+    sha256:
+      '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0',
   },
   allowScripts: {
     'better-sqlite3@13.0.3': false,
@@ -144,7 +145,10 @@ assert(
 const innoVerification = windowsReleaseWorkflow.indexOf(
   '.\\scripts\\windows\\verify-file-sha256.ps1',
 );
-const innoExecution = windowsReleaseWorkflow.indexOf('Start-Process', innoVerification + 1);
+const innoExecution = windowsReleaseWorkflow.indexOf(
+  'Start-Process',
+  innoVerification + 1,
+);
 assert(
   innoVerification >= 0 && innoExecution > innoVerification,
   'INNO_SETUP_NOT_VERIFIED_BEFORE_EXECUTION',
