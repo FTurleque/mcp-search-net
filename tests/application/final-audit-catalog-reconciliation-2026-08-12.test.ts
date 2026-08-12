@@ -61,7 +61,9 @@ describe('final audit catalog reconciliation', () => {
 
     const [documentAfterFirstSync] = await repository.listDocuments();
     expect(documentAfterFirstSync).toBeDefined();
-    const [versionAfterFirstSync] = await repository.listDocumentVersions(documentAfterFirstSync!.id);
+    const [versionAfterFirstSync] = await repository.listDocumentVersions(
+      documentAfterFirstSync!.id,
+    );
     expect(versionAfterFirstSync).toBeDefined();
     const preservedPublishedAt = new Date('2026-08-11T09:00:00.000Z');
     await repository.addDocumentVersion({
