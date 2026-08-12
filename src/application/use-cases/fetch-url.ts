@@ -114,9 +114,7 @@ export class FetchUrl {
               ...(cached?.etag === undefined ? {} : { etag: cached.etag }),
               ...(cached?.lastModified === undefined ? {} : { lastModified: cached.lastModified }),
               ...(cached?.contentHash === undefined ? {} : { contentHash: cached.contentHash }),
-              ...(cached?.validatorUrl === undefined
-                ? {}
-                : { validatorUrl: cached.validatorUrl }),
+              ...(cached?.validatorUrl === undefined ? {} : { validatorUrl: cached.validatorUrl }),
             },
           },
         );
@@ -289,15 +287,11 @@ function mergeNotModifiedContent(
     canonicalUrl: permanentTarget ?? cached.canonicalUrl,
     redirectChain: notModified.redirectChain,
     ...(notModified.etag === undefined ? {} : { etag: notModified.etag }),
-    ...(notModified.lastModified === undefined
-      ? {}
-      : { lastModified: notModified.lastModified }),
+    ...(notModified.lastModified === undefined ? {} : { lastModified: notModified.lastModified }),
     metadata: {
       ...cached.metadata,
       ...(notModified.etag === undefined ? {} : { etag: notModified.etag }),
-      ...(notModified.lastModified === undefined
-        ? {}
-        : { lastModified: notModified.lastModified }),
+      ...(notModified.lastModified === undefined ? {} : { lastModified: notModified.lastModified }),
       ...(notModified.redirectChain.length === 0
         ? {}
         : { redirectChain: notModified.redirectChain }),
