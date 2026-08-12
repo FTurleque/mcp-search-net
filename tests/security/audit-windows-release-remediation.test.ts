@@ -30,7 +30,12 @@ describe('audit Windows and release remediation', () => {
     expect(releaseWorkflow).toContain('Node.js 24 validation');
     expect(releaseWorkflow).toContain('Docker integration and live E2E');
     expect(releaseWorkflow).toContain('Windows installation and STDIO packaging');
-    expect(releaseWorkflow).toContain('--require-checksums');
+    expect(releaseWorkflow).toContain("$innoVersion = '6.7.1'");
+    expect(releaseWorkflow).toContain(
+      "$innoSha256 = '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0'",
+    );
+    expect(releaseWorkflow).toContain('.\\scripts\\windows\\verify-file-sha256.ps1');
+    expect(releaseWorkflow).not.toContain('choco install innosetup');
 
     const exactHeadGate = releaseWorkflow.indexOf('CI_EXACT_HEAD_QUALIFIED');
     const qualificationStep = releaseWorkflow.indexOf(
