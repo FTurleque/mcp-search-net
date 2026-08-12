@@ -223,7 +223,10 @@ export class SyncCatalogDocuments {
             // A 200 with identical upstream bytes is still authoritative for representation
             // metadata and extraction. Re-upserting the same version keeps its identity and version
             // count stable while atomically refreshing validators, metadata, sections and FTS.
-            const revision = await this.repository.commitDocumentRevision(revisionInput, observation);
+            const revision = await this.repository.commitDocumentRevision(
+              revisionInput,
+              observation,
+            );
             entries.push({
               sourceKey: document.sourceKey,
               stableKey: document.stableKey,
