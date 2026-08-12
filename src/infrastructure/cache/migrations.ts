@@ -28,9 +28,14 @@ export function loadMigrations(): readonly Migration[] {
           version,
           name,
           sql,
-          checksum: createHash('sha256').update(sql).digest('hex'),
+          checksum: checksumMigrationSql(sql),
         },
       ];
     })
     .sort((left, right) => left.version - right.version);
+}
+
+export function checksumMigrationSql(sql: string): string {
+  const normalizedSql = sql.replaceAll('\r\n', '\n').replace(/^\uFEFF/u, '');
+  return createHash('sha256').update(normalizedSql, 'utf8').digest('hex');
 }
