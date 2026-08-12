@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync, statSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 
 import type { OfficialSourceRegistry } from '../../application/ports/official-source-registry.js';
 import {
@@ -79,10 +79,14 @@ interface ExistingFileIdentity {
   readonly inode: bigint;
 }
 
-function assertDistinctDatabasePaths(cachePath: string, catalogPath: string): void {
+export function assertDistinctDatabasePaths(cachePath: string, catalogPath: string): void {
   const normalizeForComparison = (path: string): string =>
     process.platform === 'win32' ? path.toLowerCase() : path;
-  if (normalizeForComparison(cachePath) === normalizeForComparison(catalogPath)) {
+  const canonicalCachePath = canonicalizePotentialPath(cachePath);
+  const canonicalCatalogPath = canonicalizePotentialPath(catalogPath);
+  if (
+    normalizeForComparison(canonicalCachePath) === normalizeForComparison(canonicalCatalogPath)
+  ) {
     throw new ConfigurationError('Cache and catalog paths must be different');
   }
 
@@ -100,6 +104,20 @@ function assertDistinctDatabasePaths(cachePath: string, catalogPath: string): vo
   ) {
     throw new ConfigurationError('Cache and catalog paths must be different');
   }
+}
+
+function canonicalizePotentialPath(path: string): string {
+  let cursor = resolve(path);
+  const missingSegments: string[] = [];
+
+  while (!existsSync(cursor)) {
+    const parent = dirname(cursor);
+    if (parent === cursor) return cursor;
+    missingSegments.unshift(basename(cursor));
+    cursor = parent;
+  }
+
+  return resolve(realpathSync.native(cursor), ...missingSegments);
 }
 
 function existingFileIdentity(path: string): ExistingFileIdentity | undefined {
