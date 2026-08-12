@@ -45,6 +45,9 @@ const clientReporter = readText('scripts/generate-client-contract-report.mjs');
 const querySet = readJson('benchmarks/v2-search-quality/queries.json');
 
 const expectedNode = '24.18.0';
+const expectedInnoVersion = '6.7.1';
+const expectedInnoUrl = 'https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe';
+const expectedInnoSha256 = '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0';
 assert(readText('.nvmrc').trim() === expectedNode, '.nvmrc: Node 24.18.0 attendu');
 assert(readText('.node-version').trim() === expectedNode, '.node-version: Node 24.18.0 attendu');
 requireText(
@@ -170,13 +173,25 @@ for (const needle of [
   );
 }
 for (const needle of [
-  'choco install innosetup --version=6.7.1',
-  '--require-checksums',
+  `$innoVersion = '${expectedInnoVersion}'`,
+  `$innoUrl = '${expectedInnoUrl}'`,
+  `$innoSha256 = '${expectedInnoSha256}'`,
+  '.\\scripts\\windows\\verify-file-sha256.ps1',
   '.VersionInfo.ProductVersion',
   "StartsWith('6.7.1'",
 ]) {
   requireText(releaseWorkflow, needle, `release-windows: invariant Inno absent: ${needle}`);
 }
+assert(
+  !releaseWorkflow.includes('choco install innosetup'),
+  'release-windows: installation Inno mutable via Chocolatey encore présente',
+);
+const innoVerification = releaseWorkflow.indexOf('.\\scripts\\windows\\verify-file-sha256.ps1');
+const innoExecution = releaseWorkflow.indexOf('Start-Process', innoVerification + 1);
+assert(
+  innoVerification >= 0 && innoExecution > innoVerification,
+  'release-windows: Inno doit être vérifié avant exécution',
+);
 
 for (const invariant of [
   'actions: read',
@@ -482,6 +497,7 @@ process.stdout.write(
       betterSqlite3Napi: true,
       betterSqlite3FallbackBuildAllowed: false,
       deprecatedPrebuildInstallPresent: false,
+      immutableInnoSetupInstaller: true,
       catalogComponents: 5,
       benchmarkQueries: querySet.queries.length,
       paraphraseQueries: categories.get('paraphrase') ?? 0,
