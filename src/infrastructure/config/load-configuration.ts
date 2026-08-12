@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync, realpathSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 import type { OfficialSourceRegistry } from '../../application/ports/official-source-registry.js';
@@ -72,12 +73,44 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
   };
 }
 
+interface ExistingFileIdentity {
+  readonly realPath: string;
+  readonly device: bigint;
+  readonly inode: bigint;
+}
+
 function assertDistinctDatabasePaths(cachePath: string, catalogPath: string): void {
   const normalizeForComparison = (path: string): string =>
     process.platform === 'win32' ? path.toLowerCase() : path;
   if (normalizeForComparison(cachePath) === normalizeForComparison(catalogPath)) {
     throw new ConfigurationError('Cache and catalog paths must be different');
   }
+
+  const cacheIdentity = existingFileIdentity(cachePath);
+  const catalogIdentity = existingFileIdentity(catalogPath);
+  if (cacheIdentity === undefined || catalogIdentity === undefined) return;
+
+  if (
+    normalizeForComparison(cacheIdentity.realPath) ===
+      normalizeForComparison(catalogIdentity.realPath) ||
+    (cacheIdentity.inode !== 0n &&
+      catalogIdentity.inode !== 0n &&
+      cacheIdentity.device === catalogIdentity.device &&
+      cacheIdentity.inode === catalogIdentity.inode)
+  ) {
+    throw new ConfigurationError('Cache and catalog paths must be different');
+  }
+}
+
+function existingFileIdentity(path: string): ExistingFileIdentity | undefined {
+  if (!existsSync(path)) return undefined;
+  const realPath = realpathSync.native(path);
+  const statistics = statSync(realPath, { bigint: true });
+  return {
+    realPath,
+    device: statistics.dev,
+    inode: statistics.ino,
+  };
 }
 
 function applyEnvironmentOverrides(
