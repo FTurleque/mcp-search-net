@@ -83,6 +83,10 @@ d'exécution à zéro et `errorSummary = DRY_RUN_PLAN`. Les compteurs `planned*`
 dans la sortie du plan et ne sont pas mélangés aux métriques d'exécution. `dry-run` signifie ici
 « aucune mutation des documents/versions/sections », et non « aucune écriture d'audit ».
 
+Les options `--config`, `--limit`, `--rate-limit-ms` et `--resume-after` appartiennent au sync réel et
+sont rejetées explicitement lorsqu'elles sont combinées avec `--dry-run`. Une option acceptée par le
+dry-run n'est donc jamais ignorée silencieusement.
+
 ### Sync réel
 
 ```bash
@@ -157,12 +161,23 @@ exactement à l'URL transport demandée. Ils ne sont jamais propagés vers une c
 Une ancienne version sans `finalUrl` exploitable reste sûre : elle est simplement rechargée sans
 requête conditionnelle.
 
+Les versions produites par la synchronisation enregistrent également un
+`extractionContractVersion` dans leurs métadonnées. Si la version de contrat stockée diffère de celle
+du runtime, les validateurs HTTP (`ETag`, `Last-Modified` et `validatorUrl`) ne sont pas réutilisés :
+le document est rechargé intégralement afin d'être réextrait avec le nouveau contrat. Les versions
+historiques sans ce champ sont interprétées comme contrat V1, ce qui préserve la compatibilité du
+catalogue existant.
+
 Décisions :
 
 - réponse `notModified`/HTTP `304` => document `unchanged`, `last_seen_at` actualisé, aucune nouvelle
   version ni section ; une redirection permanente observée peut aussi actualiser l'URL canonique,
   le statut `REDIRECTED`, les aliases et les événements associés ;
-- hash identique au contenu courant => document `unchanged`, aucune nouvelle version ;
+- réponse HTTP `200` avec hash identique au contenu courant => document `unchanged`, aucune nouvelle
+  version, mais la version courante est réécrite par UPSERT dans la transaction de révision afin de
+  rafraîchir les validateurs, `finalUrl`, `Content-Type`, mode d'extraction, sections et FTS ; un
+  validateur omis par ce `200` autoritatif remplace l'ancienne valeur par `NULL` au lieu d'être
+  conservé artificiellement ;
 - hash différent => révision atomique, immédiatement recherchable sans rebuild manuel ;
 - la destination permanente de l'URL d'origine est calculée uniquement à partir du **préfixe
   contigu de redirections permanentes** : une redirection temporaire (`302`/`307`) coupe cette
@@ -187,10 +202,12 @@ date et actualise sa dernière date.
 
 Le `content_hash` V2 caractérise volontairement les octets HTTP, avant extraction. Cette sémantique
 est compatible avec les versions déjà stockées et détecte toute modification upstream, mais elle
-peut créer du churn lorsqu'un wrapper HTML change sans changement documentaire. Passer à un hash
-du Markdown normalisé exige une stratégie de migration/double-hash pour les catalogues existants ;
-ce changement est donc reporté explicitement à V3 et devra être comparé sur un corpus réel avant
-adoption.
+peut créer du churn lorsqu'un wrapper HTML change sans changement documentaire. Un `200` avec les
+mêmes octets ne fige cependant plus la représentation extraite : les métadonnées et sections de la
+version existante sont rafraîchies atomiquement, et un changement de contrat d'extraction force un
+rechargement complet avant réextraction. Passer à un hash du Markdown normalisé exige toujours une
+stratégie de migration/double-hash pour les catalogues existants ; ce changement est donc reporté
+explicitement à V3 et devra être comparé sur un corpus réel avant adoption.
 
 ## Sections persistées et FTS5
 
@@ -274,14 +291,17 @@ type `PLAN`, et peut être distingué d'une exécution réelle via `runKind`.
 - rate limiting applicatif ;
 - reprise via curseur et continuation calculée pour un lot limité ;
 - validateurs de version courante liés à leur URL de représentation ;
-- contenu inchangé ;
+- `200` au payload identique avec rafraîchissement autoritatif des validateurs, métadonnées, sections
+  et FTS sans création d'une seconde version ;
+- incompatibilité de contrat d'extraction avec désactivation des validateurs HTTP conditionnels ;
 - réponse `notModified` avec touch `last_seen_at` et absence de nouvelle version ;
 - redirection permanente et chaînes mixtes permanente/temporaire ;
 - 404 non destructif ;
 - 410 non destructif ;
 - aliases dédupliqués et six types d'événements liés au run ;
 - transition `RUNNING` vers un seul statut terminal ;
-- dry-run `PLAN -> CANCELLED` distinct des métriques d'exécution ;
+- dry-run `PLAN -> CANCELLED` distinct des métriques d'exécution et rejet explicite des options de
+  sync réel non supportées ;
 - index FTS mis à jour dans la transaction de chaque révision ;
 - chunking borné des sections surdimensionnées ;
 - rollback des écritures si sections ou indexation échouent ;
