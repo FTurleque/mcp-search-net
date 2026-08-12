@@ -554,7 +554,7 @@ describe('SyncCatalogDocuments', () => {
     ]);
   });
 
-  it('passes current version validators and does not duplicate identical content', async () => {
+  it('passes current version validators and refreshes identical content', async () => {
     const repository = new CatalogSyncRepositoryStub(
       [enabledSource],
       existingDocument,
@@ -595,8 +595,10 @@ describe('SyncCatalogDocuments', () => {
       ],
     });
     expect(repository.upserts).toHaveLength(1);
-    expect(repository.versions).toHaveLength(0);
-    expect(repository.sections).toHaveLength(0);
+    expect(repository.versions).toHaveLength(1);
+    expect(repository.versions[0]).toMatchObject({ contentHash: currentVersion.contentHash });
+    expect(repository.sections).toHaveLength(1);
+    expect(repository.sections[0]).toHaveLength(2);
   });
 
   it('keeps an existing document unchanged when the remote source returns not modified', async () => {
