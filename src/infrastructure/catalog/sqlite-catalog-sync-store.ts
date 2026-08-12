@@ -157,9 +157,9 @@ export class SqliteCatalogSyncStore {
     const validators = observation.currentVersionValidators;
     if (validators === undefined) return;
     const result = this.database
-      .prepare<[string | null, string | null, number, number]>(
-        REFRESH_CURRENT_VERSION_VALIDATORS_SQL,
-      )
+      .prepare<
+        [string | null, string | null, number, number]
+      >(REFRESH_CURRENT_VERSION_VALIDATORS_SQL)
       .run(validators.etag ?? null, validators.lastModified ?? null, observedAt, documentId);
     if (result.changes !== 1) throw new Error('CATALOG_CURRENT_VERSION_VALIDATOR_REFRESH_FAILED');
   }
