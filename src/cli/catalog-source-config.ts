@@ -165,7 +165,9 @@ function assertOnlyProperties(
 ): void {
   const unknown = Object.keys(source).filter((property) => !allowed.has(property));
   if (unknown.length === 0) return;
-  throw new Error(`${context} contains unknown propert${unknown.length === 1 ? 'y' : 'ies'}: ${unknown.join(', ')}`);
+  throw new Error(
+    `${context} contains unknown propert${unknown.length === 1 ? 'y' : 'ies'}: ${unknown.join(', ')}`,
+  );
 }
 
 function requiredString(
