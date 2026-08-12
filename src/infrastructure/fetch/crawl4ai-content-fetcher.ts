@@ -107,7 +107,9 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
   ): Promise<DownloadedResource> {
     return this.gateway.download(
       request.url.value,
-      conditionalHeadersFor(request.url.value, context.cacheValidators),
+      validatorsApplyTo(request.url.value, context.cacheValidators)
+        ? createConditionalHeaders(context.cacheValidators)
+        : {},
       securityContext,
       {
         timeoutMs: remainingTimeoutMs(deadline),
@@ -252,13 +254,6 @@ async function approveCanonicalUrl(
     if (error instanceof RequestTimeoutError) throw error;
     return fallback;
   }
-}
-
-function conditionalHeadersFor(
-  requestedUrl: string,
-  validators: ContentFetchContext['cacheValidators'],
-): Readonly<Record<string, string>> {
-  return validatorsApplyTo(requestedUrl, validators) ? createConditionalHeaders(validators) : {};
 }
 
 function validatorsApplyTo(
