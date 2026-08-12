@@ -20,6 +20,7 @@ const installerTemplate = readText('packaging/windows/mcp-search-net-installer.i
 const configureInstall = readText('packaging/windows/configure-install.ps1');
 const runtimeGuard = readText('scripts/check-node-version.mjs');
 const repositoryFacade = readText('src/infrastructure/catalog/sqlite-catalog-repository.ts');
+const catalogSql = readText('src/infrastructure/catalog/catalog-sql.ts');
 const catalogMigrationC009 = readText(
   'catalog-migrations/C009__allow_repeated_section_content.sql',
 );
@@ -32,6 +33,8 @@ const versionPurger = readText('src/infrastructure/catalog/sqlite-catalog-versio
 const secureHttpGateway = readText('src/infrastructure/fetch/secure-http-gateway.ts');
 const fetchUrl = readText('src/application/use-cases/fetch-url.ts');
 const contentFetcher = readText('src/infrastructure/fetch/crawl4ai-content-fetcher.ts');
+const redirectChain = readText('src/domain/services/redirect-chain.ts');
+const languageTag = readText('src/domain/services/language-tag.ts');
 const officialSourceRegistry = readText(
   'src/infrastructure/config/official-source-yaml-registry.ts',
 );
@@ -287,11 +290,13 @@ for (const invariant of [
   'WebUrl.createTransport(document.url)',
   'const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter',
   'resumeAfter: continuationCursor',
+  'versionValidatorUrl(version)',
+  'permanentRedirectPrefix(fetched.redirectChain)',
 ]) {
   requireText(
     syncDocuments,
     invariant,
-    `catalog sync: invariant reprise/transport absent ${invariant}`,
+    `catalog sync: invariant reprise/transport/redirection absent ${invariant}`,
   );
 }
 for (const invariant of [
@@ -325,24 +330,56 @@ for (const invariant of [
 }
 for (const invariant of [
   'WebUrl.createTransport(request.url)',
-  'JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 4 })',
+  'JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 5 })',
+  'validatorUrl: content.finalUrl',
+  'permanentRedirectTarget(notModified.redirectChain)',
   'MIN_LINK_INSPECTION_BUDGET = 32',
   'MAX_LINK_VALIDATION_MS = 2_000',
   'inspected >= maximumInspections',
 ]) {
-  requireText(fetchUrl, invariant, `fetch_url: transport/cache/liens non bornés ${invariant}`);
+  requireText(fetchUrl, invariant, `fetch_url: transport/cache/redirection/liens non bornés ${invariant}`);
 }
-for (const invariant of ['request.deadline ??', 'remainingTimeoutMs(deadline)']) {
-  requireText(contentFetcher, invariant, `fetch_url: deadline end-to-end absente ${invariant}`);
+for (const invariant of [
+  'request.deadline ??',
+  'remainingTimeoutMs(deadline)',
+  'validatorsApplyTo(request.url.value, context.cacheValidators)',
+  "resource.headers['etag']",
+]) {
+  requireText(contentFetcher, invariant, `fetch_url: deadline/validation 304 absente ${invariant}`);
 }
+for (const invariant of [
+  'if (!redirect.permanent) break',
+  'target = redirect.toUrl',
+]) {
+  requireText(redirectChain, invariant, `redirections: préfixe permanent absent ${invariant}`);
+}
+for (const invariant of [
+  'Intl.getCanonicalLocales',
+  'MAX_EXTERNAL_LANGUAGE_CHARACTERS',
+]) {
+  requireText(languageTag, invariant, `langues catalogue: canonicalisation BCP-47 absente ${invariant}`);
+}
+requireText(
+  catalogSql,
+  'documents.language = ? COLLATE NOCASE',
+  'catalogue: filtres de langue NOCASE absents',
+);
 requireText(
   officialSourceRegistry,
   "url.protocol !== 'https:'",
   'sources officielles: garde HTTPS absente',
 );
-for (const invariant of ['private readonly maxBytes', 'remainingBytes <= this.maxBytes']) {
-  requireText(sqliteCache, invariant, `cache: borne globale en octets absente ${invariant}`);
+for (const invariant of [
+  'private readonly maxBytes',
+  'remainingBytes <= this.maxBytes',
+  'SELECT entry_count, total_bytes FROM cache_usage WHERE id = 1',
+]) {
+  requireText(sqliteCache, invariant, `cache: borne/compteurs globaux absents ${invariant}`);
 }
+assert(
+  !sqliteCache.includes('SELECT count(*) AS entry_count, coalesce(sum(size_bytes), 0) AS total_bytes'),
+  'cache: agrégation O(N) encore exécutée par le repository',
+);
 requireText(
   markdownStructure,
   'sequence.length >= fence.length',
@@ -458,6 +495,10 @@ process.stdout.write(
       catalogStartupIntegrityGate: true,
       officialSourcesRequireHttps: true,
       boundedCacheBytes: true,
+      constantTimeCacheUsageRead: true,
+      uriScopedHttpValidators: true,
+      permanentRedirectPrefixSemantics: true,
+      canonicalLanguageTags: true,
       sharedMarkdownFenceScanner: true,
       reconciledCatalogSources: true,
       safeWindowsUninstall: true,
