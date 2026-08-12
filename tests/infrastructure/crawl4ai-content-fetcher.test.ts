@@ -342,7 +342,9 @@ describe('Crawl4aiContentFetcher', () => {
       finalUrl: 'https://example.com/new-docs',
       status: 200,
       headers: { 'content-type': 'text/plain' },
-      body: new TextEncoder().encode('Useful documentation content returned after redirect change.'),
+      body: new TextEncoder().encode(
+        'Useful documentation content returned after redirect change.',
+      ),
       redirectChain: [
         {
           fromUrl: 'https://example.com/old-docs',
