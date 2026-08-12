@@ -3,8 +3,9 @@ ALTER TABLE content_cache ADD COLUMN validator_url TEXT;
 
 -- Cached content created before validator_url existed cannot prove which response URI emitted its
 -- validators and may also contain redirect metadata produced by the older mixed-chain semantics.
--- Content cache is disposable, so invalidate it once instead of attempting an unsafe backfill.
-DELETE FROM content_cache;
+-- Content cache is disposable, so invalidate every legacy row once instead of attempting an unsafe
+-- validator ownership backfill.
+DELETE FROM content_cache WHERE 1 = 1;
 
 CREATE TABLE cache_usage (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -23,7 +24,7 @@ FROM (
   SELECT size_bytes FROM content_cache
 );
 
-CREATE TRIGGER search_cache_usage_insert
+CREATE TRIGGER IF NOT EXISTS search_cache_usage_insert
 AFTER INSERT ON search_cache
 BEGIN
   UPDATE cache_usage
@@ -32,7 +33,7 @@ BEGIN
   WHERE id = 1;
 END;
 
-CREATE TRIGGER search_cache_usage_delete
+CREATE TRIGGER IF NOT EXISTS search_cache_usage_delete
 AFTER DELETE ON search_cache
 BEGIN
   UPDATE cache_usage
@@ -41,7 +42,7 @@ BEGIN
   WHERE id = 1;
 END;
 
-CREATE TRIGGER search_cache_usage_update
+CREATE TRIGGER IF NOT EXISTS search_cache_usage_update
 AFTER UPDATE OF size_bytes ON search_cache
 WHEN NEW.size_bytes <> OLD.size_bytes
 BEGIN
@@ -50,7 +51,7 @@ BEGIN
   WHERE id = 1;
 END;
 
-CREATE TRIGGER content_cache_usage_insert
+CREATE TRIGGER IF NOT EXISTS content_cache_usage_insert
 AFTER INSERT ON content_cache
 BEGIN
   UPDATE cache_usage
@@ -59,7 +60,7 @@ BEGIN
   WHERE id = 1;
 END;
 
-CREATE TRIGGER content_cache_usage_delete
+CREATE TRIGGER IF NOT EXISTS content_cache_usage_delete
 AFTER DELETE ON content_cache
 BEGIN
   UPDATE cache_usage
@@ -68,7 +69,7 @@ BEGIN
   WHERE id = 1;
 END;
 
-CREATE TRIGGER content_cache_usage_update
+CREATE TRIGGER IF NOT EXISTS content_cache_usage_update
 AFTER UPDATE OF size_bytes ON content_cache
 WHEN NEW.size_bytes <> OLD.size_bytes
 BEGIN
