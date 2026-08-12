@@ -163,7 +163,13 @@ export class SyncCatalogDocuments {
         createFetchContext(currentVersion),
       );
       if ('notModified' in fetched) {
-        return this.reconcileNotModified(document, existingDocument, currentVersion, fetched, syncRunId);
+        return this.reconcileNotModified(
+          document,
+          existingDocument,
+          currentVersion,
+          fetched,
+          syncRunId,
+        );
       }
       return this.reconcileFetched(
         document,
@@ -217,7 +223,10 @@ export class SyncCatalogDocuments {
         observation,
       );
     } else {
-      storedDocument = await this.repository.touchDocumentObservation(existingDocument.id, observation);
+      storedDocument = await this.repository.touchDocumentObservation(
+        existingDocument.id,
+        observation,
+      );
     }
     return {
       sourceKey: document.sourceKey,
@@ -256,7 +265,9 @@ export class SyncCatalogDocuments {
       syncRunId,
     );
     const contentUnchanged = currentVersion?.contentHash === fetched.contentHash;
-    const publishedAt = contentUnchanged ? currentVersion?.publishedAt : new Date(fetched.fetchedAt);
+    const publishedAt = contentUnchanged
+      ? currentVersion?.publishedAt
+      : new Date(fetched.fetchedAt);
     const redirectMetadata = createRedirectVersionMetadata(fetched);
     const revision = await this.repository.commitDocumentRevision(
       {
@@ -305,7 +316,14 @@ export class SyncCatalogDocuments {
     syncRunId: number,
   ): Promise<SyncedCatalogDocumentEntry> {
     if (isMissingRemoteHttpError(error) && existingDocument !== undefined) {
-      return this.reconcileMissingRemote(document, sourceId, publicId, existingDocument, error, syncRunId);
+      return this.reconcileMissingRemote(
+        document,
+        sourceId,
+        publicId,
+        existingDocument,
+        error,
+        syncRunId,
+      );
     }
     if (existingDocument !== undefined && isSourceUnavailable(error)) {
       await this.repository.recordDocumentObservation(
@@ -391,13 +409,14 @@ export class SyncCatalogDocuments {
         ? {}
         : { errorSummary: `${counts.failedCount} document(s) failed` }),
     });
+    const continuationCursor = plan.continuationCursor;
     return {
       schemaVersion: '1.0',
       dryRun: false,
       syncRun,
       ...counts,
       documents: entries,
-      ...(plan.continuationCursor === undefined ? {} : { resumeAfter: plan.continuationCursor }),
+      ...(continuationCursor === undefined ? {} : { resumeAfter: continuationCursor }),
       rateLimitMs: plan.rateLimitMs,
       limited: plan.limited,
     };
@@ -419,14 +438,15 @@ function createExecutionPlan(
   if (options.sourceKey !== undefined && !sourceByKey.has(options.sourceKey)) {
     throw new Error(`Catalog source ${options.sourceKey} was not found`);
   }
-    const configuredDocuments = options.documents
-      .filter(
-        (document) => options.sourceKey === undefined || document.sourceKey === options.sourceKey,
-      )
-      .filter((document) => document.enabled);
+  const configuredDocuments = options.documents
+    .filter(
+      (document) => options.sourceKey === undefined || document.sourceKey === options.sourceKey,
+    )
+    .filter((document) => document.enabled);
   const resumedDocuments = applyResumeCursor(configuredDocuments, options.resumeAfter);
   const selectedDocuments = applyLimit(resumedDocuments, options.limit);
-  const limited = options.limit !== undefined && resumedDocuments.length > selectedDocuments.length;
+  const limited =
+    options.limit !== undefined && resumedDocuments.length > selectedDocuments.length;
   const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter;
   const scopedSource =
     options.sourceKey === undefined ? undefined : sourceByKey.get(options.sourceKey);
