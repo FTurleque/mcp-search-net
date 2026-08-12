@@ -76,7 +76,13 @@ function forbiddenImports(
 }
 
 function moduleSpecifiers(source: string, path: string): readonly string[] {
-  const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const sourceFile = ts.createSourceFile(
+    path,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
   const specifiers: string[] = [];
 
   const visit = (node: ts.Node): void => {
@@ -93,14 +99,17 @@ function moduleSpecifiers(source: string, path: string): readonly string[] {
       ts.isStringLiteralLike(node.moduleReference.expression)
     ) {
       specifiers.push(node.moduleReference.expression.text);
-    } else if (
-      ts.isCallExpression(node) &&
-      node.arguments.length === 1 &&
-      ts.isStringLiteralLike(node.arguments[0]) &&
-      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-        (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
-    ) {
-      specifiers.push(node.arguments[0].text);
+    } else if (ts.isCallExpression(node)) {
+      const [argument] = node.arguments;
+      if (
+        node.arguments.length === 1 &&
+        argument !== undefined &&
+        ts.isStringLiteralLike(argument) &&
+        (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+          (ts.isIdentifier(node.expression) && node.expression.text === 'require'))
+      ) {
+        specifiers.push(argument.text);
+      }
     }
     ts.forEachChild(node, visit);
   };
