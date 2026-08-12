@@ -16,6 +16,8 @@ import {
 
 const DEFAULT_MAX_TRACKED_ORIGINS = 1_024;
 
+type RobotsCache = Map<string, string | undefined>;
+
 export interface SecureHttpGatewayOptions {
   readonly timeoutMs: number;
   readonly maxBytes: number;
@@ -110,11 +112,9 @@ export class SecureHttpGateway {
     const limits = this.validateLimits(requestedLimits);
     const deadline = performance.now() + limits.timeoutMs;
     const budget: DownloadBudget = { remainingBytes: limits.maxBytes };
+    const robotsCache: RobotsCache = new Map();
     await this.acquire(deadline);
     try {
-      if (this.options.respectRobotsTxt && new URL(value).pathname !== '/robots.txt') {
-        await this.assertRobotsAllowed(value, deadline, context, limits, budget);
-      }
       return await this.follow(
         value,
         value,
@@ -125,6 +125,8 @@ export class SecureHttpGateway {
         limits,
         [],
         budget,
+        robotsCache,
+        true,
       );
     } finally {
       this.release();
@@ -141,13 +143,30 @@ export class SecureHttpGateway {
     limits: SecureDownloadLimits,
     redirectChain: readonly DownloadRedirect[],
     budget: DownloadBudget,
+    robotsCache: RobotsCache,
+    enforceRobots: boolean,
   ): Promise<DownloadedResource> {
     if (redirects > limits.maxRedirects) throw new TooManyRedirectsError();
     const approved = await withDeadline(
       this.securityPolicy.assertAllowed(currentUrl, context),
       deadline,
     );
-    await this.throttle(new URL(approved.value).origin, deadline);
+    const approvedUrl = new URL(approved.value);
+    if (
+      enforceRobots &&
+      this.options.respectRobotsTxt &&
+      approvedUrl.pathname !== '/robots.txt'
+    ) {
+      await this.assertRobotsAllowed(
+        approved.value,
+        deadline,
+        context,
+        limits,
+        budget,
+        robotsCache,
+      );
+    }
+    await this.throttle(approvedUrl.origin, deadline);
     const response = await this.requestPinned(
       approved,
       deadline,
@@ -175,6 +194,8 @@ export class SecureHttpGateway {
         limits,
         [...redirectChain, redirect],
         budget,
+        robotsCache,
+        enforceRobots,
       );
     }
     if (response.status !== 304 && (response.status < 200 || response.status >= 300)) {
@@ -189,27 +210,39 @@ export class SecureHttpGateway {
     context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
     limits: SecureDownloadLimits,
     budget: DownloadBudget,
+    robotsCache: RobotsCache,
   ): Promise<void> {
     const url = new URL(value);
-    const robotsUrl = new URL('/robots.txt', url.origin).toString();
-    let resource: DownloadedResource;
-    try {
-      resource = await this.follow(
-        robotsUrl,
-        robotsUrl,
-        0,
-        deadline,
-        {},
-        context,
-        limits,
-        [],
-        budget,
-      );
-    } catch (error) {
-      if (error instanceof HttpError && error.status === 404) return;
-      throw error;
+    const origin = url.origin;
+    let rules = robotsCache.get(origin);
+    if (!robotsCache.has(origin)) {
+      const robotsUrl = new URL('/robots.txt', origin).toString();
+      let resource: DownloadedResource;
+      try {
+        resource = await this.follow(
+          robotsUrl,
+          robotsUrl,
+          0,
+          deadline,
+          {},
+          context,
+          limits,
+          [],
+          budget,
+          robotsCache,
+          false,
+        );
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 404) {
+          robotsCache.set(origin, undefined);
+          return;
+        }
+        throw error;
+      }
+      rules = new TextDecoder().decode(resource.body);
+      robotsCache.set(origin, rules);
     }
-    const rules = new TextDecoder().decode(resource.body);
+    if (rules === undefined) return;
     const path = `${url.pathname || '/'}${url.search}`;
     if (!isAllowedByRobots(rules, path, this.options.userAgent)) {
       throw new UrlSecurityError('robots.txt disallows fetching this URL', 'BLOCKED_ADDRESS');
