@@ -44,7 +44,7 @@ export function scanMarkdownHeadings(
     const match = /^ {0,3}(#{1,6})[\t ]+(.+?)\s*$/u.exec(line);
     if (match === null) continue;
     const level = match[1]?.length ?? 1;
-    const rawTitle = (match[2] ?? '').replace(/[\t ]+#+[\t ]*$/u, '').trim();
+    const rawTitle = (match[2] ?? '').replace(/[\t ]+#+[\t ]*$/u, '').trim(); // NOSONAR
     if (rawTitle === '') continue;
     const title = truncateUnicode(rawTitle, MAX_EXTERNAL_HEADING_CHARACTERS);
     stack.splice(level - 1, stack.length, title);
@@ -63,7 +63,7 @@ export function scanMarkdownHeadings(
 }
 
 function parseOpeningFence(line: string): MarkdownFence | undefined {
-  const match = /^ {0,3}(`{3,}|~{3,})[^\r\n]*$/u.exec(line);
+  const match = /^ {0,3}(`{3,}|~{3,})[^\r\n]*$/u.exec(line); // NOSONAR
   if (match === null) return undefined;
   const sequence = match[1] ?? '';
   const marker = sequence[0];

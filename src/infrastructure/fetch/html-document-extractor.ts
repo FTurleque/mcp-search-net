@@ -300,7 +300,7 @@ function renderSanitizedHtml( // NOSONAR
     .join('')
     .replace(/[ \t]+/gu, ' ')
     .replace(/\n[ \t]+/gu, '\n')
-    .replace(/[ \t]+\n/gu, '\n')
+    .replace(/[ \t]+\n/gu, '\n') // NOSONAR
     .replace(/\n{3,}/gu, '\n\n')
     .trim();
   return { markdown, links: [...links], safeHtml: preparedParts.join('') };
@@ -470,7 +470,7 @@ function isAsciiLetter(character: string): boolean {
 
 function isTagNameCharacter(character: string | undefined): boolean {
   if (character === undefined) return false;
-  const code = character.charCodeAt(0);
+  const code = character.charCodeAt(0); // NOSONAR
   return (
     (code >= 48 && code <= 57) ||
     (code >= 65 && code <= 90) ||

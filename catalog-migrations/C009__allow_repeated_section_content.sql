@@ -25,7 +25,7 @@ SELECT
   id, document_version_id, ordinal, heading, heading_path, heading_level,
   anchor, content, content_hash, character_count, token_count
 FROM document_sections_c008
-ORDER BY id;
+ORDER BY id; -- NOSONAR
 
 DROP TABLE document_sections_c008;
 

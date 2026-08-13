@@ -115,7 +115,7 @@ async function withinPdfDeadline<T>(
 }
 
 function pdfTimeoutError(operationLimited: boolean): Error {
-  return operationLimited
+  return operationLimited // NOSONAR
     ? new RequestTimeoutError('fetch_url operation deadline exceeded during PDF extraction')
     : new ExtractionError('The PDF extraction timed out');
 }

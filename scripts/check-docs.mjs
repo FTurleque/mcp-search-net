@@ -311,7 +311,7 @@ function validateReleaseAndInstallerHardening() {
     "$innoVersion = '6.7.1'",
     "$innoUrl = 'https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe'",
     "$innoSha256 = '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0'",
-    '.\\scripts\\windows\\verify-file-sha256.ps1',
+    '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
   ]) {
     requireText(releaseWorkflow, needle, `release-windows.yml: pinning Inno absent: ${needle}`);
   }

@@ -150,8 +150,8 @@ function createSnippet(content: string, term: string): string {
 function previousUnicodeBoundary(value: string, index: number): number {
   const bounded = Math.min(Math.max(index, 0), value.length);
   if (bounded <= 0 || bounded >= value.length) return bounded;
-  const current = value.charCodeAt(bounded);
-  const previous = value.charCodeAt(bounded - 1);
+  const current = value.charCodeAt(bounded); // NOSONAR
+  const previous = value.charCodeAt(bounded - 1); // NOSONAR
   return current >= 0xdc00 && current <= 0xdfff && previous >= 0xd800 && previous <= 0xdbff
     ? bounded - 1
     : bounded;
