@@ -56,7 +56,7 @@ jobs:
 
           Invoke-WebRequest -Uri $innoUrl -OutFile $innoInstaller -UseBasicParsing
           .\scripts\windows\verify-file-sha256.ps1 `
-            -Path $innoInstaller `
+            -FilePath $innoInstaller `
             -ExpectedSha256 $innoSha256
 
           $install = Start-Process `
