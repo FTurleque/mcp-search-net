@@ -101,11 +101,6 @@ interface HtmlTagToken {
   readonly attributes: ReadonlyMap<string, string | undefined>;
 }
 
-interface HtmlMetadata {
-  readonly title?: string;
-  readonly canonicalUrl?: string;
-}
-
 export function extractHtmlDocument(html: string, baseUrl: string): ExtractedHtmlDocument {
   const metadata = extractMetadata(html, baseUrl);
   const sanitized = sanitizePreparedHtml(html);
