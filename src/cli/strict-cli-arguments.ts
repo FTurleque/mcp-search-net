@@ -76,6 +76,7 @@ function validateMutualExclusions(
 ): void {
   for (const group of groups) {
     const present = group.filter((option) => seenOptions.has(option));
-    if (present.length > 1) throw new Error(`Options ${present.join(' and ')} are mutually exclusive`);
+    if (present.length > 1)
+      throw new Error(`Options ${present.join(' and ')} are mutually exclusive`);
   }
 }
