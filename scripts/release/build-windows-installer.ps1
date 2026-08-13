@@ -137,7 +137,7 @@ try {
     Write-Host "SHA-256  : $Hash"
     Write-Host "Mode     : $(if ($Smoke) { 'smoke' } else { 'production' })"
     Write-Host "Inno     : $Iscc"
-    Write-Host "Inno Ver : $IsccVersion"
+    Write-Host "Inno Ver : $IsccBanner"
 }
 finally {
     Remove-Item -LiteralPath $GeneratedIss -Force -ErrorAction SilentlyContinue

@@ -85,7 +85,7 @@ describe('Windows installer runtime integrity', () => {
   it('rejects release version drift and verifies the pinned Windows installer toolchain', () => {
     expect(releasePublisher).toContain('$Package.version -ne $Version');
     expect(releasePublisher).toContain('$PackageLock.version -ne $Version');
-    expect(releasePublisher).toContain("$PackageLock.packages.''.version -ne $Version");
+    expect(releasePublisher).toContain("$PackageLock.packages[''].version -ne $Version");
     expect(releasePublisher).toContain('$PackagedPackage.version -ne $Version');
     expect(releaseWorkflow).toContain("$innoVersion = '6.7.3'");
     expect(releaseWorkflow).toContain(
