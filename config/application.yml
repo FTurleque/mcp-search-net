@@ -1,6 +1,6 @@
 application:
   name: mcp-search-net
-  version: 1.1.0
+  version: 1.1.2
   profile: development
 
 searxng:
@@ -22,6 +22,7 @@ cache:
   sitemapTtlMs: 86400000
   staleRetentionMs: 604800000
   maxEntries: 2000
+  maxBytes: 268435456
 
 limits:
   defaultSearchResults: 5

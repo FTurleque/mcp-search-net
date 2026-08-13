@@ -258,7 +258,7 @@ describe('SqliteCatalogRepository document revisions', () => {
       language: 'en',
       status: 'ACTIVE',
     });
-    await fixture.repository.addDocumentVersion({
+    const staged = await fixture.repository.addDocumentVersion({
       documentId: empty.id,
       contentHash: 'empty-hash',
       isCurrent: true,
@@ -266,6 +266,14 @@ describe('SqliteCatalogRepository document revisions', () => {
       contentType: 'text/plain',
       metadataJson: '{}',
     });
+    expect(staged.isCurrent).toBe(false);
+
+    const database = new Database(fixture.path);
+    database.prepare('UPDATE document_versions SET is_current = 1 WHERE id = ?').run(staged.id);
+    database
+      .prepare('UPDATE documents SET current_version_id = ? WHERE id = ?')
+      .run(staged.id, empty.id);
+    database.close();
 
     const report = await fixture.repository.verifyIntegrity();
 

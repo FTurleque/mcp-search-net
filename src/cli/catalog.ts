@@ -28,12 +28,21 @@ import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-s
 import { SystemClock } from '../infrastructure/time/system-clock.js';
 import { loadCatalogSourceConfig } from './catalog-source-config.js';
 import { ingestTextDocument } from './catalog-ingest-text.js';
+import { assertStrictCliArguments, type StrictCliArgumentSpec } from './strict-cli-arguments.js';
+import { parseStrictInteger } from './strict-integer.js';
 
 const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
 const SYNC_STRATEGIES = ['manual', 'polling'] as const;
 
 const DEFAULT_KEEP_PREVIOUS_VERSIONS = 3;
+const MAX_CATALOG_SYNC_RATE_LIMIT_MS = 10_000;
+const DRY_RUN_UNSUPPORTED_SYNC_OPTIONS = [
+  '--config',
+  '--limit',
+  '--rate-limit-ms',
+  '--resume-after',
+] as const;
 
 type CatalogCommand =
   | 'init'
@@ -49,6 +58,68 @@ type CatalogCommand =
   | 'verify'
   | 'rebuild-index'
   | 'purge-versions';
+
+const CATALOG_ARGUMENT_SPECS: Readonly<Record<CatalogCommand, StrictCliArgumentSpec>> = {
+  init: { valueOptions: ['--path'] },
+  status: { valueOptions: ['--path'] },
+  health: { valueOptions: ['--path'] },
+  backup: { valueOptions: ['--path', '--output'] },
+  'list-sources': { valueOptions: ['--path'] },
+  'load-sources': { valueOptions: ['--path', '--file'] },
+  sync: {
+    valueOptions: [
+      '--path',
+      '--source-key',
+      '--source',
+      '--file',
+      '--config',
+      '--limit',
+      '--rate-limit-ms',
+      '--resume-after',
+    ],
+    flags: ['--dry-run'],
+    mutuallyExclusiveOptions: [['--source-key', '--source']],
+  },
+  'add-source': {
+    valueOptions: [
+      '--path',
+      '--key',
+      '--name',
+      '--base-url',
+      '--type',
+      '--language',
+      '--freshness',
+      '--sync',
+    ],
+    flags: ['--disabled'],
+  },
+  'ingest-text': {
+    valueOptions: [
+      '--path',
+      '--source-key',
+      '--file',
+      '--url',
+      '--title',
+      '--language',
+      '--mime-type',
+      '--stable-key',
+      '--version-label',
+    ],
+  },
+  search: {
+    valueOptions: ['--path', '--query', '--source-key', '--language', '--limit'],
+  },
+  verify: { valueOptions: ['--path'] },
+  'rebuild-index': { valueOptions: ['--path'] },
+  'purge-versions': {
+    valueOptions: ['--path', '--source-key', '--source', '--keep', '--keep-previous'],
+    flags: ['--dry-run'],
+    mutuallyExclusiveOptions: [
+      ['--source-key', '--source'],
+      ['--keep', '--keep-previous'],
+    ],
+  },
+};
 
 interface CatalogCommandOptions {
   readonly command: CatalogCommand;
@@ -274,6 +345,7 @@ async function main(argv: readonly string[]): Promise<void> {
 
 function parseArguments(argv: readonly string[]): CatalogCommandOptions {
   const command = parseCommand(argv[0]);
+  assertStrictCliArguments(argv.slice(1), CATALOG_ARGUMENT_SPECS[command]);
   const path = getOption(argv, '--path') ?? defaultCatalogPath();
   if (command === 'load-sources') return parseLoadSources(argv, path);
   if (command === 'sync') return parseSync(argv, path);
@@ -323,19 +395,27 @@ function parseLoadSources(argv: readonly string[], path: string): CatalogCommand
 }
 
 function parseSync(argv: readonly string[], path: string): CatalogCommandOptions {
+  const dryRun = argv.includes('--dry-run');
+  if (dryRun) {
+    const unsupported = DRY_RUN_UNSUPPORTED_SYNC_OPTIONS.find((option) => argv.includes(option));
+    if (unsupported !== undefined) {
+      throw new Error(`${unsupported} is not supported with catalog sync --dry-run`);
+    }
+  }
   const sourceKey = getOption(argv, '--source-key') ?? getOption(argv, '--source');
   const filePath = getOption(argv, '--file');
   const limit = parseLimit(getOption(argv, '--limit'));
-  const rateLimitMs = parseNonNegativeInteger(
+  const rateLimitMs = parseBoundedNonNegativeInteger(
     getOption(argv, '--rate-limit-ms'),
     '--rate-limit-ms',
+    MAX_CATALOG_SYNC_RATE_LIMIT_MS,
   );
   const resumeAfter = parseResumeAfter(getOption(argv, '--resume-after'), sourceKey);
   return {
     command: 'sync',
     path: resolve(path),
     sync: {
-      dryRun: argv.includes('--dry-run'),
+      dryRun,
       configPath: resolve(getOption(argv, '--config') ?? 'config/application.yml'),
       ...(limit === undefined ? {} : { limit }),
       ...(rateLimitMs === undefined ? {} : { rateLimitMs }),
@@ -429,29 +509,22 @@ function requireOption(argv: readonly string[], name: string): string {
 }
 
 function parseLimit(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const limit = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(limit) || limit <= 0) throw new Error(`Invalid limit ${value}`);
-  return limit;
+  return parseStrictInteger(value, 'limit', 1);
 }
 
 function parseKeepPreviousVersions(value: string | undefined): number | undefined {
-  if (value === undefined) return undefined;
-  const keepPreviousVersions = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(keepPreviousVersions) || keepPreviousVersions < 0) {
-    throw new Error(`Invalid keep ${value}`);
-  }
-  return keepPreviousVersions;
+  return parseStrictInteger(value, 'keep', 0);
 }
 
-function parseNonNegativeInteger(
+function parseBoundedNonNegativeInteger(
   value: string | undefined,
   optionName: string,
+  maximum: number,
 ): number | undefined {
-  if (value === undefined) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed < 0)
+  const parsed = parseStrictInteger(value, optionName, 0);
+  if (parsed !== undefined && parsed > maximum) {
     throw new Error(`Invalid ${optionName} ${value}`);
+  }
   return parsed;
 }
 
@@ -510,7 +583,7 @@ function usage(): string {
     '  catalog list-sources [--path <catalog.db>]',
     '  catalog load-sources [--path <catalog.db>] [--file <catalog-sources.yml>]',
     '  catalog sync --dry-run [--path <catalog.db>] --file <catalog-sources.yml> [--source-key <key>]',
-    '  catalog sync [--path <catalog.db>] --file <catalog-sources.yml> [--config <application.yml>] [--source-key <key>] [--limit <n>] [--rate-limit-ms <ms>] [--resume-after <sourceKey:stableKey|stableKey>]',
+    '  catalog sync [--path <catalog.db>] --file <catalog-sources.yml> [--config <application.yml>] [--source-key <key>] [--limit <n>] [--rate-limit-ms <0..10000>] [--resume-after <sourceKey:stableKey|stableKey>]',
     '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
     '  catalog ingest-text --source-key <key> --file <file> --url <url> --title <title> [--path <catalog.db>] [--language <language>] [--mime-type <mime>] [--stable-key <key>] [--version-label <label>]',
     '  catalog search --query <text> [--path <catalog.db>] [--source-key <key>] [--language <language>] [--limit <n>]',

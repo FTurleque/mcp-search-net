@@ -2,37 +2,43 @@ name: Publish Windows Release
 
 on:
   # Publication volontaire uniquement. Ce workflow n'est jamais déclenché par
-  # un push ou une pull request. Sur master il publie ; sur toute autre branche
-  # il qualifie seulement les artefacts demandés.
+  # un push ou une pull request. Sur master il qualifie puis publie dans un job
+  # isolé ; sur toute autre branche il qualifie seulement les artefacts demandés.
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version SemVer à qualifier/publier, par exemple 1.1.0 ou 1.1.1-rc1'
+        description: 'Version SemVer à qualifier/publier, par exemple 1.1.2 ou 1.1.2-rc1'
         required: true
-        default: '1.1.0'
+        default: '1.1.2'
         type: string
-
-permissions:
-  contents: write
-  actions: read
+      validate_only:
+        description: 'Qualifier sans publier (inspection EXE avant release)'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: windows-release-${{ github.ref }}-${{ inputs.version }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Build, smoke-test et publication Windows x64
+  qualify:
+    name: Build et smoke-test Windows x64
     runs-on: windows-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
     env:
-      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      TARGET_COMMIT: ${{ github.sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js 24.18.0
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -40,24 +46,41 @@ jobs:
           node-version: 24.18.0
           cache: npm
 
-      - name: Installer Inno Setup 6.7.1
+      - name: Installer Inno Setup 6.7.3 vérifié
         shell: pwsh
         run: |
-          choco install innosetup --version=6.7.1 --yes --no-progress --require-checksums
-          $iscc = @(
-            (Get-Command ISCC.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue),
-            'C:\Program Files (x86)\Inno Setup 7\ISCC.exe',
-            'C:\Program Files\Inno Setup 7\ISCC.exe',
-            'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
-            'C:\Program Files\Inno Setup 6\ISCC.exe',
-            'C:\ProgramData\chocolatey\bin\ISCC.exe'
-          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
-          if (-not $iscc) { throw 'ISCC.exe introuvable après installation Inno Setup.' }
-          $isccVersion = (Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion
-          if ([string]::IsNullOrWhiteSpace($isccVersion) -or -not $isccVersion.StartsWith('6.7.1', [System.StringComparison]::Ordinal)) {
-            throw "Version ISCC inattendue : $isccVersion ($iscc)"
+          $innoVersion = '6.7.3'
+          $innoUrl = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'
+          $innoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'
+          $innoInstaller = Join-Path $env:RUNNER_TEMP "innosetup-$innoVersion.exe"
+
+          Invoke-WebRequest -Uri $innoUrl -OutFile $innoInstaller -UseBasicParsing
+          .\scripts\windows\verify-file-sha256.ps1 `
+            -FilePath $innoInstaller `
+            -ExpectedSha256 $innoSha256
+
+          $install = Start-Process `
+            -FilePath $innoInstaller `
+            -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/ALLUSERS') `
+            -Wait `
+            -PassThru
+          if ($install.ExitCode -ne 0) {
+            throw "Installation Inno Setup échouée (exit=$($install.ExitCode))"
           }
-          Write-Host "ISCC: $iscc ($isccVersion)"
+          Remove-Item -LiteralPath $innoInstaller -Force
+
+          $iscc = @(
+            'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+            'C:\Program Files\Inno Setup 6\ISCC.exe'
+          ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $iscc) { throw 'ISCC.exe introuvable après installation Inno Setup.' }
+          $isccOutput = @((& $iscc /? 2>&1))
+          $global:LASTEXITCODE = 0
+          $isccBanner = ($isccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
+          if ($isccBanner -notmatch 'Inno Setup 6') {
+            throw "Version ISCC non qualifiée : $isccBanner ($iscc)"
+          }
+          Write-Host "ISCC: $iscc | $isccBanner"
 
       - name: Télécharger le runtime Node.js win-x64 pour bundling
         shell: pwsh
@@ -82,6 +105,8 @@ jobs:
       - name: Vérifier la CI exact-head avant publication
         if: github.ref == 'refs/heads/master'
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $runsResponse = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$env:GITHUB_SHA&status=completed&per_page=20" | ConvertFrom-Json
           $successfulRuns = @(
@@ -108,32 +133,20 @@ jobs:
           }
           Write-Host "CI_EXACT_HEAD_QUALIFIED run=$($qualifiedRun.id) sha=$env:GITHUB_SHA"
 
-      - name: Qualifier la release (branche non-master)
-        if: github.ref != 'refs/heads/master'
+      - name: Construire et qualifier les artefacts Windows
         shell: pwsh
         run: |
           .\scripts\release\publish-windows-release.ps1 `
-            -Version '${{ inputs.version }}' `
+            -Version $env:RELEASE_VERSION `
             -NodeZipPath '.\node-runtime.zip' `
-            -TargetCommit '${{ github.sha }}' `
+            -TargetCommit $env:TARGET_COMMIT `
             -ValidateOnly
 
-      - name: Construire, qualifier et publier la GitHub Release (master)
-        if: github.ref == 'refs/heads/master'
-        shell: pwsh
-        run: |
-          .\scripts\release\publish-windows-release.ps1 `
-            -Version '${{ inputs.version }}' `
-            -NodeZipPath '.\node-runtime.zip' `
-            -TargetCommit '${{ github.sha }}'
-
-      - name: Conserver les artefacts du run
-        if: always()
-        continue-on-error: true
+      - name: Conserver les artefacts qualifiés
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mcp-search-net-${{ inputs.version }}-windows-x64
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
           path: |
             target/dist/mcp-search-net-${{ inputs.version }}-windows-x64-setup.exe
@@ -142,3 +155,111 @@ jobs:
             target/dist/mcp-search-net-${{ inputs.version }}-windows-x64.zip.sha256
             target/dist/THIRD-PARTY-NOTICES-${{ inputs.version }}.txt
             target/dist/THIRD-PARTY-NOTICES-${{ inputs.version }}.txt.sha256
+
+  publish:
+    name: Publier Windows x64
+    if: ${{ !inputs.validate_only && github.ref == 'refs/heads/master' }}
+    needs: qualify
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      TARGET_COMMIT: ${{ github.sha }}
+
+    steps:
+      - name: Publier uniquement les artefacts déjà qualifiés
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          $version = $env:RELEASE_VERSION
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
+            throw "Version de release invalide : $version"
+          }
+
+          $artifactName = "mcp-search-net-$version-windows-x64"
+          $downloadRoot = Join-Path $PWD 'target\dist'
+          New-Item -ItemType Directory -Force -Path $downloadRoot | Out-Null
+          & gh run download $env:GITHUB_RUN_ID `
+            --repo $env:GITHUB_REPOSITORY `
+            --name $artifactName `
+            --dir $downloadRoot
+          if ($LASTEXITCODE -ne 0) {
+            throw "Téléchargement de l'artefact qualifié échoué (exit=$LASTEXITCODE)"
+          }
+
+          function Resolve-QualifiedArtifact([string] $Name) {
+            $matches = @(
+              Get-ChildItem -LiteralPath $downloadRoot -Recurse -File |
+                Where-Object { $_.Name -eq $Name }
+            )
+            if ($matches.Count -ne 1) {
+              throw "Artefact qualifié attendu exactement une fois : $Name (trouvé=$($matches.Count))"
+            }
+            return $matches[0].FullName
+          }
+
+          function Verify-Sha256([string] $Artifact, [string] $Checksum) {
+            $expected = ((Get-Content -LiteralPath $Checksum | Select-Object -First 1) -split '\s+')[0]
+            $actual = (Get-FileHash -LiteralPath $Artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ([string]::IsNullOrWhiteSpace($expected) -or $expected.ToLowerInvariant() -ne $actual) {
+              throw "Checksum incorrect pour $Artifact : attendu=$expected obtenu=$actual"
+            }
+          }
+
+          $setup = Resolve-QualifiedArtifact "mcp-search-net-$version-windows-x64-setup.exe"
+          $setupChecksum = Resolve-QualifiedArtifact "mcp-search-net-$version-windows-x64-setup.exe.sha256"
+          $zip = Resolve-QualifiedArtifact "mcp-search-net-$version-windows-x64.zip"
+          $zipChecksum = Resolve-QualifiedArtifact "mcp-search-net-$version-windows-x64.zip.sha256"
+          $notices = Resolve-QualifiedArtifact "THIRD-PARTY-NOTICES-$version.txt"
+          $noticesChecksum = Resolve-QualifiedArtifact "THIRD-PARTY-NOTICES-$version.txt.sha256"
+          Verify-Sha256 $setup $setupChecksum
+          Verify-Sha256 $zip $zipChecksum
+          Verify-Sha256 $notices $noticesChecksum
+
+          $tag = "v$version"
+          $previousPreference = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          $releaseProbe = ((& gh release view $tag --repo $env:GITHUB_REPOSITORY 2>&1) | Out-String).Trim()
+          $releaseProbeExit = $LASTEXITCODE
+          $ErrorActionPreference = $previousPreference
+          if ($releaseProbeExit -eq 0) {
+            throw "GitHub Release $tag existe déjà. Les releases sont immuables ; publiez une nouvelle version."
+          }
+          if ($releaseProbe -notmatch '(?i)release not found') {
+            throw "Impossible de vérifier GitHub Release $tag (exit=$releaseProbeExit): $releaseProbe"
+          }
+
+          $previousPreference = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          $tagProbe = ((& gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" 2>&1) | Out-String).Trim()
+          $tagProbeExit = $LASTEXITCODE
+          $ErrorActionPreference = $previousPreference
+          if ($tagProbeExit -eq 0) {
+            throw "Le tag $tag existe déjà sans release associée. Résolvez ce tag explicitement."
+          }
+          if ($tagProbe -notmatch '(?i)not found|HTTP 404') {
+            throw "Impossible de vérifier le tag $tag (exit=$tagProbeExit): $tagProbe"
+          }
+
+          $releaseArgs = @(
+            'release', 'create', $tag,
+            $setup, $setupChecksum, $zip, $zipChecksum, $notices, $noticesChecksum,
+            '--repo', $env:GITHUB_REPOSITORY,
+            '--target', $env:TARGET_COMMIT,
+            '--title', "mcp-search-net $version",
+            '--generate-notes'
+          )
+          if ($version -match '-') { $releaseArgs += '--prerelease' }
+          & gh @releaseArgs
+          if ($LASTEXITCODE -ne 0) {
+            throw "Publication GitHub Release $tag échouée (exit=$LASTEXITCODE)"
+          }
+
+          Write-Host "GitHub Release $tag publiée depuis les artefacts qualifiés du run $env:GITHUB_RUN_ID."

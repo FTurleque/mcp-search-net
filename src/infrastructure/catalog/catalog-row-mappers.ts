@@ -4,6 +4,7 @@ import type {
   CatalogSource,
   CatalogSourceType,
   CatalogSyncRun,
+  CatalogSyncRunKind,
   CatalogSyncRunStatus,
   CatalogSyncStrategy,
   DocumentSection,
@@ -52,6 +53,7 @@ export interface DocumentVersionRow {
   readonly published_at: number | null;
   readonly fetched_at: number;
   readonly is_current: number;
+  readonly pending_current: number;
   readonly extraction_mode: 'static' | 'native-render';
   readonly content_type: string;
   readonly metadata_json: string;
@@ -74,6 +76,7 @@ export interface DocumentSectionRow {
 export interface CatalogSyncRunRow {
   readonly id: number;
   readonly source_id: number | null;
+  readonly run_kind: CatalogSyncRunKind;
   readonly started_at: number;
   readonly completed_at: number | null;
   readonly status: CatalogSyncRunStatus;
@@ -157,6 +160,7 @@ export function toCatalogSyncRun(row: CatalogSyncRunRow): CatalogSyncRun {
   return {
     id: row.id,
     ...(row.source_id === null ? {} : { sourceId: row.source_id }),
+    runKind: row.run_kind,
     startedAt: new Date(row.started_at),
     ...(row.completed_at === null ? {} : { completedAt: new Date(row.completed_at) }),
     status: row.status,

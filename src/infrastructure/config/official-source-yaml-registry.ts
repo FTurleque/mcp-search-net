@@ -62,14 +62,19 @@ export class OfficialSourceYamlRegistry implements OfficialSourceRegistry {
     } catch {
       return undefined;
     }
+    if (url.protocol !== 'https:') return undefined;
     return this.sources
       .filter((source) => source.enabled)
-      .find(
-        (source) =>
-          (domainMatches(url.hostname, source.domain, source.includeSubdomains) &&
-            (source.pathPrefix === undefined || pathMatches(url.pathname, source.pathPrefix))) ||
-          githubOrganizationMatches(url, source.githubOrganizations),
-      );
+      .find((source) => {
+        const baseUrl = new URL(source.baseUrl);
+        const configuredOriginMatch =
+          effectivePort(url) === effectivePort(baseUrl) &&
+          domainMatches(url.hostname, source.domain, source.includeSubdomains) &&
+          (source.pathPrefix === undefined || pathMatches(url.pathname, source.pathPrefix));
+        const githubMatch =
+          effectivePort(url) === 443 && githubOrganizationMatches(url, source.githubOrganizations);
+        return configuredOriginMatch || githubMatch;
+      });
   }
 
   public findForQuery(query: string): readonly OfficialSource[] {
@@ -123,6 +128,11 @@ function githubOrganizationMatches(url: URL, organizations: readonly string[]): 
     .find((segment) => segment !== '')
     ?.toLowerCase();
   return organization !== undefined && organizations.includes(organization);
+}
+
+function effectivePort(url: URL): number {
+  if (url.port !== '') return Number.parseInt(url.port, 10);
+  return url.protocol === 'https:' ? 443 : 80;
 }
 
 function compareText(left: string, right: string): number {

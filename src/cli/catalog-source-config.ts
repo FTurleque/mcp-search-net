@@ -1,18 +1,37 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { parse } from 'yaml';
-
 import type {
   CatalogFreshnessPolicy,
   CatalogSourceType,
   CatalogSyncStrategy,
   NewCatalogSource,
 } from '../domain/models/catalog.js';
+import { validateNewCatalogSource } from '../domain/services/catalog-source-validation.js';
+import { parseStrictYaml } from '../infrastructure/config/yaml-loader.js';
 
 const SOURCE_TYPES = ['documentation', 'reference', 'api', 'guide'] as const;
 const FRESHNESS_POLICIES = ['manual', 'daily', 'weekly', 'monthly'] as const;
 const SYNC_STRATEGIES = ['manual', 'polling'] as const;
+const ROOT_PROPERTIES = new Set(['schema_version', 'sources']);
+const SOURCE_PROPERTIES = new Set([
+  'display_name',
+  'base_url',
+  'source_type',
+  'language',
+  'freshness_policy',
+  'sync_strategy',
+  'enabled',
+  'documents',
+]);
+const DOCUMENT_PROPERTIES = new Set([
+  'stable_key',
+  'title',
+  'url',
+  'language',
+  'mime_type',
+  'enabled',
+]);
 
 export interface CatalogSourceDocumentConfig {
   readonly sourceKey: string;
@@ -36,8 +55,9 @@ export async function loadCatalogSourceConfig(filePath: string): Promise<Catalog
 }
 
 export function parseCatalogSourceConfig(content: string): CatalogSourceConfig {
-  const document = parse(content) as unknown;
+  const document = parseStrictYaml(content, 'catalog-sources.yml');
   const root = asRecord(document, 'catalog source config');
+  assertOnlyProperties(root, ROOT_PROPERTIES, 'catalog source config');
   const schemaVersion = root['schema_version'];
   if (schemaVersion !== 1) throw new Error('catalog-sources.yml schema_version must be 1');
 
@@ -61,23 +81,37 @@ interface CatalogSourceConfigEntry {
 function parseCatalogSourceEntry(sourceKey: string, value: unknown): CatalogSourceConfigEntry {
   if (sourceKey.trim().length === 0) throw new Error('catalog source key must not be empty');
   const source = asRecord(value, `catalog source ${sourceKey}`);
+  assertOnlyProperties(source, SOURCE_PROPERTIES, `catalog source ${sourceKey}`);
   const language = optionalString(source, 'language') ?? 'fr';
-  const parsedSource: NewCatalogSource = {
-    sourceKey,
-    displayName: requiredString(source, 'display_name', sourceKey),
-    baseUrl: validateHttpUrl(requiredString(source, 'base_url', sourceKey), sourceKey),
-    sourceType: parseSourceType(
-      optionalString(source, 'source_type') ?? 'documentation',
+  let parsedSource: NewCatalogSource;
+  try {
+    parsedSource = validateNewCatalogSource({
       sourceKey,
-    ),
-    language,
-    freshnessPolicy: parseFreshnessPolicy(
-      optionalString(source, 'freshness_policy') ?? 'manual',
-      sourceKey,
-    ),
-    syncStrategy: parseSyncStrategy(optionalString(source, 'sync_strategy') ?? 'manual', sourceKey),
-    enabled: optionalBoolean(source, 'enabled') ?? true,
-  };
+      displayName: requiredString(source, 'display_name', sourceKey),
+      baseUrl: requiredString(source, 'base_url', sourceKey),
+      sourceType: parseSourceType(
+        optionalString(source, 'source_type') ?? 'documentation',
+        sourceKey,
+      ),
+      language,
+      freshnessPolicy: parseFreshnessPolicy(
+        optionalString(source, 'freshness_policy') ?? 'manual',
+        sourceKey,
+      ),
+      syncStrategy: parseSyncStrategy(
+        optionalString(source, 'sync_strategy') ?? 'manual',
+        sourceKey,
+      ),
+      enabled: optionalBoolean(source, 'enabled') ?? true,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === 'CATALOG_SOURCE_BASE_URL_INVALID') {
+      throw new Error(`catalog source ${sourceKey} base_url must be an HTTP(S) URL`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
   return {
     source: parsedSource,
     documents: parseDocuments(sourceKey, source['documents'], language),
@@ -101,13 +135,15 @@ function parseDocument(
   value: unknown,
   sourceLanguage: string,
 ): CatalogSourceDocumentConfig {
-  const document = asRecord(value, `catalog source ${sourceKey} document ${index + 1}`);
+  const context = `catalog source ${sourceKey} document ${index + 1}`;
+  const document = asRecord(value, context);
+  assertOnlyProperties(document, DOCUMENT_PROPERTIES, context);
   const stableKey = requiredString(document, 'stable_key', sourceKey);
   return {
     sourceKey,
     stableKey,
     title: requiredString(document, 'title', sourceKey),
-    url: validateHttpUrl(requiredString(document, 'url', sourceKey), sourceKey),
+    url: validateDocumentUrl(requiredString(document, 'url', sourceKey), sourceKey, index),
     language: optionalString(document, 'language') ?? sourceLanguage,
     mimeType: optionalString(document, 'mime_type') ?? 'text/html',
     enabled: optionalBoolean(document, 'enabled') ?? true,
@@ -119,6 +155,18 @@ function asRecord(value: unknown, context: string): Record<string, unknown> {
     throw new Error(`${context} must be an object`);
   }
   return value as Record<string, unknown>;
+}
+
+function assertOnlyProperties(
+  source: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+  context: string,
+): void {
+  const unknown = Object.keys(source).filter((property) => !allowed.has(property));
+  if (unknown.length === 0) return;
+  throw new Error(
+    `${context} contains unknown propert${unknown.length === 1 ? 'y' : 'ies'}: ${unknown.join(', ')}`,
+  );
 }
 
 function requiredString(
@@ -150,7 +198,7 @@ function optionalBoolean(
   return value;
 }
 
-function validateHttpUrl(value: string, sourceKey: string): string {
+function validateDocumentUrl(value: string, sourceKey: string, index: number): string {
   try {
     const url = new URL(value);
     if (url.protocol !== 'http:' && url.protocol !== 'https:') {
@@ -158,7 +206,7 @@ function validateHttpUrl(value: string, sourceKey: string): string {
     }
     return url.toString();
   } catch {
-    throw new Error(`catalog source ${sourceKey} base_url must be an HTTP(S) URL`);
+    throw new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`);
   }
 }
 

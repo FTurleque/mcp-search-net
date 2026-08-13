@@ -20,6 +20,11 @@ const installerTemplate = readText('packaging/windows/mcp-search-net-installer.i
 const configureInstall = readText('packaging/windows/configure-install.ps1');
 const runtimeGuard = readText('scripts/check-node-version.mjs');
 const repositoryFacade = readText('src/infrastructure/catalog/sqlite-catalog-repository.ts');
+const catalogSql = readText('src/infrastructure/catalog/catalog-sql.ts');
+const catalogMigrationC009 = readText(
+  'catalog-migrations/C009__allow_repeated_section_content.sql',
+);
+const catalogIntegrity = readText('src/infrastructure/catalog/catalog-integrity.ts');
 const revisionWriter = readText('src/infrastructure/catalog/sqlite-catalog-revision-writer.ts');
 const sourceLoader = readText('src/application/use-cases/load-catalog-sources.ts');
 const syncDocuments = readText('src/application/use-cases/sync-catalog-documents.ts');
@@ -27,11 +32,23 @@ const ingestText = readText('src/cli/catalog-ingest-text.ts');
 const versionPurger = readText('src/infrastructure/catalog/sqlite-catalog-version-purger.ts');
 const secureHttpGateway = readText('src/infrastructure/fetch/secure-http-gateway.ts');
 const fetchUrl = readText('src/application/use-cases/fetch-url.ts');
+const contentFetcher = readText('src/infrastructure/fetch/crawl4ai-content-fetcher.ts');
+const redirectChain = readText('src/domain/services/redirect-chain.ts');
+const languageTag = readText('src/domain/services/language-tag.ts');
+const officialSourceRegistry = readText(
+  'src/infrastructure/config/official-source-yaml-registry.ts',
+);
+const sqliteCache = readText('src/infrastructure/cache/sqlite-cache-repository.ts');
+const markdownStructure = readText('src/domain/services/markdown-structure.ts');
 const httpUtils = readText('src/infrastructure/http/http-utils.ts');
 const clientReporter = readText('scripts/generate-client-contract-report.mjs');
 const querySet = readJson('benchmarks/v2-search-quality/queries.json');
 
 const expectedNode = '24.18.0';
+const expectedInnoVersion = '6.7.3';
+const expectedInnoUrl =
+  'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe';
+const expectedInnoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732';
 assert(readText('.nvmrc').trim() === expectedNode, '.nvmrc: Node 24.18.0 attendu');
 assert(readText('.node-version').trim() === expectedNode, '.node-version: Node 24.18.0 attendu');
 requireText(
@@ -146,9 +163,9 @@ assert(
 );
 
 for (const needle of [
-  "$ExpectedInnoVersion = '6.7.1'",
-  '.VersionInfo.ProductVersion',
+  "$ExpectedInnoVersion = '6.7.3'",
   'Version Inno Setup non qualifiée',
+  "notmatch 'Inno Setup 6'",
 ]) {
   requireText(
     installerBuilder,
@@ -157,13 +174,24 @@ for (const needle of [
   );
 }
 for (const needle of [
-  'choco install innosetup --version=6.7.1',
-  '--require-checksums',
-  '.VersionInfo.ProductVersion',
-  "StartsWith('6.7.1'",
+  `$innoVersion = '${expectedInnoVersion}'`,
+  `$innoUrl = '${expectedInnoUrl}'`,
+  `$innoSha256 = '${expectedInnoSha256}'`,
+  '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
+  "notmatch 'Inno Setup 6'",
 ]) {
   requireText(releaseWorkflow, needle, `release-windows: invariant Inno absent: ${needle}`);
 }
+assert(
+  !releaseWorkflow.includes('choco install innosetup'),
+  'release-windows: installation Inno mutable via Chocolatey encore présente',
+);
+const innoVerification = releaseWorkflow.indexOf('.\\scripts\\windows\\verify-file-sha256.ps1'); // NOSONAR
+const innoExecution = releaseWorkflow.indexOf('Start-Process', innoVerification + 1);
+assert(
+  innoVerification >= 0 && innoExecution > innoVerification,
+  'release-windows: Inno doit être vérifié avant exécution',
+);
 
 for (const invariant of [
   'actions: read',
@@ -233,26 +261,57 @@ for (const invariant of [
   'MAX_PERSISTED_SECTION_CHARACTERS = 12_000',
   'SECTION_CHUNK_OVERLAP_CHARACTERS = 400',
   'chunkDocumentSections(revision.sections)',
-  'seenContentHashes',
 ]) {
   requireText(repositoryFacade, invariant, `catalog facade: chunking borné absent ${invariant}`);
+}
+assert(
+  !repositoryFacade.includes('seenChunkContentHashes') &&
+    !repositoryFacade.includes('Duplicate document section content hash'),
+  'catalog facade: une occurrence de section ne doit pas être dédupliquée par content_hash',
+);
+requireText(
+  catalogMigrationC009,
+  'UNIQUE (document_version_id, ordinal)',
+  'C009: unicité des ordinaux absente',
+);
+assert(
+  !catalogMigrationC009.includes('UNIQUE (document_version_id, content_hash)'),
+  'C009: unicité artificielle par content_hash encore présente',
+);
+for (const invariant of ['verifyCatalogIntegrity(database)', 'integrity.issues.length > 0']) {
+  requireText(repositoryFacade, invariant, `catalog startup: gate intégrité absent ${invariant}`);
+}
+for (const invariant of ['PRAGMA integrity_check', 'PRAGMA foreign_key_check']) {
+  requireText(catalogIntegrity, invariant, `catalog integrity: contrôle absent ${invariant}`);
 }
 for (const invariant of [
   "CatalogSourceLoadStatus = 'created' | 'updated' | 'skipped'",
   'repository.updateSource(source)',
-  'await this.repository.rebuildSearchIndex()',
 ]) {
   requireText(sourceLoader, invariant, `catalog sources: réconciliation absente ${invariant}`);
+}
+for (const invariant of [
+  'const transaction = this.database.transaction((): CatalogSource => {',
+  'const updatedSource = this.sources.update(validatedSource);',
+  'this.rebuildSearchIndexNow();',
+]) {
+  requireText(
+    repositoryFacade,
+    invariant,
+    `catalog sources: update/FTS atomique absent ${invariant}`,
+  );
 }
 for (const invariant of [
   'WebUrl.createTransport(document.url)',
   'const continuationCursor = limited ? cursorFor(selectedDocuments.at(-1)) : options.resumeAfter',
   'resumeAfter: continuationCursor',
+  'versionValidatorUrl(version)',
+  'permanentRedirectPrefix(fetched.redirectChain)',
 ]) {
   requireText(
     syncDocuments,
     invariant,
-    `catalog sync: invariant reprise/transport absent ${invariant}`,
+    `catalog sync: invariant reprise/transport/redirection absent ${invariant}`,
   );
 }
 for (const invariant of [
@@ -286,13 +345,65 @@ for (const invariant of [
 }
 for (const invariant of [
   'WebUrl.createTransport(request.url)',
-  'JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 4 })',
+  'JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 5 })',
+  'validatorUrl: content.finalUrl',
+  'permanentRedirectTarget(notModified.redirectChain)',
   'MIN_LINK_INSPECTION_BUDGET = 32',
   'MAX_LINK_VALIDATION_MS = 2_000',
   'inspected >= maximumInspections',
 ]) {
-  requireText(fetchUrl, invariant, `fetch_url: transport/cache/liens non bornés ${invariant}`);
+  requireText(
+    fetchUrl,
+    invariant,
+    `fetch_url: transport/cache/redirection/liens non bornés ${invariant}`,
+  );
 }
+for (const invariant of [
+  'request.deadline ??',
+  'remainingTimeoutMs(deadline)',
+  'validatorsApplyTo(request.url.value, context.cacheValidators)',
+  "resource.headers['etag']",
+]) {
+  requireText(contentFetcher, invariant, `fetch_url: deadline/validation 304 absente ${invariant}`);
+}
+for (const invariant of ['if (!redirect.permanent) break', 'target = redirect.toUrl']) {
+  requireText(redirectChain, invariant, `redirections: préfixe permanent absent ${invariant}`);
+}
+for (const invariant of ['Intl.getCanonicalLocales', 'MAX_EXTERNAL_LANGUAGE_CHARACTERS']) {
+  requireText(
+    languageTag,
+    invariant,
+    `langues catalogue: canonicalisation BCP-47 absente ${invariant}`,
+  );
+}
+requireText(
+  catalogSql,
+  'documents.language = ? COLLATE NOCASE',
+  'catalogue: filtres de langue NOCASE absents',
+);
+requireText(
+  officialSourceRegistry,
+  "url.protocol !== 'https:'",
+  'sources officielles: garde HTTPS absente',
+);
+for (const invariant of [
+  'private readonly maxBytes',
+  'remainingBytes <= this.maxBytes',
+  'SELECT entry_count, total_bytes FROM cache_usage WHERE id = 1',
+]) {
+  requireText(sqliteCache, invariant, `cache: borne/compteurs globaux absents ${invariant}`);
+}
+assert(
+  !sqliteCache.includes(
+    'SELECT count(*) AS entry_count, coalesce(sum(size_bytes), 0) AS total_bytes',
+  ),
+  'cache: agrégation O(N) encore exécutée par le repository',
+);
+requireText(
+  markdownStructure,
+  'sequence.length >= fence.length',
+  'Markdown: scanner de fences compatible absent',
+);
 for (const invariant of [
   'DEFAULT_MAX_PROVIDER_JSON_BYTES = 16 * 1024 * 1024',
   'readJsonWithLimit',
@@ -386,6 +497,7 @@ process.stdout.write(
       betterSqlite3Napi: true,
       betterSqlite3FallbackBuildAllowed: false,
       deprecatedPrebuildInstallPresent: false,
+      immutableInnoSetupInstaller: true,
       catalogComponents: 5,
       benchmarkQueries: querySet.queries.length,
       paraphraseQueries: categories.get('paraphrase') ?? 0,
@@ -399,6 +511,15 @@ process.stdout.write(
       boundedLinkValidation: true,
       boundedProviderJson: true,
       boundedCatalogSections: true,
+      repeatedCatalogSectionsPreserved: true,
+      catalogStartupIntegrityGate: true,
+      officialSourcesRequireHttps: true,
+      boundedCacheBytes: true,
+      constantTimeCacheUsageRead: true,
+      uriScopedHttpValidators: true,
+      permanentRedirectPrefixSemantics: true,
+      canonicalLanguageTags: true,
+      sharedMarkdownFenceScanner: true,
       reconciledCatalogSources: true,
       safeWindowsUninstall: true,
       exactHeadReleaseGate: true,

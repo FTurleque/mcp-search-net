@@ -9,9 +9,10 @@ npm run check:supply-chain
 ```
 
 Il vérifie les versions exactes du SDK MCP et des overrides de sécurité, les références OCI par
-digest, l'absence de secret Compose par défaut, la politique des scripts lifecycle npm et les
-licences des paquets de production réellement installés. Une dépendance de production sans
-manifeste ou avec une licence hors liste autorisée fait échouer le gate.
+digest, l'absence de secret Compose par défaut, la politique des scripts lifecycle npm, le pinning
+de la toolchain Windows et les licences des paquets de production réellement installés. Une
+dépendance de production sans manifeste ou avec une licence hors liste autorisée fait échouer le
+gate.
 
 La qualification avec accès au registre ajoute :
 
@@ -36,6 +37,26 @@ lifecycle autorisés. Cette frontière doit rester identique dans tous les envir
 
 Une construction d'artefact qui omet `.npmrc` est considérée non qualifiée même si le checkout local
 possède une politique stricte.
+
+## Toolchain Windows immuable
+
+Le workflow de release Windows n'utilise pas Chocolatey pour installer Inno Setup. La version
+`6.7.1` est téléchargée directement depuis le serveur de fichiers officiel JRSoftware :
+
+```text
+https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe
+```
+
+Le SHA-256 attendu, stocké dans le dépôt, est :
+
+```text
+4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0
+```
+
+`scripts/windows/verify-file-sha256.ps1` vérifie ce digest avant toute exécution de l'installeur.
+`npm run check:supply-chain`, `npm run check:audit-invariants` et les tests de sécurité imposent la
+version, l'URL, le SHA-256 et l'ordre vérification puis exécution. Une mise à jour d'Inno Setup doit
+modifier ces quatre preuves ensemble après vérification indépendante du nouveau binaire.
 
 ## Installation de production reproductible
 

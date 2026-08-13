@@ -131,6 +131,7 @@ function isPublicIpv4(address: string): boolean {
     [ipv4ToNumber('172.16.0.0'), 12],
     [ipv4ToNumber('192.0.0.0'), 24],
     [ipv4ToNumber('192.0.2.0'), 24],
+    [ipv4ToNumber('192.88.99.0'), 24], // NOSONAR — intentional SSRF blocklist entry
     [ipv4ToNumber('192.168.0.0'), 16],
     [ipv4ToNumber('198.18.0.0'), 15],
     [ipv4ToNumber('198.51.100.0'), 24],
@@ -153,6 +154,47 @@ function inIpv4Range(value: number, network: number, bits: number): boolean {
   return (value & mask) === (network & mask);
 }
 
+const ALLOCATED_IPV6_GLOBAL_UNICAST_CIDRS: readonly [string, number][] = [
+  ['2001:200::', 23], // NOSONAR
+  ['2001:400::', 23], // NOSONAR
+  ['2001:600::', 23], // NOSONAR
+  ['2001:800::', 22], // NOSONAR
+  ['2001:c00::', 23], // NOSONAR
+  ['2001:e00::', 23], // NOSONAR
+  ['2001:1200::', 23], // NOSONAR
+  ['2001:1400::', 22], // NOSONAR
+  ['2001:1800::', 23], // NOSONAR
+  ['2001:1a00::', 23], // NOSONAR
+  ['2001:1c00::', 22], // NOSONAR
+  ['2001:2000::', 19], // NOSONAR
+  ['2001:4000::', 23], // NOSONAR
+  ['2001:4200::', 23], // NOSONAR
+  ['2001:4400::', 23], // NOSONAR
+  ['2001:4600::', 23], // NOSONAR
+  ['2001:4800::', 23], // NOSONAR
+  ['2001:4a00::', 23], // NOSONAR
+  ['2001:4c00::', 23], // NOSONAR
+  ['2001:5000::', 20], // NOSONAR
+  ['2001:8000::', 19], // NOSONAR
+  ['2001:a000::', 20], // NOSONAR
+  ['2001:b000::', 20], // NOSONAR
+  ['2003::', 18], // NOSONAR
+  ['2400::', 12], // NOSONAR
+  ['2410::', 12], // NOSONAR
+  ['2600::', 12], // NOSONAR
+  ['2610::', 23], // NOSONAR
+  ['2620::', 23], // NOSONAR
+  ['2630::', 12], // NOSONAR
+  ['2800::', 12], // NOSONAR
+  ['2a00::', 12], // NOSONAR
+  ['2a10::', 12], // NOSONAR
+  ['2c00::', 12], // NOSONAR
+];
+
+const BLOCKED_ALLOCATED_IPV6_CIDRS: readonly [string, number][] = [
+  ['2001:db8::', 32], // Documentation range inside 2001:c00::/23.
+];
+
 function isPublicIpv6(address: string): boolean {
   const value = ipv6ToBigInt(address);
   if (value === undefined) return false;
@@ -163,23 +205,15 @@ function isPublicIpv6(address: string): boolean {
     return isPublicIpv4([24, 16, 8, 0].map((shift) => String((ipv4 >>> shift) & 0xff)).join('.'));
   }
 
-  // These are denylist CIDR prefixes, never outbound connection destinations.
-  // NOSONAR is intentionally scoped per literal because S1313 otherwise treats policy data as endpoints.
-  const blockedCidrs: readonly [string, number][] = [
-    ['::', 96], // NOSONAR
-    ['64:ff9b::', 96], // NOSONAR
-    ['64:ff9b:1::', 48], // NOSONAR
-    ['100::', 64], // NOSONAR
-    ['2001::', 23], // NOSONAR
-    ['2001:db8::', 32], // NOSONAR
-    ['2002::', 16], // NOSONAR
-    ['3fff::', 20], // NOSONAR
-    ['5f00::', 16], // NOSONAR
-    ['fc00::', 7], // NOSONAR
-    ['fe80::', 10], // NOSONAR
-    ['ff00::', 8], // NOSONAR
-  ];
-  return !blockedCidrs.some(([network, bits]) => {
+  // Fail closed against IANA's IPv6 Global Unicast registry. Only ranges explicitly
+  // allocated there are accepted; unlisted space inside 2000::/3 remains reserved.
+  const allocated = ALLOCATED_IPV6_GLOBAL_UNICAST_CIDRS.some(([network, bits]) => {
+    const networkValue = ipv6ToBigInt(network);
+    return networkValue !== undefined && inIpv6Range(value, networkValue, bits);
+  });
+  if (!allocated) return false;
+
+  return !BLOCKED_ALLOCATED_IPV6_CIDRS.some(([network, bits]) => {
     const networkValue = ipv6ToBigInt(network);
     return networkValue === undefined || inIpv6Range(value, networkValue, bits);
   });

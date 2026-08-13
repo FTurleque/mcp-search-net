@@ -5,11 +5,29 @@ import type { OperationContext, Telemetry } from '../ports/telemetry.js';
 import type { ContentFetcher } from '../ports/content-fetcher.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
 import type { UrlSecurityPolicy } from '../ports/url-security-policy.js';
-import type { FetchRequest, FetchResponse, FetchedContent } from '../../domain/models/content.js';
-import { ApplicationError, InternalApplicationError } from '../../domain/errors/domain-errors.js';
+import { decodeFetchedContent } from '../services/cache-value-validation.js';
+import type {
+  FetchRequest,
+  FetchResponse,
+  FetchedContent,
+  NotModifiedContent,
+} from '../../domain/models/content.js';
+import {
+  ApplicationError,
+  HttpError,
+  isTransientHttpStatus,
+  InternalApplicationError,
+  RequestTimeoutError,
+} from '../../domain/errors/domain-errors.js';
 import type { SourceStatus } from '../../domain/models/search.js';
 import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
+import {
+  countUnicodeCharacters,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 import { selectRelevantContent } from '../../domain/services/content-selection.js';
+import { permanentRedirectTarget } from '../../domain/services/redirect-chain.js';
 import { WebUrl } from '../../domain/value-objects/web-url.js';
 
 const MIN_LINK_INSPECTION_BUDGET = 32;
@@ -40,20 +58,27 @@ export class FetchUrl {
     request: FetchRequest,
     context: OperationContext = {},
   ): Promise<ToolExecution<FetchResponse>> {
+    const deadline = performance.now() + this.options.timeoutMs;
     const securityContext = {
       ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
       tool: 'fetch_url' as const,
     };
     const requestedUrl = WebUrl.createTransport(request.url);
-    const approved = await this.securityPolicy.assertAllowed(requestedUrl.value, securityContext);
+    const approved = await withOperationDeadline(
+      this.securityPolicy.assertAllowed(requestedUrl.value, securityContext),
+      deadline,
+    );
     // Cache identity must preserve the exact approved transport query. Canonical URL normalization
     // is reserved for search-result deduplication and must never collapse transport semantics.
     const key = createHash('sha256')
       .update(
-        JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 4 }),
+        JSON.stringify({ url: approved.value, renderMode: request.renderMode, contractVersion: 5 }),
       )
       .digest('hex');
-    const cached = await this.cache.getContent<FetchedContent>(key, { allowStale: true });
+    const cached = await this.cache.getContent<FetchedContent>(key, {
+      allowStale: true,
+      decode: decodeFetchedContent,
+    });
     let content: FetchedContent;
     let cacheStatus: ToolExecution<FetchResponse>['cacheStatus'];
     let staleFallback = false;
@@ -79,6 +104,7 @@ export class FetchUrl {
             url: WebUrl.createTransport(approved.value),
             renderMode: request.renderMode,
             timeoutMs: this.options.timeoutMs,
+            deadline,
             maxResponseBytes: this.options.maxResponseBytes,
             maxRedirects: this.options.maxRedirects,
           },
@@ -88,6 +114,7 @@ export class FetchUrl {
               ...(cached?.etag === undefined ? {} : { etag: cached.etag }),
               ...(cached?.lastModified === undefined ? {} : { lastModified: cached.lastModified }),
               ...(cached?.contentHash === undefined ? {} : { contentHash: cached.contentHash }),
+              ...(cached?.validatorUrl === undefined ? {} : { validatorUrl: cached.validatorUrl }),
             },
           },
         );
@@ -105,12 +132,18 @@ export class FetchUrl {
               ? undefined
               : fetched.metadata['bytes'],
         });
-        content = 'notModified' in fetched ? requireCachedValue(cached) : fetched;
+        content =
+          'notModified' in fetched
+            ? mergeNotModifiedContent(requireCachedValue(cached), fetched)
+            : fetched;
         cacheStatus = 'notModified' in fetched ? 'HIT' : 'MISS';
         const stored = await this.cache.setContent(key, content, cacheTtl(content, this.options), {
           ...(content.etag === undefined ? {} : { etag: content.etag }),
           ...(content.lastModified === undefined ? {} : { lastModified: content.lastModified }),
           contentHash: content.contentHash,
+          ...(content.etag === undefined && content.lastModified === undefined
+            ? {}
+            : { validatorUrl: content.finalUrl }),
         });
         if (!stored) cacheStatus = 'DISABLED';
       } catch (error) {
@@ -135,12 +168,16 @@ export class FetchUrl {
         });
       }
     }
-    const final = await this.securityPolicy.assertAllowed(content.finalUrl, securityContext);
+    const final = await withOperationDeadline(
+      this.securityPolicy.assertAllowed(content.finalUrl, securityContext),
+      deadline,
+    );
     const canonical = await safeApprovedUrl(
       content.canonicalUrl,
       final.value,
       this.securityPolicy,
       securityContext,
+      deadline,
     );
 
     const selected = selectRelevantContent(
@@ -154,6 +191,7 @@ export class FetchUrl {
       this.options.maxLinks,
       this.securityPolicy,
       securityContext,
+      deadline,
     );
     const sourceStatus = classifySource(final.value, this.officialSources);
     const data: FetchResponse = {
@@ -161,7 +199,9 @@ export class FetchUrl {
       finalUrl: final.value,
       canonicalUrl: canonical,
       domain: final.hostname,
-      ...(content.title === undefined ? {} : { title: content.title }),
+      ...(content.title === undefined
+        ? {}
+        : { title: truncateUnicode(content.title, MAX_EXTERNAL_TITLE_CHARACTERS) }),
       contentType: content.contentType,
       sourceStatus,
       fetchedAt: content.fetchedAt,
@@ -199,7 +239,7 @@ export class FetchUrl {
         tool: 'fetch_url',
         domain: final.hostname,
         sectionCount: selected.sections.length,
-        outputCharacters: selected.markdown.length,
+        outputCharacters: countUnicodeCharacters(selected.markdown),
       });
     if (selected.truncated)
       warnings.push({
@@ -235,6 +275,31 @@ function requireCachedValue(
   return record.value;
 }
 
+function mergeNotModifiedContent(
+  cached: FetchedContent,
+  notModified: NotModifiedContent,
+): FetchedContent {
+  const permanentTarget = permanentRedirectTarget(notModified.redirectChain);
+  return {
+    ...cached,
+    requestedUrl: notModified.requestedUrl,
+    finalUrl: notModified.finalUrl,
+    canonicalUrl: permanentTarget ?? cached.canonicalUrl,
+    redirectChain: notModified.redirectChain,
+    ...(notModified.etag === undefined ? {} : { etag: notModified.etag }),
+    ...(notModified.lastModified === undefined ? {} : { lastModified: notModified.lastModified }),
+    metadata: {
+      ...cached.metadata,
+      ...(notModified.etag === undefined ? {} : { etag: notModified.etag }),
+      ...(notModified.lastModified === undefined ? {} : { lastModified: notModified.lastModified }),
+      ...(notModified.redirectChain.length === 0
+        ? {}
+        : { redirectChain: notModified.redirectChain }),
+      ...(permanentTarget === undefined ? {} : { redirectedPermanently: true }),
+    },
+  };
+}
+
 function cacheTtl(content: FetchedContent, options: FetchUrlOptions): number {
   const path = new URL(content.finalUrl).pathname.toLowerCase();
   if (path.endsWith('/readme') || /\/readme(?:\.[a-z0-9]+)?$/u.test(path))
@@ -244,10 +309,12 @@ function cacheTtl(content: FetchedContent, options: FetchUrlOptions): number {
 }
 
 function isTransientProviderError(error: unknown): boolean {
-  return (
-    error instanceof ApplicationError &&
-    ['CONTENT_PROVIDER_UNAVAILABLE', 'REQUEST_TIMEOUT', 'HTTP_ERROR'].includes(error.code)
-  );
+  if (!(error instanceof ApplicationError)) return false;
+  if (error.code === 'CONTENT_PROVIDER_UNAVAILABLE' || error.code === 'REQUEST_TIMEOUT')
+    return true;
+  if (!(error instanceof HttpError)) return false;
+  if (error.status === undefined) return true;
+  return isTransientHttpStatus(error.status);
 }
 
 async function safeApprovedUrl(
@@ -255,10 +322,12 @@ async function safeApprovedUrl(
   fallback: string,
   policy: UrlSecurityPolicy,
   context: NonNullable<Parameters<UrlSecurityPolicy['assertAllowed']>[1]>,
+  deadline: number,
 ): Promise<string> {
   try {
-    return (await policy.assertAllowed(value, context)).value;
-  } catch {
+    return (await withOperationDeadline(policy.assertAllowed(value, context), deadline)).value;
+  } catch (error) {
+    if (error instanceof RequestTimeoutError) throw error;
     return fallback;
   }
 }
@@ -268,6 +337,7 @@ async function filterApprovedLinks(
   maximum: number,
   policy: UrlSecurityPolicy,
   context: NonNullable<Parameters<UrlSecurityPolicy['assertAllowed']>[1]>,
+  operationDeadline: number,
 ): Promise<readonly string[]> {
   const accepted: string[] = [];
   const uniqueValues = [...new Set(values)];
@@ -275,17 +345,22 @@ async function filterApprovedLinks(
     MIN_LINK_INSPECTION_BUDGET,
     maximum * LINK_INSPECTION_MULTIPLIER,
   );
-  const deadline = Date.now() + MAX_LINK_VALIDATION_MS;
+  const deadline = Math.min(operationDeadline, performance.now() + MAX_LINK_VALIDATION_MS);
   let inspected = 0;
 
   for (const value of uniqueValues) {
-    if (accepted.length >= maximum || inspected >= maximumInspections || Date.now() >= deadline)
+    if (
+      accepted.length >= maximum ||
+      inspected >= maximumInspections ||
+      performance.now() >= deadline
+    )
       break;
     inspected += 1;
     try {
-      const remaining = deadline - Date.now();
-      if (remaining <= 0) break;
-      accepted.push((await withTimeout(policy.assertAllowed(value, context), remaining)).value);
+      if (deadline - performance.now() <= 0) break;
+      accepted.push(
+        (await withOperationDeadline(policy.assertAllowed(value, context), deadline)).value,
+      );
     } catch {
       /* Blocked, invalid and over-budget links are never exposed. */
     }
@@ -293,10 +368,12 @@ async function filterApprovedLinks(
   return accepted;
 }
 
-async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+async function withOperationDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
+  const remaining = Math.ceil(deadline - performance.now());
+  if (remaining <= 0) throw new RequestTimeoutError();
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error('LINK_VALIDATION_TIMEOUT')), timeoutMs);
+    timer = setTimeout(() => reject(new RequestTimeoutError()), remaining);
     timer.unref();
   });
   try {
@@ -307,8 +384,9 @@ async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise
 }
 
 function classifySource(url: string, registry: OfficialSourceRegistry): SourceStatus {
-  if (registry.findByUrl(url) !== undefined) return 'VERIFIED_OFFICIAL';
   const parsed = new URL(url);
+  if (parsed.protocol === 'https:' && registry.findByUrl(url) !== undefined)
+    return 'VERIFIED_OFFICIAL';
   if (
     parsed.hostname.startsWith('docs.') ||
     parsed.pathname

@@ -1,3 +1,5 @@
+import { decodeHtmlCharacterReferences } from './html-character-reference-decoder.js';
+
 const ACTIVE_CONTAINER_TAGS = [
   'script',
   'style',
@@ -48,8 +50,10 @@ const RESOURCE_TAG_PATTERN = new RegExp(
  * Active containers are removed together with their contents. If an active block is malformed or
  * never closed, everything from its opening tag to EOF is discarded instead of being handed to a
  * browser parser. Resource-loading elements are removed entirely and resource/event attributes are
- * stripped from the remaining well-formed start tags. An unterminated start tag is likewise dropped
- * together with the remainder because quote recovery rules differ across HTML parsers.
+ * stripped from the remaining well-formed start tags. Explicit non-HTTP(S) href schemes are also
+ * removed so downstream Markdown cannot expose javascript:, data:, file: or equivalent links.
+ * An unterminated start tag is likewise dropped together with the remainder because quote recovery
+ * rules differ across HTML parsers.
  */
 export function sanitizePreparedHtml(html: string): string {
   const withoutComments = html.replace(/<!--[\s\S]*?(?:-->|$)/gu, ' ');
@@ -95,7 +99,7 @@ function stripUnsafeHtmlAttributes(html: string): string {
 
     const tag = html.slice(start.index, end + 1);
     output += tag.replace(HTML_ATTRIBUTE_ASSIGNMENT_PATTERN, (attribute, rawName: string) =>
-      isUnsafeHtmlAttribute(rawName) ? '' : attribute,
+      isUnsafeHtmlAttributeAssignment(attribute, rawName) ? '' : attribute,
     );
     cursor = end + 1;
   }
@@ -118,7 +122,33 @@ function findStartTagEnd(html: string, start: number): number | undefined {
   return undefined;
 }
 
-function isUnsafeHtmlAttribute(rawName: string): boolean {
+function isUnsafeHtmlAttributeAssignment(attribute: string, rawName: string): boolean {
   const name = rawName.toLowerCase();
-  return name.startsWith('on') || UNSAFE_HTML_ATTRIBUTES.has(name);
+  if (name.startsWith('on') || UNSAFE_HTML_ATTRIBUTES.has(name)) return true;
+  if (name !== 'href') return false;
+  const value = extractAttributeValue(attribute);
+  if (value === undefined) return true;
+  // Decode HTML character references before scheme detection so that obfuscated hrefs like
+  // javascript&#58;alert(1) or java&#x73;cript:x are not incorrectly allowed through.
+  const decoded = decodeHtmlCharacterReferences(value);
+  const normalized = stripAsciiControlsAndSpace(decoded);
+  const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/u.exec(normalized)?.[1]?.toLowerCase();
+  return scheme !== undefined && scheme !== 'http' && scheme !== 'https';
+}
+
+function extractAttributeValue(attribute: string): string | undefined {
+  const match = /=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/u.exec(attribute);
+  return (match?.[1] ?? match?.[2] ?? match?.[3])?.trim();
+}
+
+function stripAsciiControlsAndSpace(value: string): string {
+  let output = '';
+  for (let index = 0; index < value.length; ) {
+    const codePoint = value.codePointAt(index);
+    if (codePoint === undefined) break;
+    const character = String.fromCodePoint(codePoint);
+    if (codePoint > 0x20) output += character;
+    index += character.length;
+  }
+  return output;
 }

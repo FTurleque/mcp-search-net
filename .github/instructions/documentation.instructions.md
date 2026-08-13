@@ -6,7 +6,7 @@ description: >
   relatifs valides, et roadmap avec preuves reproductibles.
 applyTo: 'docs/**/*.md,README.md'
 owner: mcp-search-net
-version: 1.1.0
+version: 1.1.2
 lastReviewed: '2026-06-21'
 ---
 

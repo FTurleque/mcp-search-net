@@ -12,6 +12,9 @@ src/
 ```
 
 Le domaine ne dépend ni du SDK MCP, ni de SearXNG, Crawl4AI, SQLite, Docker, YAML ou Zod. Les dépendances pointent vers l’intérieur : la présentation appelle les cas d’usage, et les adaptateurs implémentent les ports applicatifs.
+La suite `tests/architecture/hexagonal-import-boundaries.test.ts` garde ces frontières exécutables :
+le domaine n’importe aucun runtime ou package, la présentation MCP n’importe aucun adaptateur
+concret, et les couches infrastructure/presentation ne remontent jamais vers bootstrap.
 
 ## Ports V1
 
@@ -74,7 +77,9 @@ compatibilité des opérations internes mais sont dépréciées pour la créatio
 Les collections MCP sont bornées à 20 éléments et les outils n'acceptent pas plus de 50 documents
 par page. Les lectures par identifiant utilisent des requêtes ciblées, tandis que les méthodes de
 chargement global restent réservées aux opérations CLI internes et aux comparaisons de benchmark. La
-migration `C008` ajoute les index de pagination mesurés pour la langue et les filtres composés.
+migration `C008` ajoute les index de pagination mesurés pour la langue et les filtres composés ;
+`C009` retire l’unicité artificielle des sections par hash, préserve leurs IDs et reconstruit le
+FTS afin que chaque occurrence documentaire reste recherchable.
 
 ## Recherche locale
 

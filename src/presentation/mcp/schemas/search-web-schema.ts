@@ -1,8 +1,14 @@
 import { z } from 'zod/v4';
 
+import {
+  MAX_EXTERNAL_ENGINE_NAME_CHARACTERS,
+  MAX_EXTERNAL_LANGUAGE_CHARACTERS,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+} from '../../../domain/services/bounded-text.js';
 import { containsControlCharacters } from '../../../domain/services/text-validation.js';
 import { acceptInvalidToolInput } from './invalid-tool-input.js';
 import { createToolResponseSchema } from './tool-response-schema.js';
+import { unicodeBoundedString } from './unicode-bounded-string.js';
 
 export function createSearchWebSchemas(defaultResults: number, maximumResults: number) {
   const domain = z
@@ -29,6 +35,7 @@ export function createSearchWebSchemas(defaultResults: number, maximumResults: n
         language: z
           .string()
           .trim()
+          .max(MAX_EXTERNAL_LANGUAGE_CHARACTERS)
           .regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/)
           .default('fr-FR')
           .describe('BCP-47-like language code, for example fr or en-US'),
@@ -40,15 +47,15 @@ export function createSearchWebSchemas(defaultResults: number, maximumResults: n
 
   const result = z
     .object({
-      title: z.string(),
+      title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS),
       url: z.url(),
-      domain: z.string(),
-      snippet: z.string(),
+      domain: z.string().max(253),
+      snippet: unicodeBoundedString(500),
       sourceStatus: z.enum(['VERIFIED_OFFICIAL', 'LIKELY_OFFICIAL', 'THIRD_PARTY', 'UNKNOWN']),
-      engines: z.array(z.string()),
+      engines: z.array(unicodeBoundedString(MAX_EXTERNAL_ENGINE_NAME_CHARACTERS)).max(32),
       publishedAt: z.iso.datetime().optional(),
       updatedAt: z.iso.datetime().optional(),
-      detectedLanguage: z.string().optional(),
+      detectedLanguage: z.string().max(MAX_EXTERNAL_LANGUAGE_CHARACTERS).optional(),
       score: z.number().min(0).max(1),
     })
     .strict();
@@ -61,7 +68,9 @@ export function createSearchWebSchemas(defaultResults: number, maximumResults: n
         .object({
           total: z.number(),
           returned: z.number(),
-          unresponsiveEngines: z.array(z.string()),
+          unresponsiveEngines: z
+            .array(unicodeBoundedString(MAX_EXTERNAL_ENGINE_NAME_CHARACTERS))
+            .max(32),
           sourceProvider: z.literal('searxng'),
           retrievedAt: z.iso.datetime(),
         })

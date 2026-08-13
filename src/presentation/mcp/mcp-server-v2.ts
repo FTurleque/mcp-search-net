@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 
 import type { CatalogRepository } from '../../application/ports/catalog-repository.js';
+import type { Logger } from '../../application/ports/logger.js';
 import type {
   SearchCatalogDocuments,
   SearchCatalogDocumentsOutput,
@@ -9,20 +10,28 @@ import type {
 import { InvalidArgumentError, ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
 import type { CatalogDocument } from '../../domain/models/catalog.js';
 import type { ToolResponse, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
-import type { ApplicationConfig } from '../../infrastructure/config/application-config.js';
-import type { Logger } from '../../application/ports/logger.js';
+import {
+  countUnicodeCharacters,
+  MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+  MAX_EXTERNAL_HEADING_CHARACTERS,
+  MAX_EXTERNAL_HEADING_PATH_CHARACTERS,
+  MAX_EXTERNAL_LANGUAGE_CHARACTERS,
+  MAX_EXTERNAL_SOURCE_KEY_CHARACTERS,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 import { registerCatalogResources } from './catalog-resources.js';
 import type { McpServerDependencies as V1McpServerDependencies } from './mcp-server.js';
 import { createMcpServer as createV1McpServer } from './mcp-server.js';
 import { isInvalidToolInput } from './schemas/invalid-tool-input.js';
 import { createSearchDocsSchemas } from './schemas/search-docs-schema.js';
 import { createToolResponseSchema } from './schemas/tool-response-schema.js';
+import { unicodeBoundedString } from './schemas/unicode-bounded-string.js';
 import { executeToolCall } from './tool-call.js';
 
 export interface McpServerV2Dependencies extends V1McpServerDependencies {
   readonly catalogRepository: CatalogRepository;
   readonly searchCatalogDocuments: SearchCatalogDocuments;
-  readonly config: ApplicationConfig;
   readonly logger: Logger;
 }
 
@@ -33,11 +42,11 @@ const MAX_LIST_DOCS_DATA_CHARACTERS = 20_000;
 const compactDocumentSchema = z
   .object({
     id: z.number().int().positive(),
-    publicId: z.string().min(1),
-    sourceKey: z.string().min(1),
-    title: z.string().min(1),
+    publicId: z.string().min(1).max(MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS),
+    sourceKey: z.string().min(1).max(MAX_EXTERNAL_SOURCE_KEY_CHARACTERS),
+    title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS, 1),
     url: z.url(),
-    language: z.string().min(1),
+    language: z.string().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS),
     status: z.string().min(1),
     currentVersionId: z.number().int().positive().nullable(),
   })
@@ -45,8 +54,8 @@ const compactDocumentSchema = z
 
 const listDocsInputSchema = z
   .object({
-    sourceKey: z.string().trim().min(1).max(128).optional(),
-    language: z.string().trim().min(1).max(32).optional(),
+    sourceKey: z.string().trim().min(1).max(MAX_EXTERNAL_SOURCE_KEY_CHARACTERS).optional(),
+    language: z.string().trim().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS).optional(),
     status: z.enum(['ACTIVE', 'STALE', 'REDIRECTED', 'REMOVED', 'UNAVAILABLE']).optional(),
     limit: z.number().int().min(1).max(50).default(20),
     offset: z.number().int().min(0).default(0),
@@ -79,9 +88,9 @@ const readDocSectionInputSchema = z
 const sectionDocumentSchema = z
   .object({
     id: z.number().int().positive(),
-    publicId: z.string().min(1),
-    sourceKey: z.string().min(1),
-    title: z.string().min(1),
+    publicId: z.string().min(1).max(MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS),
+    sourceKey: z.string().min(1).max(MAX_EXTERNAL_SOURCE_KEY_CHARACTERS),
+    title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS, 1),
     url: z.url(),
   })
   .strict();
@@ -93,8 +102,8 @@ const readDocSectionDataSchema = z
     truncated: z.boolean(),
     characterCount: z.number().int().nonnegative(),
     document: sectionDocumentSchema.nullable(),
-    heading: z.string().nullable(),
-    headingPath: z.string().nullable(),
+    heading: unicodeBoundedString(MAX_EXTERNAL_HEADING_CHARACTERS).nullable(),
+    headingPath: unicodeBoundedString(MAX_EXTERNAL_HEADING_PATH_CHARACTERS).nullable(),
     content: z.string(),
   })
   .strict();
@@ -297,7 +306,7 @@ function toSearchDocsData(
     resultCount: output.resultCount,
     results: output.results.map((result) => ({
       ...result,
-      snippet: truncateText(result.snippet, snippetLimit),
+      snippet: truncateUnicode(result.snippet, snippetLimit),
     })),
   };
 }
@@ -347,33 +356,53 @@ async function readDocSection(
       content: '',
     };
   }
-  const content = truncateText(entry.section.content, input.maxCharacters);
+  const content = truncateUnicode(entry.section.content, input.maxCharacters);
+  const publicId = boundedNonEmpty(
+    entry.document.publicId,
+    MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+    `document-${entry.document.id}`,
+  );
   return {
     sectionId: input.sectionId,
     found: true,
-    truncated: content.length < entry.section.content.length,
-    characterCount: content.length,
+    truncated: countUnicodeCharacters(content) < countUnicodeCharacters(entry.section.content),
+    characterCount: countUnicodeCharacters(content),
     document: {
       id: entry.document.id,
-      publicId: entry.document.publicId,
-      sourceKey: entry.source.sourceKey,
-      title: entry.document.title,
+      publicId,
+      sourceKey: boundedNonEmpty(
+        entry.source.sourceKey,
+        MAX_EXTERNAL_SOURCE_KEY_CHARACTERS,
+        'catalog',
+      ),
+      title: boundedNonEmpty(entry.document.title, MAX_EXTERNAL_TITLE_CHARACTERS, publicId),
       url: entry.document.canonicalUrl,
     },
-    heading: entry.section.heading ?? null,
-    headingPath: entry.section.headingPath ?? null,
+    heading:
+      entry.section.heading === undefined
+        ? null
+        : truncateUnicode(entry.section.heading, MAX_EXTERNAL_HEADING_CHARACTERS),
+    headingPath:
+      entry.section.headingPath === undefined
+        ? null
+        : truncateUnicode(entry.section.headingPath, MAX_EXTERNAL_HEADING_PATH_CHARACTERS),
     content,
   };
 }
 
 function toCompactDocument(document: CatalogDocument, sourceKey: string) {
+  const publicId = boundedNonEmpty(
+    document.publicId,
+    MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+    `document-${document.id}`,
+  );
   return {
     id: document.id,
-    publicId: document.publicId,
-    sourceKey,
-    title: document.title,
+    publicId,
+    sourceKey: boundedNonEmpty(sourceKey, MAX_EXTERNAL_SOURCE_KEY_CHARACTERS, 'catalog'),
+    title: boundedNonEmpty(document.title, MAX_EXTERNAL_TITLE_CHARACTERS, publicId),
     url: document.canonicalUrl,
-    language: document.language,
+    language: boundedNonEmpty(document.language, MAX_EXTERNAL_LANGUAGE_CHARACTERS, 'und'),
     status: document.status,
     currentVersionId: document.currentVersionId ?? null,
   };
@@ -394,15 +423,17 @@ function applyListDocsBudget(
     const candidate = [...accepted, document];
     const candidateNextOffset =
       offset + candidate.length < total ? offset + candidate.length : null;
-    const candidateLength = JSON.stringify({
-      count: candidate.length,
-      total,
-      offset,
-      limit,
-      nextOffset: candidateNextOffset,
-      truncated: candidate.length < documents.length,
-      documents: candidate,
-    }).length;
+    const candidateLength = countUnicodeCharacters(
+      JSON.stringify({
+        count: candidate.length,
+        total,
+        offset,
+        limit,
+        nextOffset: candidateNextOffset,
+        truncated: candidate.length < documents.length,
+        documents: candidate,
+      }),
+    );
     if (candidateLength > MAX_LIST_DOCS_DATA_CHARACTERS) {
       if (accepted.length === 0) {
         throw new ResponseTooLargeError(
@@ -421,11 +452,6 @@ function applyListDocsBudget(
   };
 }
 
-function truncateText(value: string, maxCharacters: number): string {
-  if (value.length <= maxCharacters) return value;
-  return `${value.slice(0, Math.max(0, maxCharacters - 1))}…`;
-}
-
 function searchDocsWarnings(data: SearchDocsData): readonly ToolWarningDescriptor[] {
   if (data.resultCount > 0) return [];
   return [
@@ -434,4 +460,9 @@ function searchDocsWarnings(data: SearchDocsData): readonly ToolWarningDescripto
       message: 'No catalog document matched the query',
     },
   ];
+}
+
+function boundedNonEmpty(value: string, maximumCharacters: number, fallback: string): string {
+  const trimmed = value.trim();
+  return truncateUnicode(trimmed === '' ? fallback : trimmed, maximumCharacters);
 }

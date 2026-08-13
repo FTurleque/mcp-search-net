@@ -2,8 +2,12 @@ import { z } from 'zod/v4';
 
 const durationSchema = z.number().int().positive();
 const httpUrlSchema = z.url().refine((value) => {
-  const protocol = new URL(value).protocol;
-  return protocol === 'http:' || protocol === 'https:';
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
 }, 'Expected an HTTP or HTTPS URL');
 const publicPortsEnvironmentSchema = z
   .string()
@@ -20,7 +24,7 @@ export const applicationConfigSchema = z
         profile: z.enum(['development', 'production', 'test']).default('development'),
       })
       .strict()
-      .default({ name: 'mcp-search-net', version: '1.1.0', profile: 'development' }),
+      .default({ name: 'mcp-search-net', version: '1.1.2', profile: 'development' }),
     searxng: z
       .object({
         baseUrl: httpUrlSchema.default('http://127.0.0.1:8888'),
@@ -48,6 +52,7 @@ export const applicationConfigSchema = z
         sitemapTtlMs: durationSchema.default(86_400_000),
         staleRetentionMs: durationSchema.default(604_800_000),
         maxEntries: z.number().int().min(10).max(100_000).default(2_000),
+        maxBytes: z.number().int().min(1_048_576).max(2_147_483_648).default(268_435_456),
       })
       .strict()
       .default({
@@ -60,6 +65,7 @@ export const applicationConfigSchema = z
         sitemapTtlMs: 86_400_000,
         staleRetentionMs: 604_800_000,
         maxEntries: 2_000,
+        maxBytes: 268_435_456,
       }),
     limits: z
       .object({

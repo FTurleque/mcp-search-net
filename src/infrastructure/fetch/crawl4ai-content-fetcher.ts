@@ -12,13 +12,15 @@ import {
   ContentProviderUnavailableError,
   ExtractionError,
   OcrRequiredNotSupportedError,
+  RequestTimeoutError,
   UnsupportedContentTypeError,
 } from '../../domain/errors/domain-errors.js';
-import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
 import { extractDocumentSections } from '../../domain/services/content-selection.js';
+import { permanentRedirectTarget } from '../../domain/services/redirect-chain.js';
+import { normalizeResultUrl } from '../../domain/services/result-ranking.js';
 import { fetchJson } from '../http/http-utils.js';
+import { extractHtmlDocument } from './html-document-extractor.js';
 import { extractPdfText } from './pdf-text-extractor.js';
-import { sanitizePreparedHtml } from './prepared-html-sanitizer.js';
 import type { DownloadedResource } from './secure-http-gateway.js';
 import type { SecureHttpGateway } from './secure-http-gateway.js';
 
@@ -43,6 +45,16 @@ const envelopeSchema = z
   .object({ results: z.array(crawlResultSchema).optional(), result: crawlResultSchema.optional() })
   .loose();
 
+interface FetchSecurityContext {
+  readonly requestId?: string;
+  readonly tool: 'fetch_url';
+}
+
+interface ExtractedMarkdown {
+  readonly markdown: string;
+  readonly extractionMode: FetchedContent['extractionMode'];
+}
+
 export class Crawl4aiContentFetcher implements ContentFetcher {
   public constructor(
     private readonly baseUrl: string,
@@ -55,72 +67,71 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     request: ContentFetchRequest,
     context: ContentFetchContext = {},
   ): Promise<ContentFetchResult> {
-    const resource = await this.gateway.download(
+    const deadline = request.deadline ?? performance.now() + request.timeoutMs;
+    const securityContext = createSecurityContext(context);
+    const resource = await this.downloadResource(request, context, securityContext, deadline);
+    if (resource.status === 304) return toNotModifiedContent(resource);
+
+    const contentType = detectContentType(resource);
+    const decoded = await decodeResource(resource, contentType, deadline);
+    const extracted = await this.extractMarkdown(request, decoded, contentType, deadline);
+    const redirectChain = resource.redirectChain ?? [];
+    const permanentTarget = permanentRedirectTarget(redirectChain);
+    const canonicalUrl = await approveCanonicalUrl(
+      decoded.canonicalUrl,
+      permanentTarget ?? resource.finalUrl,
+      this.gateway,
+      securityContext,
+      deadline,
+    );
+
+    return toFetchedContent(
+      resource,
+      decoded,
+      extracted,
+      contentType,
+      canonicalUrl,
+      permanentTarget,
+    );
+  }
+
+  private downloadResource(
+    request: ContentFetchRequest,
+    context: ContentFetchContext,
+    securityContext: FetchSecurityContext,
+    deadline: number,
+  ): Promise<DownloadedResource> {
+    return this.gateway.download(
       request.url.value,
-      createConditionalHeaders(context.cacheValidators),
+      validatorsApplyTo(request.url.value, context.cacheValidators)
+        ? createConditionalHeaders(context.cacheValidators)
+        : {},
+      securityContext,
       {
-        ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
-        tool: 'fetch_url',
-      },
-      {
-        timeoutMs: request.timeoutMs,
+        timeoutMs: remainingTimeoutMs(deadline),
         maxBytes: request.maxResponseBytes,
         maxRedirects: request.maxRedirects,
       },
     );
-    if (resource.status === 304) {
-      return {
-        notModified: true,
-        requestedUrl: resource.requestedUrl,
-        finalUrl: resource.finalUrl,
-        redirectChain: resource.redirectChain ?? [],
-      };
-    }
-    const contentType = detectContentType(resource);
-    const decoded = await decodeResource(resource, contentType);
-    let markdown = decoded.markdown;
-    let extractionMode: FetchedContent['extractionMode'] = 'static';
+  }
 
-    if (request.renderMode === 'auto' && isHtml(contentType) && !isUseful(markdown)) {
-      const rendered = await this.renderPreparedHtml(decoded.safeHtml ?? '', request.timeoutMs);
-      if (isUseful(rendered)) markdown = rendered;
-      extractionMode = 'native-render';
+  private async extractMarkdown(
+    request: ContentFetchRequest,
+    decoded: DecodedContent,
+    contentType: string,
+    deadline: number,
+  ): Promise<ExtractedMarkdown> {
+    if (request.renderMode === 'auto' && isHtml(contentType) && !isUseful(decoded.markdown)) {
+      const rendered = await this.renderPreparedHtml(
+        decoded.safeHtml ?? '',
+        remainingTimeoutMs(deadline),
+      );
+      if (isUseful(rendered)) return { markdown: rendered, extractionMode: 'native-render' };
     }
-    if (markdown.trim() === '')
+    if (decoded.markdown.trim() === '') {
       throw new ExtractionError('No usable textual content was extracted');
-
-    const redirectChain = resource.redirectChain ?? [];
-    const redirectedPermanently = redirectChain.some((redirect) => redirect.permanent);
-
-    return {
-      requestedUrl: resource.requestedUrl,
-      finalUrl: resource.finalUrl,
-      canonicalUrl: decoded.canonicalUrl ?? resource.finalUrl,
-      ...(decoded.title === undefined ? {} : { title: decoded.title }),
-      markdown,
-      documentSections: extractDocumentSections(markdown),
-      contentType,
-      fetchedAt: new Date().toISOString(),
-      extractionMode,
-      statusCode: resource.status,
-      ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
-      ...(resource.headers['last-modified'] === undefined
-        ? {}
-        : { lastModified: resource.headers['last-modified'] }),
-      contentHash: createHash('sha256').update(resource.body).digest('hex'),
-      redirectChain,
-      metadata: {
-        status: resource.status,
-        bytes: resource.body.byteLength,
-        ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
-        ...(resource.headers['last-modified'] === undefined
-          ? {}
-          : { lastModified: resource.headers['last-modified'] }),
-        ...(redirectChain.length === 0 ? {} : { redirectChain }),
-        ...(redirectedPermanently ? { redirectedPermanently: true } : {}),
-      },
-      links: decoded.links,
-    };
+    }
+    return { markdown: decoded.markdown, extractionMode: 'static' };
   }
 
   private async renderPreparedHtml(html: string, timeoutMs: number): Promise<string> {
@@ -158,6 +169,101 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
   }
 }
 
+function createSecurityContext(context: ContentFetchContext): FetchSecurityContext {
+  return {
+    ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
+    tool: 'fetch_url',
+  };
+}
+
+function toNotModifiedContent(resource: DownloadedResource): ContentFetchResult {
+  return {
+    notModified: true,
+    requestedUrl: resource.requestedUrl,
+    finalUrl: resource.finalUrl,
+    redirectChain: resource.redirectChain ?? [],
+    ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
+    ...(resource.headers['last-modified'] === undefined
+      ? {}
+      : { lastModified: resource.headers['last-modified'] }),
+  };
+}
+
+function toFetchedContent(
+  resource: DownloadedResource,
+  decoded: DecodedContent,
+  extracted: ExtractedMarkdown,
+  contentType: string,
+  canonicalUrl: string,
+  permanentTarget: string | undefined,
+): FetchedContent {
+  const redirectChain = resource.redirectChain ?? [];
+  return {
+    requestedUrl: resource.requestedUrl,
+    finalUrl: resource.finalUrl,
+    canonicalUrl,
+    ...(decoded.title === undefined ? {} : { title: decoded.title }),
+    markdown: extracted.markdown,
+    documentSections: extractDocumentSections(extracted.markdown),
+    contentType,
+    fetchedAt: new Date().toISOString(),
+    extractionMode: extracted.extractionMode,
+    statusCode: resource.status,
+    ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
+    ...(resource.headers['last-modified'] === undefined
+      ? {}
+      : { lastModified: resource.headers['last-modified'] }),
+    contentHash: createHash('sha256').update(resource.body).digest('hex'),
+    redirectChain,
+    metadata: {
+      status: resource.status,
+      bytes: resource.body.byteLength,
+      ...(resource.headers['etag'] === undefined ? {} : { etag: resource.headers['etag'] }),
+      ...(resource.headers['last-modified'] === undefined
+        ? {}
+        : { lastModified: resource.headers['last-modified'] }),
+      ...(redirectChain.length === 0 ? {} : { redirectChain }),
+      ...(permanentTarget === undefined ? {} : { redirectedPermanently: true }),
+    },
+    links: decoded.links,
+  };
+}
+
+function remainingTimeoutMs(deadline: number): number {
+  const remaining = Math.ceil(deadline - performance.now());
+  if (remaining <= 0) throw new RequestTimeoutError('fetch_url operation deadline exceeded');
+  return remaining;
+}
+
+async function approveCanonicalUrl(
+  candidate: string | undefined,
+  fallback: string,
+  gateway: SecureHttpGateway,
+  context: FetchSecurityContext,
+  deadline: number,
+): Promise<string> {
+  if (candidate === undefined || candidate === fallback) return fallback;
+  try {
+    if (new URL(candidate).origin === new URL(fallback).origin) return candidate;
+    return (await gateway.approveUrl(candidate, context, remainingTimeoutMs(deadline))).value;
+  } catch (error) {
+    if (error instanceof RequestTimeoutError) throw error;
+    return fallback;
+  }
+}
+
+function validatorsApplyTo(
+  requestedUrl: string,
+  validators: ContentFetchContext['cacheValidators'],
+): boolean {
+  if (validators?.validatorUrl === undefined) return false;
+  try {
+    return new URL(validators.validatorUrl).toString() === new URL(requestedUrl).toString();
+  } catch {
+    return false;
+  }
+}
+
 function createConditionalHeaders(
   context: ContentFetchContext['cacheValidators'],
 ): Readonly<Record<string, string>> {
@@ -182,13 +288,14 @@ interface DecodedContent {
 async function decodeResource(
   resource: DownloadedResource,
   contentType: string,
+  deadline: number,
 ): Promise<DecodedContent> {
-  if (contentType === 'application/pdf') return decodePdf(resource.body);
+  if (contentType === 'application/pdf') return decodePdf(resource.body, deadline);
   if (contentType.startsWith('image/')) {
     throw new OcrRequiredNotSupportedError();
   }
   const text = new TextDecoder('utf-8', { fatal: false }).decode(resource.body).replace(/\0/gu, '');
-  if (isHtml(contentType)) return decodeHtml(text, resource.finalUrl);
+  if (isHtml(contentType)) return extractHtmlDocument(text, resource.finalUrl);
   if (contentType === 'application/json' || contentType.endsWith('+json')) {
     try {
       return {
@@ -216,63 +323,6 @@ async function decodeResource(
   throw new UnsupportedContentTypeError(`Unsupported content type: ${contentType}`);
 }
 
-function decodeHtml(html: string, baseUrl: string): DecodedContent {
-  const title =
-    decodeEntities(/<title\b[^>]*>([\s\S]*?)<\/title>/iu.exec(html)?.[1] ?? '').trim() || undefined;
-  const canonical =
-    /<link\b[^>]*rel=["'][^"']*canonical[^"']*["'][^>]*href=["']([^"']+)["']/iu.exec(html)?.[1] ??
-    /<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["'][^"']*canonical[^"']*["']/iu.exec(html)?.[1];
-  const safeHtml = sanitizePreparedHtml(removeNoisyBlocks(html));
-  const links = [...safeHtml.matchAll(/<a\b[^>]*href=["']([^"']+)["']/giu)].flatMap((match) =>
-    normalizeLink(match[1] ?? '', baseUrl),
-  );
-  let markdown = safeHtml
-    .replace(
-      /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/giu,
-      (_all, level: string, body: string) =>
-        `\n\n${'#'.repeat(Number(level))} ${stripTags(body)}\n\n`,
-    )
-    .replace(
-      /<pre\b[^>]*>([\s\S]*?)<\/pre>/giu,
-      (_all, body: string) => `\n\n\`\`\`\n${decodeEntities(stripTags(body)).trim()}\n\`\`\`\n\n`,
-    )
-    .replace(
-      /<code\b[^>]*>([\s\S]*?)<\/code>/giu,
-      (_all, body: string) => `\`${decodeEntities(stripTags(body)).trim()}\``,
-    )
-    .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/giu, (_all, body: string) => `\n- ${stripTags(body)}`)
-    .replace(
-      /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/giu,
-      (_all, href: string, body: string) => formatMarkdownLink(href, body, baseUrl),
-    )
-    .replace(/<(br|p|div|section|article|main|header|footer|table|tr)\b[^>]*>/giu, '\n')
-    .replace(/<[^>]+>/gu, ' ');
-  markdown = decodeEntities(markdown)
-    .replace(/[ \t]+/gu, ' ')
-    .replace(/\n[ \t]+/gu, '\n')
-    .replace(/\n{3,}/gu, '\n\n')
-    .trim();
-  return {
-    markdown,
-    ...(title === undefined ? {} : { title }),
-    ...(canonical === undefined ? {} : { canonicalUrl: normalizeLink(canonical, baseUrl)[0] }),
-    links: [...new Set(links)],
-    safeHtml,
-  };
-}
-
-function removeNoisyBlocks(value: string): string {
-  let cleaned = value;
-  const noisyAttribute = '(?:class|id|aria-label|role|data-testid|data-test|data-component)';
-  const noisyPattern =
-    String.raw`<([a-z][\w:-]*)\b[^>]*${noisyAttribute}\s*=\s*["'][^"']*(?:` +
-    String.raw`cookie|consent|banner|modal|dialog|sidebar|breadcrumb|pagination|advert|promo|tracking|analytics|footer|header|nav|menu|share|social|newsletter|subscribe|search)[^"']*["'][^>]*>[\s\S]*?<\/\1>`;
-  for (let index = 0; index < 3; index += 1) {
-    cleaned = cleaned.replace(new RegExp(noisyPattern, 'giu'), ' ');
-  }
-  return cleaned;
-}
-
 function collectPlainLinks(text: string, baseUrl: string): readonly string[] {
   const urls = [...text.matchAll(/https?:\/\/[^\s)>'"]+/giu)].flatMap((match) =>
     normalizeLink(match[0], baseUrl),
@@ -287,19 +337,6 @@ function normalizeLink(value: string, baseUrl: string): readonly string[] {
   } catch {
     return [];
   }
-}
-
-function formatMarkdownLink(href: string, body: string, baseUrl: string): string {
-  const text = stripTags(body);
-  try {
-    return `[${text}](${new URL(href, baseUrl).toString()})`;
-  } catch {
-    return text;
-  }
-}
-
-function stripTags(value: string): string {
-  return value.replace(/<[^>]+>/gu, ' ');
 }
 
 function detectContentType(resource: DownloadedResource): string {
@@ -317,18 +354,8 @@ function isUseful(markdown: string): boolean {
   return markdown.trim().split(/\s+/u).filter(Boolean).length >= 8;
 }
 
-function decodeEntities(value: string): string {
-  return value
-    .replace(/&nbsp;/gu, ' ')
-    .replace(/&amp;/gu, '&')
-    .replace(/&lt;/gu, '<')
-    .replace(/&gt;/gu, '>')
-    .replace(/&quot;/gu, '"')
-    .replace(/&#39;/gu, "'");
-}
-
-async function decodePdf(body: Uint8Array): Promise<DecodedContent> {
-  const decoded = await extractPdfText(body);
+async function decodePdf(body: Uint8Array, deadline: number): Promise<DecodedContent> {
+  const decoded = await extractPdfText(body, deadline);
   return { markdown: decoded, links: collectPlainLinks(decoded, 'https://example.invalid/') };
 }
 

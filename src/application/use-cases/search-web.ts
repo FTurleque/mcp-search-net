@@ -2,6 +2,10 @@ import type { CacheRepository } from '../ports/cache-repository.js';
 import type { OperationContext, Telemetry } from '../ports/telemetry.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
 import type { SearchProvider, SearchProviderResponse } from '../ports/search-provider.js';
+import {
+  decodeSearchCacheValue,
+  type SearchCacheValue,
+} from '../services/cache-value-validation.js';
 import { createSearchCacheKey, normalizeSearchRequest } from '../services/search-request.js';
 import type {
   NormalizedSearchRequest,
@@ -9,12 +13,18 @@ import type {
   SearchResponse,
   SearchResult,
 } from '../../domain/models/search.js';
-import type {
-  ToolExecution,
-  ToolResponseStatus,
-  ToolWarningDescriptor,
-} from '../../domain/models/tool-response.js';
-import { ApplicationError } from '../../domain/errors/domain-errors.js';
+import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
+import {
+  ApplicationError,
+  HttpError,
+  isTransientHttpStatus,
+  RequestTimeoutError,
+  SearchProviderUnavailableError,
+} from '../../domain/errors/domain-errors.js';
+import {
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
 import { SearchQuery } from '../../domain/value-objects/search-query.js';
 import {
   matchesDomain,
@@ -22,16 +32,13 @@ import {
   toSearchResult,
 } from '../../domain/services/result-ranking.js';
 
+const DEFAULT_PROVIDER_TIMEOUT_MS = 20_000;
+
 export interface SearchWebOptions {
   readonly cacheTtlMs: number;
   readonly providerOversampling: number;
   readonly maxSnippetChars: number;
-}
-
-interface CachedSearchValue {
-  readonly status: ToolResponseStatus;
-  readonly warnings: readonly ToolWarningDescriptor[];
-  readonly data: SearchResponse;
+  readonly providerTimeoutMs?: number;
 }
 
 export class SearchWeb {
@@ -52,7 +59,10 @@ export class SearchWeb {
       providerOversampling: this.options.providerOversampling,
       maxSnippetChars: this.options.maxSnippetChars,
     });
-    const cached = await this.cache.getSearch<CachedSearchValue>(key, { allowStale: true });
+    const cached = await this.cache.getSearch<SearchCacheValue>(key, {
+      allowStale: true,
+      decode: decodeSearchCacheValue,
+    });
 
     if (cached !== undefined && !cached.stale) {
       this.telemetry?.record('cache_hit', {
@@ -72,17 +82,19 @@ export class SearchWeb {
     let firstResponse: SearchProviderResponse;
     let providerResponse: SearchProviderResponse;
     let shouldFallback: boolean;
+    const deadline = Date.now() + (this.options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS);
     try {
       firstResponse = await this.searchProvider(
         normalizedRequest,
         normalizedRequest.language,
         context,
+        deadline,
       );
       shouldFallback =
         firstResponse.results.length === 0 &&
         !normalizedRequest.language.toLowerCase().startsWith('en');
       providerResponse = shouldFallback
-        ? await this.searchProvider(normalizedRequest, 'en', context)
+        ? await this.searchProvider(normalizedRequest, 'en', context, deadline)
         : firstResponse;
     } catch (error) {
       if (cached !== undefined && isTransientProviderError(error)) {
@@ -106,7 +118,8 @@ export class SearchWeb {
         if (mapped === undefined) return undefined;
         return {
           ...mapped,
-          snippet: truncate(mapped.snippet, this.options.maxSnippetChars),
+          title: truncateUnicode(mapped.title, MAX_EXTERNAL_TITLE_CHARACTERS),
+          snippet: truncateUnicode(mapped.snippet, this.options.maxSnippetChars),
         };
       })
       .filter((result) => result !== undefined)
@@ -129,7 +142,7 @@ export class SearchWeb {
       results,
       unresponsiveEngines,
     });
-    const value: CachedSearchValue = {
+    const value: SearchCacheValue = {
       status: warnings.some((warning) =>
         [
           'FALLBACK_LANGUAGE_USED',
@@ -162,15 +175,20 @@ export class SearchWeb {
     request: NormalizedSearchRequest,
     language: string,
     context: OperationContext,
+    deadline: number,
   ): Promise<SearchProviderResponse> {
     const startedAt = performance.now();
     try {
-      const response = await this.provider.search({
-        query: SearchQuery.create(request.query),
-        language,
-        ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
-        maxResults: request.maxResults * this.options.providerOversampling,
-      });
+      const response = await withDeadline(
+        this.provider.search({
+          query: SearchQuery.create(request.query),
+          language,
+          ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
+          maxResults: request.maxResults * this.options.providerOversampling,
+          deadlineMs: deadline,
+        }),
+        deadline,
+      );
       this.telemetry?.record('provider_called', {
         requestId: context.requestId,
         tool: 'search_web',
@@ -265,7 +283,7 @@ function createWarnings(context: {
 }
 
 function execution(
-  value: CachedSearchValue,
+  value: SearchCacheValue,
   cacheStatus: 'HIT' | 'MISS' | 'DISABLED',
 ): ToolExecution<SearchResponse> {
   return {
@@ -277,7 +295,7 @@ function execution(
   };
 }
 
-function staleExecution(value: CachedSearchValue): ToolExecution<SearchResponse> {
+function staleExecution(value: SearchCacheValue): ToolExecution<SearchResponse> {
   return {
     ...execution(value, 'MISS'),
     status: 'partial',
@@ -293,10 +311,14 @@ function staleExecution(value: CachedSearchValue): ToolExecution<SearchResponse>
 }
 
 function isTransientProviderError(error: unknown): boolean {
-  return (
-    error instanceof ApplicationError &&
-    ['SEARCH_PROVIDER_UNAVAILABLE', 'REQUEST_TIMEOUT', 'HTTP_ERROR'].includes(error.code)
-  );
+  if (error instanceof RequestTimeoutError) return true;
+  if (error instanceof SearchProviderUnavailableError) {
+    return error.status === undefined || isTransientHttpStatus(error.status);
+  }
+  if (error instanceof HttpError) {
+    return error.status === undefined || isTransientHttpStatus(error.status);
+  }
+  return error instanceof ApplicationError && error.code === 'SEARCH_PROVIDER_UNAVAILABLE';
 }
 
 function mergeUnresponsiveEngines(
@@ -312,8 +334,20 @@ function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function truncate(value: string, maxChars: number): string {
-  return value.length <= maxChars
-    ? value
-    : `${value.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+async function withDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new RequestTimeoutError('search_web provider deadline exceeded');
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new RequestTimeoutError('search_web provider deadline exceeded')),
+      remaining,
+    );
+    timer.unref();
+  });
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }

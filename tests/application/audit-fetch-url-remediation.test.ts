@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { DisabledCacheRepository } from '../../src/application/ports/cache-repository.js';
 import { FetchUrl } from '../../src/application/use-cases/fetch-url.js';
@@ -86,6 +86,45 @@ describe('audit fetch_url remediation', () => {
 
     expect(result.data.links).toEqual([]);
     expect(blockedInspections).toBe(32);
+  });
+
+  it('applies the original operation deadline to final URL validation', async () => {
+    let validations = 0;
+    const useCase = new FetchUrl(
+      {
+        async fetch({ url }) {
+          return content(url.value, []);
+        },
+      },
+      new DisabledCacheRepository(),
+      {
+        async assertAllowed(url) {
+          validations += 1;
+          return { value: url, hostname: 'example.com', addresses: ['93.184.216.34'] };
+        },
+      },
+      officialSources,
+      options,
+    );
+    const now = vi
+      .spyOn(performance, 'now')
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0)
+      .mockReturnValue(1_001);
+    try {
+      await expect(
+        useCase.execute({
+          url: 'https://example.com/docs',
+          maxCharacters: 2_000,
+          maxSections: 5,
+          renderMode: 'static',
+        }),
+      ).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
+      expect(validations).toBe(2);
+    } finally {
+      now.mockRestore();
+    }
   });
 });
 

@@ -8,9 +8,22 @@ import type {
 import {
   ExternalServiceError,
   HttpError,
+  isTransientHttpStatus,
+  RequestTimeoutError,
   SearchProviderUnavailableError,
 } from '../../domain/errors/domain-errors.js';
+import {
+  countUnicodeCharacters,
+  MAX_EXTERNAL_ENGINE_NAME_CHARACTERS,
+  MAX_EXTERNAL_LANGUAGE_CHARACTERS,
+  MAX_EXTERNAL_TITLE_CHARACTERS,
+  truncateUnicode,
+} from '../../domain/services/bounded-text.js';
+import { decodeHtmlCharacterReferences } from '../fetch/html-character-reference-decoder.js';
 import { fetchJson } from '../http/http-utils.js';
+
+const MAX_PROVIDER_SNIPPET_CHARACTERS = 4_096;
+const MAX_PROVIDER_ENGINES = 32;
 
 const resultSchema = z
   .object({
@@ -47,6 +60,11 @@ export class SearxngSearchProvider implements SearchProvider {
   ) {}
 
   public async search(request: SearchProviderRequest): Promise<SearchProviderResponse> {
+    const providerDeadline = Date.now() + this.timeoutMs;
+    const deadline =
+      request.deadlineMs === undefined
+        ? providerDeadline
+        : Math.min(providerDeadline, request.deadlineMs);
     const endpoint = new URL('/search', ensureTrailingSlash(this.baseUrl));
     endpoint.searchParams.set('q', request.query.value);
     endpoint.searchParams.set('format', 'json');
@@ -56,7 +74,7 @@ export class SearxngSearchProvider implements SearchProvider {
     if (request.language !== undefined) endpoint.searchParams.set('language', request.language);
     if (request.timeRange !== undefined) endpoint.searchParams.set('time_range', request.timeRange);
 
-    const json = await this.requestJson(endpoint);
+    const json = await this.requestJson(endpoint, deadline);
     const parsed = responseSchema.safeParse(json);
     if (!parsed.success) {
       throw new ExternalServiceError('searxng response does not match its contract', 'searxng', {
@@ -68,13 +86,18 @@ export class SearxngSearchProvider implements SearchProvider {
       results: parsed.data.results.slice(0, request.maxResults).map((result) => {
         const publishedAt = toPublishedAt(result.publishedDate ?? result.pubdate);
         const updatedAt = toPublishedAt(result.updatedDate);
-        const detectedLanguage = result.language ?? result.lang ?? undefined;
+        const detectedLanguage = normalizeDetectedLanguage(
+          result.language ?? result.lang ?? undefined,
+        );
+        const engines = result.engines ?? (result.engine === undefined ? [] : [result.engine]);
         return {
-          title: decodeSnippet(result.title),
+          title: truncateUnicode(decodeSnippet(result.title), MAX_EXTERNAL_TITLE_CHARACTERS),
           url: result.url,
-          snippet: decodeSnippet(result.content),
+          snippet: truncateUnicode(decodeSnippet(result.content), MAX_PROVIDER_SNIPPET_CHARACTERS),
           ...(result.score === undefined ? {} : { score: result.score }),
-          engines: result.engines ?? (result.engine === undefined ? [] : [result.engine]),
+          engines: engines
+            .slice(0, MAX_PROVIDER_ENGINES)
+            .map((engine) => truncateUnicode(engine, MAX_EXTERNAL_ENGINE_NAME_CHARACTERS)),
           ...(publishedAt === undefined ? {} : { publishedAt }),
           ...(updatedAt === undefined ? {} : { updatedAt }),
           ...(detectedLanguage === undefined ? {} : { detectedLanguage }),
@@ -83,31 +106,37 @@ export class SearxngSearchProvider implements SearchProvider {
       ...(parsed.data.number_of_results === undefined
         ? {}
         : { total: parsed.data.number_of_results }),
-      unresponsiveEngines: parsed.data.unresponsive_engines.map((entry) =>
-        typeof entry === 'string' ? entry : entry[0],
-      ),
+      unresponsiveEngines: parsed.data.unresponsive_engines
+        .slice(0, MAX_PROVIDER_ENGINES)
+        .map((entry) => (typeof entry === 'string' ? entry : entry[0]))
+        .map((engine) => truncateUnicode(engine, MAX_EXTERNAL_ENGINE_NAME_CHARACTERS)),
     };
   }
 
-  private async requestJson(endpoint: URL): Promise<unknown> {
+  private async requestJson(endpoint: URL, deadline: number): Promise<unknown> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new RequestTimeoutError('searxng search deadline exceeded');
       try {
         return await fetchJson(
           'searxng',
           endpoint,
           { method: 'GET', headers: { accept: 'application/json' } },
-          this.timeoutMs,
+          remaining,
           this.fetchImplementation,
         );
       } catch (error) {
         const retryable =
           error instanceof HttpError &&
-          (error.status === 429 || (error.status !== undefined && error.status >= 500));
+          error.status !== undefined &&
+          isTransientHttpStatus(error.status);
         if (retryable && attempt === 0) continue;
         if (error instanceof HttpError) {
-          throw new SearchProviderUnavailableError('searxng rejected the search request', {
-            cause: error,
-          });
+          throw new SearchProviderUnavailableError(
+            'searxng rejected the search request',
+            error.status,
+            { cause: error },
+          );
         }
         throw error;
       }
@@ -121,15 +150,26 @@ function ensureTrailingSlash(value: string): string {
 }
 
 function decodeSnippet(value: string): string {
-  return value
+  // Decode all HTML character references first so that encoded tags like &lt;b&gt; become
+  // literal <b> before tag-stripping, preventing re-injection of HTML markup into the output.
+  const decoded = decodeHtmlCharacterReferences(value);
+  return decoded
     .replace(/<[^>]*>/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeDetectedLanguage(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const candidate = value.trim();
+  if (candidate === '' || countUnicodeCharacters(candidate) > MAX_EXTERNAL_LANGUAGE_CHARACTERS) {
+    return undefined;
+  }
+  try {
+    return Intl.getCanonicalLocales(candidate)[0];
+  } catch {
+    return undefined;
+  }
 }
 
 function toPublishedAt(value: string | Date | null | undefined): string | undefined {

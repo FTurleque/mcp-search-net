@@ -15,7 +15,7 @@ describe.runIf(live)('live MCP fetch', () => {
   });
 
   it('fetches a public page through the complete STDIO stack', async () => {
-    client = new Client({ name: 'mcp-search-net-live-test', version: '1.1.0' });
+    client = new Client({ name: 'mcp-search-net-live-test', version: '1.1.2' });
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [resolve('build/bootstrap/main.js')],

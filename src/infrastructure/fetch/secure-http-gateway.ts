@@ -16,6 +16,8 @@ import {
 
 const DEFAULT_MAX_TRACKED_ORIGINS = 1_024;
 
+type RobotsCache = Map<string, string | undefined>;
+
 export interface SecureHttpGatewayOptions {
   readonly timeoutMs: number;
   readonly maxBytes: number;
@@ -73,6 +75,7 @@ export class SecureHttpGateway {
   private active = 0;
   private readonly waiters: (() => void)[] = [];
   private readonly lastRequestByOrigin = new Map<string, number>();
+  private readonly originThrottleQueues = new Map<string, Promise<void>>();
   private readonly maxTrackedOrigins: number;
 
   public constructor(
@@ -86,6 +89,20 @@ export class SecureHttpGateway {
     this.maxTrackedOrigins = maxTrackedOrigins;
   }
 
+  public async approveUrl(
+    value: string,
+    context: { readonly requestId?: string; readonly tool?: 'fetch_url' } = {},
+    timeoutMs: number = this.options.timeoutMs,
+  ): Promise<Awaited<ReturnType<UrlSecurityPolicy['assertAllowed']>>> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > this.options.timeoutMs) {
+      throw new ApplicationError('Unsafe URL approval timeout was requested', 'INTERNAL_ERROR');
+    }
+    return withDeadline(
+      this.securityPolicy.assertAllowed(value, context),
+      performance.now() + timeoutMs,
+    );
+  }
+
   public async download(
     value: string,
     conditionalHeaders: Readonly<Record<string, string>> = {},
@@ -93,13 +110,11 @@ export class SecureHttpGateway {
     requestedLimits?: SecureDownloadLimits,
   ): Promise<DownloadedResource> {
     const limits = this.validateLimits(requestedLimits);
-    const deadline = Date.now() + limits.timeoutMs;
+    const deadline = performance.now() + limits.timeoutMs;
     const budget: DownloadBudget = { remainingBytes: limits.maxBytes };
+    const robotsCache: RobotsCache = new Map();
     await this.acquire(deadline);
     try {
-      if (this.options.respectRobotsTxt && new URL(value).pathname !== '/robots.txt') {
-        await this.assertRobotsAllowed(value, deadline, context, limits, budget);
-      }
       return await this.follow(
         value,
         value,
@@ -110,6 +125,8 @@ export class SecureHttpGateway {
         limits,
         [],
         budget,
+        robotsCache,
+        true,
       );
     } finally {
       this.release();
@@ -126,18 +143,30 @@ export class SecureHttpGateway {
     limits: SecureDownloadLimits,
     redirectChain: readonly DownloadRedirect[],
     budget: DownloadBudget,
+    robotsCache: RobotsCache,
+    enforceRobots: boolean,
   ): Promise<DownloadedResource> {
     if (redirects > limits.maxRedirects) throw new TooManyRedirectsError();
     const approved = await withDeadline(
       this.securityPolicy.assertAllowed(currentUrl, context),
       deadline,
     );
-    await this.throttle(new URL(approved.value).origin, deadline);
-    const sameOrigin = new URL(approved.value).origin === new URL(requestedUrl).origin;
+    const approvedUrl = new URL(approved.value);
+    if (enforceRobots && this.options.respectRobotsTxt && approvedUrl.pathname !== '/robots.txt') {
+      await this.assertRobotsAllowed(
+        approved.value,
+        deadline,
+        context,
+        limits,
+        budget,
+        robotsCache,
+      );
+    }
+    await this.throttle(approvedUrl.origin, deadline);
     const response = await this.requestPinned(
       approved,
       deadline,
-      sameOrigin ? conditionalHeaders : {},
+      redirects === 0 ? conditionalHeaders : {},
       budget,
     );
     if (isRedirectStatus(response.status)) {
@@ -161,6 +190,8 @@ export class SecureHttpGateway {
         limits,
         [...redirectChain, redirect],
         budget,
+        robotsCache,
+        enforceRobots,
       );
     }
     if (response.status !== 304 && (response.status < 200 || response.status >= 300)) {
@@ -175,27 +206,39 @@ export class SecureHttpGateway {
     context: { readonly requestId?: string; readonly tool?: 'fetch_url' },
     limits: SecureDownloadLimits,
     budget: DownloadBudget,
+    robotsCache: RobotsCache,
   ): Promise<void> {
     const url = new URL(value);
-    const robotsUrl = new URL('/robots.txt', url.origin).toString();
-    let resource: DownloadedResource;
-    try {
-      resource = await this.follow(
-        robotsUrl,
-        robotsUrl,
-        0,
-        deadline,
-        {},
-        context,
-        limits,
-        [],
-        budget,
-      );
-    } catch (error) {
-      if (error instanceof HttpError && error.status === 404) return;
-      throw error;
+    const origin = url.origin;
+    let rules = robotsCache.get(origin);
+    if (!robotsCache.has(origin)) {
+      const robotsUrl = new URL('/robots.txt', origin).toString();
+      let resource: DownloadedResource;
+      try {
+        resource = await this.follow(
+          robotsUrl,
+          robotsUrl,
+          0,
+          deadline,
+          {},
+          context,
+          limits,
+          [],
+          budget,
+          robotsCache,
+          false,
+        );
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 404) {
+          robotsCache.set(origin, undefined);
+          return;
+        }
+        throw error;
+      }
+      rules = new TextDecoder().decode(resource.body);
+      robotsCache.set(origin, rules);
     }
-    const rules = new TextDecoder().decode(resource.body);
+    if (rules === undefined) return;
     const path = `${url.pathname || '/'}${url.search}`;
     if (!isAllowedByRobots(rules, path, this.options.userAgent)) {
       throw new UrlSecurityError('robots.txt disallows fetching this URL', 'BLOCKED_ADDRESS');
@@ -225,7 +268,7 @@ export class SecureHttpGateway {
       } catch (error) {
         if (!isRetryablePinnedConnectionError(error)) throw error;
         lastConnectionError = error;
-        if (Date.now() >= deadline) throw new RequestTimeoutError();
+        if (performance.now() >= deadline) throw new RequestTimeoutError();
       }
     }
 
@@ -242,7 +285,7 @@ export class SecureHttpGateway {
     budget: DownloadBudget,
   ): Promise<PinnedResponse> {
     const url = new URL(approvedUrl);
-    const remaining = deadline - Date.now();
+    const remaining = Math.ceil(deadline - performance.now());
     if (remaining <= 0) throw new RequestTimeoutError();
     const request = url.protocol === 'https:' ? requestHttps : requestHttp;
     const family = isIP(address) as 4 | 6;
@@ -354,13 +397,29 @@ export class SecureHttpGateway {
   }
 
   private async throttle(origin: string, deadline: number): Promise<void> {
-    const wait = Math.max(
-      0,
-      (this.lastRequestByOrigin.get(origin) ?? 0) + this.options.minimumDelayMs - Date.now(),
-    );
-    if (Date.now() + wait >= deadline) throw new RequestTimeoutError();
-    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    this.rememberOriginRequest(origin, Date.now());
+    const predecessor = this.originThrottleQueues.get(origin) ?? Promise.resolve();
+    let releaseSlot!: () => void;
+    const slot = new Promise<void>((resolve) => {
+      releaseSlot = resolve;
+    });
+    const tail = predecessor.then(() => slot);
+    this.originThrottleQueues.set(origin, tail);
+
+    try {
+      await withDeadline(predecessor, deadline);
+      const wait = Math.max(
+        0,
+        (this.lastRequestByOrigin.get(origin) ?? 0) + this.options.minimumDelayMs - Date.now(),
+      );
+      if (performance.now() + wait >= deadline) throw new RequestTimeoutError();
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      this.rememberOriginRequest(origin, Date.now());
+    } finally {
+      releaseSlot();
+      if (this.originThrottleQueues.get(origin) === tail) {
+        this.originThrottleQueues.delete(origin);
+      }
+    }
   }
 
   private rememberOriginRequest(origin: string, timestamp: number): void {
@@ -378,7 +437,7 @@ export class SecureHttpGateway {
       this.active += 1;
       return;
     }
-    const remaining = deadline - Date.now();
+    const remaining = Math.ceil(deadline - performance.now());
     if (remaining <= 0) throw new RequestTimeoutError();
     await new Promise<void>((resolve, reject) => {
       const waiter = (): void => {
@@ -403,7 +462,7 @@ export class SecureHttpGateway {
 }
 
 async function withDeadline<T>(operation: Promise<T>, deadline: number): Promise<T> {
-  const remaining = deadline - Date.now();
+  const remaining = Math.ceil(deadline - performance.now());
   if (remaining <= 0) throw new RequestTimeoutError();
 
   let timer: NodeJS.Timeout | undefined;

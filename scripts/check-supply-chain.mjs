@@ -10,6 +10,7 @@ const npmrc = readText('.npmrc');
 const dockerfile = readText('Dockerfile');
 const dockerignore = readText('.dockerignore');
 const windowsDistributionBuilder = readText('scripts/release/build-windows-distribution.ps1');
+const windowsReleaseWorkflow = readText('.github/workflows/release-windows.yml');
 const compose = readText('compose.yaml');
 const composeHybrid = readText('compose.hybrid.yaml');
 
@@ -19,6 +20,11 @@ const expected = {
   nodeDockerImage: 'node@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
   nodeRelayImage:
     'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
+  innoSetup: {
+    version: '6.7.3',
+    url: 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe',
+    sha256: '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732',
+  },
   allowScripts: {
     'better-sqlite3@13.0.3': false,
     'esbuild@0.28.1': true,
@@ -122,6 +128,27 @@ assert(providerImageLines.length === 2, 'PROVIDER_IMAGE_DIGEST_NOT_PINNED');
 assert(!/\$\{SEARXNG_SECRET:-/u.test(compose), 'COMPOSE_DEFAULT_SECRET_PRESENT');
 assert(!/\$\{CRAWL4AI_API_TOKEN:-/u.test(compose), 'COMPOSE_DEFAULT_TOKEN_PRESENT');
 
+for (const needle of [
+  `$innoVersion = '${expected.innoSetup.version}'`,
+  `$innoUrl = '${expected.innoSetup.url}'`,
+  `$innoSha256 = '${expected.innoSetup.sha256}'`,
+  '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
+]) {
+  assert(windowsReleaseWorkflow.includes(needle), `INNO_SETUP_PIN_MISSING:${needle}`);
+}
+assert(
+  !windowsReleaseWorkflow.includes('choco install innosetup'),
+  'INNO_SETUP_MUTABLE_CHOCO_INSTALL_PRESENT',
+);
+const innoVerification = windowsReleaseWorkflow.indexOf(
+  '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
+);
+const innoExecution = windowsReleaseWorkflow.indexOf('Start-Process', innoVerification + 1);
+assert(
+  innoVerification >= 0 && innoExecution > innoVerification,
+  'INNO_SETUP_NOT_VERIFIED_BEFORE_EXECUTION',
+);
+
 const allowedLicenses = new Set([
   '(BSD-2-Clause OR MIT OR Apache-2.0)',
   '(MIT OR WTFPL)',
@@ -167,6 +194,8 @@ process.stdout.write(
       overrides: expected.overrides,
       developmentOverrides: expected.developmentOverrides,
       dockerImageReferencesPinnedByDigest: 5,
+      innoSetup: expected.innoSetup,
+      innoSetupVerifiedBeforeExecution: true,
       installedProductionPackages,
       licenses: Object.fromEntries(
         [...licenseCounts].sort(([left], [right]) => left.localeCompare(right)),

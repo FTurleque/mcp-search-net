@@ -244,8 +244,13 @@ function validatePostMergeTruth() {
   );
   requireText(
     currentState,
-    'Branche de référence : `master`',
-    `${currentStatePath}: master absent`,
+    'Branche de release et source de vérité publiée : `master`',
+    `${currentStatePath}: branche de release master absente`,
+  );
+  requireText(
+    currentState,
+    'Branche d’intégration courante : `develop`',
+    `${currentStatePath}: branche d’intégration develop absente`,
   );
   requireText(
     readme,
@@ -302,11 +307,17 @@ function validateReleaseAndInstallerHardening() {
       `publish-windows-release.ps1: invariant version absent: ${needle}`,
     );
   }
-  requireText(
-    releaseWorkflow,
-    'choco install innosetup --version=6.7.1',
-    'release-windows.yml: Inno Setup non figé en 6.7.1',
-  );
+  for (const needle of [
+    "$innoVersion = '6.7.3'",
+    "$innoUrl = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'",
+    "$innoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'",
+    '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
+  ]) {
+    requireText(releaseWorkflow, needle, `release-windows.yml: pinning Inno absent: ${needle}`);
+  }
+  if (releaseWorkflow.includes('choco install innosetup')) {
+    failures.push('release-windows.yml: installation Inno mutable via Chocolatey encore présente');
+  }
   requireText(
     toolCall,
     'formatExternalContentText(options.formatText(validated))',

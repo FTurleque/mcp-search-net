@@ -22,7 +22,7 @@ if (!crawl4aiToken) {
   throw new Error('Set MCP_CRAWL4AI_TOKEN or CRAWL4AI_API_TOKEN before running benchmark:v1');
 }
 
-const client = new Client({ name: 'mcp-search-net-benchmark', version: '1.1.0' });
+const client = new Client({ name: 'mcp-search-net-benchmark', version: '1.1.2' });
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [resolve('build/bootstrap/main.js')],

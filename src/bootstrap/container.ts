@@ -8,7 +8,10 @@ import { CacheUnavailableError } from '../domain/errors/domain-errors.js';
 import { SafeCacheRepository } from '../infrastructure/cache/safe-cache-repository.js';
 import { SqliteCacheRepository } from '../infrastructure/cache/sqlite-cache-repository.js';
 import { SqliteCatalogRepository } from '../infrastructure/catalog/sqlite-catalog-repository.js';
-import type { LoadedConfiguration } from '../infrastructure/config/load-configuration.js';
+import {
+  assertDistinctDatabasePaths,
+  type LoadedConfiguration,
+} from '../infrastructure/config/load-configuration.js';
 import { Crawl4aiContentFetcher } from '../infrastructure/fetch/crawl4ai-content-fetcher.js';
 import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.js';
 import { StructuredLogger } from '../infrastructure/logging/structured-logger.js';
@@ -22,6 +25,7 @@ export function createContainer(loaded: LoadedConfiguration) {
   const logger = new StructuredLogger(config.logging.level);
   const clock = new SystemClock();
   const cache = createCache(loaded, clock, logger);
+  assertDistinctDatabasePaths(config.cache.path, loaded.catalogPath);
   const catalog = createCatalog(loaded, clock);
   const securityPolicy = new PublicUrlSecurityPolicy(config.security, undefined, logger);
   const secureGateway = new SecureHttpGateway(securityPolicy, {
@@ -50,6 +54,7 @@ export function createContainer(loaded: LoadedConfiguration) {
       cacheTtlMs: config.cache.searchTtlMs,
       providerOversampling: config.limits.providerOversampling,
       maxSnippetChars: config.limits.maxSnippetChars,
+      providerTimeoutMs: config.searxng.timeoutMs,
     },
     logger,
   );
@@ -91,7 +96,13 @@ function createCache(
   if (!config.enabled) return new DisabledCacheRepository();
   try {
     return new SafeCacheRepository(
-      new SqliteCacheRepository(config.path, clock, config.maxEntries, config.staleRetentionMs),
+      new SqliteCacheRepository(
+        config.path,
+        clock,
+        config.maxEntries,
+        config.maxBytes,
+        config.staleRetentionMs,
+      ),
       config.continueOnError,
       logger,
     );
@@ -107,5 +118,5 @@ function createCache(
 }
 
 function createCatalog(loaded: LoadedConfiguration, clock: SystemClock): CatalogRepository {
-  return new SqliteCatalogRepository(loaded.catalogPath, clock);
+  return new SqliteCatalogRepository(loaded.catalogPath, clock, { verifyIntegrityOnOpen: true });
 }

@@ -42,6 +42,8 @@ export interface NotModifiedContent {
   readonly requestedUrl: string;
   readonly finalUrl: string;
   readonly redirectChain: readonly ContentRedirect[];
+  readonly etag?: string;
+  readonly lastModified?: string;
 }
 
 export type ContentFetchResult = FetchedContent | NotModifiedContent;

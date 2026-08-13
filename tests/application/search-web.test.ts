@@ -7,7 +7,11 @@ import type { SearchProvider } from '../../src/application/ports/search-provider
 import { SearchWeb } from '../../src/application/use-cases/search-web.js';
 import type { OfficialSource } from '../../src/domain/models/official-source.js';
 import type { ProviderSearchResult, SearchRequest } from '../../src/domain/models/search.js';
-import { ExternalServiceError } from '../../src/domain/errors/domain-errors.js';
+import {
+  ExternalServiceError,
+  RequestTimeoutError,
+  SearchProviderUnavailableError,
+} from '../../src/domain/errors/domain-errors.js';
 
 class MemoryCache implements CacheRepository {
   private readonly values = new Map<string, unknown>();
@@ -146,6 +150,21 @@ describe('SearchWeb', () => {
     ]);
   });
 
+  it('never admits an HTTP official hostname under the strict source policy', async () => {
+    const useCase = createUseCase(async () => ({
+      results: [providerResult('http://docs.example.com/mcp')],
+      total: 1,
+      unresponsiveEngines: [],
+    }));
+
+    const response = await useCase.execute({ ...baseRequest, sourcePolicy: 'strict' });
+
+    expect(response.data.results).toEqual([]);
+    expect(response.warnings.map((warning) => warning.code)).toContain(
+      'NO_VERIFIED_OFFICIAL_SOURCE',
+    );
+  });
+
   it('applies allowed domains as a whitelist and exclusions first', async () => {
     const useCase = createUseCase(async () => ({
       results: [
@@ -249,6 +268,53 @@ describe('SearchWeb', () => {
     expect(response.warnings.map((warning) => warning.code)).toContain('STALE_CACHE_USED');
   });
 
+  it.each([
+    [403, false],
+    [404, false],
+    [410, false],
+    [408, true],
+    [425, true],
+    [429, true],
+    [500, true],
+    [503, true],
+  ])('uses stale search cache for HTTP %i only when transient', async (status, fallback) => {
+    const cache = await warmStaleCache();
+    const degraded = new SearchWeb(
+      {
+        search: async () => {
+          throw new SearchProviderUnavailableError('provider HTTP failure', status);
+        },
+      },
+      cache,
+      registry,
+      { cacheTtlMs: 1, providerOversampling: 3, maxSnippetChars: 500 },
+    );
+
+    if (fallback) {
+      await expect(degraded.execute(baseRequest)).resolves.toMatchObject({
+        cacheStatus: 'STALE_FALLBACK',
+      });
+    } else {
+      await expect(degraded.execute(baseRequest)).rejects.toMatchObject({ status });
+    }
+  });
+
+  it.each([
+    ['timeout', new RequestTimeoutError()],
+    ['network outage', new ExternalServiceError('network down', 'searxng')],
+  ])('uses stale search cache after a transient %s', async (_label, error) => {
+    const cache = await warmStaleCache();
+    const degraded = new SearchWeb({ search: async () => Promise.reject(error) }, cache, registry, {
+      cacheTtlMs: 1,
+      providerOversampling: 3,
+      maxSnippetChars: 500,
+    });
+
+    await expect(degraded.execute(baseRequest)).resolves.toMatchObject({
+      cacheStatus: 'STALE_FALLBACK',
+    });
+  });
+
   it('reports DISABLED when configured without cache', async () => {
     const events: { event: string; data?: Readonly<Record<string, unknown>> }[] = [];
     const useCase = new SearchWeb(
@@ -272,6 +338,19 @@ function createUseCase(search: SearchProvider['search']): SearchWeb {
     providerOversampling: 3,
     maxSnippetChars: 500,
   });
+}
+
+async function warmStaleCache(): Promise<MemoryCache> {
+  const cache = new MemoryCache();
+  const warm = new SearchWeb(
+    { search: async () => ({ results: baseResults, total: 2, unresponsiveEngines: [] }) },
+    cache,
+    registry,
+    { cacheTtlMs: 1, providerOversampling: 3, maxSnippetChars: 500 },
+  );
+  await warm.execute(baseRequest);
+  cache.markStale();
+  return cache;
 }
 
 function providerResult(url: string): ProviderSearchResult {

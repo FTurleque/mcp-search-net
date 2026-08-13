@@ -25,7 +25,7 @@ export class LoadCatalogSources {
   public constructor(
     private readonly repository: Pick<
       CatalogRepository,
-      'addSource' | 'updateSource' | 'getSourceByKey' | 'rebuildSearchIndex'
+      'addSource' | 'updateSource' | 'getSourceByKey'
     >,
   ) {}
 
@@ -61,8 +61,6 @@ export class LoadCatalogSources {
     }
 
     const updatedCount = entries.filter((entry) => entry.status === 'updated').length;
-    if (updatedCount > 0) await this.repository.rebuildSearchIndex();
-
     return {
       schemaVersion: '1.0',
       createdCount: entries.filter((entry) => entry.status === 'created').length,

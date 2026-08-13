@@ -5,7 +5,7 @@
 - **Phase historique d'introduction** : V2.11 — pagination et lectures ciblées
 - **État courant** : schéma du candidat `1.1.0`; verdict de livraison dans
   [`docs/status/current-state.md`](../status/current-state.md)
-- **Portée** : schéma implémenté par `C001` à `C008`
+- **Portée** : schéma implémenté par `C001` à `C009`
 - **Base cible** : `.data/catalog.db`
 - **Décision liée** : ADR-014, ADR-015
 
@@ -44,6 +44,7 @@ C005__create_sync_tracking.sql
 C006__create_document_section_fts.sql
 C007__harden_revision_integrity.sql
 C008__add_catalog_pagination_indexes.sql
+C009__allow_repeated_section_content.sql
 ```
 
 Une migration appliquée reste immuable. Toute évolution du schéma reçoit le numéro suivant.
@@ -168,8 +169,12 @@ Contraintes :
 
 ```sql
 UNIQUE(document_version_id, ordinal)
-UNIQUE(document_version_id, content_hash)
 ```
+
+`content_hash` décrit le contenu d’une occurrence ; il n’en constitue pas l’identité. Deux
+sections ou chunks placés à des positions distinctes d’une même version peuvent donc partager le
+même hash. `C009` reconstruit la table sans l’ancienne unicité par hash, préserve les identifiants
+et reconstruit l’index FTS courant.
 
 ## `document_aliases`
 
@@ -294,7 +299,7 @@ contentless. Les jointures applicatives utilisent toujours `rowid`.
 `catalog_schema_migrations` stocke `version`, `name`, `applied_at` et `checksum`. Le checksum est un
 SHA-256 du SQL avec fins de ligne normalisées. Pour un registre C001-C006 antérieur à V2.9, le
 runner ajoute la colonne et établit une seule fois la baseline depuis les migrations embarquées,
-puis applique C007 et C008. Toute différence ultérieure de nom ou de checksum fait échouer
+puis applique C007, C008 et C009. Toute différence ultérieure de nom ou de checksum fait échouer
 l'ouverture du catalogue ; une migration appliquée ne doit jamais être modifiée rétroactivement.
 
 ## Transactions

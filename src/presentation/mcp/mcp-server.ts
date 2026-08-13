@@ -7,17 +7,31 @@ import { InvalidArgumentError } from '../../domain/errors/domain-errors.js';
 import type { FetchResponse } from '../../domain/models/content.js';
 import type { SearchResponse } from '../../domain/models/search.js';
 import type { ToolResponse } from '../../domain/models/tool-response.js';
-import type { ApplicationConfig } from '../../infrastructure/config/application-config.js';
 import type { Logger } from '../../application/ports/logger.js';
 import { createFetchUrlSchemas } from './schemas/fetch-url-schema.js';
 import { isInvalidToolInput } from './schemas/invalid-tool-input.js';
 import { createSearchWebSchemas } from './schemas/search-web-schema.js';
 import { executeToolCall } from './tool-call.js';
 
+export interface McpPresentationConfig {
+  readonly application: {
+    readonly name: string;
+    readonly version: string;
+  };
+  readonly limits: {
+    readonly defaultSearchResults: number;
+    readonly maxSearchResults: number;
+    readonly defaultFetchChars: number;
+    readonly maxFetchChars: number;
+    readonly defaultFetchSections: number;
+    readonly maxFetchSections: number;
+  };
+}
+
 export interface McpServerDependencies {
   readonly searchWeb: SearchWeb;
   readonly fetchUrl: FetchUrl;
-  readonly config: ApplicationConfig;
+  readonly config: McpPresentationConfig;
   readonly logger: Logger;
 }
 

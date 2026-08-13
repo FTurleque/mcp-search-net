@@ -36,6 +36,16 @@ describe('extractDocumentSections', () => {
     ]);
   });
 
+  it('does not split on headings embedded in compatible backtick or tilde fences', () => {
+    const sections = extractDocumentSections(
+      '# Guide\n\n````bash\n# shell comment\n```\n````\n\n~~~\n## example\n~~~\n\n## Install\n\nSteps.',
+    );
+
+    expect(sections.map(({ heading }) => heading)).toEqual(['Guide', 'Install']);
+    expect(sections[0]?.markdown).toContain('# shell comment');
+    expect(sections[0]?.markdown).toContain('## example');
+  });
+
   it.each(['', '   ', '\r\n\r\n'])('does not create a section for empty Markdown', (markdown) => {
     expect(extractDocumentSections(markdown)).toEqual([]);
   });

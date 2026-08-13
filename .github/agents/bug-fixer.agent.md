@@ -5,7 +5,7 @@ description: >
   cause racine rigoureuse, test de régression ciblé et impact minimal sur les contrats
   publics et les invariants de sécurité.
 owner: mcp-search-net
-version: 1.1.0
+version: 1.1.2
 lastReviewed: '2026-06-21'
 tools:
   [

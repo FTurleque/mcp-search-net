@@ -7,8 +7,11 @@ pas ce document pour connaître l’état présent.
 ## Version et statut de livraison
 
 - Jalon produit : V2 documentaire intégrée et hardening post-audit livré.
-- Version SemVer : `1.1.0`.
-- Branche de référence : `master`.
+- Version SemVer : `1.1.2`.
+- Branche de release et source de vérité publiée : `master`.
+- Branche d’intégration courante : `develop`. Une correction présente uniquement sur `develop`
+  n’est pas déclarée publiée sur `master` ; sa qualification repose sur la CI du SHA exact de la
+  PR d’intégration concernée.
 - Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
 - Hardening post-merge initial : PR #31 regroupe les corrections d’ownership Windows, de release,
   de provenance MCP, de passerelle HTTP et de réconciliation documentaire issues de l’audit V2.
@@ -30,8 +33,9 @@ pas ce document pour connaître l’état présent.
   Claude Desktop et Codex. Les trois clients ont été observés réellement sur Windows 10 avec le
   runtime installé `a70b9a51527543c9417566326bb780121954cef5` et la chaîne déterministe
   `search_docs -> sectionId réel -> read_doc_section(même sectionId)`.
-- Release V2/1.1.0 : aucune publication n’est déclarée par ce document ; une publication doit
-  passer la qualification exact-head et le workflow de release volontaire.
+- Release 1.1.2 : candidate en cours de qualification. Corrections de sécurité post-audit :
+  décodage HTML character references avant détection de schéma dans le sanitizer HTML et dans
+  le provider SearXNG. La publication sera déclenchée après qualification exact-head master.
 - Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
   et la version embarquée doivent être identiques. Toute dérive bloque la publication.
 
@@ -104,13 +108,48 @@ Les migrations catalogue appliquées dans l’ordre sont :
 - `C006__create_document_section_fts.sql`
 - `C007__harden_revision_integrity.sql`
 - `C008__add_catalog_pagination_indexes.sql`
+- `C009__allow_repeated_section_content.sql`
+- `C010__add_sync_run_kind.sql`
+- `C011__persist_pending_version_promotion.sql`
+- `C012__make_language_indexes_nocase.sql`
 
 Une migration appliquée est immuable. Toute évolution crée une nouvelle migration.
+
+`C009` préserve les IDs de section, retire l’ancienne unicité `(document_version_id,
+content_hash)` et reconstruit le FTS courant. L’identité persistée d’une section est son occurrence
+ordonnée : deux sections ou chunks identiques à des positions différentes restent tous deux
+présents et recherchables.
+
+`C010` ajoute `sync_runs.run_kind` avec les valeurs `EXECUTION` et `PLAN`. Les historiques existants
+sont baselinés en `EXECUTION`; un dry-run est enregistré comme `PLAN`, ce qui permet de le séparer
+d’une vraie annulation sans casser les statuts terminaux historiques.
+
+`C011` ajoute `document_versions.pending_current` pour persister l’intention de promotion des
+primitives legacy dépréciées. Une version candidate reste non courante tant que ses sections ne sont
+pas remplacées ; cette intention survit désormais à une fermeture ou un redémarrage du repository et
+est consommée atomiquement lors de la promotion avec les sections, le FTS et le pointeur courant.
+
+`C012` recrée les index de langue catalogue existants avec `COLLATE NOCASE`. Les filtres BCP-47
+restent ainsi insensibles à la casse sans perdre l’utilisation des index SQLite pour la pagination
+et les comptages filtrés.
+
+Le découpage Markdown du fetch et l’ingestion CLI utilisent le même scanner de headings/fences. Les
+fences backtick ou tilde se ferment uniquement avec le même caractère et une longueur compatible ;
+un heading présent dans du code n’est pas interprété comme une section. Le scanner borne désormais
+le nombre de headings/sections, les lignes structurelles et les métadonnées de heading avant
+matérialisation ; la persistance SQLite applique également un plafond indépendant au nombre de
+sections et aux champs heading/heading path/anchor. Les options numériques des CLI catalogue exigent
+une chaîne décimale entière complète. L’ajout et le chargement des sources passent par la même
+validation de `NewCatalogSource`, dont une base URL HTTP(S) obligatoire.
 
 `SqliteCatalogRepository` est une façade stable construite autour d’une connexion SQLite unique et
 sépare les responsabilités source/read-model/révision/recherche/synchronisation. Une révision
 courante reste une transaction atomique couvrant document, version, sections, FTS, pointeur courant
-et observations.
+et observations. Les métadonnées documentaires passent par un invariant central avant persistance ;
+les projections MCP restent défensives pour les anciennes bases qui peuvent contenir des valeurs
+plus larges que les contrats externes. Les primitives legacy dépréciées stagient une version
+candidate non courante puis ne la promeuvent qu’au moment où ses sections peuvent être remplacées
+dans la même transaction.
 
 FTS5 reste une dépendance fonctionnelle explicite. La qualification N-API vérifie en plus la version
 SQLite embarquée, une vraie requête FTS5 et le verrouillage writer entre connexions. Les suites
@@ -183,6 +222,8 @@ explicite `-PurgeData` ; `-KeepData` reste accepté comme alias de compatibilit�
 ## Sécurité Web et exploitation
 
 - chaque URL et chaque redirection est validée avant connexion ;
+- `VERIFIED_OFFICIAL` exige à la fois une URL résultat HTTPS et une correspondance au registre
+  officiel ; HTTP reste non vérifié même pour un domaine ou une organisation GitHub connu ;
 - les adresses DNS publiques approuvées sont épinglées et peuvent être essayées successivement sans
   nouvelle résolution DNS ;
 - les littéraux IPv4/IPv6 HTTP(S) suivent la même politique d’adresses publiques que les réponses
@@ -192,8 +233,8 @@ explicite `-PurgeData` ; `-KeepData` reste accepté comme alias de compatibilit�
 - `robots.txt` est chargé uniquement depuis la racine de l’origine et s’applique à toutes les autres
   ressources, y compris un chemin imbriqué se terminant lui-même par `/robots.txt` ;
 - une opération de téléchargement partage un budget d’octets et une deadline uniques entre
-  `robots.txt`, les redirections et la ressource cible ; les limites de concurrence restent
-  appliquées par la passerelle HTTP ;
+  validation initiale, `robots.txt`, redirections, ressource cible, fallback natif Crawl4AI et
+  validation finale ; les limites de concurrence restent appliquées par la passerelle HTTP ;
 - l’historique de throttling par origine est borné afin qu’un processus long ne conserve pas une
   entrée mémoire pour un nombre illimité d’origines visitées ;
 - le HTML envoyé au fallback natif Crawl4AI neutralise les attributs de chargement de ressources,
@@ -201,6 +242,19 @@ explicite `-PurgeData` ; `-KeepData` reste accepté comme alias de compatibilit�
   d’un bloc actif ou d’une balise de début malformée/non fermée avant le transport `raw://` ;
 - `pdfjs-dist` est fixé à `6.2.108` afin de sortir de la plage affectée par
   `GHSA-hq66-cqwq-w95j` (exécution JavaScript arbitraire sur PDF malveillant).
+
+Le stale fallback Web est réservé aux pannes transitoires : timeout, réseau, HTTP 408/425/429 et
+5xx. Les HTTP permanents 4xx, notamment 400/401/403/404/410, sont propagés sans masquer l’erreur par
+une réponse expirée. Le champ MCP `retryable` applique la même distinction lorsque le statut HTTP
+est disponible.
+
+Le cache SQLite applique d’abord la rétention stale, puis une éviction LRU déterministe globale aux
+namespaces recherche et contenu. Les valeurs par défaut sont 2 000 entrées et 256 Mio de payloads
+JSON sérialisés. Une valeur JSON syntaxiquement valide mais incompatible avec le contrat attendu est
+supprimée lors de la lecture et traitée comme un cache miss ; les stale fallbacks utilisent les mêmes
+décodeurs runtime. Le catalogue exécute son contrôle complet d’intégrité après migrations et avant
+exposition du serveur MCP ; toute incohérence SQLite, FK, current pointer, sections ou FTS bloque le
+démarrage.
 
 ## CI et qualification
 
@@ -250,10 +304,12 @@ toolchain Inno Setup est figée sur la version `6.7.1`.
 
 ## Gouvernance Git post-V2
 
-`master` est la source de vérité. L’historique squashé de la PR #8 ne doit jamais être réintégré via
-un merge brut de l’ancien `develop`. `develop` doit rester explicitement alignée sur le `master`
-qualifié. La PR #27 est supersédée par cette règle. Les branches absorbées n’ont plus vocation à
-porter du travail unique et peuvent être retirées de la liste des branches actives.
+`master` est la source de vérité de release ; `develop` est la branche d’intégration. L’historique
+squashé de la PR #8 ne doit jamais être réintégré via un merge brut d’un ancien historique
+`develop`. Une évolution qualifiée peut avancer sur `develop` sans être attribuée à `master` avant
+une intégration de release distincte. La PR #27 est supersédée par cette règle. Les branches
+absorbées n’ont plus vocation à porter du travail unique et peuvent être retirées de la liste des
+branches actives.
 
 ## Réconciliation de qualification — audit du 7 août 2026
 

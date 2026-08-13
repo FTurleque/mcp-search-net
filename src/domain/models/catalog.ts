@@ -6,6 +6,8 @@ export type CatalogFreshnessPolicy = 'manual' | 'daily' | 'weekly' | 'monthly';
 
 export type CatalogSyncStrategy = 'manual' | 'polling';
 
+export type CatalogSyncRunKind = 'EXECUTION' | 'PLAN';
+
 export type CatalogSyncRunStatus = 'RUNNING' | 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'CANCELLED';
 
 export type CatalogSyncRunTerminalStatus = Exclude<CatalogSyncRunStatus, 'RUNNING'>;
@@ -174,6 +176,7 @@ export interface CatalogSearchIndexRebuildResult {
 export interface CatalogSyncRun {
   readonly id: number;
   readonly sourceId?: number;
+  readonly runKind: CatalogSyncRunKind;
   readonly startedAt: Date;
   readonly completedAt?: Date;
   readonly status: CatalogSyncRunStatus;
@@ -187,8 +190,17 @@ export interface CatalogSyncRun {
 
 export interface CatalogSyncRunStartInput {
   readonly sourceId?: number;
+  readonly runKind: CatalogSyncRunKind;
   readonly startedAt: Date;
 }
+
+/**
+ * Compatibility request accepted at the repository boundary. Legacy execution callers may omit
+ * runKind; persistence normalizes that case to EXECUTION before a CatalogSyncRun is returned.
+ */
+export type CatalogSyncRunStartRequest = Omit<CatalogSyncRunStartInput, 'runKind'> & {
+  readonly runKind?: CatalogSyncRunKind;
+};
 
 export interface CatalogSyncRunCompletionInput {
   readonly completedAt: Date;
@@ -211,8 +223,14 @@ export interface CatalogStalenessEventObservationInput {
   readonly detailsJson: string;
 }
 
+export interface CatalogCurrentVersionValidatorRefreshInput {
+  readonly etag?: string;
+  readonly lastModified?: string;
+}
+
 export interface CatalogDocumentObservationInput {
   readonly syncRunId: number;
   readonly aliases?: readonly CatalogDocumentAliasObservationInput[];
   readonly events?: readonly CatalogStalenessEventObservationInput[];
+  readonly currentVersionValidators?: CatalogCurrentVersionValidatorRefreshInput;
 }

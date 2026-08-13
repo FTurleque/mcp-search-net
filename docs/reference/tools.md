@@ -28,7 +28,12 @@ interface ToolResponse<T> {
 
 `durationMs` est mesuré avec une horloge monotone. Le même `requestId` relie la réponse, les avertissements et les événements structurés écrits sur `stderr`.
 
-`cacheStatus` vaut `HIT` pour une entrée fraîche ou revalidée en HTTP 304, `MISS` après appel fournisseur, `STALE_FALLBACK` lorsqu'une entrée expirée remplace un fournisseur indisponible, et `DISABLED` lorsque le cache est désactivé ou que le mode dégradé poursuit après une panne SQLite. Pour `search_docs`, le provider est `catalog` et le cache applicatif V1 est désactivé.
+`cacheStatus` vaut `HIT` pour une entrée fraîche ou revalidée en HTTP 304, `MISS` après appel
+fournisseur, `STALE_FALLBACK` lorsqu'une entrée expirée remplace une panne transitoire (timeout,
+réseau, HTTP 408/425/429 ou 5xx), et `DISABLED` lorsque le cache est désactivé ou que le mode
+dégradé poursuit après une panne SQLite. Un HTTP permanent comme 400, 401, 403, 404 ou 410 ne
+déclenche pas de stale fallback. Pour `search_docs`, le provider est `catalog` et le cache
+applicatif V1 est désactivé.
 
 Le champ textuel MCP est volontairement compact. Il ne doit pas recopier tout `structuredContent` afin de limiter la consommation de contexte dans Copilot.
 
@@ -52,7 +57,10 @@ Entrées :
 | `timeRange`       | absente  | `day`, `month` ou `year`, selon l’API SearXNG           |
 | `maxResults`      | `5`      | de 1 à 10                                               |
 
-Les domaines sont comparés par frontière DNS : `docs.example.com` correspond à `example.com`, contrairement à `example.com.attacker.test`. `allowedDomains` filtre les résultats mais ne rend jamais un domaine officiel ; seul le registre `official-sources.yml` peut produire `VERIFIED_OFFICIAL`.
+Les domaines sont comparés par frontière DNS : `docs.example.com` correspond à `example.com`,
+contrairement à `example.com.attacker.test`. `allowedDomains` filtre les résultats mais ne rend
+jamais un domaine officiel ; seul le registre `official-sources.yml`, pour une URL résultat HTTPS,
+peut produire `VERIFIED_OFFICIAL`.
 
 Politiques :
 

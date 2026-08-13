@@ -129,6 +129,10 @@ export class HttpError extends ApplicationError {
   }
 }
 
+export function isTransientHttpStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
 export class UnsupportedContentTypeError extends ApplicationError {
   public constructor(message = 'The content type is not supported', options?: ErrorOptions) {
     super(message, 'UNSUPPORTED_CONTENT_TYPE', options);
@@ -171,7 +175,11 @@ export class CacheUnavailableError extends ApplicationError {
 }
 
 export class SearchProviderUnavailableError extends ExternalServiceError {
-  public constructor(message = 'The search provider is unavailable', options?: ErrorOptions) {
+  public constructor(
+    message = 'The search provider is unavailable',
+    public readonly status?: number,
+    options?: ErrorOptions,
+  ) {
     super(message, 'searxng', options);
   }
 }

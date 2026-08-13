@@ -82,12 +82,23 @@ describe('Windows installer runtime integrity', () => {
     expect(configureInstall).not.toContain('$existed = Get-PropertyExists $root $ServerKey');
   });
 
-  it('rejects release version drift and pins the Windows installer toolchain', () => {
+  it('rejects release version drift and verifies the pinned Windows installer toolchain', () => {
     expect(releasePublisher).toContain('$Package.version -ne $Version');
     expect(releasePublisher).toContain('$PackageLock.version -ne $Version');
-    expect(releasePublisher).toContain("$PackageLock.packages.''.version -ne $Version");
+    expect(releasePublisher).toContain("$PackageLock.packages[''].version -ne $Version");
     expect(releasePublisher).toContain('$PackagedPackage.version -ne $Version');
-    expect(releaseWorkflow).toContain('choco install innosetup --version=6.7.1');
+    expect(releaseWorkflow).toContain("$innoVersion = '6.7.3'");
+    expect(releaseWorkflow).toContain(
+      "$innoUrl = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'",
+    );
+    expect(releaseWorkflow).toContain(
+      "$innoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'",
+    );
+    const innoVerification = releaseWorkflow.indexOf('.\\scripts\\windows\\verify-file-sha256.ps1');
+    const innoExecution = releaseWorkflow.indexOf('Start-Process', innoVerification + 1);
+    expect(innoVerification).toBeGreaterThan(0);
+    expect(innoExecution).toBeGreaterThan(innoVerification);
+    expect(releaseWorkflow).not.toContain('choco install innosetup');
   });
 
   it('keeps installed Docker builds away from local data and preserves operator configuration', () => {

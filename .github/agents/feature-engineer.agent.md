@@ -5,7 +5,7 @@ description: >
   l'alignement entre architecture hexagonale, contrats de sécurité, couverture de tests
   et documentation — sans jamais élargir le périmètre V1 sans autorisation roadmap explicite.
 owner: mcp-search-net
-version: 1.1.0
+version: 1.1.2
 lastReviewed: '2026-06-21'
 tools:
   [

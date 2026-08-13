@@ -43,7 +43,8 @@ catalog-migrations/
 ├── C005__create_sync_tracking.sql
 ├── C006__create_document_section_fts.sql
 ├── C007__harden_revision_integrity.sql
-└── C008__add_catalog_pagination_indexes.sql
+├── C008__add_catalog_pagination_indexes.sql
+└── C009__allow_repeated_section_content.sql
 ```
 
 Les deux runners sont séparés. Le registre catalogue conserve le nom et le checksum SHA-256

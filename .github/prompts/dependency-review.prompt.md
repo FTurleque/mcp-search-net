@@ -7,7 +7,7 @@ description: >-
 mode: agent
 agent: security-auditor
 owner: mcp-search-net
-version: 1.1.0
+version: 1.1.2
 lastReviewed: '2026-06-21'
 ---
 
