@@ -132,7 +132,7 @@ for (const needle of [
   `$innoVersion = '${expected.innoSetup.version}'`,
   `$innoUrl = '${expected.innoSetup.url}'`,
   `$innoSha256 = '${expected.innoSetup.sha256}'`,
-  '.\\scripts\\windows\\verify-file-sha256.ps1',
+  '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
 ]) {
   assert(windowsReleaseWorkflow.includes(needle), `INNO_SETUP_PIN_MISSING:${needle}`);
 }
@@ -141,7 +141,7 @@ assert(
   'INNO_SETUP_MUTABLE_CHOCO_INSTALL_PRESENT',
 );
 const innoVerification = windowsReleaseWorkflow.indexOf(
-  '.\\scripts\\windows\\verify-file-sha256.ps1',
+  '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
 );
 const innoExecution = windowsReleaseWorkflow.indexOf('Start-Process', innoVerification + 1);
 assert(

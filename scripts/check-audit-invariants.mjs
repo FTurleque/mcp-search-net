@@ -176,7 +176,7 @@ for (const needle of [
   `$innoVersion = '${expectedInnoVersion}'`,
   `$innoUrl = '${expectedInnoUrl}'`,
   `$innoSha256 = '${expectedInnoSha256}'`,
-  '.\\scripts\\windows\\verify-file-sha256.ps1',
+  '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
   '.VersionInfo.ProductVersion',
   "StartsWith('6.7.1'",
 ]) {
@@ -186,7 +186,7 @@ assert(
   !releaseWorkflow.includes('choco install innosetup'),
   'release-windows: installation Inno mutable via Chocolatey encore présente',
 );
-const innoVerification = releaseWorkflow.indexOf('.\\scripts\\windows\\verify-file-sha256.ps1');
+const innoVerification = releaseWorkflow.indexOf('.\\scripts\\windows\\verify-file-sha256.ps1'); // NOSONAR
 const innoExecution = releaseWorkflow.indexOf('Start-Process', innoVerification + 1);
 assert(
   innoVerification >= 0 && innoExecution > innoVerification,

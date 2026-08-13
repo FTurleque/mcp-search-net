@@ -454,7 +454,7 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL = `
     AND documents.status = 'ACTIVE'
     AND (? IS NULL OR catalog_sources.source_key = ?)
     AND (? IS NULL OR documents.language = ? COLLATE NOCASE)
-  ORDER BY rank ASC, score DESC, documents.title COLLATE NOCASE, document_sections.ordinal
+  ORDER BY rank ASC, score DESC, documents.title COLLATE NOCASE ASC, document_sections.ordinal ASC
   LIMIT ?
 `;
 
@@ -524,6 +524,6 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL = `
       OR lower(document_sections.heading_path) LIKE ? ESCAPE '\\'
       OR lower(document_sections.content) LIKE ? ESCAPE '\\'
     )
-  ORDER BY score DESC, documents.title COLLATE NOCASE, document_sections.ordinal
+  ORDER BY score DESC, documents.title COLLATE NOCASE ASC, document_sections.ordinal ASC
   LIMIT ?
 `;

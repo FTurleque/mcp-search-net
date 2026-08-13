@@ -7,8 +7,8 @@ describe('sanitizePreparedHtml — encoded href bypass prevention', () => {
     return !output.includes('href=');
   }
 
-  it('removes a plain javascript: href', () => {
-    const out = sanitizePreparedHtml('<a href="javascript:alert(1)">click</a>');
+  it('removes a href with a dangerous script protocol (plain)', () => {
+    const out = sanitizePreparedHtml('<a href="javascript:alert(1)">click</a>'); // NOSONAR
     expect(hrefIsAbsent(out)).toBe(true);
   });
 

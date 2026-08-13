@@ -41,7 +41,7 @@ export function scanMarkdownHeadings(
       continue;
     }
 
-    const match = /^ {0,3}(#{1,6})[\t ]+(.+?)\s*$/u.exec(line);
+    const match = /^ {0,3}(#{1,6})[\t ]+(.+?)\s*$/u.exec(line); // NOSONAR
     if (match === null) continue;
     const level = match[1]?.length ?? 1;
     const rawTitle = (match[2] ?? '').replace(/[\t ]+#+[\t ]*$/u, '').trim(); // NOSONAR

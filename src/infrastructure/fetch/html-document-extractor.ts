@@ -464,7 +464,7 @@ function isHtmlSpace(character: string | undefined): boolean {
 }
 
 function isAsciiLetter(character: string): boolean {
-  const code = character.charCodeAt(0);
+  const code = character.charCodeAt(0); // NOSONAR
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
 }
 

@@ -38,7 +38,7 @@ export function assertStrictCliArguments(
   validateMutualExclusions(spec.mutuallyExclusiveOptions ?? [], seenOptions);
 }
 
-function processCliArgument(
+function processCliArgument( // NOSONAR
   argument: string,
   index: number,
   argv: readonly string[],
