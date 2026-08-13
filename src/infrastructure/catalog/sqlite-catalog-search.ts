@@ -120,10 +120,7 @@ function normalizeSearchLimit(limit: number | undefined): number {
 }
 
 function escapeLikePattern(value: string): string {
-  return value
-    .replaceAll('\\', String.raw`\\`)
-    .replaceAll('%', String.raw`\%`)
-    .replaceAll('_', String.raw`\_`);
+  return value.replaceAll('!', '!!').replaceAll('%', '!%').replaceAll('_', '!_');
 }
 
 function createFtsQuery(value: string): string | undefined {
