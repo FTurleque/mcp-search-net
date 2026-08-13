@@ -291,3 +291,29 @@ jobs:
               throw "Head qualifié inattendu : $actual"
           }
           Write-Host "WINDOWS_QUALIFIED_SHA=$actual"
+
+  sonarcloud:
+    name: SonarCloud Code Analysis
+    runs-on: ubuntu-latest
+    needs: [check]
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.QUALIFIED_SHA }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          name: deterministic-test-reports
+          path: .
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
