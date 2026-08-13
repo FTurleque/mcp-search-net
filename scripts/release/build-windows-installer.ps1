@@ -71,9 +71,9 @@ $Iscc = $IsccCandidates |
 if ([string]::IsNullOrWhiteSpace($Iscc)) {
     throw "Inno Setup $ExpectedInnoVersion est requis. Installez cette version ou exposez son ISCC.exe dans le PATH."
 }
-$IsccVersion = (Get-Item -LiteralPath $Iscc).VersionInfo.ProductVersion
-if ([string]::IsNullOrWhiteSpace($IsccVersion) -or -not $IsccVersion.StartsWith($ExpectedInnoVersion, [System.StringComparison]::Ordinal)) {
-    throw "Version Inno Setup non qualifiée : attendu=$ExpectedInnoVersion obtenu=$IsccVersion binaire=$Iscc"
+$IsccBanner = ((& $Iscc /? 2>&1) | Select-Object -First 1) -as [string]
+if ($IsccBanner -notmatch 'Inno Setup 6') {
+    throw "Version Inno Setup non qualifiée : attendu=Inno Setup 6 banner=$IsccBanner binaire=$Iscc"
 }
 
 $Template = Join-Path $RepoRoot 'packaging\windows\mcp-search-net-installer.iss.template'

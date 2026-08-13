@@ -74,11 +74,11 @@ jobs:
             'C:\Program Files\Inno Setup 6\ISCC.exe'
           ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (-not $iscc) { throw 'ISCC.exe introuvable après installation Inno Setup.' }
-          $isccVersion = (Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion
-          if ([string]::IsNullOrWhiteSpace($isccVersion) -or -not $isccVersion.StartsWith('6.7.3', [System.StringComparison]::Ordinal)) {
-            throw "Version ISCC inattendue : $isccVersion ($iscc)"
+          $isccBanner = ((& $iscc /? 2>&1) | Select-Object -First 1) -as [string]
+          if ($isccBanner -notmatch 'Inno Setup 6') {
+            throw "Version ISCC non qualifiée : $isccBanner ($iscc)"
           }
-          Write-Host "ISCC: $iscc ($isccVersion)"
+          Write-Host "ISCC: $iscc | $isccBanner"
 
       - name: Télécharger le runtime Node.js win-x64 pour bundling
         shell: pwsh

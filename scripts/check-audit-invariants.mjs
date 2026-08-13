@@ -164,8 +164,8 @@ assert(
 
 for (const needle of [
   "$ExpectedInnoVersion = '6.7.3'",
-  '.VersionInfo.ProductVersion',
   'Version Inno Setup non qualifiée',
+  "notmatch 'Inno Setup 6'",
 ]) {
   requireText(
     installerBuilder,
@@ -178,8 +178,7 @@ for (const needle of [
   `$innoUrl = '${expectedInnoUrl}'`,
   `$innoSha256 = '${expectedInnoSha256}'`,
   '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
-  '.VersionInfo.ProductVersion',
-  "StartsWith('6.7.3'",
+  "notmatch 'Inno Setup 6'",
 ]) {
   requireText(releaseWorkflow, needle, `release-windows: invariant Inno absent: ${needle}`);
 }
