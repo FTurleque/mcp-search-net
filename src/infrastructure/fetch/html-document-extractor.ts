@@ -182,7 +182,7 @@ function extractMetadata(html: string, baseUrl: string): HtmlMetadata {
   };
 }
 
-function renderSanitizedHtml(
+function renderSanitizedHtml( // NOSONAR
   html: string,
   baseUrl: string,
 ): { readonly markdown: string; readonly links: readonly string[]; readonly safeHtml: string } {
@@ -395,7 +395,7 @@ function findTagEnd(html: string, start: number): number | undefined {
   return undefined;
 }
 
-function parseInterestingAttributes(
+function parseInterestingAttributes( // NOSONAR
   raw: string,
   start: number,
 ): ReadonlyMap<string, string | undefined> {

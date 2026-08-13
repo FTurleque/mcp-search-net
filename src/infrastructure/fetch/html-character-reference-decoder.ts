@@ -1,4 +1,4 @@
-const HTML_CHARACTER_REFERENCE_PATTERN = /&(?:#[0-9]+|#x[0-9a-f]+|[a-z][a-z0-9]+);/giu;
+const HTML_CHARACTER_REFERENCE_PATTERN = /&(?:#\d+|#x[\da-f]+|[a-z][a-z\d]+);/giu;
 
 const NAMED_HTML_ENTITIES: Readonly<Record<string, string>> = {
   amp: '&',

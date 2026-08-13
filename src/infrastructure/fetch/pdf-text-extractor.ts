@@ -73,19 +73,23 @@ export async function extractPdfText(
     if (text === '') throw new OcrRequiredNotSupportedError();
     return text;
   } catch (error) {
-    if (
-      error instanceof OcrRequiredNotSupportedError ||
-      error instanceof ExtractionError ||
-      error instanceof RequestTimeoutError
-    ) {
-      throw error;
-    }
+    if (isKnownPdfError(error)) throw error;
     throw new ExtractionError('The PDF could not be parsed or its text could not be extracted', {
       cause: error,
     });
   } finally {
     await loadingTask?.destroy().catch(() => undefined);
   }
+}
+
+function isKnownPdfError(
+  error: unknown,
+): error is OcrRequiredNotSupportedError | ExtractionError | RequestTimeoutError {
+  return (
+    error instanceof OcrRequiredNotSupportedError ||
+    error instanceof ExtractionError ||
+    error instanceof RequestTimeoutError
+  );
 }
 
 async function withinPdfDeadline<T>(
