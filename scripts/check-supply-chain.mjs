@@ -21,9 +21,9 @@ const expected = {
   nodeRelayImage:
     'node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d',
   innoSetup: {
-    version: '6.7.1',
-    url: 'https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe',
-    sha256: '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0',
+    version: '6.7.3',
+    url: 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe',
+    sha256: '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732',
   },
   allowScripts: {
     'better-sqlite3@13.0.3': false,
