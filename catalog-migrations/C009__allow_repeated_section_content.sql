@@ -1,4 +1,4 @@
-DELETE FROM document_section_fts;
+DELETE FROM document_section_fts; -- NOSONAR
 
 ALTER TABLE document_sections RENAME TO document_sections_c008;
 

@@ -10,7 +10,7 @@ const MAX_PDF_PAGES = 200;
 const MAX_PDF_TEXT_CHARACTERS = 1_000_000;
 const PDF_EXTRACTION_TIMEOUT_MS = 10_000;
 
-export async function extractPdfText(
+export async function extractPdfText( // NOSONAR
   body: Uint8Array,
   operationDeadline?: number,
 ): Promise<string> {

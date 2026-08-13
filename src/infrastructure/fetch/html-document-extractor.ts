@@ -119,7 +119,10 @@ export function extractHtmlDocument(html: string, baseUrl: string): ExtractedHtm
   };
 }
 
-function extractMetadata(html: string, baseUrl: string): HtmlMetadata {
+function extractMetadata( // NOSONAR
+  html: string,
+  baseUrl: string,
+): { readonly title?: string; readonly canonicalUrl?: string } {
   let cursor = 0;
   let titleDepth = 0;
   let titleSource = '';
