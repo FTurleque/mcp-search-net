@@ -18,4 +18,12 @@ describe('parseStrictInteger', () => {
       expect(() => parseStrictInteger(value, '--value', 0)).toThrow(`Invalid --value ${value}`);
     },
   );
+
+  it('rejects a valid integer below the minimum', () => {
+    expect(() => parseStrictInteger('0', '--value', 1)).toThrow('Invalid --value 0');
+  });
+
+  it('returns undefined when value is undefined', () => {
+    expect(parseStrictInteger(undefined, '--value', 0)).toBeUndefined();
+  });
 });
