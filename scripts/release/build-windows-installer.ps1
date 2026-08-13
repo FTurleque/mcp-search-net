@@ -49,7 +49,7 @@ foreach ($Required in @(
     }
 }
 
-$ExpectedInnoVersion = '6.7.1'
+$ExpectedInnoVersion = '6.7.3'
 $IsccCandidates = @()
 $IsccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
 if ($IsccCommand) { $IsccCandidates += $IsccCommand.Source }

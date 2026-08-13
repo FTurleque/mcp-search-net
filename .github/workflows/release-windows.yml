@@ -75,7 +75,7 @@ jobs:
           ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (-not $iscc) { throw 'ISCC.exe introuvable après installation Inno Setup.' }
           $isccVersion = (Get-Item -LiteralPath $iscc).VersionInfo.ProductVersion
-          if ([string]::IsNullOrWhiteSpace($isccVersion) -or -not $isccVersion.StartsWith('6.7.1', [System.StringComparison]::Ordinal)) {
+          if ([string]::IsNullOrWhiteSpace($isccVersion) -or -not $isccVersion.StartsWith('6.7.3', [System.StringComparison]::Ordinal)) {
             throw "Version ISCC inattendue : $isccVersion ($iscc)"
           }
           Write-Host "ISCC: $iscc ($isccVersion)"

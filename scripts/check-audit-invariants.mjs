@@ -45,9 +45,10 @@ const clientReporter = readText('scripts/generate-client-contract-report.mjs');
 const querySet = readJson('benchmarks/v2-search-quality/queries.json');
 
 const expectedNode = '24.18.0';
-const expectedInnoVersion = '6.7.1';
-const expectedInnoUrl = 'https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe';
-const expectedInnoSha256 = '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0';
+const expectedInnoVersion = '6.7.3';
+const expectedInnoUrl =
+  'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe';
+const expectedInnoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732';
 assert(readText('.nvmrc').trim() === expectedNode, '.nvmrc: Node 24.18.0 attendu');
 assert(readText('.node-version').trim() === expectedNode, '.node-version: Node 24.18.0 attendu');
 requireText(
@@ -162,7 +163,7 @@ assert(
 );
 
 for (const needle of [
-  "$ExpectedInnoVersion = '6.7.1'",
+  "$ExpectedInnoVersion = '6.7.3'",
   '.VersionInfo.ProductVersion',
   'Version Inno Setup non qualifiée',
 ]) {
@@ -178,7 +179,7 @@ for (const needle of [
   `$innoSha256 = '${expectedInnoSha256}'`,
   '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
   '.VersionInfo.ProductVersion',
-  "StartsWith('6.7.1'",
+  "StartsWith('6.7.3'",
 ]) {
   requireText(releaseWorkflow, needle, `release-windows: invariant Inno absent: ${needle}`);
 }
