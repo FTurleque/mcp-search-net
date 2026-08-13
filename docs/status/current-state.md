@@ -7,7 +7,7 @@ pas ce document pour connaître l’état présent.
 ## Version et statut de livraison
 
 - Jalon produit : V2 documentaire intégrée et hardening post-audit livré.
-- Version SemVer : `1.1.0`.
+- Version SemVer : `1.1.2`.
 - Branche de release et source de vérité publiée : `master`.
 - Branche d’intégration courante : `develop`. Une correction présente uniquement sur `develop`
   n’est pas déclarée publiée sur `master` ; sa qualification repose sur la CI du SHA exact de la
@@ -33,8 +33,9 @@ pas ce document pour connaître l’état présent.
   Claude Desktop et Codex. Les trois clients ont été observés réellement sur Windows 10 avec le
   runtime installé `a70b9a51527543c9417566326bb780121954cef5` et la chaîne déterministe
   `search_docs -> sectionId réel -> read_doc_section(même sectionId)`.
-- Release V2/1.1.0 : aucune publication n’est déclarée par ce document ; une publication doit
-  passer la qualification exact-head et le workflow de release volontaire.
+- Release 1.1.2 : candidate en cours de qualification. Corrections de sécurité post-audit :
+  décodage HTML character references avant détection de schéma dans le sanitizer HTML et dans
+  le provider SearXNG. La publication sera déclenchée après qualification exact-head master.
 - Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
   et la version embarquée doivent être identiques. Toute dérive bloque la publication.
 

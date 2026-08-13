@@ -1,3 +1,5 @@
+import { decodeHtmlCharacterReferences } from './html-character-reference-decoder.js';
+
 const ACTIVE_CONTAINER_TAGS = [
   'script',
   'style',
@@ -126,7 +128,10 @@ function isUnsafeHtmlAttributeAssignment(attribute: string, rawName: string): bo
   if (name !== 'href') return false;
   const value = extractAttributeValue(attribute);
   if (value === undefined) return true;
-  const normalized = stripAsciiControlsAndSpace(value);
+  // Decode HTML character references before scheme detection so that obfuscated hrefs like
+  // javascript&#58;alert(1) or java&#x73;cript:x are not incorrectly allowed through.
+  const decoded = decodeHtmlCharacterReferences(value);
+  const normalized = stripAsciiControlsAndSpace(decoded);
   const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/u.exec(normalized)?.[1]?.toLowerCase();
   return scheme !== undefined && scheme !== 'http' && scheme !== 'https';
 }

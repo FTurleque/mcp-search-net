@@ -19,6 +19,7 @@ import {
   MAX_EXTERNAL_TITLE_CHARACTERS,
   truncateUnicode,
 } from '../../domain/services/bounded-text.js';
+import { decodeHtmlCharacterReferences } from '../fetch/html-character-reference-decoder.js';
 import { fetchJson } from '../http/http-utils.js';
 
 const MAX_PROVIDER_SNIPPET_CHARACTERS = 4_096;
@@ -149,13 +150,11 @@ function ensureTrailingSlash(value: string): string {
 }
 
 function decodeSnippet(value: string): string {
-  return value
+  // Decode all HTML character references first so that encoded tags like &lt;b&gt; become
+  // literal <b> before tag-stripping, preventing re-injection of HTML markup into the output.
+  const decoded = decodeHtmlCharacterReferences(value);
+  return decoded
     .replace(/<[^>]*>/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
 }

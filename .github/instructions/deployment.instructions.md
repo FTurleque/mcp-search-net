@@ -6,7 +6,7 @@ description: >
   loopback-bound, least-privilege Docker, et stdout propre depuis le launcher.
 applyTo: 'Dockerfile,compose.yaml,config/**/*.yml,scripts/**/*.ps1,scripts/**/*.cmd,.github/workflows/**/*.yml'
 owner: mcp-search-net
-version: 1.1.0
+version: 1.1.2
 lastReviewed: '2026-06-21'
 ---
 
