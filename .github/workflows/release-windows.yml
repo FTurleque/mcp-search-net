@@ -74,8 +74,9 @@ jobs:
             'C:\Program Files\Inno Setup 6\ISCC.exe'
           ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
           if (-not $iscc) { throw 'ISCC.exe introuvable après installation Inno Setup.' }
-          $isccBanner = ((& $iscc /? 2>&1) | Select-Object -First 1) -as [string]
+          $isccOutput = @((& $iscc /? 2>&1))
           $global:LASTEXITCODE = 0
+          $isccBanner = ($isccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
           if ($isccBanner -notmatch 'Inno Setup 6') {
             throw "Version ISCC non qualifiée : $isccBanner ($iscc)"
           }

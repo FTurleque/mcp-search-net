@@ -71,8 +71,9 @@ $Iscc = $IsccCandidates |
 if ([string]::IsNullOrWhiteSpace($Iscc)) {
     throw "Inno Setup $ExpectedInnoVersion est requis. Installez cette version ou exposez son ISCC.exe dans le PATH."
 }
-$IsccBanner = ((& $Iscc /? 2>&1) | Select-Object -First 1) -as [string]
+$IsccOutput = @((& $Iscc /? 2>&1))
 $global:LASTEXITCODE = 0
+$IsccBanner = ($IsccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
 if ($IsccBanner -notmatch 'Inno Setup 6') {
     throw "Version Inno Setup non qualifiée : attendu=Inno Setup 6 banner=$IsccBanner binaire=$Iscc"
 }
