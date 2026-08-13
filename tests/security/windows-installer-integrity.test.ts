@@ -87,12 +87,12 @@ describe('Windows installer runtime integrity', () => {
     expect(releasePublisher).toContain('$PackageLock.version -ne $Version');
     expect(releasePublisher).toContain("$PackageLock.packages.''.version -ne $Version");
     expect(releasePublisher).toContain('$PackagedPackage.version -ne $Version');
-    expect(releaseWorkflow).toContain("$innoVersion = '6.7.1'");
+    expect(releaseWorkflow).toContain("$innoVersion = '6.7.3'");
     expect(releaseWorkflow).toContain(
-      "$innoUrl = 'https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe'",
+      "$innoUrl = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'",
     );
     expect(releaseWorkflow).toContain(
-      "$innoSha256 = '4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0'",
+      "$innoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'",
     );
     const innoVerification = releaseWorkflow.indexOf('.\\scripts\\windows\\verify-file-sha256.ps1');
     const innoExecution = releaseWorkflow.indexOf('Start-Process', innoVerification + 1);
