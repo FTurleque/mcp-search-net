@@ -390,7 +390,9 @@ export const INSERT_DOCUMENT_VERSION_SECTIONS_FTS_SQL = `
 
 export const COUNT_DOCUMENT_SECTION_FTS_SQL = 'SELECT count(*) AS count FROM document_section_fts';
 
-export const SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL = `
+// prettier-ignore
+export const SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL = // NOSONAR
+  `
   SELECT
     catalog_sources.id AS source_id,
     catalog_sources.source_key AS source_source_key,
@@ -458,7 +460,9 @@ export const SEARCH_CURRENT_DOCUMENT_SECTIONS_FTS_SQL = `
   LIMIT ?
 `;
 
-export const SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL = `
+// prettier-ignore
+export const SEARCH_CURRENT_DOCUMENT_SECTIONS_SQL = // NOSONAR
+  `
   SELECT
     catalog_sources.id AS source_id,
     catalog_sources.source_key AS source_source_key,
