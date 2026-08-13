@@ -55,7 +55,7 @@ function Verify-Sha256([string]$Artifact, [string]$Checksum) {
 $PackageJsonPath = Join-Path $RepoRoot 'package.json'
 $PackageLockPath = Join-Path $RepoRoot 'package-lock.json'
 $Package = Get-Content -LiteralPath $PackageJsonPath -Raw | ConvertFrom-Json
-$PackageLock = Get-Content -LiteralPath $PackageLockPath -Raw | ConvertFrom-Json -AsHashTable
+$PackageLock = Get-Content -LiteralPath $PackageLockPath -Raw | ConvertFrom-Json -AsHashtable
 if ($Package.version -ne $Version) {
     throw "Version de release incohérente : paramètre=$Version package.json=$($Package.version). Mettez à jour la version du dépôt avant de publier."
 }
