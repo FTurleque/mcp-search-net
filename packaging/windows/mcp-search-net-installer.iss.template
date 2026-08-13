@@ -425,6 +425,11 @@ begin
     if DeleteUserDataOnUninstall and DirExists(ExpandConstant('{app}')) then
       DelTree(ExpandConstant('{app}'), True, True, True);
 
+    { Smoke build: the entire installation is ephemeral; remove runtime-generated files
+      (.env, data/, node-runtime-proof.json) that Inno did not track from [Files]. }
+    if IsSmokeBuild() and DirExists(ExpandConstant('{app}')) then
+      DelTree(ExpandConstant('{app}'), True, True, True);
+
     { Never delete the legacy ZIP installation path from this setup. It is a separate installation
       root and ownership cannot be proven by the Inno uninstaller. }
   end;
