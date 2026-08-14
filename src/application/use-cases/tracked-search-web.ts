@@ -1,6 +1,9 @@
 import type { CacheRepository } from '../ports/cache-repository.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
-import type { SearchHistoryRepository } from '../ports/search-history-repository.js';
+import type {
+  SearchHistoryRecordInput,
+  SearchHistoryRepository,
+} from '../ports/search-history-repository.js';
 import type { SearchProvider } from '../ports/search-provider.js';
 import type { OperationContext, Telemetry } from '../ports/telemetry.js';
 import { ApplicationError } from '../../domain/errors/domain-errors.js';
@@ -27,20 +30,20 @@ export class TrackedSearchWeb extends SearchWeb {
   ): Promise<ToolExecution<SearchResponse>> {
     const normalized = normalizeSearchRequest(request);
     const startedAt = performance.now();
+    const safeRequest = {
+      language: normalized.language,
+      timeRange: normalized.timeRange ?? null,
+      maxResults: normalized.maxResults,
+      sourcePolicy: normalized.sourcePolicy,
+      allowedDomains: normalized.allowedDomains,
+      excludedDomains: normalized.excludedDomains,
+    };
     try {
       const execution = await super.execute(request, context);
       await this.record(context, {
-        requestId: context.requestId,
         tool: 'search_web',
         query: normalized.query,
-        request: {
-          language: normalized.language,
-          timeRange: normalized.timeRange ?? null,
-          maxResults: normalized.maxResults,
-          sourcePolicy: normalized.sourcePolicy,
-          allowedDomains: normalized.allowedDomains,
-          excludedDomains: normalized.excludedDomains,
-        },
+        request: safeRequest,
         durationMs: elapsedMilliseconds(startedAt),
         status: execution.status,
         cacheStatus: execution.cacheStatus,
@@ -51,17 +54,9 @@ export class TrackedSearchWeb extends SearchWeb {
       return execution;
     } catch (error) {
       await this.record(context, {
-        requestId: context.requestId,
         tool: 'search_web',
         query: normalized.query,
-        request: {
-          language: normalized.language,
-          timeRange: normalized.timeRange ?? null,
-          maxResults: normalized.maxResults,
-          sourcePolicy: normalized.sourcePolicy,
-          allowedDomains: normalized.allowedDomains,
-          excludedDomains: normalized.excludedDomains,
-        },
+        request: safeRequest,
         durationMs: elapsedMilliseconds(startedAt),
         status: 'failed',
         provider: 'searxng',
@@ -74,7 +69,7 @@ export class TrackedSearchWeb extends SearchWeb {
 
   private async record(
     context: OperationContext,
-    record: Parameters<SearchHistoryRepository['append']>[0] & { readonly requestId?: string },
+    record: Omit<SearchHistoryRecordInput, 'requestId'>,
   ): Promise<void> {
     if (context.requestId === undefined) return;
     try {
