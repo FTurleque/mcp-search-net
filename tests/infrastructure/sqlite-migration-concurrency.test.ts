@@ -133,7 +133,9 @@ async function waitForFile(path: string, child: ChildProcess): Promise<void> {
 
 async function waitForSuccess(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null) {
-    if (child.exitCode !== 0) throw new Error(`Migration fixture failed with code ${child.exitCode}`);
+    if (child.exitCode !== 0) {
+      throw new Error(`Migration fixture failed with code ${child.exitCode}`);
+    }
     return;
   }
   let stderr = '';
@@ -209,7 +211,7 @@ function recordMigration(
   }
   const table = kind === 'catalog' ? 'catalog_schema_migrations' : 'history_schema_migrations';
   database
-    .prepare(`INSERT INTO ${table}(version, name, applied_at, checksum) VALUES (?, ?, ?, ?)`)
+    .prepare(`INSERT INTO ${table}(version, name, applied_at, checksum) VALUES (?, ?, ?, ?)`) 
     .run(migration.version, migration.name, 1_000, migration.checksum);
 }
 
