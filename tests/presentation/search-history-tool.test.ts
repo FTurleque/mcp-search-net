@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -73,8 +73,10 @@ describe('list_search_history MCP contract', () => {
       expect(first.structuredContent).toMatchObject({
         status: 'success',
         warnings: [],
-        cacheStatus: 'DISABLED',
-        provider: 'history',
+        metadata: {
+          cacheStatus: 'DISABLED',
+          provider: 'history',
+        },
         data: {
           enabled: true,
           available: true,
@@ -216,6 +218,8 @@ describe('list_search_history MCP contract', () => {
 
   it('reports HISTORY_UNAVAILABLE while keeping the MCP server usable', async () => {
     const root = mkdtempSync(join(tmpdir(), 'mcp-search-history-unavailable-'));
+    const blockedParent = join(root, 'blocked-parent');
+    writeFileSync(blockedParent, 'not-a-directory', 'utf8');
     const loaded = await loadConfiguration(resolve('config/application.yml'));
     const container = createContainer({
       ...loaded,
@@ -225,7 +229,7 @@ describe('list_search_history MCP contract', () => {
         cache: { ...loaded.application.cache, path: join(root, 'cache.sqlite') },
         history: {
           ...loaded.application.history,
-          path: join(root, 'missing-parent', 'history.sqlite'),
+          path: join(blockedParent, 'history.sqlite'),
         },
       },
     });
