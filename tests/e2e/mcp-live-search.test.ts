@@ -12,6 +12,7 @@ const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
 const expectedToolNames = [
   'fetch_url',
   'list_docs',
+  'list_search_history',
   'read_doc_section',
   'search_docs',
   'search_web',
@@ -36,6 +37,7 @@ describe.runIf(live)('live MCP search', () => {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
         [crawl4aiEnvironmentName]: requireCrawl4aiToken(),
         MCP_CACHE_PATH: join(cacheRoot, 'cache.sqlite'),
+        MCP_HISTORY_PATH: join(cacheRoot, 'history.sqlite'),
       },
       stderr: 'pipe',
     });
