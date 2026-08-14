@@ -106,6 +106,19 @@ describe('SqliteSearchHistoryRepository', () => {
     expect(page.items[0]?.query).toBe('new query');
   });
 
+  it('does not return expired entries when no newer search has triggered pruning', async () => {
+    const { path, clock } = createDatabase();
+    const repository = new SqliteSearchHistoryRepository(path, clock, 90, 20_000);
+    await repository.append(searchRecord('expired query', 'MISS'));
+    clock.advance(91 * 86_400_000);
+
+    const page = await repository.list({ limit: 20 });
+    repository.close();
+
+    expect(page.total).toBe(0);
+    expect(page.items).toEqual([]);
+  });
+
   it('keeps only the configured maximum number of newest entries', async () => {
     const { path, clock } = createDatabase();
     const repository = new SqliteSearchHistoryRepository(path, clock, 90, 100);
