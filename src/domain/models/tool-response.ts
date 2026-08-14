@@ -20,6 +20,8 @@ export const TOOL_WARNING_CODES = [
   'DATE_UNAVAILABLE',
   'UNVERIFIED_SOURCE',
   'SEARCH_PROVIDER_PARTIAL_FAILURE',
+  'HISTORY_DISABLED',
+  'HISTORY_UNAVAILABLE',
 ] as const;
 export type ToolWarningCode = (typeof TOOL_WARNING_CODES)[number];
 
@@ -49,7 +51,8 @@ export type ToolName =
   | 'fetch_url'
   | 'search_docs'
   | 'list_docs'
-  | 'read_doc_section';
+  | 'read_doc_section'
+  | 'list_search_history';
 export type ToolResponseStatus = 'success' | 'partial';
 
 export interface ToolWarningDescriptor {
