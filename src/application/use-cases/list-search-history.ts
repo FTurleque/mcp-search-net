@@ -78,12 +78,11 @@ function toListQuery(input: ListSearchHistoryInput): SearchHistoryListQuery {
   };
 }
 
-function normalizeLimit(limit: number | undefined): number {
-  const normalized = limit ?? 20;
-  if (!Number.isSafeInteger(normalized) || normalized < 1 || normalized > 50) {
+function normalizeLimit(limit = 20): number {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
     throw new InvalidArgumentError('limit must be an integer between 1 and 50');
   }
-  return normalized;
+  return limit;
 }
 
 function validateBeforeId(beforeId: number | undefined): void {
