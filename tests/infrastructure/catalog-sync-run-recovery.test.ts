@@ -98,6 +98,51 @@ describe('catalog sync run recovery', () => {
     owner.close();
   });
 
+  it('does not recover an expired heartbeat while the same-host owner process is alive', async () => {
+    const { path, clock, setNow } = fixture();
+    const owner = repository(path, clock, {
+      pid: 112,
+      hostname: 'test-host',
+      ownerTokenFactory: () => 'long-running-owner-token',
+      processAlive: () => true,
+      abandonedAfterMs: 1_000,
+    });
+    const run = await owner.startCatalogSyncRun({ startedAt: new Date(1_000) });
+
+    setNow(10_000);
+    const observer = repository(path, clock, {
+      pid: 223,
+      hostname: 'test-host',
+      ownerTokenFactory: () => 'observer-token',
+      processAlive: (pid) => pid === 112,
+      abandonedAfterMs: 1_000,
+    });
+
+    expect(readRun(path, run.id)).toMatchObject({
+      status: 'RUNNING',
+      completed_at: null,
+      owner_token: 'long-running-owner-token',
+      owner_pid: 112,
+      owner_hostname: 'test-host',
+      heartbeat_at: 1_000,
+    });
+
+    observer.close();
+    setNow(11_000);
+    await expect(
+      owner.completeCatalogSyncRun(run.id, {
+        completedAt: new Date(11_000),
+        status: 'SUCCESS',
+        documentsChecked: 0,
+        documentsAdded: 0,
+        documentsUpdated: 0,
+        documentsUnchanged: 0,
+        documentsFailed: 0,
+      }),
+    ).resolves.toMatchObject({ status: 'SUCCESS', completedAt: new Date(11_000) });
+    owner.close();
+  });
+
   it('uses the default process liveness probe for a live local owner', async () => {
     const { path, clock, setNow } = fixture();
     const owner = repository(path, clock, {
