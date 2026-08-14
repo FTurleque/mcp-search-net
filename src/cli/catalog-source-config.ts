@@ -199,15 +199,21 @@ function optionalBoolean(
 }
 
 function validateDocumentUrl(value: string, sourceKey: string, index: number): string {
+  let url: URL;
   try {
-    const url = new URL(value);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-      throw new Error('unsupported protocol');
-    }
-    return url.toString();
+    url = new URL(value);
   } catch {
     throw new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`);
   }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`);
+  }
+  if (url.username !== '' || url.password !== '') {
+    throw new Error(
+      `catalog source ${sourceKey} document ${index + 1} url must not contain credentials`,
+    );
+  }
+  return url.toString();
 }
 
 function parseSourceType(value: string, sourceKey: string): CatalogSourceType {

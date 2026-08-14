@@ -9,6 +9,9 @@ Maintenir un serveur MCP TypeScript local, en lecture seule, pour GitHub Copilot
 - Inspecter `git status --short` avant tout travail. Préserver les modifications mises en attente, non liées, ou rédigées par l'utilisateur.
 - Lire les sources, tests, documentation et section de roadmap concernés avant de modifier quoi que ce soit.
 - Pour les audits, revues, explications et diagnostics : rester en lecture seule sauf si l'utilisateur demande explicitement une correction.
+- Gouvernance du dépôt : `mcp-search-net` est maintenu par un seul développeur. L'absence de branch
+  protection/ruleset sur `develop` est volontaire et hors périmètre ; ne jamais la remonter comme
+  finding d'audit ni la modifier sauf demande explicite de l'utilisateur.
 - Pour les modifications : définir des critères d'acceptation, implémenter la solution cohérente la plus petite, ajouter des tests de régression et valider proportionnellement.
 - Ne jamais exécuter de commandes Git/filesystem destructives, publier, pousser, créer des releases, modifier des ressources cloud ou contacter des personnes sans autorisation explicite.
 - Ne pas installer silencieusement des dépendances ni démarrer/arrêter des services quand une alternative en lecture seule suffit.
