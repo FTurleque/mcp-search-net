@@ -231,7 +231,7 @@ export class SqliteCatalogSyncStore {
       return row;
     });
     try {
-      return toCatalogSyncRun(transaction());
+      return toCatalogSyncRun(transaction.immediate());
     } finally {
       this.ownedRuns.delete(syncRunId);
     }
@@ -309,7 +309,7 @@ export class SqliteCatalogSyncStore {
     const lastHeartbeat = row.heartbeat_at ?? row.started_at;
     if (row.owner_pid !== null && row.owner_hostname === this.hostname) {
       if (!this.processAlive(row.owner_pid)) return true;
-      return now - lastHeartbeat > this.abandonedAfterMs;
+      return false;
     }
     return now - lastHeartbeat > this.abandonedAfterMs;
   }
