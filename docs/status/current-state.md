@@ -37,9 +37,10 @@ pas ce document pour connaître l’état présent.
   (exe Anthropic vs. Windows Store), nettoyage complet à la désinstallation (PowerShell
   Remove-Item au lieu de DelTree), câblage MCP post-installation. La publication sera déclenchée
   après qualification exact-head master.
-- Évolution d’intégration : la PR #89 ajoute un historique local persistant des recherches MCP dans
-  `history.sqlite` et l’outil read-only `list_search_history`. Tant que cette PR n’est pas intégrée,
-  cette capacité n’est pas déclarée publiée sur `master`.
+- Évolution d’intégration : la PR #89 a été mergée dans `develop` le 14 août 2026 et ajoute un
+  historique local persistant des recherches MCP dans `history.sqlite` ainsi que l’outil read-only
+  `list_search_history`. Cette capacité reste une évolution de `develop` tant qu’une intégration de
+  release distincte ne l’a pas portée sur `master`.
 - Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
   et la version embarquée doivent être identiques. Toute dérive bloque la publication.
 
@@ -103,7 +104,11 @@ L’historique ne réutilise pas `search_cache` : deux appels identiques créent
 distinctes, et une expiration ou éviction du cache ne supprime pas leur trace. La migration dédiée
 `H001__create_search_history.sql` initialise ce stockage. Les écritures sont fail-open : une panne
 de l’historique est journalisée mais ne transforme jamais une recherche principale réussie en
-échec. La rétention par défaut est de 90 jours, bornée en plus à 20 000 occurrences.
+échec. La rétention par défaut est de 90 jours, bornée en plus à 20 000 occurrences. Avant
+persistance, les formes évidentes de credentials présentes dans la requête ou les paramètres
+(Bearer, JWT, PAT connus, API key, password, secret ou signature) sont remplacées par `[REDACTED]`.
+Cette redaction est un hardening best-effort : une requête en texte libre reste une donnée locale
+potentiellement sensible et `history.enabled: false` permet de désactiver entièrement ce journal.
 
 La dépendance native SQLite est fixée à `better-sqlite3@13.0.3`. Cette ligne utilise N-API et dépend
 de `node-addon-api`; les anciennes transitives `prebuild-install` et `bindings` ne font plus partie
@@ -126,8 +131,13 @@ Les migrations catalogue appliquées dans l’ordre sont :
 - `C010__add_sync_run_kind.sql`
 - `C011__persist_pending_version_promotion.sql`
 - `C012__make_language_indexes_nocase.sql`
+- `C013__add_sync_run_lease.sql`
 
-Une migration appliquée est immuable. Toute évolution crée une nouvelle migration.
+Une migration appliquée est immuable. Toute évolution crée une nouvelle migration. Les runners de
+migration cache, catalogue et historique prennent désormais une transaction SQLite
+`BEGIN IMMEDIATE` avant toute inspection du ledger, DDL de compatibilité ou application de version :
+deux processus démarrant ou mettant à niveau la même base sont sérialisés avant d’observer l’état du
+schéma.
 
 `C009` préserve les IDs de section, retire l’ancienne unicité `(document_version_id,
 content_hash)` et reconstruit le FTS courant. L’identité persistée d’une section est son occurrence
@@ -146,6 +156,13 @@ est consommée atomiquement lors de la promotion avec les sections, le FTS et le
 `C012` recrée les index de langue catalogue existants avec `COLLATE NOCASE`. Les filtres BCP-47
 restent ainsi insensibles à la casse sans perdre l’utilisation des index SQLite pour la pagination
 et les comptages filtrés.
+
+`C013` ajoute un lease durable aux `sync_runs` avec token propriétaire, PID, hostname et heartbeat.
+L’ouverture du catalogue réconcilie un run `RUNNING` lorsque son propriétaire local n’existe plus ou
+lorsque son lease a réellement expiré, le clôt en `FAILED` et efface l’ownership. Un token de
+fencing empêche ensuite l’ancien propriétaire de finaliser le run récupéré ; les observations d’un
+run possédé par l’instance courante renouvellent son heartbeat sans modifier le contrat public du
+repository.
 
 Le découpage Markdown du fetch et l’ingestion CLI utilisent le même scanner de headings/fences. Les
 fences backtick ou tilde se ferment uniquement avec le même caractère et une longueur compatible ;
