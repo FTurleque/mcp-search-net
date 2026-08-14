@@ -45,7 +45,20 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
   public readonly enabled = true;
   private readonly database: Database.Database;
   private readonly insertStatement: Database.Statement<
-    [string, string, string, string, number, number, string, string | null, string, number | null, string, string | null]
+    [
+      string,
+      string,
+      string,
+      string,
+      number,
+      number,
+      string,
+      string | null,
+      string,
+      number | null,
+      string,
+      string | null,
+    ]
   >;
   private readonly deleteExpiredStatement: Database.Statement<[number]>;
   private readonly deleteOverflowStatement: Database.Statement<[number]>;
@@ -139,12 +152,13 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
     const hasMore = rows.length > query.limit;
     const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
     const items = pageRows.map(toEntry);
+    const nextBeforeId = hasMore ? items.at(-1)?.id : undefined;
     return Promise.resolve({
       enabled: true,
       available: true,
       items,
       total: countRow?.total ?? 0,
-      ...(hasMore && items.length > 0 ? { nextBeforeId: items.at(-1)?.id } : {}),
+      ...(nextBeforeId === undefined ? {} : { nextBeforeId }),
     });
   }
 
@@ -203,7 +217,9 @@ function toEntry(row: HistoryRow): SearchHistoryEntry {
     executedAt: new Date(row.executed_at),
     durationMs: row.duration_ms,
     status: row.status as SearchHistoryStatus,
-    ...(row.cache_status === null ? {} : { cacheStatus: row.cache_status as CacheStatus }),
+    ...(row.cache_status === null
+      ? {}
+      : { cacheStatus: row.cache_status as CacheStatus }),
     provider: row.provider,
     ...(row.result_count === null ? {} : { resultCount: row.result_count }),
     warningCodes: parseWarningCodes(row.warning_codes_json),
@@ -242,10 +258,16 @@ function assertRecord(record: SearchHistoryRecordInput): void {
   if (!Number.isFinite(record.durationMs) || record.durationMs < 0) {
     throw new Error('HISTORY_DURATION_INVALID');
   }
-  if (record.resultCount !== undefined && (!Number.isSafeInteger(record.resultCount) || record.resultCount < 0)) {
+  if (
+    record.resultCount !== undefined &&
+    (!Number.isSafeInteger(record.resultCount) || record.resultCount < 0)
+  ) {
     throw new Error('HISTORY_RESULT_COUNT_INVALID');
   }
-  if (record.cacheStatus !== undefined && !(CACHE_STATUSES as readonly string[]).includes(record.cacheStatus)) {
+  if (
+    record.cacheStatus !== undefined &&
+    !(CACHE_STATUSES as readonly string[]).includes(record.cacheStatus)
+  ) {
     throw new Error('HISTORY_CACHE_STATUS_INVALID');
   }
 }
