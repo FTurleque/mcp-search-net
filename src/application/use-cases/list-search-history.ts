@@ -1,4 +1,5 @@
 import type {
+  SearchHistoryEntry,
   SearchHistoryListQuery,
   SearchHistoryRepository,
   SearchHistoryStatus,
@@ -47,58 +48,76 @@ export class ListSearchHistory {
   public constructor(private readonly repository: SearchHistoryRepository) {}
 
   public async execute(input: ListSearchHistoryInput): Promise<ListSearchHistoryOutput> {
-    const limit = input.limit ?? 20;
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
-      throw new InvalidArgumentError('limit must be an integer between 1 and 50');
-    }
-    if (
-      input.beforeId !== undefined &&
-      (!Number.isSafeInteger(input.beforeId) || input.beforeId <= 0)
-    ) {
-      throw new InvalidArgumentError('beforeId must be a positive integer');
-    }
-    if (input.from !== undefined && Number.isNaN(input.from.getTime())) {
-      throw new InvalidArgumentError('from must be a valid date');
-    }
-    if (input.to !== undefined && Number.isNaN(input.to.getTime())) {
-      throw new InvalidArgumentError('to must be a valid date');
-    }
-    if (input.from !== undefined && input.to !== undefined && input.from > input.to) {
-      throw new InvalidArgumentError('from must be before or equal to to');
-    }
-    const queryContains = input.queryContains?.trim();
-    const query: SearchHistoryListQuery = {
-      limit,
-      ...(input.tool === undefined ? {} : { tool: input.tool }),
-      ...(input.status === undefined ? {} : { status: input.status }),
-      ...(input.cacheStatus === undefined ? {} : { cacheStatus: input.cacheStatus }),
-      ...(input.from === undefined ? {} : { from: input.from }),
-      ...(input.to === undefined ? {} : { to: input.to }),
-      ...(queryContains === undefined || queryContains === '' ? {} : { queryContains }),
-      ...(input.beforeId === undefined ? {} : { beforeId: input.beforeId }),
-    };
-    const page = await this.repository.list(query);
+    const page = await this.repository.list(toListQuery(input));
     return {
       enabled: page.enabled,
       available: page.available,
       count: page.items.length,
       total: page.total,
       nextBeforeId: page.nextBeforeId ?? null,
-      searches: page.items.map((entry) => ({
-        id: entry.id,
-        requestId: entry.requestId,
-        tool: entry.tool,
-        query: entry.query,
-        request: { ...entry.request },
-        executedAt: entry.executedAt.toISOString(),
-        durationMs: entry.durationMs,
-        status: entry.status,
-        cacheStatus: entry.cacheStatus ?? null,
-        provider: entry.provider,
-        resultCount: entry.resultCount ?? null,
-        warningCodes: [...entry.warningCodes],
-        errorCode: entry.errorCode ?? null,
-      })),
+      searches: page.items.map(toListEntry),
     };
   }
+}
+
+function toListQuery(input: ListSearchHistoryInput): SearchHistoryListQuery {
+  const limit = normalizeLimit(input.limit);
+  validateBeforeId(input.beforeId);
+  validateDateRange(input.from, input.to);
+  const queryContains = input.queryContains?.trim();
+
+  return {
+    limit,
+    ...(input.tool === undefined ? {} : { tool: input.tool }),
+    ...(input.status === undefined ? {} : { status: input.status }),
+    ...(input.cacheStatus === undefined ? {} : { cacheStatus: input.cacheStatus }),
+    ...(input.from === undefined ? {} : { from: input.from }),
+    ...(input.to === undefined ? {} : { to: input.to }),
+    ...(queryContains === undefined || queryContains === '' ? {} : { queryContains }),
+    ...(input.beforeId === undefined ? {} : { beforeId: input.beforeId }),
+  };
+}
+
+function normalizeLimit(limit: number | undefined): number {
+  const normalized = limit ?? 20;
+  if (!Number.isSafeInteger(normalized) || normalized < 1 || normalized > 50) {
+    throw new InvalidArgumentError('limit must be an integer between 1 and 50');
+  }
+  return normalized;
+}
+
+function validateBeforeId(beforeId: number | undefined): void {
+  if (beforeId !== undefined && (!Number.isSafeInteger(beforeId) || beforeId <= 0)) {
+    throw new InvalidArgumentError('beforeId must be a positive integer');
+  }
+}
+
+function validateDateRange(from: Date | undefined, to: Date | undefined): void {
+  if (from !== undefined && Number.isNaN(from.getTime())) {
+    throw new InvalidArgumentError('from must be a valid date');
+  }
+  if (to !== undefined && Number.isNaN(to.getTime())) {
+    throw new InvalidArgumentError('to must be a valid date');
+  }
+  if (from !== undefined && to !== undefined && from > to) {
+    throw new InvalidArgumentError('from must be before or equal to to');
+  }
+}
+
+function toListEntry(entry: SearchHistoryEntry): ListSearchHistoryEntry {
+  return {
+    id: entry.id,
+    requestId: entry.requestId,
+    tool: entry.tool,
+    query: entry.query,
+    request: { ...entry.request },
+    executedAt: entry.executedAt.toISOString(),
+    durationMs: entry.durationMs,
+    status: entry.status,
+    cacheStatus: entry.cacheStatus ?? null,
+    provider: entry.provider,
+    resultCount: entry.resultCount ?? null,
+    warningCodes: [...entry.warningCodes],
+    errorCode: entry.errorCode ?? null,
+  };
 }
