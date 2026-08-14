@@ -435,11 +435,10 @@ begin
 
     { Inno already removes every file installed from [Files].
       configure-install.ps1 -Uninstall removes installer-generated artifacts (.env, backups...).
-      Only data/ may remain (user opt-out). Delete the installation dir if empty or if user said yes. }
+      Only data/ may remain (user opt-out). Delete the installation dir only when user said yes;
+      Inno cleans empty dirs automatically on user opt-out. }
     if DeleteUserDataOnUninstall and DirExists(ExpandConstant('{app}')) then
-      PsRemoveTree(ExpandConstant('{app}'))
-    else if DirExists(ExpandConstant('{app}')) then
-      DelTree(ExpandConstant('{app}'), True, False, True);  { subdirs only, files were cleaned }
+      PsRemoveTree(ExpandConstant('{app}'));
 
     { Smoke build: remove any runtime-generated files Inno did not track. }
     if IsSmokeBuild() then
