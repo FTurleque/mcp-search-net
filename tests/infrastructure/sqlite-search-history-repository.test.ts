@@ -51,17 +51,21 @@ describe('SqliteSearchHistoryRepository', () => {
 
     const firstPage = await repository.list({ limit: 2 });
     expect(firstPage.items.map((entry) => entry.query)).toEqual(['three', 'two']);
-    expect(firstPage.nextBeforeId).toBeDefined();
+    const beforeId = firstPage.nextBeforeId;
+    expect(beforeId).toBeDefined();
+    if (beforeId === undefined) throw new Error('Expected a next page cursor');
 
     const secondPage = await repository.list({
       limit: 2,
-      beforeId: firstPage.nextBeforeId,
+      beforeId,
     });
     repository.close();
 
     expect(secondPage.items.map((entry) => entry.query)).toEqual(['one']);
     expect(secondPage.nextBeforeId).toBeUndefined();
-    expect(new Set([...firstPage.items, ...secondPage.items].map((entry) => entry.id)).size).toBe(3);
+    expect(new Set([...firstPage.items, ...secondPage.items].map((entry) => entry.id)).size).toBe(
+      3,
+    );
   });
 
   it('filters by tool, cache status, date and query text', async () => {
@@ -131,7 +135,10 @@ function createDatabase(): { path: string; clock: MutableClock } {
   };
 }
 
-function searchRecord(query: string, cacheStatus: 'HIT' | 'MISS' | 'DISABLED'): SearchHistoryRecordInput {
+function searchRecord(
+  query: string,
+  cacheStatus: 'HIT' | 'MISS' | 'DISABLED',
+): SearchHistoryRecordInput {
   return {
     requestId: randomUUID(),
     tool: 'search_web',
