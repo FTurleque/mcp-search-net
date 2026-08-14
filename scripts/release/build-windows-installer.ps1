@@ -49,7 +49,6 @@ foreach ($Required in @(
     }
 }
 
-$ExpectedInnoVersion = '6.7.3'
 $IsccCandidates = @()
 $IsccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
 if ($IsccCommand) { $IsccCandidates += $IsccCommand.Source }
@@ -69,13 +68,14 @@ $Iscc = $IsccCandidates |
     Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
     Select-Object -First 1
 if ([string]::IsNullOrWhiteSpace($Iscc)) {
-    throw "Inno Setup $ExpectedInnoVersion est requis. Installez cette version ou exposez son ISCC.exe dans le PATH."
+    throw 'Inno Setup 6 ou 7 est requis. Installez-le ou exposez son ISCC.exe dans le PATH.'
 }
 $IsccOutput = @((& $Iscc /? 2>&1))
 $global:LASTEXITCODE = 0
 $IsccBanner = ($IsccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
-if ($IsccBanner -notmatch 'Inno Setup 6') {
-    throw "Version Inno Setup non qualifiée : attendu=Inno Setup 6 banner=$IsccBanner binaire=$Iscc"
+$ExpectedInnoVersion = '6.7.3'  # version figée dans le workflow CI release-windows.yml
+if ($IsccBanner -notmatch 'Inno Setup 6' -and $IsccBanner -notmatch 'Inno Setup 7') {
+    throw "Version Inno Setup non qualifiée : attendu=Inno Setup 6 ou 7 banner=$IsccBanner binaire=$Iscc"
 }
 
 $Template = Join-Path $RepoRoot 'packaging\windows\mcp-search-net-installer.iss.template'

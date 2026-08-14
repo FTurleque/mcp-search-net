@@ -86,9 +86,10 @@ if (Test-Path -LiteralPath $pkgsDir -PathType Container) {
 }
 if (-not $desktopOk) {
     $appDataClaude = Join-Path $env:APPDATA 'Claude'
-    $claudeCodeDir = Join-Path $appDataClaude 'claude-code'
-    if ((Test-Path -LiteralPath $appDataClaude -PathType Container) -and
-        -not (Test-Path -LiteralPath $claudeCodeDir -PathType Container)) {
+    $configFile    = Join-Path $appDataClaude 'claude_desktop_config.json'
+    $logsDir       = Join-Path $appDataClaude 'logs'
+    if ((Test-Path -LiteralPath $configFile -PathType Leaf) -or
+        (Test-Path -LiteralPath $logsDir -PathType Container)) {
         $desktopOk = $true
     }
 }
@@ -98,7 +99,7 @@ if ($desktopOk) {
     $lines.Add('Reason=Claude Desktop detecte')
 } else {
     $lines.Add('Available=0')
-    $lines.Add('Reason=Claude Desktop non installe')
+    $lines.Add('Reason=Claude Desktop non detecte (claude_desktop_config.json et logs\ absents de %APPDATA%\Claude)')
 }
 
 # [ClaudeCode]
