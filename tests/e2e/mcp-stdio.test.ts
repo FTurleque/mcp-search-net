@@ -182,6 +182,14 @@ describe('MCP STDIO server', () => {
         },
       ],
     });
+    const catalogSearchStructured = catalogSearch.structuredContent as
+      | Record<string, unknown>
+      | undefined;
+    const catalogSearchRequestId =
+      typeof catalogSearchStructured?.['requestId'] === 'string'
+        ? catalogSearchStructured['requestId']
+        : undefined;
+    expect(catalogSearchRequestId).toEqual(expect.any(String));
 
     const history = await client.callTool({
       name: 'list_search_history',
@@ -206,7 +214,7 @@ describe('MCP STDIO server', () => {
           {
             tool: 'search_docs',
             query: 'definitely-no-matching-catalog-section',
-            requestId: catalogSearch.structuredContent?.requestId,
+            requestId: catalogSearchRequestId,
             status: 'success',
             cacheStatus: 'DISABLED',
             provider: 'catalog',
