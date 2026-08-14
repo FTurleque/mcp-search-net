@@ -46,6 +46,15 @@ export interface CatalogPage<T> {
   readonly items: readonly T[];
 }
 
+export interface CatalogSyncRunProgress {
+  readonly heartbeatAt: Date;
+  readonly documentsChecked: number;
+  readonly documentsAdded: number;
+  readonly documentsUpdated: number;
+  readonly documentsUnchanged: number;
+  readonly documentsFailed: number;
+}
+
 export type CatalogIntegrityIssueCode =
   | 'SQLITE_INTEGRITY_CHECK_FAILED'
   | 'SQLITE_FOREIGN_KEY_CHECK_FAILED'
@@ -128,6 +137,10 @@ export interface CatalogRepository {
   verifyIntegrity(): Promise<CatalogIntegrityReport>;
   rebuildSearchIndex(): Promise<CatalogSearchIndexRebuildResult>;
   startCatalogSyncRun(input: CatalogSyncRunStartRequest): Promise<CatalogSyncRun>;
+  updateCatalogSyncRunProgress(
+    syncRunId: number,
+    progress: CatalogSyncRunProgress,
+  ): Promise<void>;
   completeCatalogSyncRun(
     syncRunId: number,
     input: CatalogSyncRunCompletionInput,
