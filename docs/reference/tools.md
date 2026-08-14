@@ -190,27 +190,27 @@ read-only, idempotent, closed-world et n’effectue aucun appel Web. Il consulte
 
 Entrées :
 
-| Champ           | Défaut | Contraintes                                                     |
-| --------------- | ------ | --------------------------------------------------------------- |
-| `tool`          | absent | `search_web` ou `search_docs`                                   |
-| `status`        | absent | `success`, `partial` ou `failed`                                |
-| `cacheStatus`   | absent | `HIT`, `MISS`, `STALE_FALLBACK` ou `DISABLED`                   |
-| `from`          | absent | date/heure ISO interprétable                                    |
-| `to`            | absent | date/heure ISO interprétable, postérieure ou égale à `from`     |
-| `queryContains` | absent | sous-chaîne insensible à la casse, 1 à 200 caractères           |
-| `limit`         | `20`   | de 1 à 50                                                       |
-| `beforeId`      | absent | curseur keyset positif retourné par la page précédente          |
+| Champ           | Défaut | Contraintes                                                 |
+| --------------- | ------ | ----------------------------------------------------------- |
+| `tool`          | absent | `search_web` ou `search_docs`                               |
+| `status`        | absent | `success`, `partial` ou `failed`                            |
+| `cacheStatus`   | absent | `HIT`, `MISS`, `STALE_FALLBACK` ou `DISABLED`               |
+| `from`          | absent | date/heure ISO interprétable                                |
+| `to`            | absent | date/heure ISO interprétable, postérieure ou égale à `from` |
+| `queryContains` | absent | sous-chaîne insensible à la casse, 1 à 200 caractères       |
+| `limit`         | `20`   | de 1 à 50                                                   |
+| `beforeId`      | absent | curseur keyset positif retourné par la page précédente      |
 
 Sortie `data` :
 
-| Champ          | Description                                                       |
-| -------------- | ----------------------------------------------------------------- |
-| `enabled`      | indique si l’historisation est activée                            |
-| `available`    | indique si le stockage d’historique est actuellement lisible      |
-| `count`        | nombre d’entrées retournées sur la page                           |
-| `total`        | nombre total d’entrées correspondant aux filtres, hors curseur     |
-| `nextBeforeId` | curseur de la page suivante ou `null`                             |
-| `searches`     | occurrences de recherche, de la plus récente à la plus ancienne    |
+| Champ          | Description                                                     |
+| -------------- | --------------------------------------------------------------- |
+| `enabled`      | indique si l’historisation est activée                          |
+| `available`    | indique si le stockage d’historique est actuellement lisible    |
+| `count`        | nombre d’entrées retournées sur la page                         |
+| `total`        | nombre total d’entrées correspondant aux filtres, hors curseur  |
+| `nextBeforeId` | curseur de la page suivante ou `null`                           |
+| `searches`     | occurrences de recherche, de la plus récente à la plus ancienne |
 
 Chaque occurrence contient `id`, `requestId`, `tool`, `query`, les paramètres de recherche non
 secrets dans `request`, `executedAt`, `durationMs`, `status`, `cacheStatus`, `provider`,
