@@ -23,7 +23,7 @@ export function redactSensitiveSearchText(value: string): string {
       REDACTED,
     )
     .replace(
-      /(\b(?:authorization|credential|password|passwd|secret|access[-_]?token|refresh[-_]?token|api[-_]?key|signature|sig)\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s&,;]+)/giu,
+      /(\b(?:authorization|credential|password|passwd|secret|token|access[-_]?token|refresh[-_]?token|api[-_]?key|signature|sig)\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s&,;]+)/giu,
       `$1${REDACTED}`,
     );
 }
