@@ -41,7 +41,7 @@ export class TrackedSearchCatalogDocuments extends SearchCatalogDocuments {
         cacheStatus: 'DISABLED',
         provider: 'catalog',
         resultCount: output.resultCount,
-        warningCodes: [],
+        warningCodes: output.resultCount === 0 ? ['NO_RESULTS'] : [],
       });
       return output;
     } catch (error) {
