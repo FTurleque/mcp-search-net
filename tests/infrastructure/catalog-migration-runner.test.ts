@@ -90,7 +90,13 @@ describe('CatalogMigrationRunner', () => {
     expect(applied.every(({ checksum }) => checksum.length === 64)).toBe(true);
     expect(ftsDefinition.sql).toContain('contentless_delete = 1');
     expect(syncColumns.map(({ name }) => name)).toEqual(
-      expect.arrayContaining(['run_kind', 'owner_token', 'owner_pid', 'owner_hostname', 'heartbeat_at']),
+      expect.arrayContaining([
+        'run_kind',
+        'owner_token',
+        'owner_pid',
+        'owner_hostname',
+        'heartbeat_at',
+      ]),
     );
     expect(versionColumns.map(({ name }) => name)).toContain('pending_current');
     database.close();
