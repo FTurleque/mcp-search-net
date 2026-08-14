@@ -1,5 +1,8 @@
 import type { CatalogRepository } from '../ports/catalog-repository.js';
-import type { SearchHistoryRecordInput, SearchHistoryRepository } from '../ports/search-history-repository.js';
+import type {
+  SearchHistoryRecordInput,
+  SearchHistoryRepository,
+} from '../ports/search-history-repository.js';
 import type { OperationContext } from '../ports/telemetry.js';
 import { ApplicationError } from '../../domain/errors/domain-errors.js';
 import {
