@@ -39,7 +39,9 @@ export function sanitizeSearchHistoryRecord(
 }
 
 export function redactSensitiveSearchText(value: string): string {
-  let redacted = value.replace(BEARER_TOKEN, `Bearer ${REDACTED}`).replace(JWT_TOKEN, REDACTED);
+  let redacted = value
+    .replace(BEARER_TOKEN, `Bearer ${REDACTED}`)
+    .replace(JWT_TOKEN, REDACTED);
   for (const pattern of KNOWN_TOKEN_PATTERNS) redacted = redacted.replace(pattern, REDACTED);
   return redacted.replace(
     KEY_VALUE_SECRET,
