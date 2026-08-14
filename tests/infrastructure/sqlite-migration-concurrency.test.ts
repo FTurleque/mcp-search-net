@@ -1,10 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import {
-  existsSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -50,7 +45,7 @@ const suites: readonly MigrationSuite[] = [
 ];
 const roots: string[] = [];
 
- afterEach(() => {
+afterEach(() => {
   roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true }));
 });
 
@@ -98,10 +93,7 @@ async function openConcurrently(
   const second = spawnRepository(kind, databasePath, readyTwo, goPath, fixturePath);
 
   try {
-    await Promise.all([
-      waitForFile(readyOne, first),
-      waitForFile(readyTwo, second),
-    ]);
+    await Promise.all([waitForFile(readyOne, first), waitForFile(readyTwo, second)]);
     writeFileSync(goPath, 'go\n', 'utf8');
     await Promise.all([waitForSuccess(first), waitForSuccess(second)]);
   } finally {
@@ -217,7 +209,7 @@ function recordMigration(
   }
   const table = kind === 'catalog' ? 'catalog_schema_migrations' : 'history_schema_migrations';
   database
-    .prepare(`INSERT INTO ${table}(version, name, applied_at, checksum) VALUES (?, ?, ?, ?)`) 
+    .prepare(`INSERT INTO ${table}(version, name, applied_at, checksum) VALUES (?, ?, ?, ?)`)
     .run(migration.version, migration.name, 1_000, migration.checksum);
 }
 
