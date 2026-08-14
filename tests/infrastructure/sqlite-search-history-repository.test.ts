@@ -34,10 +34,7 @@ describe('SqliteSearchHistoryRepository', () => {
     expect(page.available).toBe(true);
     expect(page.total).toBe(2);
     expect(page.items.map((entry) => entry.query)).toEqual(['same query', 'same query']);
-    expect(page.items.map((entry) => entry.requestId)).toEqual([
-      second.requestId,
-      first.requestId,
-    ]);
+    expect(page.items.map((entry) => entry.requestId)).toEqual([second.requestId, first.requestId]);
     expect(page.items.map((entry) => entry.cacheStatus)).toEqual(['HIT', 'MISS']);
   });
 
