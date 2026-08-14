@@ -21,6 +21,8 @@ import {
 } from '../../domain/models/tool-response.js';
 import { HistoryMigrationRunner } from './history-migration-runner.js';
 
+const SQLITE_BUSY_TIMEOUT_MS = 5_000;
+
 interface HistoryRow {
   readonly id: number;
   readonly request_id: string;
@@ -76,12 +78,12 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
       throw new RangeError('maxEntries must be an integer between 100 and 1000000');
     }
     mkdirSync(dirname(path), { recursive: true });
-    this.database = new Database(path);
+    this.database = new Database(path, { timeout: SQLITE_BUSY_TIMEOUT_MS });
     try {
+      this.database.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
       this.database.pragma('journal_mode = WAL');
       this.database.pragma('synchronous = NORMAL');
       this.database.pragma('foreign_keys = ON');
-      this.database.pragma('busy_timeout = 5000');
       new HistoryMigrationRunner(this.database, this.clock).apply();
     } catch (error) {
       if (this.database.open) this.database.close();
