@@ -95,9 +95,6 @@ export class SqliteCatalogRepository implements CatalogRepository {
       if (error instanceof ConfigurationError) throw error;
       throw new ConfigurationError('Catalog integrity verification failed', { cause: error });
     }
-    if (database === undefined || syncStore === undefined) {
-      throw new ConfigurationError('Catalog integrity verification failed');
-    }
     this.database = database;
     this.sources = new SqliteCatalogSourceStore(this.database, clock);
     this.readModel = new SqliteCatalogReadModel(this.database);
