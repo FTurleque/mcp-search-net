@@ -55,6 +55,7 @@ const CACHE_TABLES: Readonly<Record<CacheKind, string>> = {
   content: 'content_cache',
 };
 const CACHE_EVICTION_BATCH_SIZE = 256;
+const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
 export class SqliteCacheRepository implements CacheRepository {
   public readonly enabled = true;
@@ -100,12 +101,12 @@ export class SqliteCacheRepository implements CacheRepository {
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)
       throw new Error('CACHE_MAX_BYTES_INVALID');
     mkdirSync(dirname(path), { recursive: true });
-    this.database = new Database(path);
+    this.database = new Database(path, { timeout: SQLITE_BUSY_TIMEOUT_MS });
     try {
+      this.database.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
       this.database.pragma('journal_mode = WAL');
       this.database.pragma('synchronous = NORMAL');
       this.database.pragma('foreign_keys = ON');
-      this.database.pragma('busy_timeout = 5000');
       this.applyMigrations();
     } catch (error) {
       if (this.database.open) this.database.close();
