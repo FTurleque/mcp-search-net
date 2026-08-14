@@ -21,7 +21,12 @@ describe('catalog mutation concurrency', () => {
   it('serializes sync completion before its read-to-write transition', async () => {
     const fixture = await createFixture();
     const run = await fixture.repository.startCatalogSyncRun({ startedAt: new Date(1_000) });
-    const child = holdCompetingWriter(fixture.path, fixture.sourceId, fixture.root, 'complete');
+    const child = holdCompetingWriter(
+      fixture.path,
+      fixture.sourceId,
+      fixture.root,
+      'complete',
+    );
 
     try {
       await waitForFile(join(fixture.root, 'complete.ready'), child);
@@ -55,7 +60,12 @@ describe('catalog mutation concurrency', () => {
       status: 'ACTIVE',
     });
     const run = await fixture.repository.startCatalogSyncRun({ startedAt: new Date(1_000) });
-    const child = holdCompetingWriter(fixture.path, fixture.sourceId, fixture.root, 'observation');
+    const child = holdCompetingWriter(
+      fixture.path,
+      fixture.sourceId,
+      fixture.root,
+      'observation',
+    );
 
     try {
       await waitForFile(join(fixture.root, 'observation.ready'), child);
@@ -110,7 +120,12 @@ function holdCompetingWriter(
   root: string,
   scenario: string,
 ): ChildProcess {
-  const fixturePath = join(process.cwd(), 'tests', 'fixtures', 'hold-catalog-write-lock.ts');
+  const fixturePath = join(
+    process.cwd(),
+    'tests',
+    'fixtures',
+    'hold-catalog-write-lock.ts',
+  );
   return spawn(
     process.execPath,
     [
@@ -134,7 +149,9 @@ async function waitForFile(path: string, child: ChildProcess): Promise<void> {
   const deadline = Date.now() + 10_000;
   while (!existsSync(path)) {
     if (child.exitCode !== null) {
-      throw new Error(`Catalog contention fixture exited before readiness with code ${child.exitCode}`);
+      throw new Error(
+        `Catalog contention fixture exited before readiness with code ${child.exitCode}`,
+      );
     }
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${path}`);
     await delay(10);
