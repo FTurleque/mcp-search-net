@@ -61,7 +61,9 @@ export class DisabledSearchHistoryRepository implements SearchHistoryRepository 
     return Promise.resolve(emptyPage(false, true));
   }
 
-  public close(): void {}
+  public close(): void {
+    // No backing resource exists when history is disabled.
+  }
 }
 
 export class UnavailableSearchHistoryRepository implements SearchHistoryRepository {
@@ -75,7 +77,9 @@ export class UnavailableSearchHistoryRepository implements SearchHistoryReposito
     return Promise.resolve(emptyPage(true, false));
   }
 
-  public close(): void {}
+  public close(): void {
+    // Opening the backing resource failed, so there is nothing to close.
+  }
 }
 
 function emptyPage(enabled: boolean, available: boolean): SearchHistoryPage {
