@@ -42,6 +42,7 @@ describe('MCP STDIO server', () => {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
         [crawl4aiEnvironmentName]: 'mcp-search-local-development-value',
         MCP_CACHE_PATH: join(cacheRoot, 'cache.sqlite'),
+        MCP_HISTORY_PATH: join(cacheRoot, 'history.sqlite'),
       },
       stderr: 'pipe',
     });
@@ -52,6 +53,7 @@ describe('MCP STDIO server', () => {
     expect(response.tools.map((tool) => tool.name).sort()).toEqual([
       'fetch_url',
       'list_docs',
+      'list_search_history',
       'read_doc_section',
       'search_docs',
       'search_web',
@@ -61,18 +63,21 @@ describe('MCP STDIO server', () => {
     const fetchUrlTool = response.tools.find((tool) => tool.name === 'fetch_url');
     const searchDocsTool = response.tools.find((tool) => tool.name === 'search_docs');
     const listDocsTool = response.tools.find((tool) => tool.name === 'list_docs');
+    const listHistoryTool = response.tools.find((tool) => tool.name === 'list_search_history');
     const readSectionTool = response.tools.find((tool) => tool.name === 'read_doc_section');
 
     expect(searchWebTool?.annotations).toEqual(readOnlyOpenWorldAnnotations);
     expect(fetchUrlTool?.annotations).toEqual(readOnlyOpenWorldAnnotations);
     expect(searchDocsTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
     expect(listDocsTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
+    expect(listHistoryTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
     expect(readSectionTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
 
     expect(searchDocsTool?.description).toContain('read_doc_section');
     expect(searchDocsTool?.description).toContain('fetch_url');
     expect(listDocsTool?.description).toContain('metadata');
     expect(listDocsTool?.description).toContain('search_docs');
+    expect(listHistoryTool?.description).toContain('historique');
     expect(readSectionTool?.description).toContain('search_docs');
 
     expect(searchDocsTool?.inputSchema).toMatchObject({
@@ -93,6 +98,17 @@ describe('MCP STDIO server', () => {
         },
         limit: { default: 20, maximum: 50 },
         offset: { default: 0 },
+      },
+    });
+
+    expect(listHistoryTool?.inputSchema).toMatchObject({
+      properties: {
+        tool: { enum: ['search_web', 'search_docs'] },
+        status: { enum: ['success', 'partial', 'failed'] },
+        cacheStatus: { enum: ['HIT', 'MISS', 'STALE_FALLBACK', 'DISABLED'] },
+        queryContains: { type: 'string', maxLength: 200 },
+        limit: { default: 20, maximum: 50 },
+        beforeId: { type: 'integer' },
       },
     });
 
@@ -166,6 +182,47 @@ describe('MCP STDIO server', () => {
         },
       ],
     });
+    const catalogSearchStructured = catalogSearch.structuredContent as
+      | Record<string, unknown>
+      | undefined;
+    const catalogSearchRequestId =
+      typeof catalogSearchStructured?.['requestId'] === 'string'
+        ? catalogSearchStructured['requestId']
+        : undefined;
+    expect(catalogSearchRequestId).toEqual(expect.any(String));
+
+    const history = await client.callTool({
+      name: 'list_search_history',
+      arguments: { tool: 'search_docs', limit: 10 },
+    });
+    expect(history.isError).not.toBe(true);
+    expect(history.structuredContent).toMatchObject({
+      schemaVersion: '1.0',
+      status: 'success',
+      metadata: {
+        tool: 'list_search_history',
+        cacheStatus: 'DISABLED',
+        provider: 'history',
+      },
+      data: {
+        enabled: true,
+        available: true,
+        count: 1,
+        total: 1,
+        nextBeforeId: null,
+        searches: [
+          {
+            tool: 'search_docs',
+            query: 'definitely-no-matching-catalog-section',
+            requestId: catalogSearchRequestId,
+            status: 'success',
+            cacheStatus: 'DISABLED',
+            provider: 'catalog',
+            resultCount: 0,
+          },
+        ],
+      },
+    });
 
     const compactList = await client.callTool({ name: 'list_docs', arguments: { limit: 3 } });
     expect(compactList.isError).not.toBe(true);
@@ -213,6 +270,7 @@ describe('MCP STDIO server', () => {
         MCP_CONFIG_PATH: resolve('config/application.yml'),
         [crawl4aiEnvironmentName]: privateValue,
         MCP_CACHE_PATH: join(cacheRoot, 'cache.sqlite'),
+        MCP_HISTORY_PATH: join(cacheRoot, 'history.sqlite'),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     });

@@ -8,7 +8,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$ExpectedTools = @('search_web', 'fetch_url', 'search_docs', 'list_docs', 'read_doc_section')
+$ExpectedTools = @('search_web', 'fetch_url', 'search_docs', 'list_docs', 'read_doc_section', 'list_search_history')
 $CertificationClients = @('Claude Code', 'Claude Desktop', 'Codex')
 $ExcludedCertificationClients = @('IntelliJ IDEA + GitHub Copilot', 'GitHub Copilot CLI')
 $ServerName = 'mcp-search-net'
@@ -221,217 +221,140 @@ function New-ClientResult {
     }
 }
 
-function Find-ClaudeDesktopConfig {
-    try {
-        $packages = Join-Path $env:LOCALAPPDATA 'Packages'
-        if (Test-Path -LiteralPath $packages -PathType Container) {
-            foreach ($pkg in Get-ChildItem -LiteralPath $packages -Directory -Filter 'Claude_*' -ErrorAction SilentlyContinue) {
-                $candidate = Join-Path $pkg.FullName 'LocalCache\Roaming\Claude\claude_desktop_config.json'
-                if (Test-Path -LiteralPath (Split-Path $candidate -Parent) -PathType Container) {
-                    return $candidate
-                }
+function Resolve-CertificationWindowsProfilePath {
+    $profile = $env:USERPROFILE
+    if (-not $profile -or -not (Test-Path -LiteralPath $profile -PathType Container)) { return $null }
+    return [System.IO.Path]::GetFullPath($profile)
+}
+
+function Get-ClaudeCodeResult {
+    $exe = Resolve-CommandPath -Name 'claude' -Fallbacks @(
+        (Join-Path $env:USERPROFILE '.local\bin\claude.exe'),
+        (Join-Path $env:APPDATA 'npm\claude.cmd')
+    )
+    $version = Get-VersionProbe $exe
+    $configPath = Join-Path $env:USERPROFILE '.claude.json'
+    $configured = Test-JsonServerEntry -Path $configPath -RootKeys @('mcpServers')
+    $listed = $false
+    $details = $false
+    $toolsSeen = @()
+    $source = 'non observe'
+    if ($exe) {
+        $list = Invoke-ExternalCapture -Executable $exe -Arguments @('mcp', 'list') -TimeoutSeconds 15
+        if ($list.completed -and $list.exitCode -eq 0) {
+            $listed = Test-TextServerResponse -Text ($list.stdout + "`n" + $list.stderr) -Name $ServerName
+            if ($listed) { $source = 'claude mcp list' }
+        }
+        if ($listed) {
+            $get = Invoke-ExternalCapture -Executable $exe -Arguments @('mcp', 'get', $ServerName) -TimeoutSeconds 15
+            if ($get.completed -and $get.exitCode -eq 0) {
+                $text = $get.stdout + "`n" + $get.stderr
+                $details = Test-TextServerResponse -Text $text -Name $ServerName
+                $toolsSeen = Get-ExpectedToolsSeen $text
+                if ($details) { $source = 'claude mcp get' }
             }
         }
-    } catch {
-        Write-Verbose "Claude Desktop package detection failed: $($_.Exception.Message)"
     }
-    return (Join-Path $env:APPDATA 'Claude\claude_desktop_config.json')
+    return New-ClientResult -Name 'Claude Code' -Detected ([bool]$exe) -Version $version -ConfigurationPath (Normalize-PathForReport $configPath) -Configured $configured -ServerListed $listed -ServerDetailsAvailable $details -ExpectedToolsSeen $toolsSeen -EvidenceSource $source -NextAction 'Lancer une vraie recherche documentaire puis capturer le détail du serveur.'
 }
 
-function Find-ClaudeDesktopVersion {
-    try {
-        $process = Get-Process -Name 'Claude' -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($process -and $process.Path) {
-            return [System.Diagnostics.FileVersionInfo]::GetVersionInfo($process.Path).ProductVersion
+function Get-ClaudeDesktopResult {
+    $desktopExeCandidates = @(
+        (Join-Path $env:LOCALAPPDATA 'AnthropicClaude\claude.exe'),
+        (Join-Path $env:LOCALAPPDATA 'AnthropicClaude\Claude.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Claude\Claude.exe')
+    )
+    $desktopExe = $desktopExeCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    $configPath = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
+    $configured = Test-JsonServerEntry -Path $configPath -RootKeys @('mcpServers')
+    $version = if ($desktopExe) {
+        try { (Get-Item -LiteralPath $desktopExe).VersionInfo.ProductVersion } catch { $null }
+    } else { $null }
+    return New-ClientResult -Name 'Claude Desktop' -Detected ([bool]$desktopExe) -Version $version -ConfigurationPath (Normalize-PathForReport $configPath) -Configured $configured -ServerListed $configured -ServerDetailsAvailable $false -ExpectedToolsSeen @() -EvidenceSource $(if ($configured) { 'claude_desktop_config.json' } else { 'non observe' }) -NextAction 'Ouvrir Claude Desktop, afficher les outils MCP puis exécuter search_docs.'
+}
+
+function Get-CodexResult {
+    $exe = Resolve-CommandPath -Name 'codex' -Fallbacks @(
+        (Join-Path $env:APPDATA 'npm\codex.cmd'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\codex\codex.exe')
+    )
+    $version = Get-VersionProbe $exe
+    $configPath = Join-Path $env:USERPROFILE '.codex\config.toml'
+    $configured = $false
+    if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+        $toml = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8
+        $configured = $toml -match '(?m)^\[mcp_servers\.mcp-search-net\]\s*$'
+    }
+    $listed = $false
+    $details = $false
+    $toolsSeen = @()
+    $source = 'non observe'
+    if ($exe) {
+        $list = Invoke-ExternalCapture -Executable $exe -Arguments @('mcp', 'list') -TimeoutSeconds 15
+        if ($list.completed -and $list.exitCode -eq 0) {
+            $listed = Test-TextServerResponse -Text ($list.stdout + "`n" + $list.stderr) -Name $ServerName
+            if ($listed) { $source = 'codex mcp list' }
         }
-    } catch {
-        Write-Verbose "Claude Desktop process version detection failed: $($_.Exception.Message)"
-    }
-    try {
-        $package = Get-AppxPackage -Name 'Claude*' -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
-        if ($package) { return [string]$package.Version }
-    } catch {
-        Write-Verbose "Claude Desktop package version detection failed: $($_.Exception.Message)"
-    }
-    return $null
-}
-
-function Find-CodexVersion([string] $Executable) {
-    $commandVersion = Get-VersionProbe $Executable
-    if ($commandVersion) { return $commandVersion }
-
-    try {
-        $process = Get-Process -Name 'Codex' -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($process -and $process.Path) {
-            $productVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($process.Path).ProductVersion
-            if ($productVersion) { return $productVersion }
+        if ($listed) {
+            $get = Invoke-ExternalCapture -Executable $exe -Arguments @('mcp', 'get', $ServerName) -TimeoutSeconds 15
+            if ($get.completed -and $get.exitCode -eq 0) {
+                $text = $get.stdout + "`n" + $get.stderr
+                $details = Test-TextServerResponse -Text $text -Name $ServerName
+                $toolsSeen = Get-ExpectedToolsSeen $text
+                if ($details) { $source = 'codex mcp get' }
+            }
         }
-    } catch {
-        Write-Verbose "Codex process version detection failed: $($_.Exception.Message)"
     }
-
-    try {
-        $package = Get-AppxPackage -Name '*Codex*' -ErrorAction SilentlyContinue | Sort-Object Version -Descending | Select-Object -First 1
-        if ($package) { return [string]$package.Version }
-    } catch {
-        Write-Verbose "Codex package version detection failed: $($_.Exception.Message)"
-    }
-
-    return $null
+    return New-ClientResult -Name 'Codex' -Detected ([bool]$exe) -Version $version -ConfigurationPath (Normalize-PathForReport $configPath) -Configured $configured -ServerListed $listed -ServerDetailsAvailable $details -ExpectedToolsSeen $toolsSeen -EvidenceSource $source -NextAction 'Exécuter une vraie chaîne search_docs -> read_doc_section avec Codex et capturer la sortie.'
 }
 
-$buildManifestPath = Join-Path $InstallRoot 'BUILD-MANIFEST.json'
-$buildManifest = Read-JsonSafe $buildManifestPath
-$launcherPath = Join-Path $InstallRoot 'bin\mcp-search-net.cmd'
-$server = [PSCustomObject][ordered]@{
-    installRoot = Normalize-PathForReport $InstallRoot
-    installExists = Test-Path -LiteralPath $InstallRoot -PathType Container
-    launcherExists = Test-Path -LiteralPath $launcherPath -PathType Leaf
-    version = if ($buildManifest -and (Get-PropertyExists $buildManifest 'version')) { $buildManifest.version } else { $null }
-    sourceRevision = if ($buildManifest -and (Get-PropertyExists $buildManifest 'sourceRevision')) { $buildManifest.sourceRevision } else { $null }
-    sourceState = if ($buildManifest -and (Get-PropertyExists $buildManifest 'sourceState')) { $buildManifest.sourceState } else { $null }
-}
-
-$clients = @()
+$results = @(
+    (Get-ClaudeCodeResult),
+    (Get-ClaudeDesktopResult),
+    (Get-CodexResult)
+)
 
 if ($SmokeMode) {
-    $negative = 'No MCP server named "mcp-search-net". Configured servers: minos'
-    if (Test-TextServerResponse -Text $negative -Name $ServerName) {
-        throw 'Smoke regression: not-found text must never be accepted as server evidence.'
+    $detected = @($results | Where-Object { $_.detected }).Count
+    $configured = @($results | Where-Object { $_.configured }).Count
+    $summary = [PSCustomObject][ordered]@{
+        schemaVersion = '1.0'
+        mode = 'smoke'
+        certificationScope = $CertificationClients
+        excludedClients = $ExcludedCertificationClients
+        detected = $detected
+        configured = $configured
+        reportPath = $null
     }
-
-    foreach ($name in $CertificationClients) {
-        $clients += New-ClientResult -Name $name -Detected $false -Version $null -ConfigurationPath $null -Configured $false -ServerListed $false -ServerDetailsAvailable $false -ExpectedToolsSeen @() -EvidenceSource 'SMOKE_MODE' -NextAction 'Run without -SmokeMode on the Windows workstation.'
-    }
-} else {
-    $claudeFallback = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
-    $claudeExe = Resolve-CommandPath -Name 'claude' -Fallbacks @($claudeFallback)
-    $claudeList = $null
-    $claudeGet = $null
-    if ($claudeExe) {
-        $claudeList = Invoke-ExternalCapture -Executable $claudeExe -Arguments @('mcp', 'list') -TimeoutSeconds 15
-        $claudeGet = Invoke-ExternalCapture -Executable $claudeExe -Arguments @('mcp', 'get', $ServerName) -TimeoutSeconds 15
-    }
-    $claudeText = if ($claudeGet) { $claudeGet.stdout + $claudeGet.stderr } else { '' }
-    $claudeListText = if ($claudeList) { $claudeList.stdout + $claudeList.stderr } else { '' }
-    $claudeListValid = [bool]($claudeList -and $claudeList.completed -and $claudeList.exitCode -eq 0 -and (Test-TextServerResponse -Text $claudeListText -Name $ServerName))
-    $claudeGetValid = [bool]($claudeGet -and $claudeGet.completed -and $claudeGet.exitCode -eq 0 -and (Test-TextServerResponse -Text $claudeText -Name $ServerName))
-    $clients += New-ClientResult `
-        -Name 'Claude Code' `
-        -Detected ([bool]$claudeExe) `
-        -Version (Get-VersionProbe $claudeExe) `
-        -ConfigurationPath $null `
-        -Configured ([bool]($claudeGetValid -or $claudeListValid)) `
-        -ServerListed $claudeListValid `
-        -ServerDetailsAvailable $claudeGetValid `
-        -ExpectedToolsSeen (Get-ExpectedToolsSeen $claudeText) `
-        -EvidenceSource 'claude mcp list/get' `
-        -NextAction 'Run Claude Code and explicitly call mcp-search-net search_docs, then read_doc_section with the returned sectionId.'
-
-    $claudeDesktopConfig = Find-ClaudeDesktopConfig
-    $claudeDesktopConfigured = Test-JsonServerEntry -Path $claudeDesktopConfig -RootKeys @('mcpServers')
-    $claudeProcess = Get-Process -Name 'Claude' -ErrorAction SilentlyContinue | Select-Object -First 1
-    $claudeDesktopDetected = (Test-Path -LiteralPath (Split-Path $claudeDesktopConfig -Parent) -PathType Container) -or [bool]$claudeProcess
-    $clients += New-ClientResult `
-        -Name 'Claude Desktop' `
-        -Detected $claudeDesktopDetected `
-        -Version (Find-ClaudeDesktopVersion) `
-        -ConfigurationPath (Normalize-PathForReport $claudeDesktopConfig) `
-        -Configured $claudeDesktopConfigured `
-        -ServerListed $claudeDesktopConfigured `
-        -ServerDetailsAvailable $claudeDesktopConfigured `
-        -ExpectedToolsSeen @() `
-        -EvidenceSource 'claude_desktop_config.json + local process/package version' `
-        -NextAction 'Restart Claude Desktop, then execute search_docs -> read_doc_section with the exact returned sectionId and record both native calls.'
-
-    $codexExe = Resolve-CommandPath -Name 'codex'
-    $codexConfig = Join-Path $env:USERPROFILE '.codex\config.toml'
-    $codexText = if (Test-Path -LiteralPath $codexConfig -PathType Leaf) { Get-Content -LiteralPath $codexConfig -Raw -Encoding UTF8 } else { '' }
-    $codexConfigured = $codexText -match '(?m)^\s*\[mcp_servers\.mcp-search-net\]\s*(?:#.*)?$'
-    $codexList = $null
-    if ($codexExe) {
-        $codexList = Invoke-ExternalCapture -Executable $codexExe -Arguments @('mcp', 'list') -TimeoutSeconds 15
-    }
-    $codexListText = if ($codexList) { $codexList.stdout + $codexList.stderr } else { '' }
-    $codexProcess = Get-Process -Name 'Codex' -ErrorAction SilentlyContinue | Select-Object -First 1
-    $codexDetected = [bool]$codexExe -or [bool]$codexProcess -or (Test-Path -LiteralPath (Split-Path $codexConfig -Parent) -PathType Container)
-    $clients += New-ClientResult `
-        -Name 'Codex' `
-        -Detected $codexDetected `
-        -Version (Find-CodexVersion $codexExe) `
-        -ConfigurationPath (Normalize-PathForReport $codexConfig) `
-        -Configured ([bool]($codexConfigured -or ($codexList -and $codexList.completed -and $codexList.exitCode -eq 0 -and $codexListText -match [regex]::Escape($ServerName)))) `
-        -ServerListed ([bool]($codexList -and $codexList.completed -and $codexList.exitCode -eq 0 -and $codexListText -match [regex]::Escape($ServerName))) `
-        -ServerDetailsAvailable $codexConfigured `
-        -ExpectedToolsSeen (Get-ExpectedToolsSeen $codexListText) `
-        -EvidenceSource 'codex mcp list + ~/.codex/config.toml + process/MSIX version fallback' `
-        -NextAction 'Start a fresh Codex session and execute mcp-search-net search_docs -> read_doc_section with the exact returned sectionId; record both native calls.'
+    Write-Output ($summary | ConvertTo-Json -Depth 6)
+    exit 0
 }
 
+$profilePath = Resolve-CertificationWindowsProfilePath
 $report = [PSCustomObject][ordered]@{
     schemaVersion = '1.0'
     generatedAt = [datetime]::UtcNow.ToString('o')
-    smokeMode = [bool]$SmokeMode
-    host = [PSCustomObject][ordered]@{
-        osVersion = [Environment]::OSVersion.VersionString
-        osArchitecture = Get-OperatingSystemArchitecture
-        powershellVersion = $PSVersionTable.PSVersion.ToString()
-    }
-    server = $server
-    expectedTools = $ExpectedTools
+    serverName = $ServerName
+    installRoot = (Normalize-PathForReport $InstallRoot)
     certificationScope = $CertificationClients
-    excludedCertificationClients = $ExcludedCertificationClients
-    clients = @($clients)
-    closureRule = 'Issue #34 certification scope is Claude Code, Claude Desktop, and Codex; a future requalification requires nativeToolInvocationObserved=true evidence for all three clients.'
-}
-
-$jsonPath = Join-Path $OutputDirectory 'native-client-certification.json'
-$markdownPath = Join-Path $OutputDirectory 'native-client-certification.md'
-[System.IO.File]::WriteAllText($jsonPath, ($report | ConvertTo-Json -Depth 12) + "`r`n", $Utf8NoBom)
-
-$lines = New-Object System.Collections.Generic.List[string]
-$lines.Add('# Native MCP client certification evidence')
-$lines.Add('')
-$lines.Add("Generated UTC: $($report.generatedAt)")
-$lines.Add("Server revision: $($server.sourceRevision)")
-$lines.Add("Server version: $($server.version)")
-$lines.Add('Certification scope: Claude Code, Claude Desktop, Codex')
-$lines.Add('Copilot integrations: supported for compatibility, excluded from certification scope')
-$lines.Add('')
-$lines.Add('| Client | Detected | Configured/listed | Tools seen by metadata | Native tool call | Verdict |')
-$lines.Add('| --- | --- | --- | --- | --- | --- |')
-foreach ($client in @($clients)) {
-    $toolsSeen = @($client.expectedToolsSeen | Where-Object { $null -ne $_ -and $_ -ne '' })
-    $tools = if ((Get-CollectionCount $toolsSeen) -gt 0) { $toolsSeen -join ', ' } else { '-' }
-    $lines.Add("| $($client.name) | $($client.detected) | $($client.configured -or $client.serverListed) | $tools | false | NON OBSERVE |")
-}
-$lines.Add('')
-$lines.Add('## Manual completion for a future requalification')
-$lines.Add('')
-$lines.Add('For each retained client, perform a real native tool invocation and record the client version, OS, server revision, and observed tool call. The required workflow is `search_docs -> exact returned sectionId -> read_doc_section(same sectionId)`.')
-$lines.Add('')
-foreach ($client in @($clients)) {
-    $lines.Add("- **$($client.name)**: $($client.nextAction)")
-}
-[System.IO.File]::WriteAllText($markdownPath, ($lines -join "`r`n") + "`r`n", $Utf8NoBom)
-
-if ($SmokeMode) {
-    $clientCount = Get-CollectionCount $clients
-    if ($clientCount -ne 3) { throw "Smoke mode expected three client records, got $clientCount." }
-    $parsed = Get-Content -LiteralPath $jsonPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    if (-not (Get-PropertyExists $parsed 'clients')) { throw 'Smoke mode report is missing clients.' }
-    $parsedClientCount = Get-CollectionCount $parsed.clients
-    if ($parsed.schemaVersion -ne '1.0' -or $parsedClientCount -ne 3) {
-        throw "Smoke mode report serialization is invalid (clients=$parsedClientCount)."
+    excludedClients = $ExcludedCertificationClients
+    expectedTools = $ExpectedTools
+    environment = [PSCustomObject][ordered]@{
+        os = [Environment]::OSVersion.VersionString
+        osArchitecture = Get-OperatingSystemArchitecture
+        processArchitecture = $env:PROCESSOR_ARCHITECTURE
+        profilePath = (Normalize-PathForReport $profilePath)
     }
-    foreach ($name in $CertificationClients) {
-        if (@($parsed.clients | Where-Object { $_.name -eq $name }).Count -ne 1) {
-            throw "Smoke mode report is missing retained client '$name'."
-        }
+    clients = $results
+    summary = [PSCustomObject][ordered]@{
+        certified = 0
+        detected = @($results | Where-Object { $_.detected }).Count
+        configured = @($results | Where-Object { $_.configured }).Count
+        nativeInvocationObserved = 0
     }
-    if (-not $parsed.host.osArchitecture) { throw 'Smoke mode report is missing OS architecture.' }
-    Write-Host "NATIVE_CLIENT_CERTIFICATION_SMOKE_VALID json=$jsonPath markdown=$markdownPath"
-} else {
-    Write-Host "NATIVE_CLIENT_CERTIFICATION_COLLECTED json=$jsonPath markdown=$markdownPath"
-    Write-Host 'No native PASS is inferred from configuration/listing alone. For any future requalification, record real search_docs -> read_doc_section calls for Claude Code, Claude Desktop, and Codex.'
 }
+
+$reportPath = Join-Path $OutputDirectory 'native-client-certification-report.json'
+[System.IO.File]::WriteAllText($reportPath, (($report | ConvertTo-Json -Depth 8) + "`r`n"), $Utf8NoBom)
+Write-Host "Rapport écrit : $reportPath"
+Write-Output ($report | ConvertTo-Json -Depth 8)

@@ -3,8 +3,9 @@ import { z } from 'zod/v4';
 
 import type { CatalogRepository } from '../../application/ports/catalog-repository.js';
 import type { Logger } from '../../application/ports/logger.js';
+import type { ListSearchHistory } from '../../application/use-cases/list-search-history.js';
 import type {
-  SearchCatalogDocuments,
+  SearchCatalogDocumentsInput,
   SearchCatalogDocumentsOutput,
 } from '../../application/use-cases/search-catalog-documents.js';
 import { InvalidArgumentError, ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
@@ -23,15 +24,24 @@ import {
 import { registerCatalogResources } from './catalog-resources.js';
 import type { McpServerDependencies as V1McpServerDependencies } from './mcp-server.js';
 import { createMcpServer as createV1McpServer } from './mcp-server.js';
+import { registerSearchHistoryTool } from './search-history-tool.js';
 import { isInvalidToolInput } from './schemas/invalid-tool-input.js';
 import { createSearchDocsSchemas } from './schemas/search-docs-schema.js';
 import { createToolResponseSchema } from './schemas/tool-response-schema.js';
 import { unicodeBoundedString } from './schemas/unicode-bounded-string.js';
 import { executeToolCall } from './tool-call.js';
 
+interface SearchCatalogDocumentsExecutor {
+  execute(
+    input: SearchCatalogDocumentsInput,
+    context?: { readonly requestId?: string },
+  ): Promise<SearchCatalogDocumentsOutput>;
+}
+
 export interface McpServerV2Dependencies extends V1McpServerDependencies {
   readonly catalogRepository: CatalogRepository;
-  readonly searchCatalogDocuments: SearchCatalogDocuments;
+  readonly searchCatalogDocuments: SearchCatalogDocumentsExecutor;
+  readonly listSearchHistory: ListSearchHistory;
   readonly logger: Logger;
 }
 
@@ -118,6 +128,7 @@ type ReadDocSectionData = z.infer<typeof readDocSectionDataSchema>;
 export function createMcpServer(dependencies: McpServerV2Dependencies): McpServer {
   const server = createV1McpServer(dependencies);
   registerCatalogResources(server, dependencies.catalogRepository);
+  registerSearchHistoryTool(server, dependencies.listSearchHistory, dependencies.logger);
   const schemas = createSearchDocsSchemas(
     dependencies.config.limits.defaultSearchResults,
     dependencies.config.limits.maxSearchResults,
@@ -142,14 +153,17 @@ export function createMcpServer(dependencies: McpServerV2Dependencies): McpServe
       return executeToolCall({
         tool: 'search_docs',
         logger: dependencies.logger,
-        execute: async () => {
+        execute: async (requestId) => {
           if (isInvalidToolInput(input)) throw new InvalidArgumentError();
-          const output = await dependencies.searchCatalogDocuments.execute({
-            query: input.query,
-            ...(input.sourceKey === undefined ? {} : { sourceKey: input.sourceKey }),
-            ...(input.language === undefined ? {} : { language: input.language }),
-            limit: input.maxResults,
-          });
+          const output = await dependencies.searchCatalogDocuments.execute(
+            {
+              query: input.query,
+              ...(input.sourceKey === undefined ? {} : { sourceKey: input.sourceKey }),
+              ...(input.language === undefined ? {} : { language: input.language }),
+              limit: input.maxResults,
+            },
+            { requestId },
+          );
           const snippetLimit = input.compact
             ? Math.min(input.maxSnippetChars, 160)
             : input.maxSnippetChars;

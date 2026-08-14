@@ -67,6 +67,20 @@ export const applicationConfigSchema = z
         maxEntries: 2_000,
         maxBytes: 268_435_456,
       }),
+    history: z
+      .object({
+        enabled: z.boolean().default(true),
+        path: z.string().min(1).default('../.data/history.sqlite'),
+        retentionDays: z.number().int().min(1).max(3_650).default(90),
+        maxEntries: z.number().int().min(100).max(1_000_000).default(20_000),
+      })
+      .strict()
+      .default({
+        enabled: true,
+        path: '../.data/history.sqlite',
+        retentionDays: 90,
+        maxEntries: 20_000,
+      }),
     limits: z
       .object({
         defaultSearchResults: z.number().int().min(1).max(10).default(5),
@@ -159,6 +173,7 @@ export const applicationEnvironmentSchema = z.object({
   MCP_LOG_LEVEL: z.enum(['debug', 'info', 'warning', 'error']).optional(),
   MCP_CACHE_PATH: z.string().min(1).optional(),
   MCP_CATALOG_PATH: z.string().min(1).optional(),
+  MCP_HISTORY_PATH: z.string().min(1).optional(),
   MCP_OFFICIAL_SOURCES_PATH: z.string().min(1).optional(),
   MCP_SEARXNG_URL: httpUrlSchema.optional(),
   MCP_CRAWL4AI_URL: httpUrlSchema.optional(),

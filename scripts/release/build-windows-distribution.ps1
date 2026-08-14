@@ -74,6 +74,7 @@ New-Item -ItemType Directory -Force -Path $AppDist | Out-Null
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'build') -Destination $AppDist -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'migrations') -Destination $AppDist -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'catalog-migrations') -Destination $AppDist -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $RepoRoot 'history-migrations') -Destination $AppDist -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'package.json') -Destination $AppDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'package-lock.json') -Destination $AppDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot '.npmrc') -Destination $AppDist -Force
