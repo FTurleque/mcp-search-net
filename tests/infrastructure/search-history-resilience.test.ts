@@ -62,7 +62,11 @@ describe('search history resilience', () => {
     const realDirectory = join(root, 'real');
     const aliasDirectory = join(root, 'alias');
     mkdirSync(realDirectory);
-    symlinkSync(realDirectory, aliasDirectory, process.platform === 'win32' ? 'junction' : 'dir');
+    symlinkSync(
+      realDirectory,
+      aliasDirectory,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
 
     expect(() =>
       assertDistinctDatabasePaths(
@@ -78,9 +82,9 @@ describe('search history resilience', () => {
     roots.push(root);
     const shared = join(root, 'shared.db');
 
-    expect(() =>
-      assertDistinctDatabasePaths(join(root, 'cache.db'), shared, shared),
-    ).toThrow('Catalog and history paths must be different');
+    expect(() => assertDistinctDatabasePaths(join(root, 'cache.db'), shared, shared)).toThrow(
+      'Catalog and history paths must be different',
+    );
   });
 });
 
