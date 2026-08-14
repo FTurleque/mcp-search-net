@@ -40,7 +40,7 @@ process.stdout.write(
     {
       status: 'DOCS_CHECK_PASSED',
       markdownFiles: markdownFiles.length,
-      tools: 5,
+      tools: 6,
       resources: 4,
       resourceTemplates: 9,
       migrations: readdirSync(resolve(root, 'catalog-migrations')).filter((name) =>
@@ -128,11 +128,18 @@ function validateDocumentationIndex() {
 function validatePublicContractInventory() {
   const serverV1 = readText('src/presentation/mcp/mcp-server.ts');
   const serverV2 = readText('src/presentation/mcp/mcp-server-v2.ts');
+  const historyTool = readText('src/presentation/mcp/search-history-tool.ts');
   const resources = readText('src/presentation/mcp/catalog-resources.ts');
   const toolsReference = readText('docs/reference/tools.md');
-  const tools = ['search_web', 'fetch_url', 'search_docs', 'list_docs', 'read_doc_section'];
-  for (const tool of tools) {
-    const implementation = tool === 'search_web' || tool === 'fetch_url' ? serverV1 : serverV2;
+  const tools = [
+    ['search_web', serverV1],
+    ['fetch_url', serverV1],
+    ['search_docs', serverV2],
+    ['list_docs', serverV2],
+    ['read_doc_section', serverV2],
+    ['list_search_history', historyTool],
+  ];
+  for (const [tool, implementation] of tools) {
     requireText(implementation, `'${tool}'`, `outil absent du serveur: ${tool}`);
     requireText(toolsReference, `\`${tool}\``, `docs/reference/tools.md: outil absent ${tool}`);
     requireText(currentState, `\`${tool}\``, `${currentStatePath}: outil absent ${tool}`);
@@ -221,6 +228,7 @@ function validateEnvironmentInventory() {
     'MCP_LOG_LEVEL',
     'MCP_CACHE_PATH',
     'MCP_CATALOG_PATH',
+    'MCP_HISTORY_PATH',
     'MCP_OFFICIAL_SOURCES_PATH',
     'MCP_SEARXNG_URL',
     'MCP_CRAWL4AI_URL',
