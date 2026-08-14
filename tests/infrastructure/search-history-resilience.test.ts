@@ -20,7 +20,8 @@ afterEach(() => {
 
 describe('search history resilience', () => {
   it('never propagates an append failure into the primary search path', async () => {
-    const logger = createLogger();
+    const errorSpy = vi.fn();
+    const logger = createLogger(errorSpy);
     const inner: SearchHistoryRepository = {
       enabled: true,
       append: vi.fn().mockRejectedValue(new Error('disk unavailable')),
@@ -30,7 +31,7 @@ describe('search history resilience', () => {
     const repository = new SafeSearchHistoryRepository(inner, logger);
 
     await expect(repository.append(record())).resolves.toBe(false);
-    expect(logger.error).toHaveBeenCalledWith(
+    expect(errorSpy).toHaveBeenCalledWith(
       'history_unavailable',
       expect.objectContaining({ operation: 'append' }),
     );
@@ -99,12 +100,12 @@ function record(): SearchHistoryRecordInput {
   };
 }
 
-function createLogger(): Logger {
+function createLogger(error = vi.fn()): Logger {
   return {
     record: vi.fn(),
     debug: vi.fn(),
     info: vi.fn(),
     warning: vi.fn(),
-    error: vi.fn(),
+    error,
   };
 }
