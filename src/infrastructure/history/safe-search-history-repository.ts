@@ -5,6 +5,7 @@ import type {
   SearchHistoryRecordInput,
   SearchHistoryRepository,
 } from '../../application/ports/search-history-repository.js';
+import { sanitizeSearchHistoryRecord } from '../../application/services/search-history-sanitization.js';
 
 export class SafeSearchHistoryRepository implements SearchHistoryRepository {
   public readonly enabled: boolean;
@@ -18,7 +19,7 @@ export class SafeSearchHistoryRepository implements SearchHistoryRepository {
 
   public async append(record: SearchHistoryRecordInput): Promise<boolean> {
     try {
-      return await this.inner.append(record);
+      return await this.inner.append(sanitizeSearchHistoryRecord(record));
     } catch (error) {
       this.logger.error('history_unavailable', {
         operation: 'append',

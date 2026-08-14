@@ -86,14 +86,22 @@ La configuration est validée par Zod au démarrage. Les maxima absolus sont 10 
 `history.sqlite` conserve uniquement des métadonnées nécessaires à l’inspection locale :
 
 - `requestId` et outil (`search_web` ou `search_docs`) ;
-- requête validée et paramètres de recherche non secrets ;
+- requête validée et paramètres de recherche techniques ;
 - instant d’exécution, durée, statut et provider ;
 - statut de cache lorsqu’il existe, nombre de résultats et codes d’avertissement ;
 - code d’erreur public pour une recherche validée qui échoue.
 
-Le serveur n’y duplique pas le contenu complet des pages ou des sections et n’y écrit ni secret,
-ni header d’autorisation, ni variable d’environnement. La base reste locale et n’est pas exposée
-comme fichier arbitraire via MCP ; sa consultation passe par l’outil borné `list_search_history`.
+Avant l’écriture SQLite, le serveur applique une redaction best-effort des formes évidentes de
+credentials dans la requête et les paramètres : Bearer, JWT, PAT connus, API key, password, secret
+et signature sont remplacés par `[REDACTED]`, et les clés de paramètres manifestement sensibles sont
+neutralisées. Cette protection ne peut toutefois pas garantir qu’un texte libre ne contienne jamais
+une donnée sensible sous une forme non reconnue. `history.sqlite` doit donc rester protégé comme une
+donnée locale utilisateur ; pour un besoin de confidentialité stricte, utiliser `history.enabled:
+false` ou réduire la rétention.
+
+Le serveur n’y duplique pas le contenu complet des pages ou des sections, ni les headers
+d’autorisation ni les variables d’environnement. La base reste locale et n’est pas exposée comme
+fichier arbitraire via MCP ; sa consultation passe par l’outil borné `list_search_history`.
 
 ## Registre officiel
 

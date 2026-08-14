@@ -17,33 +17,33 @@ export class CatalogMigrationRunner {
   ) {}
 
   public apply(): void {
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS catalog_schema_migrations (
-        version INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        applied_at INTEGER NOT NULL,
-        checksum TEXT NOT NULL
-      ) STRICT;
-    `);
+    const migrate = this.database.transaction(() => {
+      this.database.exec(`
+        CREATE TABLE IF NOT EXISTS catalog_schema_migrations (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          applied_at INTEGER NOT NULL,
+          checksum TEXT NOT NULL
+        ) STRICT;
+      `);
 
-    const columns = this.database
-      .prepare<[], { readonly name: string }>('PRAGMA table_info(catalog_schema_migrations)')
-      .all();
-    if (!columns.some((column) => column.name === 'checksum')) {
-      this.database.exec('ALTER TABLE catalog_schema_migrations ADD COLUMN checksum TEXT;');
-    }
+      const columns = this.database
+        .prepare<[], { readonly name: string }>('PRAGMA table_info(catalog_schema_migrations)')
+        .all();
+      if (!columns.some((column) => column.name === 'checksum')) {
+        this.database.exec('ALTER TABLE catalog_schema_migrations ADD COLUMN checksum TEXT;');
+      }
 
-    const selectMigration = this.database.prepare<[number], CatalogMigrationRow>(
-      'SELECT version, name, checksum FROM catalog_schema_migrations WHERE version = ?',
-    );
-    const recordMigration = this.database.prepare<[number, string, number, string]>(
-      'INSERT INTO catalog_schema_migrations(version, name, applied_at, checksum) VALUES (?, ?, ?, ?)',
-    );
-    const baselineMigration = this.database.prepare<[string, number]>(
-      'UPDATE catalog_schema_migrations SET checksum = ? WHERE version = ?',
-    );
+      const selectMigration = this.database.prepare<[number], CatalogMigrationRow>(
+        'SELECT version, name, checksum FROM catalog_schema_migrations WHERE version = ?',
+      );
+      const recordMigration = this.database.prepare<[number, string, number, string]>(
+        'INSERT INTO catalog_schema_migrations(version, name, applied_at, checksum) VALUES (?, ?, ?, ?)',
+      );
+      const baselineMigration = this.database.prepare<[string, number]>(
+        'UPDATE catalog_schema_migrations SET checksum = ? WHERE version = ?',
+      );
 
-    this.database.transaction(() => {
       for (const migration of this.migrations) {
         const applied = selectMigration.get(migration.version);
         if (applied !== undefined) {
@@ -61,7 +61,12 @@ export class CatalogMigrationRunner {
           migration.checksum,
         );
       }
-    })();
+    });
+
+    // BEGIN IMMEDIATE acquires the SQLite write reservation before any schema inspection or DDL.
+    // Competing MCP/CLI processes therefore serialize migrations instead of both observing the same
+    // pre-migration state and racing to apply the same version.
+    migrate.immediate();
   }
 }
 

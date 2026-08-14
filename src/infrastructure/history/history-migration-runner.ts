@@ -17,23 +17,23 @@ export class HistoryMigrationRunner {
   ) {}
 
   public apply(): void {
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS history_schema_migrations (
-        version INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        applied_at INTEGER NOT NULL,
-        checksum TEXT NOT NULL
-      ) STRICT;
-    `);
+    const migrate = this.database.transaction(() => {
+      this.database.exec(`
+        CREATE TABLE IF NOT EXISTS history_schema_migrations (
+          version INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          applied_at INTEGER NOT NULL,
+          checksum TEXT NOT NULL
+        ) STRICT;
+      `);
 
-    const selectMigration = this.database.prepare<[number], HistoryMigrationRow>(
-      'SELECT version, name, checksum FROM history_schema_migrations WHERE version = ?',
-    );
-    const recordMigration = this.database.prepare<[number, string, number, string]>(
-      'INSERT INTO history_schema_migrations(version, name, applied_at, checksum) VALUES (?, ?, ?, ?)',
-    );
+      const selectMigration = this.database.prepare<[number], HistoryMigrationRow>(
+        'SELECT version, name, checksum FROM history_schema_migrations WHERE version = ?',
+      );
+      const recordMigration = this.database.prepare<[number, string, number, string]>(
+        'INSERT INTO history_schema_migrations(version, name, applied_at, checksum) VALUES (?, ?, ?, ?)',
+      );
 
-    this.database.transaction(() => {
       for (const migration of this.migrations) {
         const applied = selectMigration.get(migration.version);
         if (applied !== undefined) {
@@ -48,7 +48,11 @@ export class HistoryMigrationRunner {
           migration.checksum,
         );
       }
-    })();
+    });
+
+    // Acquire the write reservation before reading the migration ledger. This makes first-open and
+    // upgrade races deterministic when several MCP clients start against the same history file.
+    migrate.immediate();
   }
 }
 
