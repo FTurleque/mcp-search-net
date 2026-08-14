@@ -1,0 +1,40 @@
+name: Temporary search history formatter
+
+on:
+  push:
+    branches:
+      - feat/search-history-inspection
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24.18.0
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Format repository
+        run: npx prettier --write .
+      - name: Package formatted changes
+        shell: bash
+        run: |
+          git diff --name-only -z | tar --null -T - -czf formatted-changes.tar.gz
+          git diff --name-only > formatted-files.txt
+      - name: Upload formatted files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: search-history-formatted-files
+          path: |
+            formatted-changes.tar.gz
+            formatted-files.txt
+          if-no-files-found: error
