@@ -217,9 +217,7 @@ function toEntry(row: HistoryRow): SearchHistoryEntry {
     executedAt: new Date(row.executed_at),
     durationMs: row.duration_ms,
     status: row.status as SearchHistoryStatus,
-    ...(row.cache_status === null
-      ? {}
-      : { cacheStatus: row.cache_status as CacheStatus }),
+    ...(row.cache_status === null ? {} : { cacheStatus: row.cache_status as CacheStatus }),
     provider: row.provider,
     ...(row.result_count === null ? {} : { resultCount: row.result_count }),
     warningCodes: parseWarningCodes(row.warning_codes_json),
