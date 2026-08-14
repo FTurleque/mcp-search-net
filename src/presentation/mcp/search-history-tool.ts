@@ -1,12 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod/v4';
 
 import type { Logger } from '../../application/ports/logger.js';
-import type { ListSearchHistory } from '../../application/use-cases/list-search-history.js';
+import type {
+  ListSearchHistory,
+  ListSearchHistoryOutput,
+} from '../../application/use-cases/list-search-history.js';
 import type { ToolResponse, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import { executeToolCall } from './tool-call.js';
 import {
-  listSearchHistoryDataSchema,
   listSearchHistoryInputSchema,
   listSearchHistoryOutputSchema,
 } from './schemas/search-history-schema.js';
@@ -65,7 +66,7 @@ export function registerSearchHistoryTool(
   );
 }
 
-type SearchHistoryData = z.infer<typeof listSearchHistoryDataSchema>;
+type SearchHistoryData = ListSearchHistoryOutput;
 
 function historyWarnings(data: SearchHistoryData): readonly ToolWarningDescriptor[] {
   if (!data.enabled) {
