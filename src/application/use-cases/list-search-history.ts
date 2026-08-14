@@ -4,7 +4,7 @@ import type {
   SearchHistoryStatus,
   SearchHistoryTool,
 } from '../ports/search-history-repository.js';
-import type { CacheStatus } from '../../domain/models/tool-response.js';
+import type { CacheStatus, ToolWarningCode } from '../../domain/models/tool-response.js';
 import { InvalidArgumentError } from '../../domain/errors/domain-errors.js';
 
 export interface ListSearchHistoryInput {
@@ -30,7 +30,7 @@ export interface ListSearchHistoryEntry {
   readonly cacheStatus: CacheStatus | null;
   readonly provider: string;
   readonly resultCount: number | null;
-  readonly warningCodes: readonly string[];
+  readonly warningCodes: readonly ToolWarningCode[];
   readonly errorCode: string | null;
 }
 
