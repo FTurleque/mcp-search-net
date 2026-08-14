@@ -7,6 +7,7 @@ const live = process.env['RUN_LIVE_SERVICES'] === '1';
 const expectedToolNames = [
   'fetch_url',
   'list_docs',
+  'list_search_history',
   'read_doc_section',
   'search_docs',
   'search_web',
