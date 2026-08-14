@@ -37,6 +37,9 @@ pas ce document pour connaître l’état présent.
   (exe Anthropic vs. Windows Store), nettoyage complet à la désinstallation (PowerShell
   Remove-Item au lieu de DelTree), câblage MCP post-installation. La publication sera déclenchée
   après qualification exact-head master.
+- Évolution d’intégration : la PR #89 ajoute un historique local persistant des recherches MCP dans
+  `history.sqlite` et l’outil read-only `list_search_history`. Tant que cette PR n’est pas intégrée,
+  cette capacité n’est pas déclarée publiée sur `master`.
 - Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
   et la version embarquée doivent être identiques. Toute dérive bloque la publication.
 
@@ -46,13 +49,14 @@ surfaces manuelles, par une recette datée explicitement reliée à ce SHA.
 
 ## Contrat MCP public
 
-Le serveur STDIO expose exactement cinq outils read-only :
+Le serveur STDIO candidat expose exactement six outils read-only :
 
 - `search_web`
 - `fetch_url`
 - `search_docs`
 - `list_docs`
 - `read_doc_section`
+- `list_search_history`
 
 Les quatre resources statiques sont :
 
@@ -74,13 +78,15 @@ Les neuf resource templates sont :
 - `mcp-search-net://sections/{sectionId}`
 
 Le workflow documentaire recommandé est `search_docs` puis `read_doc_section` sur une à trois
-sections utiles. `search_web` et `fetch_url` servent au Web frais ou absent du catalogue. Les
-resources/templates sont un canal read-only complémentaire dont l’ergonomie dépend du client MCP.
+sections utiles. `search_web` et `fetch_url` servent au Web frais ou absent du catalogue.
+`list_search_history` inspecte uniquement l’historique local déjà enregistré et ne relance aucune
+recherche. Les resources/templates sont un canal read-only complémentaire dont l’ergonomie dépend
+du client MCP.
 
 Toutes les réponses issues du Web ou du catalogue sont marquées comme contenu externe non fiable ;
 le serveur n’exécute jamais le contenu récupéré comme instruction.
 
-La sonde STDIO de référence gèle cinq tools, quatre resources et neuf templates avec
+La sonde STDIO de référence gèle six tools, quatre resources et neuf templates avec
 `schemaVersion = 1.0`. La certification native retenue couvre Claude Code, Claude Desktop et Codex ;
 elle a été finalisée dans l’issue #34 sur le runtime installé
 `a70b9a51527543c9417566326bb780121954cef5`. IntelliJ/GitHub Copilot et GitHub Copilot CLI restent
@@ -89,8 +95,15 @@ certification. L’état détaillé est `docs/planning/client-certification-curr
 
 ## Stockage, SQLite et migrations catalogue
 
-`cache.sqlite` est le cache Web V1. `catalog.db` est le catalogue documentaire persistant V2. Ces
-fichiers sont isolés et n’ont pas la même politique de rétention.
+`cache.sqlite` est le cache Web V1. `catalog.db` est le catalogue documentaire persistant V2.
+`history.sqlite` est le journal local persistant des occurrences validées de `search_web` et
+`search_docs`. Les trois fichiers sont isolés et n’ont pas la même politique de rétention.
+
+L’historique ne réutilise pas `search_cache` : deux appels identiques créent deux occurrences
+ distinctes, et une expiration ou éviction du cache ne supprime pas leur trace. La migration dédiée
+`H001__create_search_history.sql` initialise ce stockage. Les écritures sont fail-open : une panne
+de l’historique est journalisée mais ne transforme jamais une recherche principale réussie en
+échec. La rétention par défaut est de 90 jours, bornée en plus à 20 000 occurrences.
 
 La dépendance native SQLite est fixée à `better-sqlite3@13.0.3`. Cette ligne utilise N-API et dépend
 de `node-addon-api`; les anciennes transitives `prebuild-install` et `bindings` ne font plus partie
@@ -192,6 +205,7 @@ Variables déclarées par le schéma runtime :
 - `MCP_LOG_LEVEL`
 - `MCP_CACHE_PATH`
 - `MCP_CATALOG_PATH`
+- `MCP_HISTORY_PATH`
 - `MCP_OFFICIAL_SOURCES_PATH`
 - `MCP_SEARXNG_URL`
 - `MCP_CRAWL4AI_URL`
@@ -293,7 +307,7 @@ toolchain Inno Setup est figée sur la version `6.7.1`.
 - les résultats #32 autorisent l’étude `prototype-local-vector-index`, mais le prototype doit encore
   prouver persistance/rebuild, sync incrémentale, packaging Windows/Docker, redistribution du modèle,
   fonctionnement hors ligne et budget mémoire produit avant toute décision d’intégration ;
-- l’affichage et l’usage direct des resources/templates dépendent du client MCP ; les cinq outils
+- l’affichage et l’usage direct des resources/templates dépendent du client MCP ; les six outils
   restent le contrat portable principal ;
 - les entrypoints bootstrap/CLI sont surtout qualifiés par les suites integration/E2E qui exécutent
   des processus réels ; la couverture V8 in-process ne doit pas être interprétée seule comme leur
