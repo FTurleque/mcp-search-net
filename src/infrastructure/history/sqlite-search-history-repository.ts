@@ -19,9 +19,8 @@ import {
   type CacheStatus,
   type ToolWarningCode,
 } from '../../domain/models/tool-response.js';
+import { configureSqliteConnection, SQLITE_BUSY_TIMEOUT_MS } from '../sqlite-connection.js';
 import { HistoryMigrationRunner } from './history-migration-runner.js';
-
-const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
 interface HistoryRow {
   readonly id: number;
@@ -80,10 +79,7 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
     mkdirSync(dirname(path), { recursive: true });
     this.database = new Database(path, { timeout: SQLITE_BUSY_TIMEOUT_MS });
     try {
-      this.database.pragma(`busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`);
-      this.database.pragma('journal_mode = WAL');
-      this.database.pragma('synchronous = NORMAL');
-      this.database.pragma('foreign_keys = ON');
+      configureSqliteConnection(this.database);
       new HistoryMigrationRunner(this.database, this.clock).apply();
     } catch (error) {
       if (this.database.open) this.database.close();
