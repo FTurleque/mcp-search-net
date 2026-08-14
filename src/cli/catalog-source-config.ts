@@ -203,13 +203,19 @@ function validateDocumentUrl(value: string, sourceKey: string, index: number): s
   try {
     url = new URL(value);
   } catch {
-    throw new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`);
+    throw new Error(
+      `catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`,
+    );
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`);
+    throw new Error(
+      `catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`,
+    );
   }
   if (url.username !== '' || url.password !== '') {
-    throw new Error(`catalog source ${sourceKey} document ${index + 1} url must not contain credentials`);
+    throw new Error(
+      `catalog source ${sourceKey} document ${index + 1} url must not contain credentials`,
+    );
   }
   return url.toString();
 }
