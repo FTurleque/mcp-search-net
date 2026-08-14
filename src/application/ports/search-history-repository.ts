@@ -58,13 +58,31 @@ export class DisabledSearchHistoryRepository implements SearchHistoryRepository 
   }
 
   public list(_query: SearchHistoryListQuery): Promise<SearchHistoryPage> {
-    return Promise.resolve({
-      enabled: false,
-      available: true,
-      items: [],
-      total: 0,
-    });
+    return Promise.resolve(emptyPage(false, true));
   }
 
   public close(): void {}
+}
+
+export class UnavailableSearchHistoryRepository implements SearchHistoryRepository {
+  public readonly enabled = true;
+
+  public append(_record: SearchHistoryRecordInput): Promise<boolean> {
+    return Promise.resolve(false);
+  }
+
+  public list(_query: SearchHistoryListQuery): Promise<SearchHistoryPage> {
+    return Promise.resolve(emptyPage(true, false));
+  }
+
+  public close(): void {}
+}
+
+function emptyPage(enabled: boolean, available: boolean): SearchHistoryPage {
+  return {
+    enabled,
+    available,
+    items: [],
+    total: 0,
+  };
 }
