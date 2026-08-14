@@ -6,7 +6,14 @@ import process from 'node:process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
-const EXPECTED_TOOLS = ['fetch_url', 'list_docs', 'read_doc_section', 'search_docs', 'search_web'];
+const EXPECTED_TOOLS = [
+  'fetch_url',
+  'list_docs',
+  'list_search_history',
+  'read_doc_section',
+  'search_docs',
+  'search_web',
+];
 const EXPECTED_RESOURCES = [
   'mcp-search-net://catalog',
   'mcp-search-net://documents',
@@ -43,6 +50,7 @@ try {
       MCP_CONFIG_PATH: resolve('config/application.yml'),
       MCP_CACHE_PATH: join(temporaryRoot, 'cache.sqlite'),
       MCP_CATALOG_PATH: join(temporaryRoot, 'catalog.db'),
+      MCP_HISTORY_PATH: join(temporaryRoot, 'history.sqlite'),
       [crawl4aiEnvironmentName]: 'mcp-search-local-development-value',
     },
     stderr: 'pipe',
