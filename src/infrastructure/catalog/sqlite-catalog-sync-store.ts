@@ -192,17 +192,18 @@ export class SqliteCatalogSyncStore {
   }
 
   public complete(syncRunId: number, input: CatalogSyncRunCompletionInput): CatalogSyncRun {
-    const ownerToken = this.requireOwnedRun(syncRunId);
+    const ownerToken = this.ownedRuns.get(syncRunId);
     const transaction = this.database.transaction((): CatalogSyncRunRow => {
       const running = this.database
         .prepare<[number], OwnedCatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
         .get(syncRunId);
       if (running === undefined) throw new Error('CATALOG_SYNC_RUN_NOT_FOUND');
-      if (running.owner_token !== ownerToken) {
-        throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
-      }
       if (running.status !== 'RUNNING' || running.completed_at !== null) {
+        if (ownerToken !== undefined) throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
         throw new Error('CATALOG_SYNC_RUN_ALREADY_COMPLETED');
+      }
+      if (ownerToken === undefined || running.owner_token !== ownerToken) {
+        throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
       }
       if (input.completedAt.getTime() < running.started_at) {
         throw new Error('CATALOG_SYNC_RUN_COMPLETION_PRECEDES_START');
@@ -290,12 +291,6 @@ export class SqliteCatalogSyncStore {
         event.detailsJson,
       );
     }
-  }
-
-  private requireOwnedRun(syncRunId: number): string {
-    const ownerToken = this.ownedRuns.get(syncRunId);
-    if (ownerToken === undefined) throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
-    return ownerToken;
   }
 
   private renewOwnedRun(syncRunId: number, observedAt: number): void {
