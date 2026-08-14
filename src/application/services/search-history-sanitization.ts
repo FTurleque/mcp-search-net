@@ -1,13 +1,32 @@
 import type { SearchHistoryRecordInput } from '../ports/search-history-repository.js';
 
 const REDACTED = '[REDACTED]';
-const SENSITIVE_KEY =
-  /(?:authorization|credential|password|passwd|secret|token|api[-_]?key|signature|sig)/iu;
-const KEY_VALUE_SECRET =
-  /\b(authorization|credential|password|passwd|secret|access[-_]?token|refresh[-_]?token|api[-_]?key|signature|sig)\s*([:=])\s*("[^"]*"|'[^']*'|[^\s&,;]+)/giu;
+const SENSITIVE_KEY_PARTS = [
+  'authorization',
+  'credential',
+  'password',
+  'passwd',
+  'secret',
+  'access[-_]?token',
+  'refresh[-_]?token',
+  'token',
+  'api[-_]?key',
+  'signature',
+  'sig',
+] as const;
+const SENSITIVE_KEY_PATTERN = SENSITIVE_KEY_PARTS.join('|');
+const SENSITIVE_KEY = new RegExp(`(?:${SENSITIVE_KEY_PATTERN})`, 'iu');
+const KEY_VALUE_SECRET = new RegExp(
+  String.raw`\b(${SENSITIVE_KEY_PATTERN})\s*([:=])\s*("[^"]*"|'[^']*'|[^\s&,;]+)`,
+  'giu',
+);
 const BEARER_TOKEN = /\bBearer\s+[A-Za-z0-9._~+\/-]{8,}=*/giu;
 const JWT_TOKEN = /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/gu;
-const KNOWN_TOKEN = /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16})\b/gu;
+const KNOWN_TOKEN_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{16,}\b/gu,
+  /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/gu,
+  /\bAKIA[0-9A-Z]{16}\b/gu,
+] as const;
 
 export function sanitizeSearchHistoryRecord(
   record: SearchHistoryRecordInput,
@@ -20,14 +39,12 @@ export function sanitizeSearchHistoryRecord(
 }
 
 export function redactSensitiveSearchText(value: string): string {
-  return value
-    .replace(BEARER_TOKEN, `Bearer ${REDACTED}`)
-    .replace(JWT_TOKEN, REDACTED)
-    .replace(KNOWN_TOKEN, REDACTED)
-    .replace(
-      KEY_VALUE_SECRET,
-      (_match, key: string, separator: string) => `${key}${separator}${REDACTED}`,
-    );
+  let redacted = value.replace(BEARER_TOKEN, `Bearer ${REDACTED}`).replace(JWT_TOKEN, REDACTED);
+  for (const pattern of KNOWN_TOKEN_PATTERNS) redacted = redacted.replace(pattern, REDACTED);
+  return redacted.replace(
+    KEY_VALUE_SECRET,
+    (_match, key: string, separator: string) => `${key}${separator}${REDACTED}`,
+  );
 }
 
 function sanitizeRequest(
