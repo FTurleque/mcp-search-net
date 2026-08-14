@@ -1,8 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod/v4';
 
 import type { Logger } from '../../application/ports/logger.js';
 import type { ListSearchHistory } from '../../application/use-cases/list-search-history.js';
-import type { ToolResponse, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
+import type {
+  ToolResponse,
+  ToolWarningDescriptor,
+} from '../../domain/models/tool-response.js';
 import { executeToolCall } from './tool-call.js';
 import {
   listSearchHistoryDataSchema,
@@ -38,7 +42,9 @@ export function registerSearchHistoryTool(
           const data = await listSearchHistory.execute({
             ...(input.tool === undefined ? {} : { tool: input.tool }),
             ...(input.status === undefined ? {} : { status: input.status }),
-            ...(input.cacheStatus === undefined ? {} : { cacheStatus: input.cacheStatus }),
+            ...(input.cacheStatus === undefined
+              ? {}
+              : { cacheStatus: input.cacheStatus }),
             ...(input.from === undefined ? {} : { from: new Date(input.from) }),
             ...(input.to === undefined ? {} : { to: new Date(input.to) }),
             ...(input.queryContains === undefined
@@ -66,14 +72,16 @@ export function registerSearchHistoryTool(
   );
 }
 
-type SearchHistoryData = typeof listSearchHistoryDataSchema._output;
+type SearchHistoryData = z.infer<typeof listSearchHistoryDataSchema>;
 
 function historyWarnings(data: SearchHistoryData): readonly ToolWarningDescriptor[] {
   if (!data.enabled) {
     return [{ code: 'HISTORY_DISABLED', message: 'Persistent search history is disabled' }];
   }
   if (!data.available) {
-    return [{ code: 'HISTORY_UNAVAILABLE', message: 'Persistent search history is unavailable' }];
+    return [
+      { code: 'HISTORY_UNAVAILABLE', message: 'Persistent search history is unavailable' },
+    ];
   }
   if (data.count === 0) {
     return [{ code: 'NO_RESULTS', message: 'No search history entry matched the filters' }];
