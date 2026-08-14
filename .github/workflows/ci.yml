@@ -117,11 +117,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image_user="$(docker image inspect mcp-search-net:1.1.2 --format '{{.Config.User}}')"
-          image_version="$(docker image inspect mcp-search-net:1.1.2 --format '{{index .Config.Labels "org.opencontainers.image.version"}}')"
-          image_revision="$(docker image inspect mcp-search-net:1.1.2 --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+          image_user="$(docker image inspect mcp-search-net:1.1.3 --format '{{.Config.User}}')"
+          image_version="$(docker image inspect mcp-search-net:1.1.3 --format '{{index .Config.Labels "org.opencontainers.image.version"}}')"
+          image_revision="$(docker image inspect mcp-search-net:1.1.3 --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
           test "$image_user" = 'node'
-          test "$image_version" = '1.1.2'
+          test "$image_version" = '1.1.3'
           test "$image_revision" = "$QUALIFIED_SHA"
           mkdir -p .data/test-reports
           {
