@@ -1,9 +1,15 @@
 import { FetchUrl } from '../application/use-cases/fetch-url.js';
-import { SearchCatalogDocuments } from '../application/use-cases/search-catalog-documents.js';
-import { SearchWeb } from '../application/use-cases/search-web.js';
+import { ListSearchHistory } from '../application/use-cases/list-search-history.js';
+import { TrackedSearchCatalogDocuments } from '../application/use-cases/tracked-search-catalog-documents.js';
+import { TrackedSearchWeb } from '../application/use-cases/tracked-search-web.js';
 import { DisabledCacheRepository } from '../application/ports/cache-repository.js';
 import type { CacheRepository } from '../application/ports/cache-repository.js';
 import type { CatalogRepository } from '../application/ports/catalog-repository.js';
+import {
+  DisabledSearchHistoryRepository,
+  type SearchHistoryRepository,
+  UnavailableSearchHistoryRepository,
+} from '../application/ports/search-history-repository.js';
 import { CacheUnavailableError } from '../domain/errors/domain-errors.js';
 import { SafeCacheRepository } from '../infrastructure/cache/safe-cache-repository.js';
 import { SqliteCacheRepository } from '../infrastructure/cache/sqlite-cache-repository.js';
@@ -14,6 +20,8 @@ import {
 } from '../infrastructure/config/load-configuration.js';
 import { Crawl4aiContentFetcher } from '../infrastructure/fetch/crawl4ai-content-fetcher.js';
 import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.js';
+import { SafeSearchHistoryRepository } from '../infrastructure/history/safe-search-history-repository.js';
+import { SqliteSearchHistoryRepository } from '../infrastructure/history/sqlite-search-history-repository.js';
 import { StructuredLogger } from '../infrastructure/logging/structured-logger.js';
 import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-security-policy.js';
 import { SearxngSearchProvider } from '../infrastructure/search/searxng-search-provider.js';
@@ -25,7 +33,8 @@ export function createContainer(loaded: LoadedConfiguration) {
   const logger = new StructuredLogger(config.logging.level);
   const clock = new SystemClock();
   const cache = createCache(loaded, clock, logger);
-  assertDistinctDatabasePaths(config.cache.path, loaded.catalogPath);
+  assertDistinctDatabasePaths(config.cache.path, loaded.catalogPath, config.history.path);
+  const history = createHistory(loaded, clock, logger);
   const catalog = createCatalog(loaded, clock);
   const securityPolicy = new PublicUrlSecurityPolicy(config.security, undefined, logger);
   const secureGateway = new SecureHttpGateway(securityPolicy, {
@@ -46,7 +55,7 @@ export function createContainer(loaded: LoadedConfiguration) {
     loaded.crawl4aiApiToken,
     secureGateway,
   );
-  const searchWeb = new SearchWeb(
+  const searchWeb = new TrackedSearchWeb(
     searchProvider,
     cache,
     loaded.officialSources,
@@ -57,6 +66,7 @@ export function createContainer(loaded: LoadedConfiguration) {
       providerTimeoutMs: config.searxng.timeoutMs,
     },
     logger,
+    history,
   );
   const fetchUrl = new FetchUrl(
     contentFetcher,
@@ -74,17 +84,19 @@ export function createContainer(loaded: LoadedConfiguration) {
     },
     logger,
   );
-  const searchCatalogDocuments = new SearchCatalogDocuments(catalog);
+  const searchCatalogDocuments = new TrackedSearchCatalogDocuments(catalog, history);
+  const listSearchHistory = new ListSearchHistory(history);
   const mcpServer = createMcpServer({
     searchWeb,
     fetchUrl,
     catalogRepository: catalog,
     searchCatalogDocuments,
+    listSearchHistory,
     config,
     logger,
   });
 
-  return { cache, catalog, logger, mcpServer } as const;
+  return { cache, catalog, history, logger, mcpServer } as const;
 }
 
 function createCache(
@@ -114,6 +126,32 @@ function createCache(
     if (!config.continueOnError)
       throw new CacheUnavailableError('The cache cannot be opened', { cause: error });
     return new DisabledCacheRepository();
+  }
+}
+
+function createHistory(
+  loaded: LoadedConfiguration,
+  clock: SystemClock,
+  logger: StructuredLogger,
+): SearchHistoryRepository {
+  const config = loaded.application.history;
+  if (!config.enabled) return new DisabledSearchHistoryRepository();
+  try {
+    return new SafeSearchHistoryRepository(
+      new SqliteSearchHistoryRepository(
+        config.path,
+        clock,
+        config.retentionDays,
+        config.maxEntries,
+      ),
+      logger,
+    );
+  } catch (error) {
+    logger.error('history_unavailable', {
+      operation: 'open',
+      error: error instanceof Error ? { name: error.name } : 'unknown',
+    });
+    return new UnavailableSearchHistoryRepository();
   }
 }
 
