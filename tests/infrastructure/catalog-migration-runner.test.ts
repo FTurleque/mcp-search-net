@@ -84,10 +84,14 @@ describe('CatalogMigrationRunner', () => {
     const versionColumns = database
       .prepare("SELECT name FROM pragma_table_info('document_versions') ORDER BY cid")
       .all() as { name: string }[];
-    expect(applied.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(applied.map(({ version }) => version)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+    ]);
     expect(applied.every(({ checksum }) => checksum.length === 64)).toBe(true);
     expect(ftsDefinition.sql).toContain('contentless_delete = 1');
-    expect(syncColumns.map(({ name }) => name)).toContain('run_kind');
+    expect(syncColumns.map(({ name }) => name)).toEqual(
+      expect.arrayContaining(['run_kind', 'owner_token', 'owner_pid', 'owner_hostname', 'heartbeat_at']),
+    );
     expect(versionColumns.map(({ name }) => name)).toContain('pending_current');
     database.close();
   });
@@ -156,17 +160,32 @@ describe('CatalogMigrationRunner', () => {
           "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'document_sections'",
         )
         .get() as { sql: string };
-      const legacyRun = database.prepare('SELECT run_kind FROM sync_runs LIMIT 1').get() as {
+      const legacyRun = database
+        .prepare(
+          `SELECT run_kind, owner_token, owner_pid, owner_hostname, heartbeat_at
+           FROM sync_runs LIMIT 1`,
+        )
+        .get() as {
         run_kind: string;
+        owner_token: string | null;
+        owner_pid: number | null;
+        owner_hostname: string | null;
+        heartbeat_at: number | null;
       };
       const legacyVersion = database
         .prepare('SELECT pending_current FROM document_versions WHERE id = 20')
         .get() as { pending_current: number };
       expect(versions.map(({ version }) => version)).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
       ]);
       expect(sectionSql.sql).not.toContain('UNIQUE (document_version_id, content_hash)');
-      expect(legacyRun.run_kind).toBe('EXECUTION');
+      expect(legacyRun).toEqual({
+        run_kind: 'EXECUTION',
+        owner_token: null,
+        owner_pid: null,
+        owner_hostname: null,
+        heartbeat_at: null,
+      });
       expect(legacyVersion.pending_current).toBe(0);
     } finally {
       if (database.open) database.close();
