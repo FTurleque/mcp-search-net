@@ -299,7 +299,8 @@ export class SqliteCatalogSyncStore {
   }
 
   private renewOwnedRun(syncRunId: number, observedAt: number): void {
-    const ownerToken = this.requireOwnedRun(syncRunId);
+    const ownerToken = this.ownedRuns.get(syncRunId);
+    if (ownerToken === undefined) return;
     const result = this.database
       .prepare<[number, number, string]>(TOUCH_SYNC_RUN_HEARTBEAT_SQL)
       .run(observedAt, syncRunId, ownerToken);
