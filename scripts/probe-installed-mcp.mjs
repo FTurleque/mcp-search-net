@@ -40,7 +40,14 @@ try {
   await client.connect(transport, { timeout: requestTimeoutMs });
   const tools = await client.listTools({}, { timeout: requestTimeoutMs });
   const names = tools.tools.map((tool) => tool.name).sort();
-  const expected = ['fetch_url', 'list_docs', 'read_doc_section', 'search_docs', 'search_web'];
+  const expected = [
+    'fetch_url',
+    'list_docs',
+    'list_search_history',
+    'read_doc_section',
+    'search_docs',
+    'search_web',
+  ];
   if (JSON.stringify(names) !== JSON.stringify(expected)) {
     throw new Error(`INSTALLED_TOOL_INVENTORY_MISMATCH:${names.join(',')}`);
   }
