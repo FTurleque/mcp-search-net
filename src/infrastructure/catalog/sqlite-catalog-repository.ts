@@ -10,7 +10,6 @@ import type {
   CatalogRepository,
   CatalogSectionPageQuery,
   CatalogSourcePageQuery,
-  CatalogSyncRunProgress,
 } from '../../application/ports/catalog-repository.js';
 import type { Clock } from '../../application/ports/clock.js';
 import type {
@@ -274,13 +273,6 @@ export class SqliteCatalogRepository implements CatalogRepository {
 
   public startCatalogSyncRun(input: CatalogSyncRunStartRequest): Promise<CatalogSyncRun> {
     return this.asPromise(() => this.syncStore.start(input));
-  }
-
-  public updateCatalogSyncRunProgress(
-    syncRunId: number,
-    progress: CatalogSyncRunProgress,
-  ): Promise<void> {
-    return this.asPromise(() => this.syncStore.updateProgress(syncRunId, progress));
   }
 
   public completeCatalogSyncRun(
