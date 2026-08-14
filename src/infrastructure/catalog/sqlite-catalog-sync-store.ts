@@ -198,11 +198,11 @@ export class SqliteCatalogSyncStore {
         .prepare<[number], OwnedCatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
         .get(syncRunId);
       if (running === undefined) throw new Error('CATALOG_SYNC_RUN_NOT_FOUND');
-      if (running.status !== 'RUNNING' || running.completed_at !== null) {
-        throw new Error('CATALOG_SYNC_RUN_ALREADY_COMPLETED');
-      }
       if (running.owner_token !== ownerToken) {
         throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
+      }
+      if (running.status !== 'RUNNING' || running.completed_at !== null) {
+        throw new Error('CATALOG_SYNC_RUN_ALREADY_COMPLETED');
       }
       if (input.completedAt.getTime() < running.started_at) {
         throw new Error('CATALOG_SYNC_RUN_COMPLETION_PRECEDES_START');
