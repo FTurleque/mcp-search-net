@@ -22,7 +22,13 @@ const clock = { now: () => new Date() };
 
 switch (kind) {
   case 'cache': {
-    const repository = new SqliteCacheRepository(databasePath, clock, 2_000, 268_435_456, 604_800_000);
+    const repository = new SqliteCacheRepository(
+      databasePath,
+      clock,
+      2_000,
+      268_435_456,
+      604_800_000,
+    );
     repository.close();
     break;
   }
