@@ -211,7 +211,7 @@ function recordMigration(
   }
   const table = kind === 'catalog' ? 'catalog_schema_migrations' : 'history_schema_migrations';
   database
-    .prepare(`INSERT INTO ${table}(version, name, applied_at, checksum) VALUES (?, ?, ?, ?)`) 
+    .prepare(`INSERT INTO ${table}(version, name, applied_at, checksum) VALUES (?, ?, ?, ?)`)
     .run(migration.version, migration.name, 1_000, migration.checksum);
 }
 
