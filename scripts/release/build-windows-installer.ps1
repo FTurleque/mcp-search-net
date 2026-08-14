@@ -73,7 +73,8 @@ if ([string]::IsNullOrWhiteSpace($Iscc)) {
 $IsccOutput = @((& $Iscc /? 2>&1))
 $global:LASTEXITCODE = 0
 $IsccBanner = ($IsccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
-if ($IsccBanner -notmatch 'Inno Setup [67]') {
+$ExpectedInnoVersion = '6.7.3'  # version figée dans le workflow CI release-windows.yml
+if ($IsccBanner -notmatch 'Inno Setup 6' -and $IsccBanner -notmatch 'Inno Setup 7') {
     throw "Version Inno Setup non qualifiée : attendu=Inno Setup 6 ou 7 banner=$IsccBanner binaire=$Iscc"
 }
 
