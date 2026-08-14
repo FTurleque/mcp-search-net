@@ -89,17 +89,9 @@ export function assertDistinctDatabasePaths(
   catalogPath: string,
   historyPath?: string,
 ): void {
-  assertDistinctDatabasePair(
-    cachePath,
-    catalogPath,
-    'Cache and catalog paths must be different',
-  );
+  assertDistinctDatabasePair(cachePath, catalogPath, 'Cache and catalog paths must be different');
   if (historyPath === undefined) return;
-  assertDistinctDatabasePair(
-    cachePath,
-    historyPath,
-    'Cache and history paths must be different',
-  );
+  assertDistinctDatabasePair(cachePath, historyPath, 'Cache and history paths must be different');
   assertDistinctDatabasePair(
     catalogPath,
     historyPath,
@@ -107,11 +99,7 @@ export function assertDistinctDatabasePaths(
   );
 }
 
-function assertDistinctDatabasePair(
-  leftPath: string,
-  rightPath: string,
-  message: string,
-): void {
+function assertDistinctDatabasePair(leftPath: string, rightPath: string, message: string): void {
   const normalizeForComparison = (path: string): string =>
     process.platform === 'win32' ? path.toLowerCase() : path;
   const canonicalLeftPath = canonicalizePotentialPath(leftPath);
@@ -197,9 +185,7 @@ function applyEnvironmentOverrides(
     },
     history: {
       ...application.history,
-      ...(environment.MCP_HISTORY_PATH === undefined
-        ? {}
-        : { path: environment.MCP_HISTORY_PATH }),
+      ...(environment.MCP_HISTORY_PATH === undefined ? {} : { path: environment.MCP_HISTORY_PATH }),
     },
     logging: {
       ...application.logging,
