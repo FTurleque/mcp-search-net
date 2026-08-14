@@ -100,7 +100,7 @@ certification. L’état détaillé est `docs/planning/client-certification-curr
 `search_docs`. Les trois fichiers sont isolés et n’ont pas la même politique de rétention.
 
 L’historique ne réutilise pas `search_cache` : deux appels identiques créent deux occurrences
- distinctes, et une expiration ou éviction du cache ne supprime pas leur trace. La migration dédiée
+distinctes, et une expiration ou éviction du cache ne supprime pas leur trace. La migration dédiée
 `H001__create_search_history.sql` initialise ce stockage. Les écritures sont fail-open : une panne
 de l’historique est journalisée mais ne transforme jamais une recherche principale réussie en
 échec. La rétention par défaut est de 90 jours, bornée en plus à 20 000 occurrences.
