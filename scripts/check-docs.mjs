@@ -206,6 +206,11 @@ function validateVersionConsistency() {
     `Version SemVer : \`${version}\``,
     `${currentStatePath}: version incohérente`,
   );
+  requireText(
+    readText('sonar-project.properties'),
+    `sonar.projectVersion=${version}`,
+    'sonar-project.properties: version incohérente',
+  );
 }
 
 function validateEnvironmentInventory() {
