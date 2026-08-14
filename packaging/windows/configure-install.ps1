@@ -496,9 +496,12 @@ try {
         }
     }
     if (-not $ClaudeDesktopConfig) {
-        $fallback = Join-Path $env:APPDATA 'Claude'
-        if (Test-Path -LiteralPath $fallback -PathType Container) {
-            $ClaudeDesktopConfig = Join-Path $fallback 'claude_desktop_config.json'
+        $appDataClaude = Join-Path $env:APPDATA 'Claude'
+        $configFile    = Join-Path $appDataClaude 'claude_desktop_config.json'
+        $logsDir       = Join-Path $appDataClaude 'logs'
+        if ((Test-Path -LiteralPath $configFile -PathType Leaf) -or
+            (Test-Path -LiteralPath $logsDir -PathType Container)) {
+            $ClaudeDesktopConfig = $configFile
         }
     }
 } catch {
@@ -514,13 +517,18 @@ if ($Uninstall) {
         if ($ClaudeDesktopConfig) {
             Write-Host ''
             Write-Host 'Claude Desktop détecté.'
+            # Avertir si Claude Desktop est en cours — il peut écraser la config avec son état mémoire
+            $cdProc = Get-Process -Name 'Claude' -ErrorAction SilentlyContinue
+            if ($cdProc) {
+                Write-Host '  Claude Desktop : application en cours — fermez-la maintenant et relancez-la après installation pour activer mcp-search-net.' -ForegroundColor Yellow
+            }
             Install-JsonMcpClient `
                 -ClientKey  'claude-desktop' `
                 -ConfigPath $ClaudeDesktopConfig `
                 -Entry      $DesktopEntry `
                 -RootKey    'mcpServers'
         } else {
-            Write-Host '  Claude Desktop : non détecté (%APPDATA%\Claude absent). Configuration ignorée.' -ForegroundColor Yellow
+            Write-Host '  Claude Desktop : non détecté (claude_desktop_config.json et logs\ absents de %APPDATA%\Claude). Configuration ignorée.' -ForegroundColor Yellow
         }
     } catch {
         Write-Host "  Claude Desktop : erreur lors de la configuration: $($_.Exception.Message)" -ForegroundColor Yellow
@@ -839,6 +847,17 @@ try {
 }
 
 if ($Uninstall) {
+    # Supprimer les artefacts générés par l'installateur (pas les données utilisateur)
+    # La suppression de data/ est sous contrôle de l'installateur Inno (choix utilisateur)
+    foreach ($artifact in @('.env', 'mcp-client-integrations.json', 'mcp.json.example', 'mcp.container.json.example')) {
+        $p = Join-Path $InstallRoot $artifact
+        if (Test-Path -LiteralPath $p -PathType Leaf) {
+            Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (Test-Path -LiteralPath $BackupRoot -PathType Container) {
+        Remove-Item -LiteralPath $BackupRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
     Write-Host ''
     Write-Host 'Nettoyage MCP clients terminé.' -ForegroundColor Green
 } else {

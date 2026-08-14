@@ -390,16 +390,29 @@ begin
   DeleteUserDataOnUninstall := MsgBox(MessageText, mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
 end;
 
-procedure DeleteUserData;
+{ PowerShell Remove-Item est plus fiable que DelTree pour les fichiers verrouillés
+  (SQLite WAL, node_modules imbriqués). Ecrit un script temp et l'exécute. }
+procedure PsRemoveTree(const Path: String);
 var
-  DataRoot: String;
-  EnvFile: String;
+  PS: String;
+  TmpPs1: String;
+  Script: String;
+  ResultCode: Integer;
+begin
+  if not DirExists(Path) then exit;
+  PS     := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  TmpPs1 := ExpandConstant('{tmp}\mcp-cleanup.ps1');
+  Script := 'Remove-Item -LiteralPath ''' + Path + ''' -Recurse -Force -ErrorAction SilentlyContinue';
+  SaveStringToFile(TmpPs1, Script, False);
+  Exec(PS, '-NoProfile -ExecutionPolicy Bypass -File "' + TmpPs1 + '"',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  DeleteFile(TmpPs1);
+end;
+
+procedure DeleteUserData;
 begin
   if IsSmokeBuild() or (not DeleteUserDataOnUninstall) then exit;
-  DataRoot := ExpandConstant('{app}\data');
-  EnvFile  := ExpandConstant('{app}\.env');
-  if DirExists(DataRoot) then DelTree(DataRoot, True, True, True);
-  if FileExists(EnvFile) then DeleteFile(EnvFile);
+  PsRemoveTree(ExpandConstant('{app}\data'));
   RegDeleteKeyIncludingSubkeys(HKCU, InstallerRegistryPath());
 end;
 
@@ -420,15 +433,20 @@ begin
     RegDeleteValue(HKCU, InstallerRegistryPath(), 'InstallRoot');
     DeleteUserData;
 
-    { Inno already removes every file installed from [Files]. Remaining files are user-generated.
-      Remove them only after the explicit opt-in above. Silent uninstall therefore preserves them. }
-    if DeleteUserDataOnUninstall and DirExists(ExpandConstant('{app}')) then
-      DelTree(ExpandConstant('{app}'), True, True, True);
+    { Inno already removes every file installed from [Files].
+      configure-install.ps1 -Uninstall removes installer-generated artifacts (.env, backups...).
+      Only data/ may remain (user opt-out). Delete the installation dir if empty or if user said yes. }
+    if DirExists(ExpandConstant('{app}')) then
+    begin
+      if DeleteUserDataOnUninstall then
+        PsRemoveTree(ExpandConstant('{app}'))
+      else
+        DelTree(ExpandConstant('{app}'), True, False, True);  { subdirs only, files were cleaned }
+    end;
 
-    { Smoke build: the entire installation is ephemeral; remove runtime-generated files
-      (.env, data/, node-runtime-proof.json) that Inno did not track from [Files]. }
-    if IsSmokeBuild() and DirExists(ExpandConstant('{app}')) then
-      DelTree(ExpandConstant('{app}'), True, True, True);
+    { Smoke build: remove any runtime-generated files Inno did not track. }
+    if IsSmokeBuild() then
+      PsRemoveTree(ExpandConstant('{app}'));
 
     { Never delete the legacy ZIP installation path from this setup. It is a separate installation
       root and ownership cannot be proven by the Inno uninstaller. }
