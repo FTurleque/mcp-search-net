@@ -3,7 +3,6 @@ import { hostname } from 'node:os';
 
 import type Database from 'better-sqlite3';
 
-import type { CatalogSyncRunProgress } from '../../application/ports/catalog-repository.js';
 import type { Clock } from '../../application/ports/clock.js';
 import type {
   CatalogDocumentObservationInput,
@@ -16,7 +15,7 @@ import type {
 import type { CatalogSyncRunRow } from './catalog-row-mappers.js';
 import { toCatalogSyncRun } from './catalog-row-mappers.js';
 
-const DEFAULT_ABANDONED_RUN_AFTER_MS = 120_000;
+const DEFAULT_ABANDONED_RUN_AFTER_MS = 3_600_000;
 
 const INSERT_CATALOG_SYNC_RUN_SQL = `
   INSERT INTO sync_runs (
@@ -27,20 +26,6 @@ const INSERT_CATALOG_SYNC_RUN_SQL = `
 `;
 
 const SELECT_CATALOG_SYNC_RUN_BY_ID_SQL = 'SELECT * FROM sync_runs WHERE id = ?';
-
-const UPDATE_CATALOG_SYNC_RUN_PROGRESS_SQL = `
-  UPDATE sync_runs SET
-    heartbeat_at = ?,
-    documents_checked = ?,
-    documents_added = ?,
-    documents_updated = ?,
-    documents_unchanged = ?,
-    documents_failed = ?
-  WHERE id = ?
-    AND status = 'RUNNING'
-    AND completed_at IS NULL
-    AND owner_token = ?
-`;
 
 const COMPLETE_CATALOG_SYNC_RUN_SQL = `
   UPDATE sync_runs SET
@@ -83,6 +68,15 @@ const RECOVER_ABANDONED_SYNC_RUN_SQL = `
     AND owner_token IS ?
 `;
 
+const TOUCH_SYNC_RUN_HEARTBEAT_SQL = `
+  UPDATE sync_runs
+  SET heartbeat_at = ?
+  WHERE id = ?
+    AND status = 'RUNNING'
+    AND completed_at IS NULL
+    AND owner_token = ?
+`;
+
 const UPSERT_DOCUMENT_ALIAS_SQL = `
   INSERT INTO document_aliases (
     document_id, url, alias_type, first_seen_at, last_seen_at
@@ -114,16 +108,6 @@ type InsertCatalogSyncRunParams = [
   number,
   string,
   number,
-];
-type UpdateCatalogSyncRunProgressParams = [
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  number,
-  string,
 ];
 type CompleteCatalogSyncRunParams = [
   number,
@@ -207,27 +191,6 @@ export class SqliteCatalogSyncStore {
     return toCatalogSyncRun(row);
   }
 
-  public updateProgress(syncRunId: number, progress: CatalogSyncRunProgress): void {
-    validateProgress(progress);
-    const ownerToken = this.requireOwnedRun(syncRunId);
-    const result = this.database
-      .prepare<UpdateCatalogSyncRunProgressParams>(UPDATE_CATALOG_SYNC_RUN_PROGRESS_SQL)
-      .run(
-        progress.heartbeatAt.getTime(),
-        progress.documentsChecked,
-        progress.documentsAdded,
-        progress.documentsUpdated,
-        progress.documentsUnchanged,
-        progress.documentsFailed,
-        syncRunId,
-        ownerToken,
-      );
-    if (result.changes !== 1) {
-      this.ownedRuns.delete(syncRunId);
-      throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
-    }
-  }
-
   public complete(syncRunId: number, input: CatalogSyncRunCompletionInput): CatalogSyncRun {
     const ownerToken = this.requireOwnedRun(syncRunId);
     const transaction = this.database.transaction((): CatalogSyncRunRow => {
@@ -305,6 +268,7 @@ export class SqliteCatalogSyncStore {
   ): void {
     if (observation === undefined) return;
 
+    this.renewOwnedRun(observation.syncRunId, observedAt);
     this.refreshCurrentVersionValidators(documentId, observation, observedAt);
 
     const aliasStatement =
@@ -334,12 +298,24 @@ export class SqliteCatalogSyncStore {
     return ownerToken;
   }
 
+  private renewOwnedRun(syncRunId: number, observedAt: number): void {
+    const ownerToken = this.requireOwnedRun(syncRunId);
+    const result = this.database
+      .prepare<[number, number, string]>(TOUCH_SYNC_RUN_HEARTBEAT_SQL)
+      .run(observedAt, syncRunId, ownerToken);
+    if (result.changes !== 1) {
+      this.ownedRuns.delete(syncRunId);
+      throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
+    }
+  }
+
   private isAbandoned(row: RunningSyncRunLeaseRow, now: number): boolean {
     const lastHeartbeat = row.heartbeat_at ?? row.started_at;
-    if (now - lastHeartbeat > this.abandonedAfterMs) return true;
-    if (row.owner_pid === null || row.owner_hostname === null) return false;
-    if (row.owner_hostname !== this.hostname) return false;
-    return !this.processAlive(row.owner_pid);
+    if (row.owner_pid !== null && row.owner_hostname === this.hostname) {
+      if (!this.processAlive(row.owner_pid)) return true;
+      return now - lastHeartbeat > this.abandonedAfterMs;
+    }
+    return now - lastHeartbeat > this.abandonedAfterMs;
   }
 
   private refreshCurrentVersionValidators(
@@ -355,23 +331,6 @@ export class SqliteCatalogSyncStore {
       >(REFRESH_CURRENT_VERSION_VALIDATORS_SQL)
       .run(validators.etag ?? null, validators.lastModified ?? null, observedAt, documentId);
     if (result.changes !== 1) throw new Error('CATALOG_CURRENT_VERSION_VALIDATOR_REFRESH_FAILED');
-  }
-}
-
-function validateProgress(progress: CatalogSyncRunProgress): void {
-  if (!Number.isFinite(progress.heartbeatAt.getTime())) {
-    throw new Error('CATALOG_SYNC_RUN_HEARTBEAT_INVALID');
-  }
-  for (const value of [
-    progress.documentsChecked,
-    progress.documentsAdded,
-    progress.documentsUpdated,
-    progress.documentsUnchanged,
-    progress.documentsFailed,
-  ]) {
-    if (!Number.isSafeInteger(value) || value < 0) {
-      throw new Error('CATALOG_SYNC_RUN_PROGRESS_INVALID');
-    }
   }
 }
 
