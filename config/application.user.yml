@@ -24,6 +24,12 @@ cache:
   maxEntries: 2000
   maxBytes: 268435456
 
+history:
+  enabled: true
+  path: ../data/history.sqlite
+  retentionDays: 90
+  maxEntries: 20000
+
 limits:
   defaultSearchResults: 5
   maxSearchResults: 10
