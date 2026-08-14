@@ -268,35 +268,35 @@ export class SqliteCacheRepository implements CacheRepository {
   }
 
   private applyMigrations(): void {
-    this.database.exec(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        version INTEGER PRIMARY KEY,
-        applied_at INTEGER NOT NULL,
-        name TEXT,
-        checksum TEXT
-      ) STRICT;
-    `);
-    const columns = this.database
-      .prepare<[], { readonly name: string }>('PRAGMA table_info(schema_migrations)')
-      .all();
-    if (!columns.some((column) => column.name === 'name')) {
-      this.database.exec('ALTER TABLE schema_migrations ADD COLUMN name TEXT;');
-    }
-    if (!columns.some((column) => column.name === 'checksum')) {
-      this.database.exec('ALTER TABLE schema_migrations ADD COLUMN checksum TEXT;');
-    }
+    const migrate = this.database.transaction(() => {
+      this.database.exec(`
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+          version INTEGER PRIMARY KEY,
+          applied_at INTEGER NOT NULL,
+          name TEXT,
+          checksum TEXT
+        ) STRICT;
+      `);
+      const columns = this.database
+        .prepare<[], { readonly name: string }>('PRAGMA table_info(schema_migrations)')
+        .all();
+      if (!columns.some((column) => column.name === 'name')) {
+        this.database.exec('ALTER TABLE schema_migrations ADD COLUMN name TEXT;');
+      }
+      if (!columns.some((column) => column.name === 'checksum')) {
+        this.database.exec('ALTER TABLE schema_migrations ADD COLUMN checksum TEXT;');
+      }
 
-    const selectMigration = this.database.prepare<[number], CacheMigrationRow>(
-      'SELECT version, name, checksum FROM schema_migrations WHERE version = ?',
-    );
-    const recordMigration = this.database.prepare<[number, number, string, string]>(
-      'INSERT INTO schema_migrations(version, applied_at, name, checksum) VALUES (?, ?, ?, ?)',
-    );
-    const baselineMigration = this.database.prepare<[string, string, number]>(
-      'UPDATE schema_migrations SET name = ?, checksum = ? WHERE version = ?',
-    );
+      const selectMigration = this.database.prepare<[number], CacheMigrationRow>(
+        'SELECT version, name, checksum FROM schema_migrations WHERE version = ?',
+      );
+      const recordMigration = this.database.prepare<[number, number, string, string]>(
+        'INSERT INTO schema_migrations(version, applied_at, name, checksum) VALUES (?, ?, ?, ?)',
+      );
+      const baselineMigration = this.database.prepare<[string, string, number]>(
+        'UPDATE schema_migrations SET name = ?, checksum = ? WHERE version = ?',
+      );
 
-    this.database.transaction(() => {
       for (const migration of loadMigrations()) {
         const applied = selectMigration.get(migration.version);
         if (applied !== undefined) {
@@ -323,7 +323,12 @@ export class SqliteCacheRepository implements CacheRepository {
           migration.checksum,
         );
       }
-    })();
+    });
+
+    // Schema bootstrap, compatibility ALTERs and the ledger update share one BEGIN IMMEDIATE.
+    // This closes the race where two processes could both inspect an old schema before either one
+    // had reserved the writer slot.
+    migrate.immediate();
   }
 
   private createStatements<T extends Database.Statement>(
