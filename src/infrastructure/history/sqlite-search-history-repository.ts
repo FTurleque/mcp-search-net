@@ -125,14 +125,14 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
         JSON.stringify(record.warningCodes),
         record.errorCode ?? null,
       );
-      const retentionCutoff = executedAt - this.retentionDays * 86_400_000;
-      this.deleteExpiredStatement.run(retentionCutoff);
+      this.pruneExpired(executedAt);
       this.deleteOverflowStatement.run(this.maxEntries);
     })();
     return Promise.resolve(true);
   }
 
   public list(query: SearchHistoryListQuery): Promise<SearchHistoryPage> {
+    this.pruneExpired(this.clock.now().getTime());
     const { whereSql, parameters } = buildWhere(query, false);
     const countRow = this.database
       .prepare(`SELECT COUNT(*) AS total FROM search_history${whereSql}`)
@@ -164,6 +164,11 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
 
   public close(): void {
     if (this.database.open) this.database.close();
+  }
+
+  private pruneExpired(now: number): void {
+    const retentionCutoff = now - this.retentionDays * 86_400_000;
+    this.deleteExpiredStatement.run(retentionCutoff);
   }
 }
 
