@@ -25,6 +25,7 @@ COPY --from=build /app/build ./build
 COPY config/application.docker.yml config/official-sources.yml ./config/
 COPY migrations ./migrations
 COPY catalog-migrations ./catalog-migrations
+COPY history-migrations ./history-migrations
 RUN mkdir -p /app/.data && chown -R node:node /app/.data
 USER node
 ENV MCP_CONFIG_PATH=/app/config/application.docker.yml
