@@ -98,6 +98,34 @@ describe('catalog sync run recovery', () => {
     owner.close();
   });
 
+  it('uses the default process liveness probe for a live local owner', async () => {
+    const { path, clock, setNow } = fixture();
+    const owner = repository(path, clock, {
+      pid: process.pid,
+      hostname: 'test-host',
+      ownerTokenFactory: () => 'current-process-token',
+    });
+    const run = await owner.startCatalogSyncRun({ startedAt: new Date(1_000) });
+
+    setNow(2_000);
+    const observer = repository(path, clock, {
+      pid: process.pid,
+      hostname: 'test-host',
+      ownerTokenFactory: () => 'observer-current-process-token',
+    });
+
+    expect(readRun(path, run.id)).toMatchObject({
+      status: 'RUNNING',
+      completed_at: null,
+      owner_token: 'current-process-token',
+      owner_pid: process.pid,
+      owner_hostname: 'test-host',
+    });
+
+    observer.close();
+    owner.close();
+  });
+
   it('fences the former owner after another process recovers its abandoned run', async () => {
     const { path, clock, setNow } = fixture();
     const owner = repository(path, clock, {
@@ -189,7 +217,7 @@ function repository(
     readonly pid: number;
     readonly hostname: string;
     readonly ownerTokenFactory?: () => string;
-    readonly processAlive: (pid: number) => boolean;
+    readonly processAlive?: (pid: number) => boolean;
     readonly abandonedAfterMs?: number;
   },
 ): SqliteCatalogRepository {
