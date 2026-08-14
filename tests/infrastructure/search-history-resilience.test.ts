@@ -62,11 +62,7 @@ describe('search history resilience', () => {
     const realDirectory = join(root, 'real');
     const aliasDirectory = join(root, 'alias');
     mkdirSync(realDirectory);
-    symlinkSync(
-      realDirectory,
-      aliasDirectory,
-      process.platform === 'win32' ? 'junction' : 'dir',
-    );
+    symlinkSync(realDirectory, aliasDirectory, process.platform === 'win32' ? 'junction' : 'dir');
 
     expect(() =>
       assertDistinctDatabasePaths(
