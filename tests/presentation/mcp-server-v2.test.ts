@@ -19,7 +19,10 @@ describe('MCP V2 in-memory contracts', () => {
       application: {
         ...loaded.application,
         cache: { ...loaded.application.cache, path: join(root, 'cache.sqlite') },
-        history: { ...loaded.application.history, path: join(root, 'history.sqlite') },
+        history: {
+          ...loaded.application.history,
+          path: join(root, 'history.sqlite'),
+        },
       },
     });
     const client = new Client({ name: 'mcp-search-net-in-memory-test', version: '1.0.0' });
