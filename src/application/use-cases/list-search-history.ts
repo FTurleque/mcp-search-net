@@ -23,14 +23,14 @@ export interface ListSearchHistoryEntry {
   readonly requestId: string;
   readonly tool: SearchHistoryTool;
   readonly query: string;
-  readonly request: Readonly<Record<string, unknown>>;
+  readonly request: Record<string, unknown>;
   readonly executedAt: string;
   readonly durationMs: number;
   readonly status: SearchHistoryStatus;
   readonly cacheStatus: CacheStatus | null;
   readonly provider: string;
   readonly resultCount: number | null;
-  readonly warningCodes: readonly ToolWarningCode[];
+  readonly warningCodes: ToolWarningCode[];
   readonly errorCode: string | null;
 }
 
@@ -40,7 +40,7 @@ export interface ListSearchHistoryOutput {
   readonly count: number;
   readonly total: number;
   readonly nextBeforeId: number | null;
-  readonly searches: readonly ListSearchHistoryEntry[];
+  readonly searches: ListSearchHistoryEntry[];
 }
 
 export class ListSearchHistory {
@@ -89,14 +89,14 @@ export class ListSearchHistory {
         requestId: entry.requestId,
         tool: entry.tool,
         query: entry.query,
-        request: entry.request,
+        request: { ...entry.request },
         executedAt: entry.executedAt.toISOString(),
         durationMs: entry.durationMs,
         status: entry.status,
         cacheStatus: entry.cacheStatus ?? null,
         provider: entry.provider,
         resultCount: entry.resultCount ?? null,
-        warningCodes: entry.warningCodes,
+        warningCodes: [...entry.warningCodes],
         errorCode: entry.errorCode ?? null,
       })),
     };
