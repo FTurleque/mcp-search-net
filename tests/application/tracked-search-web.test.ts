@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CacheRecord, CacheRepository } from '../../src/application/ports/cache-repository.js';
+import type {
+  CacheRecord,
+  CacheRepository,
+} from '../../src/application/ports/cache-repository.js';
 import type { OfficialSourceRegistry } from '../../src/application/ports/official-source-registry.js';
 import type {
   SearchHistoryListQuery,
