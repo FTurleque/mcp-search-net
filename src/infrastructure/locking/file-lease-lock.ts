@@ -221,7 +221,8 @@ export class FileLeaseLock {
 
   private removeHeartbeatIfOwned(ownerToken: string): void {
     const path = this.heartbeatPath();
-    if (readMetadataFile(path)?.ownerToken === ownerToken && existsSync(path)) this.unlinkFile(path);
+    if (readMetadataFile(path)?.ownerToken === ownerToken && existsSync(path))
+      this.unlinkFile(path);
   }
 
   private heartbeatPath(): string {
