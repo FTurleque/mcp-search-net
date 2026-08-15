@@ -28,7 +28,10 @@ const closeables: { close(): void }[] = [];
 const clock = { now: () => new Date(2_000) };
 
 afterEach(() => {
-  closeables.splice(0).reverse().forEach((closeable) => closeable.close());
+  closeables
+    .splice(0)
+    .reverse()
+    .forEach((closeable) => closeable.close());
   roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true }));
 });
 
@@ -218,9 +221,10 @@ function readSyncRun(path: string, id: number): SyncRunStateRow {
   const database = new Database(path, { readonly: true });
   try {
     const row = database
-      .prepare<[number], SyncRunStateRow>(
-        'SELECT status, completed_at, owner_token FROM sync_runs WHERE id = ?',
-      )
+      .prepare<
+        [number],
+        SyncRunStateRow
+      >('SELECT status, completed_at, owner_token FROM sync_runs WHERE id = ?')
       .get(id);
     if (row === undefined) throw new Error('SYNC_RUN_NOT_FOUND');
     return row;
@@ -233,9 +237,10 @@ function readVersionState(path: string, id: number): VersionStateRow {
   const database = new Database(path, { readonly: true });
   try {
     const row = database
-      .prepare<[number], VersionStateRow>(
-        'SELECT is_current, pending_current FROM document_versions WHERE id = ?',
-      )
+      .prepare<
+        [number],
+        VersionStateRow
+      >('SELECT is_current, pending_current FROM document_versions WHERE id = ?')
       .get(id);
     if (row === undefined) throw new Error('DOCUMENT_VERSION_NOT_FOUND');
     return row;
