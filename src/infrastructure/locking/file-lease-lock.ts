@@ -44,6 +44,7 @@ export interface FileLeaseLockOptions {
   readonly ownerTokenFactory?: () => string;
   readonly processAlive?: (pid: number) => boolean;
   readonly processIdentity?: (pid: number) => string | undefined;
+  readonly renameFile?: (oldPath: string, newPath: string) => void;
   readonly unlinkFile?: (path: string) => void;
   readonly writeHeartbeatFile?: (path: string, content: string) => void;
 }
@@ -61,6 +62,7 @@ export class FileLeaseLock {
   private readonly ownerTokenFactory: () => string;
   private readonly processAlive: (pid: number) => boolean;
   private readonly processIdentity: (pid: number) => string | undefined;
+  private readonly renameFile: (oldPath: string, newPath: string) => void;
   private readonly unlinkFile: (path: string) => void;
   private readonly writeHeartbeatFile: (path: string, content: string) => void;
 
@@ -73,6 +75,7 @@ export class FileLeaseLock {
     this.ownerTokenFactory = options.ownerTokenFactory ?? randomUUID;
     this.processAlive = options.processAlive ?? isProcessAlive;
     this.processIdentity = options.processIdentity ?? readProcessIdentity;
+    this.renameFile = options.renameFile ?? renameSync;
     this.unlinkFile = options.unlinkFile ?? unlinkSync;
     this.writeHeartbeatFile =
       options.writeHeartbeatFile ??
@@ -190,7 +193,7 @@ export class FileLeaseLock {
 
       const quarantinePath = `${this.lockPath}.failed-acquire-${randomUUID()}`;
       try {
-        renameSync(this.lockPath, quarantinePath);
+        this.renameFile(this.lockPath, quarantinePath);
         activeLockRemoved = true;
         this.cleanupFailedAcquireQuarantine(quarantinePath, ownerToken, cleanupFailures);
         break;
@@ -276,7 +279,7 @@ export class FileLeaseLock {
     // external state and must never influence a filesystem path.
     const quarantinePath = `${this.lockPath}.stale-${randomUUID()}`;
     try {
-      renameSync(this.lockPath, quarantinePath);
+      this.renameFile(this.lockPath, quarantinePath);
     } catch (error) {
       if (isFileSystemError(error, 'ENOENT')) return true;
       throw error;
@@ -284,7 +287,7 @@ export class FileLeaseLock {
 
     const quarantined = readMetadataFile(quarantinePath);
     if (quarantined?.ownerToken !== metadata.ownerToken) {
-      if (!existsSync(this.lockPath)) renameSync(quarantinePath, this.lockPath);
+      if (!existsSync(this.lockPath)) this.renameFile(quarantinePath, this.lockPath);
       throw new FileLeaseLockError(`Lock changed during stale recovery: ${this.lockPath}`);
     }
     unlinkSync(quarantinePath);
