@@ -68,7 +68,11 @@ const RECOVER_ABANDONED_SYNC_RUN_SQL = `
   WHERE id = ?
     AND status = 'RUNNING'
     AND completed_at IS NULL
+    AND started_at = ?
+    AND heartbeat_at IS ?
     AND owner_token IS ?
+    AND owner_pid IS ?
+    AND owner_hostname IS ?
 `;
 
 const TOUCH_SYNC_RUN_HEARTBEAT_SQL = `
@@ -125,7 +129,17 @@ type CompleteCatalogSyncRunParams = [
   number,
   string,
 ];
-type RecoverAbandonedSyncRunParams = [number, string, number, number, string | null];
+type RecoverAbandonedSyncRunParams = [
+  number,
+  string,
+  number,
+  number,
+  number,
+  number | null,
+  string | null,
+  number | null,
+  string | null,
+];
 
 type OwnedCatalogSyncRunRow = CatalogSyncRunRow & {
   readonly owner_token: string | null;
@@ -259,24 +273,35 @@ export class SqliteCatalogSyncStore {
 
   public recoverAbandonedRuns(): number {
     const now = this.clock.now().getTime();
+    // OS-backed process probes can block for seconds (notably PowerShell on Windows).
+    // Perform all liveness/identity decisions before reserving the SQLite writer. The
+    // transaction below then revalidates the exact durable lease snapshot with CAS predicates.
+    const rows = this.database
+      .prepare<[], RunningSyncRunLeaseRow>(SELECT_RUNNING_SYNC_RUN_LEASES_SQL)
+      .all();
+    const candidates = rows.filter((row) => {
+      const locallyOwnedToken = this.ownedRuns.get(row.id);
+      if (locallyOwnedToken !== undefined && locallyOwnedToken === row.owner_token) return false;
+      return this.isAbandoned(row, now);
+    });
+    if (candidates.length === 0) return 0;
+
     const recover = this.database.transaction(() => {
-      const rows = this.database
-        .prepare<[], RunningSyncRunLeaseRow>(SELECT_RUNNING_SYNC_RUN_LEASES_SQL)
-        .all();
       const statement = this.database.prepare<RecoverAbandonedSyncRunParams>(
         RECOVER_ABANDONED_SYNC_RUN_SQL,
       );
       let recovered = 0;
-      for (const row of rows) {
-        const locallyOwnedToken = this.ownedRuns.get(row.id);
-        if (locallyOwnedToken !== undefined && locallyOwnedToken === row.owner_token) continue;
-        if (!this.isAbandoned(row, now)) continue;
+      for (const row of candidates) {
         recovered += statement.run(
           now,
           'Synchronization interrupted: owner lease expired or process is no longer active',
           now,
           row.id,
+          row.started_at,
+          row.heartbeat_at,
           row.owner_token,
+          row.owner_pid,
+          row.owner_hostname,
         ).changes;
       }
       return recovered;
