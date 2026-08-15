@@ -31,7 +31,11 @@ const EXPECTED_TEMPLATES = [
   'mcp-search-net://sources/page/{offset}',
   'mcp-search-net://sources/{sourceId}',
 ];
-const PERSISTENT_SIDE_EFFECT_TOOLS = new Set(['fetch_url', 'search_docs', 'search_web']);
+const PERSISTENT_SIDE_EFFECT_TOOLS = new Set([
+  'fetch_url',
+  'search_docs',
+  'search_web',
+]);
 
 const outputIndex = process.argv.indexOf('--output');
 const outputPath =
