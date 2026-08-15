@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 
 import type { Clock } from '../../application/ports/clock.js';
+import { hardenSqliteStoragePermissions } from '../sqlite-storage-permissions.js';
 import { loadCatalogMigrations, type CatalogMigration } from './catalog-migrations.js';
 
 interface CatalogMigrationRow {
@@ -67,6 +68,7 @@ export class CatalogMigrationRunner {
     // Competing MCP/CLI processes therefore serialize migrations instead of both observing the same
     // pre-migration state and racing to apply the same version.
     migrate.immediate();
+    hardenSqliteStoragePermissions(this.database.name);
   }
 }
 

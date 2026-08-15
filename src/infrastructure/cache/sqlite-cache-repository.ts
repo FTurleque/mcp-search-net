@@ -1,6 +1,3 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-
 import Database from 'better-sqlite3';
 
 import type {
@@ -11,6 +8,10 @@ import type {
 } from '../../application/ports/cache-repository.js';
 import type { Clock } from '../../application/ports/clock.js';
 import { configureSqliteConnection, SQLITE_BUSY_TIMEOUT_MS } from '../sqlite-connection.js';
+import {
+  hardenSqliteStoragePermissions,
+  preparePrivateSqliteStorage,
+} from '../sqlite-storage-permissions.js';
 import { loadMigrations } from './migrations.js';
 
 interface CacheRow {
@@ -100,11 +101,12 @@ export class SqliteCacheRepository implements CacheRepository {
       throw new Error('CACHE_MAX_ENTRIES_INVALID');
     if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)
       throw new Error('CACHE_MAX_BYTES_INVALID');
-    mkdirSync(dirname(path), { recursive: true });
+    preparePrivateSqliteStorage(path);
     this.database = new Database(path, { timeout: SQLITE_BUSY_TIMEOUT_MS });
     try {
       configureSqliteConnection(this.database);
       this.applyMigrations();
+      hardenSqliteStoragePermissions(path);
     } catch (error) {
       if (this.database.open) this.database.close();
       throw error;

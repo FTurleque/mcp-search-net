@@ -27,8 +27,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-user.ps1 -
 
 Le script utilise Node.js 24.18.0, vérifie le SHA-256 officiel avant extraction, exige une signature
 Authenticode OpenJS valide, puis écrit `runtime\node-runtime-proof.json`. Il valide et compile le
-projet, installe uniquement les dépendances de production puis démarre SearXNG et Crawl4AI. Un
-runtime téléchargé invérifiable est supprimé et jamais activé.
+projet, construit un staging applicatif contenant les trois familles de migrations ainsi que
+`.npmrc`, exige `strict-allow-scripts=true`, installe uniquement les dépendances de production puis
+démarre SearXNG et Crawl4AI. Un runtime téléchargé invérifiable est supprimé et jamais activé.
 
 À la première installation, des secrets aléatoires sont générés dans `.env` pour SearXNG et
 Crawl4AI. Ce fichier n’est pas remplacé lors d’une mise à jour et ne doit pas être commité.
@@ -50,7 +51,7 @@ mcp-search-net-<version>-windows-x64.zip.sha256
 
 Le runtime Node.js 24.18.0 est embarqué dans ces artefacts. Le pipeline refuse de publier si la
 version demandée diffère de `package.json`, de `package-lock.json` ou de la version réellement
-embarquée. Inno Setup est figé sur la version 6.7.1 dans le workflow de publication.
+embarquée. Inno Setup est figé sur la version 6.7.3 dans le workflow de publication.
 
 Le post-install peut configurer les clients MCP détectés. Les règles d’ownership sont strictes :
 
@@ -68,24 +69,28 @@ L’état d’ownership est conservé dans `mcp-client-integrations.json`.
 
 ```text
 <installation>\
-├── app\                 application compilée et dépendances de production
+├── app\                 application compilée, dépendances et migrations runtime
 ├── bin\                 launchers MCP, Docker et opérations catalogue
 ├── config\              configuration persistante
-├── data\                cache Web et catalogue SQLite persistants
+├── data\                cache, catalogue et historique SQLite persistants
 ├── runtime\             Node.js portable
 │   └── node-v24.18.0-win-x64\
 ├── .env                  secrets fournisseurs générés localement
+├── .npmrc                politique npm strict-allow-scripts
 ├── compose.yaml
 ├── compose.hybrid.yaml
 ├── migrations\
 ├── catalog-migrations\
+├── history-migrations\
 ├── mcp.json.example
 ├── mcp.container.json.example
 ├── mcp-client-integrations.json
 └── BUILD-MANIFEST.json
 ```
 
-Le lanceur stable est `bin\mcp-search-net.cmd`.
+Le lanceur stable est `bin\mcp-search-net.cmd`. La sonde de packaging vérifie également que
+`list_search_history` démarre avec `enabled=true` et `available=true`, afin qu’une migration
+historique manquante ne puisse pas être masquée par le comportement fail-open du serveur.
 
 ## Services
 

@@ -188,11 +188,23 @@ function Assert-StagedApplication {
 
     $mainScript = Join-Path $StageAppPath 'build\bootstrap\main.js'
     $sqlitePackage = Join-Path $StageAppPath 'node_modules\better-sqlite3'
+    $historyMigration = Join-Path $StageAppPath 'history-migrations\H001__create_search_history.sql'
+    $npmConfig = Join-Path $StageAppPath '.npmrc'
     if (-not (Test-Path -LiteralPath $mainScript -PathType Leaf)) {
         throw "Application staging invalide : $mainScript est absent."
     }
     if (-not (Test-Path -LiteralPath $sqlitePackage -PathType Container)) {
         throw "Application staging invalide : better-sqlite3 n'est pas installé dans $sqlitePackage."
+    }
+    if (-not (Test-Path -LiteralPath $historyMigration -PathType Leaf)) {
+        throw "Application staging invalide : migration historique absente : $historyMigration."
+    }
+    if (-not (Test-Path -LiteralPath $npmConfig -PathType Leaf)) {
+        throw "Application staging invalide : configuration npm absente : $npmConfig."
+    }
+    $npmConfigContent = Get-Content -LiteralPath $npmConfig -Raw
+    if ($npmConfigContent -notmatch '(?m)^strict-allow-scripts=true\s*$') {
+        throw "Application staging invalide : strict-allow-scripts=true est absent de $npmConfig."
     }
 }
 
@@ -319,8 +331,10 @@ try {
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'build') -Destination $StageApp -Recurse
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Destination $StageApp
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package-lock.json') -Destination $StageApp
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot '.npmrc') -Destination $StageApp
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'migrations') -Destination $StageApp -Recurse
     Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'catalog-migrations') -Destination $StageApp -Recurse
+    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'history-migrations') -Destination $StageApp -Recurse
 
     Push-Location $StageApp
     try {
@@ -447,13 +461,15 @@ Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'compose.yaml') -Destination (
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'compose.hybrid.yaml') -Destination (Join-Path $InstallRoot 'compose.hybrid.yaml') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'Dockerfile') -Destination (Join-Path $InstallRoot 'Dockerfile') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot '.dockerignore') -Destination (Join-Path $InstallRoot '.dockerignore') -Force
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot '.npmrc') -Destination (Join-Path $InstallRoot '.npmrc') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Destination (Join-Path $InstallRoot 'package.json') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package-lock.json') -Destination (Join-Path $InstallRoot 'package-lock.json') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'tsconfig.json') -Destination (Join-Path $InstallRoot 'tsconfig.json') -Force
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'tsconfig.build.json') -Destination (Join-Path $InstallRoot 'tsconfig.build.json') -Force
 $InstalledMigrations = Join-Path $InstallRoot 'migrations'
 $InstalledCatalogMigrations = Join-Path $InstallRoot 'catalog-migrations'
-foreach ($installedMigrationRoot in @($InstalledMigrations, $InstalledCatalogMigrations)) {
+$InstalledHistoryMigrations = Join-Path $InstallRoot 'history-migrations'
+foreach ($installedMigrationRoot in @($InstalledMigrations, $InstalledCatalogMigrations, $InstalledHistoryMigrations)) {
     Assert-PathInsideInstallRoot $installedMigrationRoot
     if (Test-Path -LiteralPath $installedMigrationRoot) {
         Remove-Item -LiteralPath $installedMigrationRoot -Recurse -Force
@@ -461,6 +477,7 @@ foreach ($installedMigrationRoot in @($InstalledMigrations, $InstalledCatalogMig
 }
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'migrations') -Destination $InstalledMigrations -Recurse
 Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'catalog-migrations') -Destination $InstalledCatalogMigrations -Recurse
+Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'history-migrations') -Destination $InstalledHistoryMigrations -Recurse
 $InstalledSource = Join-Path $InstallRoot 'src'
 Assert-PathInsideInstallRoot $InstalledSource
 if (Test-Path -LiteralPath $InstalledSource) {

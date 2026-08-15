@@ -35,6 +35,26 @@ export interface ToolCallOptions<T> {
   readonly monotonicNow?: () => number;
 }
 
+const PUBLIC_TOOL_ERROR_MESSAGES: Readonly<Record<ToolErrorCode, string>> = {
+  INVALID_ARGUMENT: 'The tool arguments are invalid',
+  INVALID_URL: 'The Web URL is invalid',
+  UNSUPPORTED_PROTOCOL: 'Only HTTP and HTTPS protocols are supported',
+  BLOCKED_ADDRESS: 'The address is blocked by the public URL policy',
+  DNS_RESOLUTION_FAILED: 'The hostname cannot be resolved safely',
+  TOO_MANY_REDIRECTS: 'The maximum number of redirects was exceeded',
+  REQUEST_TIMEOUT: 'The request timed out',
+  RESPONSE_TOO_LARGE: 'The response exceeds the allowed size',
+  HTTP_ERROR: 'The remote server returned an HTTP error',
+  SEARCH_PROVIDER_UNAVAILABLE: 'The search provider is unavailable',
+  CONTENT_PROVIDER_UNAVAILABLE: 'The content provider is unavailable',
+  UNSUPPORTED_CONTENT_TYPE: 'The content type is not supported',
+  EXTRACTION_FAILED: 'The content could not be extracted',
+  NO_RELEVANT_CONTENT: 'No relevant content was found',
+  OCR_REQUIRED_NOT_SUPPORTED: 'OCR is required and is not supported in V1',
+  CACHE_UNAVAILABLE: 'The cache is unavailable',
+  INTERNAL_ERROR: 'Unexpected internal error',
+};
+
 export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<CallToolResult> {
   const requestId = (options.requestIdFactory ?? randomUUID)();
   const monotonicNow = options.monotonicNow ?? performance.now.bind(performance);
@@ -153,12 +173,12 @@ export function toPublicToolError(error: unknown): {
   readonly message: string;
 } {
   if (error instanceof ApplicationError && isToolErrorCode(error.code)) {
-    return { code: error.code, message: error.message };
+    return { code: error.code, message: PUBLIC_TOOL_ERROR_MESSAGES[error.code] };
   }
   if (error instanceof ZodError) {
-    return { code: 'INVALID_ARGUMENT', message: 'The tool arguments are invalid' };
+    return { code: 'INVALID_ARGUMENT', message: PUBLIC_TOOL_ERROR_MESSAGES.INVALID_ARGUMENT };
   }
-  return { code: 'INTERNAL_ERROR', message: 'Unexpected internal error' };
+  return { code: 'INTERNAL_ERROR', message: PUBLIC_TOOL_ERROR_MESSAGES.INTERNAL_ERROR };
 }
 
 function elapsedMilliseconds(startedAt: number, endedAt: number): number {

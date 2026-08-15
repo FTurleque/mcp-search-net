@@ -1,12 +1,10 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-
 import Database from 'better-sqlite3';
 
 import { configureSqliteConnection, SQLITE_BUSY_TIMEOUT_MS } from '../sqlite-connection.js';
+import { preparePrivateSqliteStorage } from '../sqlite-storage-permissions.js';
 
 export function openCatalogDatabase(path: string): Database.Database {
-  mkdirSync(dirname(path), { recursive: true });
+  preparePrivateSqliteStorage(path);
   const database = new Database(path, { timeout: SQLITE_BUSY_TIMEOUT_MS });
   try {
     configureSqliteConnection(database);
