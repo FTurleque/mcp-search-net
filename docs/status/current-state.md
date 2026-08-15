@@ -12,15 +12,22 @@ pas ce document pour connaître l’état présent.
 - Branche d’intégration courante : `develop`. Une correction présente uniquement sur `develop`
   n’est pas déclarée publiée sur `master` ; sa qualification repose sur la CI du SHA exact de la
   PR d’intégration concernée.
-- Baseline `develop` après la remédiation complète #94 :
-  `079a0c7075b185f7045764410b8e6e773e9cc3cb`. Le run post-merge CI `31887986932` / #1199 a
+- Baseline `develop` intégrée après la PR #95 :
+  `ce697e988af6aec7f1b85dc4cc7b3391112f8bbd`, tree
+  `0600804d3e30f692d550bbed41599d57e75ea013`. Le run post-merge CI `31891721890` / #1202 a
   terminé en `SUCCESS` sur ce SHA exact pour les jobs Node.js, Docker/live E2E et Windows
-  installation/STDIO packaging. Le job SonarCloud est ignoré sur les pushes `develop` par conception
-  du workflow ; le Quality Gate avait réussi sur la PR #94 avant merge.
-- Audit de suivi du 15 août 2026 : deux défauts techniques résiduels ont été isolés sur cette
-  baseline — handoff non atomique du sémaphore de `SecureHttpGateway` et permissions POSIX du
-  heartbeat `FileLeaseLock`. Leur correction est portée par la PR #95 depuis la branche
-  `agent/fix-audit-followup-20260815` et doit être qualifiée sur son SHA exact avant intégration.
+  installation/STDIO packaging. Le job GitHub Actions SonarCloud est ignoré sur les pushes
+  `develop` par conception du workflow ; le check natif SonarQubeCloud de la PR #95 avait publié
+  `Quality Gate passed` sur son head qualifié `e5a7466b11af3a600adc7752a3f4526f9ea9f055`.
+- Les deux findings de suivi portés par #95 sont intégrés et revalidés : le handoff du sémaphore de
+  `SecureHttpGateway` ne libère plus transitoirement un slot avant reprise du waiter, et les fichiers
+  metadata/heartbeat de `FileLeaseLock` conservent ou corrigent les permissions POSIX `0600`.
+- Audit complet de suivi du 15 août 2026 sur `ce697e988af6aec7f1b85dc4cc7b3391112f8bbd` : la PR #96
+  `fix: close post-audit qualification findings`, depuis
+  `agent/fix-post-audit-remediation-20260815`, corrige l’attente effective du Quality Gate Sonar,
+  la finalisation retryable/exception-safe du lock de maintenance catalogue et le reporting Vitest
+  POSIX sous Windows. Cette PR doit être qualifiée sur son SHA exact avant toute intégration ; le SHA
+  final `develop` post-#96 n’est pas anticipé dans ce document.
 - Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
 - Hardening post-merge initial : PR #31 regroupe les corrections d’ownership Windows, de release,
   de provenance MCP, de passerelle HTTP et de réconciliation documentaire issues de l’audit V2.
@@ -328,6 +335,11 @@ uninstall. Le job Windows parse aussi les scripts PowerShell de packaging/releas
 le lifecycle. Un résultat d’un ancien SHA est une preuve historique, pas une qualification du
 candidat présent.
 
+Le scan Sonar de pull request doit attendre le Quality Gate avant de laisser le job GitHub Actions
+`SonarCloud Code Analysis` réussir. La configuration `sonar.qualitygate.wait=true` est protégée par
+un test d’architecture déterministe afin d’éviter le retour à un simple succès de soumission du scan.
+Le check natif SonarQubeCloud reste une preuve complémentaire du verdict du Quality Gate.
+
 Le workflow de publication Windows est manuel. Node.js win-x64 est vérifié par SHA-256 et la
 toolchain Inno Setup est figée sur la version `6.7.3`.
 
@@ -361,7 +373,9 @@ Le ruleset actif `Protect integration branches` protège `master` et `develop` c
 et les non-fast-forward, impose une PR, la résolution des threads et les quatre checks requis. Le
 paramètre `strict_required_status_checks_policy` reste toutefois à `false` : l’exigence automatique
 d’une branche à jour avant merge demeure un durcissement administratif suivi dans #73 et nécessite
-une mutation du ruleset GitHub.
+une mutation du ruleset GitHub. Le connecteur GitHub disponible ne fournit pas cette mutation et le
+fallback local `gh` n’est pas installé dans l’environnement courant ; cette action reste donc
+administrative et ne doit pas être confondue avec un correctif code.
 
 ## Réconciliation de qualification — audit du 7 août 2026
 
