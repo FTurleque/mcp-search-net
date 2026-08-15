@@ -28,6 +28,7 @@ const INSERT_CATALOG_SYNC_RUN_SQL = `
 `;
 
 const SELECT_CATALOG_SYNC_RUN_BY_ID_SQL = 'SELECT * FROM sync_runs WHERE id = ?';
+const SELECT_CATALOG_SYNC_RUN_ID_SQL = 'SELECT id FROM sync_runs WHERE id = ?';
 
 const COMPLETE_CATALOG_SYNC_RUN_SQL = `
   UPDATE sync_runs SET
@@ -129,6 +130,10 @@ type RecoverAbandonedSyncRunParams = [number, string, number, number, string | n
 type OwnedCatalogSyncRunRow = CatalogSyncRunRow & {
   readonly owner_token: string | null;
 };
+
+interface SyncRunIdentityRow {
+  readonly id: number;
+}
 
 interface RunningSyncRunLeaseRow {
   readonly id: number;
@@ -322,8 +327,7 @@ export class SqliteCatalogSyncStore {
   }
 
   private renewOwnedRun(syncRunId: number, observedAt: number): void {
-    const ownerToken = this.ownedRuns.get(syncRunId);
-    if (ownerToken === undefined) throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
+    const ownerToken = this.requireOwnedRunToken(syncRunId);
     const result = this.database
       .prepare<[number, number, string]>(TOUCH_SYNC_RUN_HEARTBEAT_SQL)
       .run(observedAt, syncRunId, ownerToken);
@@ -331,6 +335,18 @@ export class SqliteCatalogSyncStore {
       this.ownedRuns.delete(syncRunId);
       throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
     }
+  }
+
+  private requireOwnedRunToken(syncRunId: number): string {
+    const ownerToken = this.ownedRuns.get(syncRunId);
+    if (ownerToken !== undefined) return ownerToken;
+    const referencedRun = this.database
+      .prepare<[number], SyncRunIdentityRow>(SELECT_CATALOG_SYNC_RUN_ID_SQL)
+      .get(syncRunId);
+    if (referencedRun === undefined) {
+      throw new Error('FOREIGN KEY constraint failed: referenced catalog sync run does not exist');
+    }
+    throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
   }
 
   private isAbandoned(row: RunningSyncRunLeaseRow, now: number): boolean {
