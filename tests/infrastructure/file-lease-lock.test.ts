@@ -1,12 +1,5 @@
 import { fork, type ChildProcess } from 'node:child_process';
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -108,7 +101,9 @@ describe('FileLeaseLock', () => {
       unlinkFile: (path) => {
         if (path === fixture.lockPath) {
           lockUnlinkAttempts += 1;
-          const error = new Error('transient acquire rollback unlink failure') as NodeJS.ErrnoException;
+          const error = new Error(
+            'transient acquire rollback unlink failure',
+          ) as NodeJS.ErrnoException;
           error.code = 'EPERM';
           throw error;
         }
