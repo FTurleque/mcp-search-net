@@ -1,5 +1,7 @@
 import type Database from 'better-sqlite3';
 
+import { hardenSqliteStoragePermissions } from './sqlite-storage-permissions.js';
+
 export const SQLITE_BUSY_TIMEOUT_MS = 5_000;
 
 const WAL_BOOTSTRAP_RETRY_MS = 25;
@@ -21,6 +23,7 @@ export function configureSqliteConnection(database: Database.Database): void {
 
   database.pragma('synchronous = NORMAL');
   database.pragma('foreign_keys = ON');
+  hardenSqliteStoragePermissions(database.name);
 }
 
 function isSqliteBusy(error: unknown): boolean {
