@@ -131,6 +131,7 @@ function validatePublicContractInventory() {
   const historyTool = readText('src/presentation/mcp/search-history-tool.ts');
   const resources = readText('src/presentation/mcp/catalog-resources.ts');
   const toolsReference = readText('docs/reference/tools.md');
+  const readme = readText('README.md');
   const tools = [
     ['search_web', serverV1],
     ['fetch_url', serverV1],
@@ -143,6 +144,7 @@ function validatePublicContractInventory() {
     requireText(implementation, `'${tool}'`, `outil absent du serveur: ${tool}`);
     requireText(toolsReference, `\`${tool}\``, `docs/reference/tools.md: outil absent ${tool}`);
     requireText(currentState, `\`${tool}\``, `${currentStatePath}: outil absent ${tool}`);
+    requireText(readme, `\`${tool}\``, `README.md: outil absent ${tool}`);
   }
   for (const option of ['maxSnippetChars', 'compact']) {
     requireText(
@@ -174,6 +176,7 @@ function validatePublicContractInventory() {
 }
 
 function validateMigrationInventory() {
+  const readme = readText('README.md');
   const migrations = readdirSync(resolve(root, 'catalog-migrations'))
     .filter((name) => /^C\d{3}__.+\.sql$/u.test(name))
     .sort();
@@ -183,6 +186,23 @@ function validateMigrationInventory() {
       `\`${migration}\``,
       `${currentStatePath}: migration absente ${migration}`,
     );
+  }
+  const firstMigration = migrations.at(0)?.slice(0, 4);
+  const lastMigration = migrations.at(-1)?.slice(0, 4);
+  if (firstMigration !== undefined && lastMigration !== undefined) {
+    requireText(
+      readme,
+      `migrations catalogue \`${firstMigration}\` à \`${lastMigration}\``,
+      `README.md: plage migrations ${firstMigration}..${lastMigration} absente`,
+    );
+  }
+
+  const historyMigrations = readdirSync(resolve(root, 'history-migrations'))
+    .filter((name) => /^H\d{3}__.+\.sql$/u.test(name))
+    .sort();
+  for (const migration of historyMigrations) {
+    requireText(currentState, `\`${migration}\``, `${currentStatePath}: migration historique absente ${migration}`);
+    requireText(readme, `\`${migration}\``, `README.md: migration historique absente ${migration}`);
   }
 }
 
@@ -214,6 +234,11 @@ function validateVersionConsistency() {
     `${currentStatePath}: version incohérente`,
   );
   requireText(
+    readText('README.md'),
+    `version de code courante est \`${version}\``,
+    `README.md: version ${version} absente`,
+  );
+  requireText(
     readText('sonar-project.properties'),
     `sonar.projectVersion=${version}`,
     'sonar-project.properties: version incohérente',
@@ -222,6 +247,7 @@ function validateVersionConsistency() {
 
 function validateEnvironmentInventory() {
   const environmentSchema = readText('src/infrastructure/config/application-config.ts');
+  const readme = readText('README.md');
   const variables = [
     'MCP_CONFIG_PATH',
     'MCP_PROFILE',
@@ -242,6 +268,7 @@ function validateEnvironmentInventory() {
       `\`${variable}\``,
       `${currentStatePath}: variable absente ${variable}`,
     );
+    requireText(readme, variable, `README.md: variable absente ${variable}`);
   }
 }
 
@@ -285,15 +312,21 @@ function validatePostMergeTruth() {
     failures.push('.github/workflows/ci.yml: branche V2 intégration obsolète encore ciblée');
   }
   requireText(windowsGuide, 'Node.js 24.18.0', 'installation-windows.md: runtime 24.18.0 absent');
-  if (windowsGuide.includes('Node.js 24.17.0')) {
-    failures.push('installation-windows.md: runtime 24.17.0 obsolète');
+  requireText(windowsGuide, 'Inno Setup est figé sur la version 6.7.3', 'installation-windows.md: Inno Setup 6.7.3 absent');
+  requireText(windowsGuide, 'history-migrations\\', 'installation-windows.md: history-migrations absent de l’arborescence');
+  if (windowsGuide.includes('Node.js 24.17.0') || windowsGuide.includes('Inno Setup est figé sur la version 6.7.1')) {
+    failures.push('installation-windows.md: version runtime ou Inno Setup obsolète');
   }
 }
 
 function validateReleaseAndInstallerHardening() {
   const configureInstall = readText('packaging/windows/configure-install.ps1');
+  const installUser = readText('scripts/install-user.ps1');
+  const installedProbe = readText('scripts/probe-installed-mcp.mjs');
   const publisher = readText('scripts/release/publish-windows-release.ps1');
   const releaseWorkflow = readText('.github/workflows/release-windows.yml');
+  const ci = readText('.github/workflows/ci.yml');
+  const dependencyAudit = readText('.github/workflows/dependency-audit.yml');
   const toolCall = readText('src/presentation/mcp/tool-call.ts');
 
   for (const needle of [
@@ -307,6 +340,22 @@ function validateReleaseAndInstallerHardening() {
       needle,
       `configure-install.ps1: invariant ownership absent: ${needle}`,
     );
+  }
+
+  for (const needle of [
+    "Join-Path $RepositoryRoot '.npmrc'",
+    "Join-Path $RepositoryRoot 'history-migrations'",
+    'strict-allow-scripts=true',
+    'H001__create_search_history.sql',
+  ]) {
+    requireText(installUser, needle, `install-user.ps1: staging incomplet: ${needle}`);
+  }
+  for (const needle of [
+    "name: 'list_search_history'",
+    'history.structuredContent?.data?.enabled !== true',
+    'history.structuredContent?.data?.available !== true',
+  ]) {
+    requireText(installedProbe, needle, `probe-installed-mcp.mjs: contrôle historique absent: ${needle}`);
   }
 
   for (const needle of [
@@ -332,9 +381,26 @@ function validateReleaseAndInstallerHardening() {
     failures.push('release-windows.yml: installation Inno mutable via Chocolatey encore présente');
   }
   requireText(
+    ci,
+    'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1',
+    'ci.yml: download-artifact Node 24 qualifié absent',
+  );
+  for (const needle of [
+    "cron: '17 5 * * *'",
+    'npm audit --audit-level=moderate',
+    'npm audit --omit=dev --audit-level=moderate',
+  ]) {
+    requireText(dependencyAudit, needle, `dependency-audit.yml: invariant absent: ${needle}`);
+  }
+  requireText(
     toolCall,
     'formatExternalContentText(options.formatText(validated))',
     'tool-call.ts: provenance texte externe absente',
+  );
+  requireText(
+    toolCall,
+    'PUBLIC_TOOL_ERROR_MESSAGES[error.code]',
+    'tool-call.ts: mapping public canonique des erreurs absent',
   );
 }
 
