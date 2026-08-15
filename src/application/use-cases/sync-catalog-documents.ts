@@ -117,7 +117,11 @@ export class SyncCatalogDocuments {
     try {
       await this.syncSelectedDocuments(options, plan, sourceByKey, runningSyncRun.id, entries);
     } catch (error) {
-      await this.completeAbortedRun(runningSyncRun.id, entries);
+      try {
+        await this.completeAbortedRun(runningSyncRun.id, entries);
+      } catch (completionError) {
+        attachFinalizationFailure(error, completionError);
+      }
       throw error;
     }
 
@@ -428,6 +432,21 @@ export class SyncCatalogDocuments {
     if (this.repository.getCurrentDocumentVersion === undefined) return undefined;
     return this.repository.getCurrentDocumentVersion(document.id);
   }
+}
+
+function attachFinalizationFailure(primaryError: unknown, completionError: unknown): void {
+  if (!(primaryError instanceof Error)) return;
+  const cause =
+    primaryError.cause === undefined
+      ? completionError
+      : new AggregateError(
+          [primaryError.cause, completionError],
+          'Synchronization failure had an additional finalization failure',
+        );
+  Reflect.defineProperty(primaryError, 'cause', {
+    configurable: true,
+    value: cause,
+  });
 }
 
 function createExecutionPlan(

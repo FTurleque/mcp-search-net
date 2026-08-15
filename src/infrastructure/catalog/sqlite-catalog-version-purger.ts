@@ -33,12 +33,14 @@ const SELECT_PURGEABLE_DOCUMENT_VERSION_IDS_SQL = `
   INNER JOIN catalog_sources
     ON catalog_sources.id = documents.source_id
   WHERE document_versions.is_current = 0
+    AND document_versions.pending_current = 0
     AND (? IS NULL OR catalog_sources.source_key = ?)
     AND (
       SELECT count(*)
       FROM document_versions AS newer_document_versions
       WHERE newer_document_versions.document_id = document_versions.document_id
         AND newer_document_versions.is_current = 0
+        AND newer_document_versions.pending_current = 0
         AND (
           newer_document_versions.fetched_at > document_versions.fetched_at
           OR (

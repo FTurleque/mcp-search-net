@@ -41,6 +41,7 @@ export interface FileLeaseLockOptions {
   readonly ownerTokenFactory?: () => string;
   readonly processAlive?: (pid: number) => boolean;
   readonly processIdentity?: (pid: number) => string | undefined;
+  readonly unlinkFile?: (path: string) => void;
 }
 
 export class FileLeaseLockError extends Error {
@@ -56,6 +57,7 @@ export class FileLeaseLock {
   private readonly ownerTokenFactory: () => string;
   private readonly processAlive: (pid: number) => boolean;
   private readonly processIdentity: (pid: number) => string | undefined;
+  private readonly unlinkFile: (path: string) => void;
 
   public constructor(
     private readonly lockPath: string,
@@ -66,6 +68,7 @@ export class FileLeaseLock {
     this.ownerTokenFactory = options.ownerTokenFactory ?? randomUUID;
     this.processAlive = options.processAlive ?? isProcessAlive;
     this.processIdentity = options.processIdentity ?? readProcessIdentity;
+    this.unlinkFile = options.unlinkFile ?? unlinkSync;
   }
 
   public acquire(): FileLease {
@@ -128,17 +131,20 @@ export class FileLeaseLock {
       },
       release: () => {
         if (released) return;
-        released = true;
         const onDisk = this.readMetadata();
         if (onDisk?.ownerToken === current.ownerToken && existsSync(this.lockPath)) {
-          unlinkSync(this.lockPath);
+          this.unlinkFile(this.lockPath);
+          released = true;
           this.removeHeartbeatIfOwned(current.ownerToken);
-        } else if (existsSync(this.lockPath)) {
+          return;
+        }
+        if (existsSync(this.lockPath)) {
           this.options.logger?.warning('file_lease_lock_release_owner_mismatch', {
             lockPath: this.lockPath,
             pid: current.pid,
           });
         }
+        released = true;
       },
     };
   }

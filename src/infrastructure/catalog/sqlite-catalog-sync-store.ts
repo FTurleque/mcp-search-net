@@ -238,9 +238,12 @@ export class SqliteCatalogSyncStore {
       return row;
     });
     try {
-      return toCatalogSyncRun(transaction.immediate());
-    } finally {
+      const completed = toCatalogSyncRun(transaction.immediate());
       this.ownedRuns.delete(syncRunId);
+      return completed;
+    } catch (error) {
+      this.reconcileCompletionOwnership(syncRunId, ownerToken);
+      throw error;
     }
   }
 
@@ -297,6 +300,24 @@ export class SqliteCatalogSyncStore {
         observedAt,
         event.detailsJson,
       );
+    }
+  }
+
+  private reconcileCompletionOwnership(syncRunId: number, ownerToken: string | undefined): void {
+    if (ownerToken === undefined) return;
+    try {
+      const row = this.database
+        .prepare<[number], OwnedCatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
+        .get(syncRunId);
+      if (
+        row?.status !== 'RUNNING' ||
+        row.completed_at !== null ||
+        row.owner_token !== ownerToken
+      ) {
+        this.ownedRuns.delete(syncRunId);
+      }
+    } catch {
+      // Durable state is unknown. Preserve the local fencing token so the caller can retry.
     }
   }
 
