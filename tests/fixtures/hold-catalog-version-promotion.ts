@@ -40,6 +40,49 @@ try {
   database
     .prepare('UPDATE documents SET current_version_id = ? WHERE id = ?')
     .run(versionId, documentId);
+  database
+    .prepare(
+      `DELETE FROM document_section_fts
+       WHERE rowid IN (
+         SELECT document_sections.id
+         FROM document_sections
+         INNER JOIN document_versions
+           ON document_versions.id = document_sections.document_version_id
+         WHERE document_versions.document_id = ?
+       )`,
+    )
+    .run(documentId);
+  database
+    .prepare(
+      `INSERT INTO document_section_fts(
+        rowid, section_id, document_id, source_key, language,
+        title, heading, heading_path, content
+      )
+      SELECT
+        document_sections.id,
+        document_sections.id,
+        documents.id,
+        catalog_sources.source_key,
+        documents.language,
+        documents.title,
+        coalesce(document_sections.heading, ''),
+        coalesce(document_sections.heading_path, ''),
+        document_sections.content
+      FROM document_sections
+      INNER JOIN document_versions
+        ON document_versions.id = document_sections.document_version_id
+       AND document_versions.id = ?
+       AND document_versions.is_current = 1
+      INNER JOIN documents
+        ON documents.id = document_versions.document_id
+       AND documents.current_version_id = document_versions.id
+      INNER JOIN catalog_sources
+        ON catalog_sources.id = documents.source_id
+      WHERE documents.id = ?
+        AND documents.status = 'ACTIVE'
+        AND catalog_sources.enabled = 1`,
+    )
+    .run(versionId, documentId);
   process.send?.({ type: 'ready' });
 
   setTimeout(() => {
