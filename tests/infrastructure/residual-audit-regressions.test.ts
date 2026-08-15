@@ -172,8 +172,8 @@ describe('residual audit persistence regressions', () => {
     await expect(repository.verifyIntegrity()).resolves.toMatchObject({ issues: [] });
   });
 
-  it('hardens persistent search-history database and SQLite sidecars on POSIX', async () => {
-    if (process.platform === 'win32') return;
+  it('hardens persistent search-history database and SQLite sidecars on POSIX', async (context) => {
+    if (process.platform === 'win32') context.skip();
 
     const path = createPath('history-permissions', join('private', 'history.sqlite'));
     const directory = dirname(path);
