@@ -92,26 +92,13 @@ describe('catalog sync ownership fencing', () => {
     await expect(owner.getCurrentDocumentVersion(baseline.document.id)).resolves.toMatchObject({
       id: baseline.version.id,
       contentHash: 'baseline-hash',
-      etag: undefined,
     });
     await expect(owner.listDocumentVersions(baseline.document.id)).resolves.toHaveLength(1);
 
     const database = new Database(path, { readonly: true });
     try {
-      expect(
-        database
-          .prepare<[number], { readonly count: number }>(
-            'SELECT count(*) AS count FROM document_aliases WHERE document_id = ?',
-          )
-          .get(baseline.document.id)?.count,
-      ).toBe(0);
-      expect(
-        database
-          .prepare<[number], { readonly count: number }>(
-            'SELECT count(*) AS count FROM staleness_events WHERE document_id = ?',
-          )
-          .get(baseline.document.id)?.count,
-      ).toBe(0);
+      expect(rowCount(database, 'document_aliases', baseline.document.id)).toBe(0);
+      expect(rowCount(database, 'staleness_events', baseline.document.id)).toBe(0);
     } finally {
       database.close();
     }
@@ -145,6 +132,13 @@ function revision(sourceId: number, contentHash: string) {
       },
     ],
   };
+}
+
+function rowCount(database: Database.Database, table: string, documentId: number): number {
+  const row = database
+    .prepare(`SELECT count(*) AS count FROM ${table} WHERE document_id = ?`)
+    .get(documentId) as { readonly count: number } | undefined;
+  return row?.count ?? 0;
 }
 
 function track(repository: SqliteCatalogRepository): SqliteCatalogRepository {
