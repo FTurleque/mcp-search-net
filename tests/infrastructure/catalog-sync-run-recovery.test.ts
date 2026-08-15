@@ -98,13 +98,13 @@ describe('catalog sync run recovery', () => {
     owner.close();
   });
 
-  it('does not recover an expired heartbeat while the same-host owner process is alive', async () => {
+  it('does not recover an expired heartbeat when the same process lifetime is proven alive', async () => {
     const { path, clock, setNow } = fixture();
     const owner = repository(path, clock, {
       pid: 112,
       hostname: 'test-host',
-      ownerTokenFactory: () => 'long-running-owner-token',
       processAlive: () => true,
+      processIdentity: () => 'process-lifetime-a',
       abandonedAfterMs: 1_000,
     });
     const run = await owner.startCatalogSyncRun({ startedAt: new Date(1_000) });
@@ -113,19 +113,19 @@ describe('catalog sync run recovery', () => {
     const observer = repository(path, clock, {
       pid: 223,
       hostname: 'test-host',
-      ownerTokenFactory: () => 'observer-token',
       processAlive: (pid) => pid === 112,
+      processIdentity: (pid) => (pid === 112 ? 'process-lifetime-a' : 'observer-lifetime'),
       abandonedAfterMs: 1_000,
     });
 
     expect(readRun(path, run.id)).toMatchObject({
       status: 'RUNNING',
       completed_at: null,
-      owner_token: 'long-running-owner-token',
       owner_pid: 112,
       owner_hostname: 'test-host',
       heartbeat_at: 1_000,
     });
+    expect(readRun(path, run.id).owner_token).toMatch(/^v1\./u);
 
     observer.close();
     setNow(11_000);
@@ -204,6 +204,110 @@ describe('catalog sync run recovery', () => {
     owner.close();
   });
 
+  it('recovers an expired same-host run when a reused pid is alive but identity is unavailable', async () => {
+    const { path, clock, setNow } = fixture();
+    const owner = repository(path, clock, {
+      pid: 141,
+      hostname: 'test-host',
+      processAlive: () => true,
+      processIdentity: () => undefined,
+      abandonedAfterMs: 1_000,
+    });
+    const run = await owner.startCatalogSyncRun({ startedAt: new Date(1_000) });
+
+    setNow(3_000);
+    const recovery = repository(path, clock, {
+      pid: 242,
+      hostname: 'test-host',
+      processAlive: (pid) => pid === 141,
+      processIdentity: () => undefined,
+      abandonedAfterMs: 1_000,
+    });
+
+    expect(readRun(path, run.id)).toMatchObject({
+      status: 'FAILED',
+      completed_at: 3_000,
+      owner_token: null,
+      owner_pid: null,
+      owner_hostname: null,
+      heartbeat_at: 3_000,
+    });
+
+    await expect(
+      owner.completeCatalogSyncRun(run.id, {
+        completedAt: new Date(3_100),
+        status: 'SUCCESS',
+        documentsChecked: 0,
+        documentsAdded: 0,
+        documentsUpdated: 0,
+        documentsUnchanged: 0,
+        documentsFailed: 0,
+      }),
+    ).rejects.toThrow('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
+
+    recovery.close();
+    owner.close();
+  });
+
+  it('reconciles an expired unverified owner before a new start without reopening the observer', async () => {
+    const { path, clock, setNow } = fixture();
+    const owner = repository(path, clock, {
+      pid: 151,
+      hostname: 'test-host',
+      processAlive: () => true,
+      processIdentity: () => undefined,
+      abandonedAfterMs: 1_000,
+    });
+    const staleRun = await owner.startCatalogSyncRun({ startedAt: new Date(1_000) });
+
+    setNow(1_500);
+    const observer = repository(path, clock, {
+      pid: 252,
+      hostname: 'test-host',
+      processAlive: (pid) => pid === 151,
+      processIdentity: () => undefined,
+      abandonedAfterMs: 1_000,
+    });
+    expect(readRun(path, staleRun.id).status).toBe('RUNNING');
+
+    setNow(3_000);
+    const replacement = await observer.startCatalogSyncRun({ startedAt: new Date(3_000) });
+
+    expect(readRun(path, staleRun.id).status).toBe('FAILED');
+    expect(readRun(path, replacement.id)).toMatchObject({
+      status: 'RUNNING',
+      owner_pid: 252,
+      owner_hostname: 'test-host',
+    });
+
+    await expect(
+      owner.completeCatalogSyncRun(staleRun.id, {
+        completedAt: new Date(3_100),
+        status: 'SUCCESS',
+        documentsChecked: 0,
+        documentsAdded: 0,
+        documentsUpdated: 0,
+        documentsUnchanged: 0,
+        documentsFailed: 0,
+      }),
+    ).rejects.toThrow('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
+
+    await expect(
+      observer.completeCatalogSyncRun(replacement.id, {
+        completedAt: new Date(3_200),
+        status: 'SUCCESS',
+        documentsChecked: 0,
+        documentsAdded: 0,
+        documentsUpdated: 0,
+        documentsUnchanged: 0,
+        documentsFailed: 0,
+      }),
+    ).resolves.toMatchObject({ status: 'SUCCESS' });
+
+    observer.close();
+    owner.close();
+  });
+
   it('recovers an owner from another host only after the lease timeout', async () => {
     const { path, clock, setNow } = fixture();
     const owner = repository(path, clock, {
@@ -263,6 +367,7 @@ function repository(
     readonly hostname: string;
     readonly ownerTokenFactory?: () => string;
     readonly processAlive?: (pid: number) => boolean;
+    readonly processIdentity?: (pid: number) => string | undefined;
     readonly abandonedAfterMs?: number;
   },
 ): SqliteCatalogRepository {
