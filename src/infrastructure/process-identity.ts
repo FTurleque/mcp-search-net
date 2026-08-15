@@ -2,6 +2,14 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 const PROCESS_IDENTITY_TIMEOUT_MS = 2_000;
+const WINDOWS_POWERSHELL_PATH = String.raw`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`;
+const POSIX_PS_PATHS: Readonly<Partial<Record<NodeJS.Platform, string>>> = {
+  aix: '/usr/bin/ps',
+  darwin: '/bin/ps',
+  freebsd: '/bin/ps',
+  openbsd: '/bin/ps',
+  sunos: '/usr/bin/ps',
+};
 
 /**
  * Returns an OS-backed identity for one concrete process lifetime.
@@ -46,7 +54,7 @@ function readWindowsProcessIdentity(pid: number): string | undefined {
     '$processInfo.StartTime.ToUniversalTime().Ticks',
   ].join('; ');
   const ticks = execFileSync(
-    'powershell.exe',
+    WINDOWS_POWERSHELL_PATH,
     ['-NoProfile', '-NonInteractive', '-Command', command],
     {
       encoding: 'utf8',
@@ -60,7 +68,10 @@ function readWindowsProcessIdentity(pid: number): string | undefined {
 }
 
 function readPosixProcessIdentity(pid: number): string | undefined {
-  const startedAtText = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+  const psPath = POSIX_PS_PATHS[process.platform];
+  if (psPath === undefined) return undefined;
+
+  const startedAtText = execFileSync(psPath, ['-o', 'lstart=', '-p', String(pid)], {
     encoding: 'utf8',
     timeout: PROCESS_IDENTITY_TIMEOUT_MS,
     stdio: ['ignore', 'pipe', 'ignore'],
