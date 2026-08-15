@@ -349,7 +349,7 @@ function createOwnerToken(entropy: string, processIdentity: string | undefined):
 }
 
 function readOwnerProcessIdentity(ownerToken: string | null): string | undefined {
-  if (ownerToken === null || !ownerToken.startsWith(OWNER_TOKEN_IDENTITY_PREFIX)) return undefined;
+  if (!ownerToken?.startsWith(OWNER_TOKEN_IDENTITY_PREFIX)) return undefined;
   const separatorIndex = ownerToken.indexOf('.', OWNER_TOKEN_IDENTITY_PREFIX.length);
   if (separatorIndex === -1) return undefined;
   const encodedIdentity = ownerToken.slice(OWNER_TOKEN_IDENTITY_PREFIX.length, separatorIndex);
