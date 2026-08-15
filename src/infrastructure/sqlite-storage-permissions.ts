@@ -7,6 +7,7 @@ export function preparePrivateSqliteStorage(path: string): void {
 
 export function preparePrivateDirectory(path: string): void {
   mkdirSync(path, { recursive: true, mode: 0o700 });
+  if (process.platform !== 'win32') chmodSync(path, 0o700);
 }
 
 export function hardenSqliteStoragePermissions(path: string): void {
