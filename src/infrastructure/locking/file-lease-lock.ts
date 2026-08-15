@@ -17,6 +17,8 @@ import type { Clock } from '../../application/ports/clock.js';
 import type { Logger } from '../../application/ports/logger.js';
 import { readProcessIdentity } from '../process-identity.js';
 
+const FAILED_ACQUIRE_CLEANUP_ATTEMPTS = 3;
+
 export interface FileLeaseMetadata {
   readonly schemaVersion: '1.0' | '1.1';
   readonly ownerToken: string;
@@ -42,7 +44,9 @@ export interface FileLeaseLockOptions {
   readonly ownerTokenFactory?: () => string;
   readonly processAlive?: (pid: number) => boolean;
   readonly processIdentity?: (pid: number) => string | undefined;
+  readonly renameFile?: (oldPath: string, newPath: string) => void;
   readonly unlinkFile?: (path: string) => void;
+  readonly writeHeartbeatFile?: (path: string, content: string) => void;
 }
 
 export class FileLeaseLockError extends Error {
@@ -58,7 +62,9 @@ export class FileLeaseLock {
   private readonly ownerTokenFactory: () => string;
   private readonly processAlive: (pid: number) => boolean;
   private readonly processIdentity: (pid: number) => string | undefined;
+  private readonly renameFile: (oldPath: string, newPath: string) => void;
   private readonly unlinkFile: (path: string) => void;
+  private readonly writeHeartbeatFile: (path: string, content: string) => void;
 
   public constructor(
     private readonly lockPath: string,
@@ -69,7 +75,16 @@ export class FileLeaseLock {
     this.ownerTokenFactory = options.ownerTokenFactory ?? randomUUID;
     this.processAlive = options.processAlive ?? isProcessAlive;
     this.processIdentity = options.processIdentity ?? readProcessIdentity;
+    this.renameFile = options.renameFile ?? renameSync;
     this.unlinkFile = options.unlinkFile ?? unlinkSync;
+    this.writeHeartbeatFile =
+      options.writeHeartbeatFile ??
+      ((path, content) =>
+        writeFileSync(path, content, {
+          encoding: 'utf8',
+          flag: 'w',
+          mode: 0o600,
+        }));
   }
 
   public acquire(): FileLease {
@@ -83,9 +98,7 @@ export class FileLeaseLock {
         try {
           this.writeHeartbeat(metadata);
         } catch (error) {
-          if (readMetadataFile(this.lockPath)?.ownerToken === metadata.ownerToken) {
-            unlinkSync(this.lockPath);
-          }
+          this.rollbackFailedAcquire(metadata.ownerToken, error);
           throw error;
         }
         return this.createLease(metadata);
@@ -152,6 +165,93 @@ export class FileLeaseLock {
     };
   }
 
+  private rollbackFailedAcquire(ownerToken: string, primaryError: unknown): void {
+    if (readMetadataFile(this.lockPath)?.ownerToken !== ownerToken) return;
+
+    const cleanupFailures: unknown[] = [];
+    this.removeFailedAcquireHeartbeat(cleanupFailures);
+    let activeLockRemoved = false;
+
+    for (let attempt = 1; attempt <= FAILED_ACQUIRE_CLEANUP_ATTEMPTS; attempt += 1) {
+      const current = readMetadataFile(this.lockPath);
+      if (current?.ownerToken !== ownerToken) {
+        activeLockRemoved = true;
+        break;
+      }
+
+      try {
+        this.unlinkFile(this.lockPath);
+        activeLockRemoved = true;
+        break;
+      } catch (unlinkError) {
+        if (isFileSystemError(unlinkError, 'ENOENT')) {
+          activeLockRemoved = true;
+          break;
+        }
+        cleanupFailures.push(unlinkError);
+      }
+
+      const quarantinePath = `${this.lockPath}.failed-acquire-${randomUUID()}`;
+      try {
+        this.renameFile(this.lockPath, quarantinePath);
+        activeLockRemoved = true;
+        this.cleanupFailedAcquireQuarantine(quarantinePath, ownerToken, cleanupFailures);
+        break;
+      } catch (renameError) {
+        if (isFileSystemError(renameError, 'ENOENT')) {
+          activeLockRemoved = true;
+          break;
+        }
+        cleanupFailures.push(renameError);
+      }
+    }
+
+    if (!activeLockRemoved) {
+      this.options.logger?.error('file_lease_lock_acquire_rollback_failed', {
+        lockPath: this.lockPath,
+        pid: this.pid,
+        attempts: FAILED_ACQUIRE_CLEANUP_ATTEMPTS,
+      });
+    }
+    attachCleanupFailures(primaryError, cleanupFailures);
+  }
+
+  private removeFailedAcquireHeartbeat(cleanupFailures: unknown[]): void {
+    const path = this.heartbeatPath();
+    if (!existsSync(path)) return;
+    try {
+      this.unlinkFile(path);
+    } catch (error) {
+      if (!isFileSystemError(error, 'ENOENT')) cleanupFailures.push(error);
+    }
+  }
+
+  private cleanupFailedAcquireQuarantine(
+    quarantinePath: string,
+    ownerToken: string,
+    cleanupFailures: unknown[],
+  ): void {
+    if (readMetadataFile(quarantinePath)?.ownerToken !== ownerToken) {
+      cleanupFailures.push(
+        new FileLeaseLockError(
+          `Quarantined lock ownership changed unexpectedly: ${quarantinePath}`,
+        ),
+      );
+      return;
+    }
+    try {
+      this.unlinkFile(quarantinePath);
+    } catch (error) {
+      if (isFileSystemError(error, 'ENOENT')) return;
+      cleanupFailures.push(error);
+      this.options.logger?.warning('file_lease_lock_acquire_quarantine_cleanup_failed', {
+        lockPath: this.lockPath,
+        quarantinePath,
+        pid: this.pid,
+      });
+    }
+  }
+
   private requireOwnedMetadata(ownerToken: string): FileLeaseMetadata {
     const metadata = this.readMetadata();
     if (metadata?.ownerToken !== ownerToken) {
@@ -179,7 +279,7 @@ export class FileLeaseLock {
     // external state and must never influence a filesystem path.
     const quarantinePath = `${this.lockPath}.stale-${randomUUID()}`;
     try {
-      renameSync(this.lockPath, quarantinePath);
+      this.renameFile(this.lockPath, quarantinePath);
     } catch (error) {
       if (isFileSystemError(error, 'ENOENT')) return true;
       throw error;
@@ -187,7 +287,7 @@ export class FileLeaseLock {
 
     const quarantined = readMetadataFile(quarantinePath);
     if (quarantined?.ownerToken !== metadata.ownerToken) {
-      if (!existsSync(this.lockPath)) renameSync(quarantinePath, this.lockPath);
+      if (!existsSync(this.lockPath)) this.renameFile(quarantinePath, this.lockPath);
       throw new FileLeaseLockError(`Lock changed during stale recovery: ${this.lockPath}`);
     }
     unlinkSync(quarantinePath);
@@ -211,11 +311,7 @@ export class FileLeaseLock {
 
   private writeHeartbeat(metadata: FileLeaseMetadata): void {
     const path = this.heartbeatPath();
-    writeFileSync(path, serializeMetadata(metadata), {
-      encoding: 'utf8',
-      flag: 'w',
-      mode: 0o600,
-    });
+    this.writeHeartbeatFile(path, serializeMetadata(metadata));
     if (process.platform !== 'win32') chmodSync(path, 0o600);
   }
 
@@ -291,6 +387,28 @@ function validateStaleAfter(value: number): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new FileLeaseLockError('staleAfterMs must be a positive safe integer');
   }
+}
+
+function attachCleanupFailures(primaryError: unknown, cleanupFailures: readonly unknown[]): void {
+  if (!(primaryError instanceof Error) || cleanupFailures.length === 0) return;
+  const cleanupCause =
+    cleanupFailures.length === 1
+      ? cleanupFailures[0]
+      : new AggregateError(
+          cleanupFailures,
+          'File lease acquisition rollback had multiple failures',
+        );
+  const cause =
+    primaryError.cause === undefined
+      ? cleanupCause
+      : new AggregateError(
+          [primaryError.cause, cleanupCause],
+          'File lease acquisition failed with additional rollback failures',
+        );
+  Reflect.defineProperty(primaryError, 'cause', {
+    configurable: true,
+    value: cause,
+  });
 }
 
 function isFileSystemError(error: unknown, code: string): boolean {
