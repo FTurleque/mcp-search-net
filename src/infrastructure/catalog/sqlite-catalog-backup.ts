@@ -1,18 +1,11 @@
 import { createHash } from 'node:crypto';
-import {
-  createReadStream,
-  existsSync,
-  linkSync,
-  mkdirSync,
-  realpathSync,
-  rmSync,
-  statSync,
-} from 'node:fs';
+import { createReadStream, existsSync, linkSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 import Database from 'better-sqlite3';
 
 import type { Clock } from '../../application/ports/clock.js';
+import { hardenPrivateFile, preparePrivateDirectory } from '../sqlite-storage-permissions.js';
 import { verifyCatalogIntegrity } from './catalog-integrity.js';
 import { openCatalogDatabase } from './catalog-database.js';
 
@@ -44,7 +37,7 @@ export class SqliteCatalogBackup {
     const finalPath = join(backupDirectory, fileName);
     if (existsSync(finalPath)) throw new Error('CATALOG_BACKUP_DESTINATION_EXISTS');
 
-    mkdirSync(backupDirectory, { recursive: true });
+    preparePrivateDirectory(backupDirectory);
     const temporaryPath = join(
       backupDirectory,
       `.partial-${process.pid}-${this.clock.now().getTime()}-${fileName}`,
@@ -52,11 +45,13 @@ export class SqliteCatalogBackup {
     const source = openCatalogDatabase(sourcePath);
     try {
       const metadata = await source.backup(temporaryPath);
+      hardenPrivateFile(temporaryPath);
       this.verifySnapshot(temporaryPath);
       const sha256 = await sha256File(temporaryPath);
       const bytes = statSync(temporaryPath).size;
 
       linkSync(temporaryPath, finalPath);
+      hardenPrivateFile(finalPath);
       rmSync(temporaryPath);
 
       return {
