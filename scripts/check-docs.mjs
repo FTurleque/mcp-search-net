@@ -201,8 +201,16 @@ function validateMigrationInventory() {
     .filter((name) => /^H\d{3}__.+\.sql$/u.test(name))
     .sort();
   for (const migration of historyMigrations) {
-    requireText(currentState, `\`${migration}\``, `${currentStatePath}: migration historique absente ${migration}`);
-    requireText(readme, `\`${migration}\``, `README.md: migration historique absente ${migration}`);
+    requireText(
+      currentState,
+      `\`${migration}\``,
+      `${currentStatePath}: migration historique absente ${migration}`,
+    );
+    requireText(
+      readme,
+      `\`${migration}\``,
+      `README.md: migration historique absente ${migration}`,
+    );
   }
 }
 
@@ -312,9 +320,20 @@ function validatePostMergeTruth() {
     failures.push('.github/workflows/ci.yml: branche V2 intégration obsolète encore ciblée');
   }
   requireText(windowsGuide, 'Node.js 24.18.0', 'installation-windows.md: runtime 24.18.0 absent');
-  requireText(windowsGuide, 'Inno Setup est figé sur la version 6.7.3', 'installation-windows.md: Inno Setup 6.7.3 absent');
-  requireText(windowsGuide, 'history-migrations\\', 'installation-windows.md: history-migrations absent de l’arborescence');
-  if (windowsGuide.includes('Node.js 24.17.0') || windowsGuide.includes('Inno Setup est figé sur la version 6.7.1')) {
+  requireText(
+    windowsGuide,
+    'Inno Setup est figé sur la version 6.7.3',
+    'installation-windows.md: Inno Setup 6.7.3 absent',
+  );
+  requireText(
+    windowsGuide,
+    'history-migrations\\',
+    'installation-windows.md: history-migrations absent de l’arborescence',
+  );
+  if (
+    windowsGuide.includes('Node.js 24.17.0') ||
+    windowsGuide.includes('Inno Setup est figé sur la version 6.7.1')
+  ) {
     failures.push('installation-windows.md: version runtime ou Inno Setup obsolète');
   }
 }
@@ -355,7 +374,11 @@ function validateReleaseAndInstallerHardening() {
     'history.structuredContent?.data?.enabled !== true',
     'history.structuredContent?.data?.available !== true',
   ]) {
-    requireText(installedProbe, needle, `probe-installed-mcp.mjs: contrôle historique absent: ${needle}`);
+    requireText(
+      installedProbe,
+      needle,
+      `probe-installed-mcp.mjs: contrôle historique absent: ${needle}`,
+    );
   }
 
   for (const needle of [
