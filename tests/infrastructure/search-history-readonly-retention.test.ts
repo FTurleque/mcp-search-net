@@ -48,9 +48,9 @@ describe('search history read-only retention', () => {
 function countRows(path: string): number {
   const database = new Database(path, { readonly: true });
   try {
-    const row = database.prepare<[], { readonly count: number }>(
-      'SELECT count(*) AS count FROM search_history',
-    ).get();
+    const row = database
+      .prepare<[], { readonly count: number }>('SELECT count(*) AS count FROM search_history')
+      .get();
     return row?.count ?? 0;
   } finally {
     database.close();
