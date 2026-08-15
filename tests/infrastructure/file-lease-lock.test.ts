@@ -162,7 +162,7 @@ describe('FileLeaseLock', () => {
 
     expect(() => lock.acquire()).toThrow(heartbeatError);
     expect(heartbeatError.cause).toBeInstanceOf(AggregateError);
-    expect((heartbeatError.cause as AggregateError).errors.length).toBe(3);
+    expect((heartbeatError.cause as AggregateError).errors).toHaveLength(3);
     expect(quarantineDeleteAttempts).toBe(1);
     expect(recording.warnings).toContain('file_lease_lock_acquire_quarantine_cleanup_failed');
     expect(existsSync(fixture.lockPath)).toBe(false);
