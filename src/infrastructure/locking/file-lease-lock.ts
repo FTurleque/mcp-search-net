@@ -15,7 +15,7 @@ import { dirname } from 'node:path';
 
 import type { Clock } from '../../application/ports/clock.js';
 import type { Logger } from '../../application/ports/logger.js';
-import { readProcessIdentity } from '../process-identity.js';
+import { compareProcessIdentity, readProcessIdentity } from '../process-identity.js';
 
 const FAILED_ACQUIRE_CLEANUP_ATTEMPTS = 3;
 const STALE_RECOVERY_CLEANUP_ATTEMPTS = 3;
@@ -270,10 +270,22 @@ export class FileLeaseLock {
     if (metadata.hostname !== this.hostname) return false;
 
     if (this.processAlive(metadata.pid)) {
-      const recordedIdentity = metadata.processIdentity;
-      if (recordedIdentity === undefined || recordedIdentity === null) return false;
-      const activeIdentity = this.processIdentity(metadata.pid);
-      if (activeIdentity === undefined || activeIdentity === recordedIdentity) return false;
+      const identity = compareProcessIdentity(
+        metadata.processIdentity,
+        metadata.pid,
+        this.processIdentity,
+      );
+      if (identity === 'same') return false;
+      if (identity === 'unavailable') {
+        this.options.logger?.warning('file_lease_lock_stale_identity_unavailable', {
+          lockPath: this.lockPath,
+          ownerPid: metadata.pid,
+          ageMs,
+        });
+      }
+      // A different process lifetime proves PID reuse. If identity cannot be established,
+      // the expired durable heartbeat is the lease authority; ownership-safe quarantine below
+      // ensures the former owner can no longer remove a replacement lock.
     }
 
     // The quarantine name contains only server-generated randomness. Lock metadata is
