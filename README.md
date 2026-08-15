@@ -190,7 +190,7 @@ maxima absolus. Une configuration obligatoire invalide arrête le démarrage ave
 La V2 intégrée fournit :
 
 - catalogue durable séparé de `cache.sqlite` ;
-- migrations catalogue `C001` à `C013` avec checksums SHA-256 ;
+- migrations catalogue `C001` à `C014` avec checksums SHA-256 ;
 - CLI `catalog init`, `status`, `verify`, `add-source`, `list-sources`, `load-sources`,
   `ingest-text`, `sync`, `search`, `rebuild-index`, `purge-versions`, ainsi que `health` et `backup` ;
 - ingestion texte/Markdown avec versioning et sections ;
