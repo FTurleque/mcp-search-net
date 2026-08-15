@@ -133,13 +133,13 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
   }
 
   public list(query: SearchHistoryListQuery): Promise<SearchHistoryPage> {
-    this.pruneExpired(this.clock.now().getTime());
-    const { whereSql, parameters } = buildWhere(query, false);
+    const retentionCutoff = this.clock.now().getTime() - this.retentionDays * 86_400_000;
+    const { whereSql, parameters } = buildWhere(query, false, retentionCutoff);
     const countRow = this.database
       .prepare(`SELECT COUNT(*) AS total FROM search_history${whereSql}`)
       .get(...parameters) as CountRow | undefined;
 
-    const pageWhere = buildWhere(query, true);
+    const pageWhere = buildWhere(query, true, retentionCutoff);
     const rows = this.database
       .prepare(
         `SELECT id, request_id, tool, query, request_json, executed_at, duration_ms, status,
@@ -154,7 +154,6 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
     const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
     const items = pageRows.map(toEntry);
     const nextBeforeId = hasMore ? items.at(-1)?.id : undefined;
-    hardenHistoryStoragePermissions(this.path);
     return Promise.resolve({
       enabled: true,
       available: true,
@@ -184,9 +183,10 @@ function hardenHistoryStoragePermissions(path: string): void {
 function buildWhere(
   query: SearchHistoryListQuery,
   includeCursor: boolean,
+  retentionCutoff: number,
 ): { readonly whereSql: string; readonly parameters: unknown[] } {
-  const clauses: string[] = [];
-  const parameters: unknown[] = [];
+  const clauses: string[] = ['executed_at >= ?'];
+  const parameters: unknown[] = [retentionCutoff];
   if (query.tool !== undefined) {
     clauses.push('tool = ?');
     parameters.push(query.tool);
@@ -216,7 +216,7 @@ function buildWhere(
     parameters.push(query.beforeId);
   }
   return {
-    whereSql: clauses.length === 0 ? '' : ` WHERE ${clauses.join(' AND ')}`,
+    whereSql: ` WHERE ${clauses.join(' AND ')}`,
     parameters,
   };
 }

@@ -16,15 +16,15 @@ certification native.
 - Branche d’intégration courante : `develop`.
 - Une capacité présente uniquement sur `develop` n’est pas déclarée publiée tant qu’elle n’a pas été
   portée sur `master` par le flux de release.
-- Dernière baseline post-merge enregistrée avant ce hardening : merge de la PR #98 dans `develop`,
-  commit `6a129923ce5b6d2cb2e0ea5814f316eb0b90ab50`, tree fonctionnel
-  `76f7efea52663c6714a29364b9411dce0709e2cf`. La CI #1228 / `31901946951` a terminé en `SUCCESS`
+- Dernière baseline post-merge intégrée avant ce hardening : merge de la PR #100 dans `develop`,
+  commit `b36251c58af715696ee78946f505810a1cc46da9`, tree fonctionnel
+  `868b95bc0044bd8df7ffee4b898570c84ea7dd6e`. La CI #1242 / `31907796018` a terminé en `SUCCESS`
   sur ce SHA pour Node.js, Docker/live E2E et Windows installation/STDIO packaging ; le job Sonar
   GitHub Actions est ignoré sur les pushes `develop` par conception.
-- Le même tree avait été qualifié sur le head exact de la PR #98
-  `b535130732115db233cdab4241927f2505e079be` par la CI #1227 / `31900524051`, avec
+- Le même tree avait été qualifié sur le head exact de la PR #100
+  `1985ccb5b10b4c799225a2503cdb53898666aa3c` par la CI #1241 / `31907147510`, avec
   `SonarCloud Code Analysis` en succès et le Quality Gate SonarQubeCloud à 0 nouvelle issue,
-  0 Security Hotspot, 86,4 % de couverture sur le nouveau code et 0 % de duplication.
+  0 Security Hotspot, 97,7 % de couverture sur le nouveau code et 0 % de duplication.
 - Le ruleset `Protect integration branches` protège la branche par défaut et `develop`, exige les PR,
   la résolution des threads et les quatre checks courants. Le mode strict est actif : une PR doit
   être à jour avec sa base avant merge (`strict_required_status_checks_policy=true`).
@@ -42,6 +42,12 @@ certification native.
   fail-closed ; après une première perte de lease, toutes les mutations suivantes du même ancien
   owner restent donc rejetées. `SyncCatalogDocuments` traite `CATALOG_SYNC_RUN_OWNERSHIP_LOST`
   comme une erreur fatale du run et n’essaie pas de poursuivre avec les documents suivants.
+- La récupération des sync-runs abandonnés sépare désormais décision et commit : les sondes OS de
+  liveness/identité de processus sont exécutées hors transaction d’écriture SQLite, puis une courte
+  transaction `BEGIN IMMEDIATE` applique uniquement les récupérations dont `started_at`,
+  `heartbeat_at`, owner token, PID et hostname correspondent encore au snapshot observé. Un owner
+  qui renouvelle son heartbeat pendant une sonde lente invalide donc la récupération candidate au
+  lieu d’être écrasé, sans conserver un write-lock SQLite pendant PowerShell/`ps`.
 - `FileLease.release()` est reprenable : une suppression réussie du lock principal suivie d’un échec
   transitoire du heartbeat ne marque pas prématurément le lease comme libéré.
 - L’acquisition `FileLeaseLock.acquire()` est également exception-safe : si la création initiale du
@@ -53,13 +59,21 @@ certification native.
   La suppression de la quarantaine et de l’ancien heartbeat est ensuite retentée avec un budget
   borné ; un `EPERM`/`EBUSY` résiduel est journalisé sans rendre de nouveau le lock stale actif ni
   empêcher à lui seul une nouvelle acquisition.
+- `list_search_history` est une lecture réellement non mutante : les lignes hors fenêtre de rétention
+  sont exclues par le prédicat SQL de lecture sans `DELETE` ni chmod déclenché par le tool call. La
+  purge physique reste effectuée sur les chemins d’écriture/rétention.
+- Les annotations MCP reflètent les effets persistants réels : `search_web`, `fetch_url` et
+  `search_docs` ne sont pas annoncés read-only/idempotents car ils peuvent écrire cache et/ou
+  historique local ; `list_docs`, `read_doc_section` et `list_search_history` restent annoncés comme
+  lectures read-only/idempotentes.
 - Les tests de fault injection couvrent les doubles fautes d’acquisition, les changements d’owner,
-  les suppressions `ENOENT`, le fencing répété d’un ancien owner et les échecs de cleanup après
-  quarantaine stale.
+  les suppressions `ENOENT`, le fencing répété d’un ancien owner, les échecs de cleanup après
+  quarantaine stale, le renouvellement concurrent d’un sync-run pendant une sonde d’identité et
+  l’absence de mutation physique pendant la lecture de l’historique.
 
 ## Contrat MCP public
 
-Le serveur STDIO expose exactement six outils read-only :
+Le serveur STDIO expose exactement six outils :
 
 - `search_web`
 - `fetch_url`
@@ -67,6 +81,14 @@ Le serveur STDIO expose exactement six outils read-only :
 - `list_docs`
 - `read_doc_section`
 - `list_search_history`
+
+Les annotations de side effects sont intentionnellement différenciées :
+
+- `search_web`, `fetch_url` et `search_docs` ont `readOnlyHint: false` et `idempotentHint: false`, car
+  un appel peut modifier le cache local et/ou ajouter une occurrence à l’historique local ; ces
+  effets restent non destructifs (`destructiveHint: false`) ;
+- `list_docs`, `read_doc_section` et `list_search_history` ont `readOnlyHint: true` et
+  `idempotentHint: true` ; leur exécution ne modifie pas l’état persistant applicatif.
 
 Les quatre resources statiques sont :
 
@@ -113,9 +135,11 @@ et flags de version courante ainsi que la cohérence du FTS. Les mises à jour d
 reconstruction FTS associée sont transactionnelles.
 
 L’historique est fail-open : une panne de `history.sqlite` n’annule pas une recherche principale
-réussie. La rétention est bornée en durée et en nombre d’entrées. Les formes évidentes de secrets
-Bearer/JWT/PAT/API-key/password/secret/signature sont remplacées par `[REDACTED]` avant persistance ;
-`history.enabled: false` permet de désactiver entièrement cette journalisation locale.
+réussie. La rétention est bornée en durée et en nombre d’entrées. Les lectures appliquent la fenêtre
+de rétention comme filtre sans muter la base ; la purge physique des entrées expirées intervient lors
+des écritures. Les formes évidentes de secrets Bearer/JWT/PAT/API-key/password/secret/signature sont
+remplacées par `[REDACTED]` avant persistance ; `history.enabled: false` permet de désactiver
+entièrement cette journalisation locale.
 
 ## Migrations catalogue et historique
 
@@ -149,6 +173,9 @@ nouveau numéro et checksum.
   observation de synchronisation sont validés dans la même transaction.
 - Toute observation de synchronisation doit être portée par un `syncRunId` encore détenu localement ;
   l’absence du token local ou l’échec du heartbeat durable fence la mutation avant commit.
+- La décision de récupération d’un sync-run abandonné peut effectuer des sondes OS lentes, mais ces
+  sondes ne tiennent jamais le writer SQLite. Le commit de récupération est un CAS durable sur le
+  snapshot exact de lease observé afin qu’un renouvellement concurrent gagne toujours la course.
 - Les sections sont chunkées et bornées avant persistance ; deux occurrences identiques à des
   positions différentes restent distinctes.
 - `C011` persiste l’intention `pending_current` pour les primitives legacy afin qu’une version ne

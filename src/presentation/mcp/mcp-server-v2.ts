@@ -139,13 +139,13 @@ export function createMcpServer(dependencies: McpServerV2Dependencies): McpServe
     {
       title: 'Search local catalog documents',
       description:
-        'Search the already ingested local catalog first and return compact ranked section snippets. Prefer 1–3 useful results, then call read_doc_section for the selected section. Use fetch_url only when the needed content is fresh Web content or is not available in the catalog.',
+        'Search the already ingested local catalog first and return compact ranked section snippets. Prefer 1–3 useful results, then call read_doc_section for the selected section. Use fetch_url only when the needed content is fresh Web content or is not available in the catalog. Cet appel peut enregistrer une occurrence dans l’historique local lorsque cette fonction est activée.',
       inputSchema: schemas.input,
       outputSchema: schemas.output.shape,
       annotations: {
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: false,
       },
     },

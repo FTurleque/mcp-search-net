@@ -31,6 +31,7 @@ const EXPECTED_TEMPLATES = [
   'mcp-search-net://sources/page/{offset}',
   'mcp-search-net://sources/{sourceId}',
 ];
+const PERSISTENT_SIDE_EFFECT_TOOLS = new Set(['fetch_url', 'search_docs', 'search_web']);
 
 const outputIndex = process.argv.indexOf('--output');
 const outputPath =
@@ -75,11 +76,12 @@ try {
 
   for (const tool of tools.tools) {
     const annotations = tool.annotations ?? {};
+    const hasPersistentSideEffects = PERSISTENT_SIDE_EFFECT_TOOLS.has(tool.name);
     const expectedOpenWorld = tool.name === 'search_web' || tool.name === 'fetch_url';
     if (
-      annotations.readOnlyHint !== true ||
+      annotations.readOnlyHint !== !hasPersistentSideEffects ||
       annotations.destructiveHint !== false ||
-      annotations.idempotentHint !== true ||
+      annotations.idempotentHint !== !hasPersistentSideEffects ||
       annotations.openWorldHint !== expectedOpenWorld
     ) {
       throw new Error(`CLIENT_CONTRACT_ANNOTATIONS_CHANGED:${tool.name}`);
