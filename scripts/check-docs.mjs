@@ -206,11 +206,7 @@ function validateMigrationInventory() {
       `\`${migration}\``,
       `${currentStatePath}: migration historique absente ${migration}`,
     );
-    requireText(
-      readme,
-      `\`${migration}\``,
-      `README.md: migration historique absente ${migration}`,
-    );
+    requireText(readme, `\`${migration}\``, `README.md: migration historique absente ${migration}`);
   }
 }
 
