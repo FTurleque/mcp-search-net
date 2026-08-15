@@ -58,57 +58,51 @@ describe('catalog maintenance lock finalization', () => {
     expect(existsSync(`${catalogPath}.maintenance.lock.heartbeat`)).toBe(false);
   });
 
-  it(
-    'preserves the exact maintenance failure when lock release also exhausts its retries',
-    async () => {
-      const catalogPath = createCatalogPath('primary-error');
-      const primaryError = new Error('PRIMARY_MAINTENANCE_FAILURE');
-      const releaseError = new Error('LOCK_RELEASE_FAILURE');
-      let releaseAttempts = 0;
-      const lease = fakeLease({
-        renew: () => {
-          throw primaryError;
-        },
-        release: () => {
-          releaseAttempts += 1;
-          throw releaseError;
-        },
-      });
+  it('preserves the exact maintenance failure when lock release also exhausts its retries', async () => {
+    const catalogPath = createCatalogPath('primary-error');
+    const primaryError = new Error('PRIMARY_MAINTENANCE_FAILURE');
+    const releaseError = new Error('LOCK_RELEASE_FAILURE');
+    let releaseAttempts = 0;
+    const lease = fakeLease({
+      renew: () => {
+        throw primaryError;
+      },
+      release: () => {
+        releaseAttempts += 1;
+        throw releaseError;
+      },
+    });
 
-      const runner = new SqliteCatalogMaintenance(catalogPath, clock, undefined, {
-        releaseAttempts: 3,
-        lockFactory: () => ({ acquire: () => lease }),
-      });
+    const runner = new SqliteCatalogMaintenance(catalogPath, clock, undefined, {
+      releaseAttempts: 3,
+      lockFactory: () => ({ acquire: () => lease }),
+    });
 
-      await expect(runner.run(maintenanceInput)).rejects.toBe(primaryError);
-      expect(releaseAttempts).toBe(3);
-      expect(primaryError.cause).toBe(releaseError);
-    },
-  );
+    await expect(runner.run(maintenanceInput)).rejects.toBe(primaryError);
+    expect(releaseAttempts).toBe(3);
+    expect(primaryError.cause).toBe(releaseError);
+  });
 
-  it(
-    'fails closed when successful maintenance cannot release its lock after all retries',
-    async () => {
-      const catalogPath = createCatalogPath('release-error');
-      const releaseError = new Error('LOCK_RELEASE_FAILURE');
-      let releaseAttempts = 0;
-      const lease = fakeLease({
-        renew: () => undefined,
-        release: () => {
-          releaseAttempts += 1;
-          throw releaseError;
-        },
-      });
+  it('fails closed when successful maintenance cannot release its lock after all retries', async () => {
+    const catalogPath = createCatalogPath('release-error');
+    const releaseError = new Error('LOCK_RELEASE_FAILURE');
+    let releaseAttempts = 0;
+    const lease = fakeLease({
+      renew: () => undefined,
+      release: () => {
+        releaseAttempts += 1;
+        throw releaseError;
+      },
+    });
 
-      const runner = new SqliteCatalogMaintenance(catalogPath, clock, undefined, {
-        releaseAttempts: 2,
-        lockFactory: () => ({ acquire: () => lease }),
-      });
+    const runner = new SqliteCatalogMaintenance(catalogPath, clock, undefined, {
+      releaseAttempts: 2,
+      lockFactory: () => ({ acquire: () => lease }),
+    });
 
-      await expect(runner.run(maintenanceInput)).rejects.toBe(releaseError);
-      expect(releaseAttempts).toBe(2);
-    },
-  );
+    await expect(runner.run(maintenanceInput)).rejects.toBe(releaseError);
+    expect(releaseAttempts).toBe(2);
+  });
 
   it('rejects an invalid release retry budget', () => {
     expect(
