@@ -1,77 +1,57 @@
 # État courant de `mcp-search-net`
 
-Ce document décrit l’état technique autoritatif du produit courant. Les fichiers datés sous
-`docs/planning/` sont des preuves historiques liées à leur date et à leur SHA ; ils ne remplacent
-pas ce document pour connaître l’état présent.
+Ce document décrit l’état **fonctionnel et architectural autoritatif** du produit courant : contrat
+MCP, stockage, migrations, sécurité, invariants de concurrence, packaging et politique de
+qualification. Les fichiers datés sous `docs/planning/` restent des preuves historiques.
 
-## Version et statut de livraison
+Les SHA de merge et les exécutions CI exact-head sont des **preuves GitHub datées** : ils ne sont pas
+utilisés comme identité auto-référente de ce fichier, car tout commit modifiant ce document crée par
+définition un nouveau SHA. L’issue #73 reste le tracker de clôture pour les preuves manuelles de
+certification native.
 
-- Jalon produit : V2 documentaire intégrée et hardening post-audit livré.
+## Version et branches
+
 - Version SemVer : `1.1.3`.
 - Branche de release et source de vérité publiée : `master`.
-- Branche d’intégration courante : `develop`. Une correction présente uniquement sur `develop`
-  n’est pas déclarée publiée sur `master` ; sa qualification repose sur la CI du SHA exact de la
-  PR d’intégration concernée.
-- Baseline `develop` intégrée après la PR #96 :
-  `3e0f943e6c10e255061cba1636515d5330de5529`, tree
-  `b949ada4181aeda88bd1ef0f52eb471bf52d28b0`. Le run post-merge CI `31894052494` / #1209 a
-  terminé en `SUCCESS` sur ce SHA exact pour les jobs Node.js, Docker/live E2E et Windows
-  installation/STDIO packaging. Le job GitHub Actions SonarCloud est ignoré sur les pushes
-  `develop` par conception du workflow ; la PR #96 avait auparavant qualifié son head exact
-  `a701d50f3ed739849c87a91071f196662376dc21` avec le run `31893237992` / #1208 en `SUCCESS`,
-  incluant `SonarCloud Code Analysis`, et le check natif SonarQubeCloud avait publié
-  `Quality Gate passed`.
-- Les findings portés par #95 et #96 sont intégrés et revalidés : handoff sans slot transitoire dans
-  le sémaphore `SecureHttpGateway`, permissions POSIX `0600` des metadata/heartbeat de
-  `FileLeaseLock`, attente effective du Quality Gate Sonar, finalisation retryable du lock de
-  maintenance et reporting Vitest POSIX correct sous Windows.
-- Audit complet de suivi du 15 août 2026 sur `3e0f943e6c10e255061cba1636515d5330de5529` : la PR #97
-  `fix: close residual audit findings`, depuis `agent/fix-residual-audit-20260815`, ferme les deux
-  défauts techniques résiduels identifiés : exclusion durable des synchronisations catalogue
-  `EXECUTION` incompatibles et finalisation réellement reprenable du heartbeat de `FileLeaseLock`.
-  La PR doit être qualifiée sur son SHA exact avant intégration ; son futur merge SHA `develop` ne
-  doit jamais être anticipé dans ce document.
-- Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
-- Hardening post-merge initial : PR #31 regroupe les corrections d’ownership Windows, de release,
-  de provenance MCP, de passerelle HTTP et de réconciliation documentaire issues de l’audit V2.
-- Hardening post-audit complet : PR #37 mergée dans `master` le 6 août 2026. Elle livre le
-  durcissement réseau/Crawl4AI, l’alignement supply-chain Node 24.18.0, le découpage interne du
-  repository SQLite, le benchmark embeddings local et le gel déterministe du contrat client MCP.
-- Baseline qualifiée de la PR #37 : head fonctionnel
-  `cbc9b58d0c948da2ed840a8245c3aafa494e67b7`, qualification CI run `31126841127`. Le merge commit
-  `005bf913de75feeb78ae7c9d23d60e7b93d210c0` n’introduit aucun changement de contenu par rapport
-  à ce head.
-- Remédiation de qualification #47/#48 : terminée le 7 août 2026. Le candidat exact
-  `2b7af195e28861f185d8aa39db8f71640d6f8845` a réussi la CI PR run `31178105942`, les trois jobs
-  exact-head Node.js/Docker/Windows, les deux audits npm et le Quality Gate SonarQube avec zéro
-  Security Hotspot.
-- Hardening résiduel #49/#50 : terminé le 7 août 2026. La PR #50 a été squash-mergée puis `develop`
-  a été réalignée sans force. La baseline commune `master`/`develop` avant la migration SQLite est
-  `63289d3bb498132ada4effdafa79039548c02381`.
-- Certification native #34 : terminée le 10 août 2026 pour le périmètre retenu Claude Code,
-  Claude Desktop et Codex. Les trois clients ont été observés réellement sur Windows 10 avec le
-  runtime installé `a70b9a51527543c9417566326bb780121954cef5` et la chaîne déterministe
-  `search_docs -> sectionId réel -> read_doc_section(même sectionId)`. Cette preuve reste historique :
-  une re-certification native sur le SHA `develop` final post-remédiation reste requise et est suivie
-  dans #73.
-- Release 1.1.3 : candidate en cours de qualification. Corrections de détection Claude Desktop
-  (exe Anthropic vs. Windows Store), nettoyage complet à la désinstallation (PowerShell
-  Remove-Item au lieu de DelTree), câblage MCP post-installation. La publication sera déclenchée
-  après qualification exact-head master.
-- Évolution d’intégration : la PR #89 a été mergée dans `develop` le 14 août 2026 et ajoute un
-  historique local persistant des recherches MCP dans `history.sqlite` ainsi que l’outil read-only
-  `list_search_history`. Cette capacité reste une évolution de `develop` tant qu’une intégration de
-  release distincte ne l’a pas portée sur `master`.
-- Politique SemVer de release : le paramètre de publication, `package.json`, `package-lock.json`
-  et la version embarquée doivent être identiques. Toute dérive bloque la publication.
+- Branche d’intégration courante : `develop`.
+- Une capacité présente uniquement sur `develop` n’est pas déclarée publiée tant qu’elle n’a pas été
+  portée sur `master` par le flux de release.
+- Dernière baseline post-merge enregistrée avant ce hardening : merge de la PR #97 dans `develop`,
+  commit `2810bcf49b740f9d5447430334fca2ebc16cedc2`, tree fonctionnel
+  `166af00af4a6c88fc21d7137e437a13e37b69faa`. La CI #1218 / `31898491231` a terminé en `SUCCESS`
+  sur ce SHA pour Node.js, Docker/live E2E et Windows installation/STDIO packaging ; le job Sonar
+  GitHub Actions est ignoré sur les pushes `develop` par conception.
+- Le même tree avait été qualifié sur le head exact de la PR #97
+  `6c79fb421e781b7b3576c17fdf77ace7ebbba788` par la CI #1217 / `31896496042`, avec
+  `SonarCloud Code Analysis` en succès et le Quality Gate SonarQubeCloud à 0 nouvelle issue,
+  0 Security Hotspot, 100 % de couverture sur le nouveau code et 0 % de duplication.
+- Le ruleset `Protect integration branches` protège la branche par défaut et `develop`, exige les PR,
+  la résolution des threads et les quatre checks courants. Le mode strict est actif : une PR doit
+  être à jour avec sa base avant merge (`strict_required_status_checks_policy=true`).
+- La politique SemVer de release impose l’égalité entre paramètre de publication, `package.json`,
+  `package-lock.json` et version embarquée ; toute dérive bloque la publication.
 
-La documentation courante ne transforme jamais un ancien résultat en PASS du head présent. La
-preuve d’un nouveau candidat est portée par les checks GitHub attachés à son SHA exact et, pour les
-surfaces manuelles, par une recette datée explicitement reliée à ce SHA.
+## Findings post-audit fermés dans le code courant
+
+- Les synchronisations catalogue `EXECUTION` incompatibles sont exclues durablement par SQLite via
+  `C014__guard_concurrent_sync_execution.sql`. Une exécution globale exclut toute autre exécution ;
+  deux exécutions ciblées sur la même source s’excluent ; deux sources différentes et les runs
+  `PLAN` peuvent coexister.
+- Le fencing du `syncRunId` et la promotion d’une révision courante partagent la même transaction
+  SQLite. Un ancien owner ne peut pas promouvoir une révision après perte de son lease.
+- `FileLease.release()` est reprenable : une suppression réussie du lock principal suivie d’un échec
+  transitoire du heartbeat ne marque pas prématurément le lease comme libéré.
+- L’acquisition `FileLeaseLock.acquire()` est également exception-safe : si la création initiale du
+  heartbeat échoue, le heartbeat éventuellement partiel est nettoyé tant que l’ownership est certain,
+  puis le lock principal est supprimé. Si l’unlink direct est transitoirement bloqué, le lock est
+  déplacé vers une quarantaine à nom généré par le serveur afin de libérer le chemin actif ; les
+  erreurs secondaires de rollback restent attachées à l’erreur primaire pour diagnostic.
+- Les tests de fault injection couvrent le double fault `heartbeat write failure + lock unlink
+  failure` et vérifient qu’un nouveau propriétaire peut acquérir immédiatement le chemin actif.
 
 ## Contrat MCP public
 
-Le serveur STDIO candidat expose exactement six outils read-only :
+Le serveur STDIO expose exactement six outils read-only :
 
 - `search_web`
 - `fetch_url`
@@ -99,46 +79,37 @@ Les neuf resource templates sont :
 - `mcp-search-net://sections/page/{offset}`
 - `mcp-search-net://sections/{sectionId}`
 
-Le workflow documentaire recommandé est `search_docs` puis `read_doc_section` sur une à trois
-sections utiles. `search_web` et `fetch_url` servent au Web frais ou absent du catalogue.
+Le workflow documentaire recommandé est `search_docs` puis `read_doc_section` avec le `sectionId`
+réel retourné. `search_web` et `fetch_url` servent au Web frais ou absent du catalogue.
 `list_search_history` inspecte uniquement l’historique local déjà enregistré et ne relance aucune
-recherche. Les resources/templates sont un canal read-only complémentaire dont l’ergonomie dépend
-du client MCP.
+recherche.
 
-Toutes les réponses issues du Web ou du catalogue sont marquées comme contenu externe non fiable ;
-le serveur n’exécute jamais le contenu récupéré comme instruction.
+Toutes les sorties provenant du Web ou du catalogue sont considérées comme contenu externe non
+fiable. Le serveur n’exécute jamais le contenu récupéré comme instruction.
 
-La sonde STDIO de référence gèle six tools, quatre resources et neuf templates avec
-`schemaVersion = 1.0`. La certification native retenue couvre Claude Code, Claude Desktop et Codex ;
-elle a été finalisée dans l’issue #34 sur le runtime installé
-`a70b9a51527543c9417566326bb780121954cef5`. Cette preuve ne qualifie pas automatiquement un SHA
-ultérieur : la re-certification du serveur `develop` post-remédiation reste suivie dans #73.
-IntelliJ/GitHub Copilot et GitHub Copilot CLI restent des intégrations de compatibilité supportées
-par l’installateur mais sont hors périmètre de certification. L’état détaillé est
-`docs/planning/client-certification-current.md`.
+## Stockage SQLite
 
-## Stockage, SQLite et migrations catalogue
+Trois bases ont des responsabilités distinctes :
 
-`cache.sqlite` est le cache Web V1. `catalog.db` est le catalogue documentaire persistant V2.
-`history.sqlite` est le journal local persistant des occurrences validées de `search_web` et
-`search_docs`. Les trois fichiers sont isolés et n’ont pas la même politique de rétention.
+- `cache.sqlite` : cache Web ;
+- `catalog.db` : catalogue documentaire ;
+- `history.sqlite` : historique local des occurrences validées de `search_web` et `search_docs`.
 
-L’historique ne réutilise pas `search_cache` : deux appels identiques créent deux occurrences
-distinctes, et une expiration ou éviction du cache ne supprime pas leur trace. La migration dédiée
-`H001__create_search_history.sql` initialise ce stockage. Les écritures sont fail-open : une panne
-de l’historique est journalisée mais ne transforme jamais une recherche principale réussie en
-échec. La rétention par défaut est de 90 jours, bornée en plus à 20 000 occurrences. Avant
-persistance, les formes évidentes de credentials présentes dans la requête ou les paramètres
-(Bearer, JWT, PAT connus, API key, password, secret ou signature) sont remplacées par `[REDACTED]`.
-Cette redaction est un hardening best-effort : une requête en texte libre reste une donnée locale
-potentiellement sensible et `history.enabled: false` permet de désactiver entièrement ce journal.
+Les chemins doivent être distincts, y compris après canonicalisation des liens/répertoires. Sous
+POSIX, les fichiers SQLite et leurs WAL/SHM sont durcis en `0600` et les répertoires privés en
+`0700`. Les connexions utilisent `busy_timeout`, WAL, `foreign_keys=ON` et une initialisation de
+schéma sérialisée par transaction `BEGIN IMMEDIATE`.
 
-La dépendance native SQLite est fixée à `better-sqlite3@13.0.3`. Cette ligne utilise N-API et dépend
-de `node-addon-api`; les anciennes transitives `prebuild-install` et `bindings` ne font plus partie
-du lockfile. Le package conserve un fallback `node-gyp rebuild`, mais il est explicitement refusé
-par `allowScripts` : les plateformes supportées doivent fonctionner avec les prebuilds embarqués.
-La qualification dédiée est décrite dans
-`docs/planning/validation-better-sqlite3-13-2026-08-07.md`.
+Le catalogue vérifie au démarrage `PRAGMA integrity_check`, `PRAGMA foreign_key_check`, les pointeurs
+et flags de version courante ainsi que la cohérence du FTS. Les mises à jour de source et la
+reconstruction FTS associée sont transactionnelles.
+
+L’historique est fail-open : une panne de `history.sqlite` n’annule pas une recherche principale
+réussie. La rétention est bornée en durée et en nombre d’entrées. Les formes évidentes de secrets
+Bearer/JWT/PAT/API-key/password/secret/signature sont remplacées par `[REDACTED]` avant persistance ;
+`history.enabled: false` permet de désactiver entièrement cette journalisation locale.
+
+## Migrations catalogue et historique
 
 Les migrations catalogue appliquées dans l’ordre sont :
 
@@ -157,97 +128,62 @@ Les migrations catalogue appliquées dans l’ordre sont :
 - `C013__add_sync_run_lease.sql`
 - `C014__guard_concurrent_sync_execution.sql`
 
-Une migration appliquée est immuable. Toute évolution crée une nouvelle migration. Les runners de
-migration cache, catalogue et historique prennent désormais une transaction SQLite
-`BEGIN IMMEDIATE` avant toute inspection du ledger, DDL de compatibilité ou application de version :
-deux processus démarrant ou mettant à niveau la même base sont sérialisés avant d’observer l’état du
-schéma.
+La migration historique courante est :
 
-`C009` préserve les IDs de section, retire l’ancienne unicité `(document_version_id,
-content_hash)` et reconstruit le FTS courant. L’identité persistée d’une section est son occurrence
-ordonnée : deux sections ou chunks identiques à des positions différentes restent tous deux
-présents et recherchables.
+- `H001__create_search_history.sql`
 
-`C010` ajoute `sync_runs.run_kind` avec les valeurs `EXECUTION` et `PLAN`. Les historiques existants
-sont baselinés en `EXECUTION`; un dry-run est enregistré comme `PLAN`, ce qui permet de le séparer
-d’une vraie annulation sans casser les statuts terminaux historiques.
+Une migration appliquée est immuable. Toute évolution de schéma crée une nouvelle migration avec un
+nouveau numéro et checksum.
 
-`C011` ajoute `document_versions.pending_current` pour persister l’intention de promotion des
-primitives legacy dépréciées. Une version candidate reste non courante tant que ses sections ne sont
-pas remplacées ; cette intention survit désormais à une fermeture ou un redémarrage du repository et
-est consommée atomiquement lors de la promotion avec les sections, le FTS et le pointeur courant.
+## Invariants catalogue
 
-`C012` recrée les index de langue catalogue existants avec `COLLATE NOCASE`. Les filtres BCP-47
-restent ainsi insensibles à la casse sans perdre l’utilisation des index SQLite pour la pagination
-et les comptages filtrés.
+- Une révision courante est atomique : document, version, sections, FTS, pointeur courant et
+  observation de synchronisation sont validés dans la même transaction.
+- Les sections sont chunkées et bornées avant persistance ; deux occurrences identiques à des
+  positions différentes restent distinctes.
+- `C011` persiste l’intention `pending_current` pour les primitives legacy afin qu’une version ne
+  devienne courante qu’avec ses sections et son FTS.
+- `C012` conserve les filtres de langue BCP-47 indexables avec `COLLATE NOCASE`.
+- `C013` ajoute owner token, PID, hostname, process identity et heartbeat aux runs de
+  synchronisation. La récupération d’un owner mort clôt le run et invalide son ancien token.
+- `C014` réconcilie les overlaps historiques puis impose les gardes `INSERT`/`UPDATE` entre toutes
+  les connexions/processus.
 
-`C013` ajoute un lease durable aux `sync_runs` avec token propriétaire, PID, hostname et heartbeat.
-L’ouverture du catalogue réconcilie un run `RUNNING` lorsque son propriétaire local n’existe plus ou
-lorsque son lease a réellement expiré, le clôt en `FAILED` et efface l’ownership. Un token de
-fencing empêche ensuite l’ancien propriétaire de finaliser le run récupéré ; les observations d’un
-run possédé par l’instance courante renouvellent son heartbeat sans modifier le contrat public du
-repository.
+## Sécurité réseau et contenu
 
-`C014` impose au niveau SQLite l’exclusion des runs `EXECUTION` incompatibles. Deux exécutions
-ciblées sur la même source ne peuvent plus être `RUNNING` simultanément ; une exécution globale
-(`source_id IS NULL`) exclut toute autre exécution globale ou ciblée, tandis que deux sources
-différentes et les runs `PLAN` peuvent continuer à coexister. La migration réconcilie d’abord les
-anciens overlaps en conservant le run compatible le plus récent et en clôturant les owners devenus
-obsolètes en `FAILED`, puis des triggers `INSERT`/`UPDATE` rendent l’invariant durable entre
-connexions et processus.
+La politique de fetch public bloque localhost, réseaux privés, link-local, multicast et plages
+réservées. Chaque destination initiale et chaque redirect sont revalidés ; la connexion est épinglée
+sur une IP approuvée après résolution DNS afin de fermer les scénarios de DNS rebinding.
 
-Le découpage Markdown du fetch et l’ingestion CLI utilisent le même scanner de headings/fences. Les
-fences backtick ou tilde se ferment uniquement avec le même caractère et une longueur compatible ;
-un heading présent dans du code n’est pas interprété comme une section. Le scanner borne désormais
-le nombre de headings/sections, les lignes structurelles et les métadonnées de heading avant
-matérialisation ; la persistance SQLite applique également un plafond indépendant au nombre de
-sections et aux champs heading/heading path/anchor. Les options numériques des CLI catalogue exigent
-une chaîne décimale entière complète. L’ajout et le chargement des sources passent par la même
-validation de `NewCatalogSource`, dont une base URL HTTP(S) obligatoire.
+`SecureHttpGateway` applique :
 
-`SqliteCatalogRepository` est une façade stable construite autour d’une connexion SQLite unique et
-sépare les responsabilités source/read-model/révision/recherche/synchronisation. Une révision
-courante reste une transaction atomique couvrant document, version, sections, FTS, pointeur courant
-et observations. Les métadonnées documentaires passent par un invariant central avant persistance ;
-les projections MCP restent défensives pour les anciennes bases qui peuvent contenir des valeurs
-plus larges que les contrats externes. Les primitives legacy dépréciées stagient une version
-candidate non courante puis ne la promeuvent qu’au moment où ses sections peuvent être remplacées
-dans la même transaction.
+- deadline absolue ;
+- budget d’octets partagé sur toute la chaîne ;
+- limite de redirects ;
+- limite de concurrence ;
+- temporisation par origine avec nombre d’origines mémorisées borné ;
+- contrôle robots.txt lorsque configuré.
 
-FTS5 reste une dépendance fonctionnelle explicite. La qualification N-API vérifie en plus la version
-SQLite embarquée, une vraie requête FTS5 et le verrouillage writer entre connexions. Les suites
-existantes continuent de couvrir migrations, catalogue, cache, backup et restauration de snapshot.
+Le fallback Crawl4AI reçoit du contenu neutralisé et non une URL publique libre à recrawler. Les
+liens extraits sont revalidés et bornés avant exposition. L’extraction PDF borne taille, pages,
+caractères et durée. Les sanitizers neutralisent scripts, iframes, formulaires, handlers actifs et
+schémas de lien dangereux.
 
-## Recherche locale et décision embeddings
+## Supply chain et release Windows
 
-FTS5/BM25 reste la stratégie de recherche du runtime produit. Le reranker lexical hashé historique
-n’apporte aucun gain mesuré et n’est pas généralisé.
+- Runtime supporté : Node.js `24.18.0`.
+- `@modelcontextprotocol/sdk@1.30.0` et `better-sqlite3@13.0.3` sont fixés.
+- `.npmrc` impose `strict-allow-scripts=true` avec allowlist explicite des scripts d’installation.
+- Les images Docker critiques sont fixées par digest.
+- Les GitHub Actions utilisées dans les workflows sont fixées par SHA.
+- La CI exécute audit npm complet et audit production ; un workflow quotidien refait les audits.
+- Inno Setup `6.7.3` est téléchargé depuis une URL fixe et vérifié par SHA-256 avant exécution.
+- Le runtime Node Windows embarqué est également vérifié par SHA-256.
+- Le job de qualification de release n’a que des permissions de lecture. Le job de publication
+  séparé reçoit `contents: write`, ne checkout pas le repository, télécharge les artefacts qualifiés
+  du même run et revérifie leurs SHA-256 avant création d’une release immutable.
 
-Le benchmark embeddings de #32 est terminé. Résultats officiels du run `31124100736`, SHA
-`72b65a12786081d4e1fbc795fd8764dd4c81fd51`, sur 10 sources / 100 documents / 10 000 sections /
-60 requêtes :
-
-| Métrique                 |  Lexical | Embeddings locaux | Fusion RRF |
-| ------------------------ | -------: | ----------------: | ---------: |
-| Recall@10                |   0.6167 |            0.8528 |     0.8528 |
-| MRR@10                   |   0.6167 |            0.9500 |          — |
-| nDCG@10                  |   0.6167 |            0.8724 |          — |
-| Paraphrase Recall@10     |        0 |              0.70 |       0.70 |
-| Multi-document Recall@10 |        0 |            0.4167 |     0.4167 |
-| p95                      | ~17.3 ms |          2.756 ms |  28.216 ms |
-
-Décision ADR-018 : `prototype-local-vector-index`. Ces résultats justifient un prototype produit
-séparé mais **pas** l’intégration immédiate des embeddings dans le runtime :
-`adoptEmbeddingRuntimeNow: false`. Aucune dépendance Python, modèle ou index vectoriel n’est donc
-ajoutée au serveur courant.
-
-Le workflow GitHub Actions one-shot utilisé pour produire cette preuve n’est pas une capacité CI
-pérenne : une fois l’étude terminée, la preuve historique reste dans #32/#37 et le harness
-`scripts/benchmark-local-embeddings.py` peut être réutilisé explicitement pour un futur prototype.
-
-## Variables serveur supportées
-
-Variables déclarées par le schéma runtime :
+## Variables d’environnement supportées
 
 - `MCP_CONFIG_PATH`
 - `MCP_PROFILE`
@@ -261,168 +197,32 @@ Variables déclarées par le schéma runtime :
 - `MCP_CRAWL4AI_TOKEN`
 - `MCP_ALLOWED_PUBLIC_PORTS`
 
-Les anciens alias `MCP_SEARCH_*` sont uniquement des compatibilités transitoires déjà présentes dans
-le chargeur ; ils ne doivent pas être introduits dans une nouvelle installation.
+Les aliases historiques documentés dans les configurations utilisateur restent gérés lorsqu’ils
+sont explicitement prévus par le loader, mais les noms ci-dessus constituent le contrat courant.
 
-## Installation Windows et ownership des clients
+## Certification native
 
-L’installateur génère des secrets locaux, démarre les fournisseurs Docker lorsque Docker est
-opérationnel et peut configurer les clients détectés.
+La dernière matrice native 3/3 historiquement finalisée couvre Claude Code, Claude Desktop et Codex
+sur Windows 10 avec le runtime serveur
+`a70b9a51527543c9417566326bb780121954cef5`. Elle vérifie la chaîne réelle :
 
-Règles de sécurité de configuration :
+`search_docs -> sectionId réel -> read_doc_section(exactement le même sectionId)`.
 
-- une entrée MCP JSON préexistante et non suivie par l’installateur est conservée ;
-- l’état `mcp-client-integrations.json` distingue `managed` et `preexisting` ;
-- la désinstallation supprime uniquement les entrées suivies comme `managed` ;
-- un JSON client existant mais invalide est traité en échec fermé : aucune réécriture silencieuse ;
-- les fichiers sont sauvegardés avant toute modification gérée ;
-- le nettoyage d’une ancienne clé JetBrains incorrecte n’est autorisé que lorsqu’elle pointe
-  explicitement vers l’installation courante.
+Cette preuve reste valide uniquement pour son SHA/version client/OS. Elle **ne qualifie pas** un
+nouveau SHA serveur. L’issue #73 reste ouverte jusqu’à une nouvelle observation native Claude Code +
+Claude Desktop + Codex contre la baseline finale choisie pour la clôture. Le harness automatisé et
+la sonde STDIO ne peuvent jamais transformer seuls cette étape en PASS natif.
 
-Le setup Inno et le script historique de désinstallation conservent les données utilisateur par
-défaut. Dans le chemin historique, la suppression complète des données et volumes exige l’option
-explicite `-PurgeData` ; `-KeepData` reste accepté comme alias de compatibilité du comportement sûr.
+## Ancrages historiques conservés
 
-## Sécurité Web et exploitation
+Les éléments suivants restent volontairement présents pour maintenir la traçabilité et les gates de
+réconciliation documentaire :
 
-- chaque URL et chaque redirection est validée avant connexion ;
-- `VERIFIED_OFFICIAL` exige à la fois une URL résultat HTTPS et une correspondance au registre
-  officiel ; HTTP reste non vérifié même pour un domaine ou une organisation GitHub connu ;
-- les adresses DNS publiques approuvées sont épinglées et peuvent être essayées successivement sans
-  nouvelle résolution DNS ;
-- les littéraux IPv4/IPv6 HTTP(S) suivent la même politique d’adresses publiques que les réponses
-  DNS ; les plages privées, réservées, de traduction, tunnel et documentation restent bloquées ;
-- Crawl4AI ne rejoint que le réseau Docker interne `backend` et n’expose aucun port hôte direct ;
-- le mode hybride passe par un relais Node loopback minimal et durci vers `crawl4ai:11235` ;
-- `robots.txt` est chargé uniquement depuis la racine de l’origine et s’applique à toutes les autres
-  ressources, y compris un chemin imbriqué se terminant lui-même par `/robots.txt` ;
-- une opération de téléchargement partage un budget d’octets et une deadline uniques entre
-  validation initiale, `robots.txt`, redirections, ressource cible, fallback natif Crawl4AI et
-  validation finale ; les limites de concurrence restent appliquées par la passerelle HTTP ;
-- l’historique de throttling par origine est borné afin qu’un processus long ne conserve pas une
-  entrée mémoire pour un nombre illimité d’origines visitées ;
-- le HTML envoyé au fallback natif Crawl4AI neutralise les attributs de chargement de ressources,
-  y compris `srcdoc`, supprime les éléments actifs et abandonne de façon conservative le reliquat
-  d’un bloc actif ou d’une balise de début malformée/non fermée avant le transport `raw://` ;
-- `pdfjs-dist` est fixé à `6.2.108` afin de sortir de la plage affectée par
-  `GHSA-hq66-cqwq-w95j` (exécution JavaScript arbitraire sur PDF malveillant).
+- Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
+- Hardening post-audit complet : PR #37 mergée dans `master` le 6 août 2026.
+- Qualification de la PR #37 : run `31126841127`.
+- Décision embeddings : `prototype-local-vector-index`.
+- `adoptEmbeddingRuntimeNow: false`.
 
-Le stale fallback Web est réservé aux pannes transitoires : timeout, réseau, HTTP 408/425/429 et
-5xx. Les HTTP permanents 4xx, notamment 400/401/403/404/410, sont propagés sans masquer l’erreur par
-une réponse expirée. Le champ MCP `retryable` applique la même distinction lorsque le statut HTTP
-est disponible.
-
-Le cache SQLite applique d’abord la rétention stale, puis une éviction LRU déterministe globale aux
-namespaces recherche et contenu. Les valeurs par défaut sont 2 000 entrées et 256 Mio de payloads
-JSON sérialisés. Une valeur JSON syntaxiquement valide mais incompatible avec le contrat attendu est
-supprimée lors de la lecture et traitée comme un cache miss ; les stale fallbacks utilisent les mêmes
-decodeurs runtime. Le catalogue exécute son contrôle complet d’intégrité après migrations et avant
-exposition du serveur MCP ; toute incohérence SQLite, FK, current pointer, sections ou FTS bloque le
-démarrage.
-
-## CI et qualification
-
-La CI s’exécute sur les pull requests et pushes vers `master` et `develop`. L’ancienne branche
-d’intégration `feat/v2-catalog-storage` n’est plus une cible de workflow.
-
-Le candidat de release doit passer sur le SHA exact :
-
-```bash
-npm ci
-npm run check
-npm run test:required
-npm run test:unit
-npm run test:contract
-npm run test:security
-npm run test:resilience
-npm run test:performance
-npm run test:integration
-npm run test:e2e:deterministic
-npm audit --audit-level=moderate
-npm audit --omit=dev --audit-level=moderate
-```
-
-La CI ajoute la qualification Docker/live et le cycle Windows installation/upgrade/rollback/
-uninstall. Le job Windows parse aussi les scripts PowerShell de packaging/release avant de lancer
-le lifecycle. Un résultat d’un ancien SHA est une preuve historique, pas une qualification du
-candidat présent.
-
-Le scan Sonar de pull request doit attendre le Quality Gate avant de laisser le job GitHub Actions
-`SonarCloud Code Analysis` réussir. La configuration `sonar.qualitygate.wait=true` est protégée par
-un test d’architecture déterministe afin d’éviter le retour à un simple succès de soumission du scan.
-Le check natif SonarQubeCloud reste une preuve complémentaire du verdict du Quality Gate.
-
-Le workflow de publication Windows est manuel. Node.js win-x64 est vérifié par SHA-256 et la
-toolchain Inno Setup est figée sur la version `6.7.3`.
-
-## Limites connues et suites autorisées
-
-- la recherche produit reste FTS5/BM25 jusqu’à qualification d’un prototype vectoriel séparé ;
-- les résultats #32 autorisent l’étude `prototype-local-vector-index`, mais le prototype doit encore
-  prouver persistance/rebuild, sync incrémentale, packaging Windows/Docker, redistribution du modèle,
-  fonctionnement hors ligne et budget mémoire produit avant toute décision d’intégration ;
-- l’affichage et l’usage direct des resources/templates dépendent du client MCP ; les six outils
-  restent le contrat portable principal ;
-- les entrypoints bootstrap/CLI sont surtout qualifiés par les suites integration/E2E qui exécutent
-  des processus réels ; la couverture V8 in-process ne doit pas être interprétée seule comme leur
-  niveau de qualification ;
-- la certification native #34 est **historique et terminée à 3/3** pour Claude Code, Claude Desktop
-  et Codex sur le runtime `a70b9a51527543c9417566326bb780121954cef5`. La re-certification native
-  du SHA serveur final post-remédiation reste explicitement ouverte dans #73 ; les intégrations
-  Copilot restent hors périmètre de certification ;
-- le serveur est un MCP STDIO local : il n’embarque aucun LLM et n’exige aucune API commerciale.
-
-## Gouvernance Git post-V2
-
-`master` est la source de vérité de release ; `develop` est la branche d’intégration. L’historique
-squashé de la PR #8 ne doit jamais être réintégré via un merge brut d’un ancien historique
-`develop`. Une évolution qualifiée peut avancer sur `develop` sans être attribuée à `master` avant
-une intégration de release distincte. La PR #27 est supersédée par cette règle. Les branches
-absorbées n’ont plus vocation à porter du travail unique et peuvent être retirées de la liste des
-branches actives.
-
-Le ruleset actif `Protect integration branches` protège `master` et `develop` contre la suppression
-et les non-fast-forward, impose une PR, la résolution des threads et les quatre checks requis. Le
-paramètre `strict_required_status_checks_policy` reste toutefois à `false` : l’exigence automatique
-d’une branche à jour avant merge demeure un durcissement administratif suivi dans #73 et nécessite
-une mutation du ruleset GitHub. Le connecteur GitHub disponible ne fournit pas cette mutation et le
-fallback local `gh` n’est pas installé dans l’environnement courant ; cette action reste donc
-administrative et ne doit pas être confondue avec un correctif code.
-
-## Réconciliation de qualification — audit du 7 août 2026
-
-Le nouvel audit complet du HEAD `ec0c6969178e99b424468631e00082acf51e3014` avait établi que le
-produit conservait un socle runtime solide, mais que la gouvernance de qualification avait régressé :
-
-- la PR #45 avait été mergée alors que son run exact-head `31162249594` était en échec sur le job
-  `Node.js 24 validation` ;
-- le Quality Gate SonarQube de cette PR avait signalé un `Security Rating E` sur le nouveau code ;
-- la PR documentaire #46 avait été mergée sans qualification exact-head réussie ;
-- quatre workflows one-shot terminés ou échoués, dont certains avec `contents: write`, restaient
-  présents dans le dépôt ;
-- le gate npm révélait ensuite l’advisory high `GHSA-hq66-cqwq-w95j` sur `pdfjs-dist@6.0.227`.
-
-Ces résultats restent des preuves historiques de non-qualification et ne doivent jamais être
-réinterprétés comme des PASS du produit courant.
-
-La remédiation portée par l’issue #47 et la PR #48 est désormais **terminée**. Elle a supprimé et
-interdit déterministiquement les workflows temporaires privilégiés, restauré les gates Node, propagé
-`strict-allow-scripts=true` dans Docker et le staging Windows, durci HTML/Crawl4AI, rendu strict le
-parsing des resource URIs MCP, sécurisé la désinstallation historique, corrigé l’identité des
-sections SQLite hors chunking réel et mis PDF.js à jour vers `6.2.108`.
-
-Candidat exact de cette remédiation : `2b7af195e28861f185d8aa39db8f71640d6f8845`.
-CI PR : run `31178105942` / #702. Les jobs `Node.js 24 validation`,
-`Docker integration and live E2E` et `Windows installation and STDIO packaging` ont réussi, ainsi
-que les deux audits npm et le Quality Gate SonarQube avec zéro Security Hotspot. La PR #48 a été
-mergée et `develop` a été réalignée explicitement sur le merge commit
-`9eeb6aba3fdb2b4a04b5e4b2085b9b9454873d5d`, identique à `master` après intégration.
-
-Le hardening résiduel #49/#50 a ensuite fermé les derniers P2/P3 du même audit. La PR #50 a été
-squash-mergée sur `63289d3bb498132ada4effdafa79039548c02381`, puis `develop` a été fast-forwardée
-sans force sur le même SHA.
-
-Une publication ultérieure depuis `master` exige toujours une nouvelle preuve CI réussie attachée
-au SHA exact de `master`. La certification native #34 est clôturée à 3/3 sur le runtime installé
-`a70b9a51527543c9417566326bb780121954cef5`; cette preuve reste historique et une future
-requalification doit de nouveau capturer les appels natifs sur le SHA serveur concerné.
+Ces ancrages sont historiques ; ils ne remplacent pas les checks attachés au SHA exact d’un nouveau
+candidat.
