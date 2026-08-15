@@ -81,9 +81,10 @@ describe('process lifetime identity', () => {
     try {
       expect(
         beforeRecovery
-          .prepare<[number], { owner_token: string | null }>(
-            'SELECT owner_token FROM sync_runs WHERE id = ?',
-          )
+          .prepare<
+            [number],
+            { owner_token: string | null }
+          >('SELECT owner_token FROM sync_runs WHERE id = ?')
           .get(run.id)?.owner_token,
       ).toMatch(/^v1\./u);
     } finally {
@@ -108,9 +109,10 @@ describe('process lifetime identity', () => {
     try {
       expect(
         database
-          .prepare<[number], { status: string; owner_token: string | null }>(
-            'SELECT status, owner_token FROM sync_runs WHERE id = ?',
-          )
+          .prepare<
+            [number],
+            { status: string; owner_token: string | null }
+          >('SELECT status, owner_token FROM sync_runs WHERE id = ?')
           .get(run.id),
       ).toEqual({
         status: 'FAILED',
