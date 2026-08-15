@@ -16,10 +16,17 @@ const readOnlyClosedWorldAnnotations = {
   openWorldHint: false,
 };
 
-const readOnlyOpenWorldAnnotations = {
-  readOnlyHint: true,
+const persistentClosedWorldAnnotations = {
+  readOnlyHint: false,
   destructiveHint: false,
-  idempotentHint: true,
+  idempotentHint: false,
+  openWorldHint: false,
+};
+
+const persistentOpenWorldAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
   openWorldHint: true,
 };
 
@@ -66,9 +73,9 @@ describe('MCP STDIO server', () => {
     const listHistoryTool = response.tools.find((tool) => tool.name === 'list_search_history');
     const readSectionTool = response.tools.find((tool) => tool.name === 'read_doc_section');
 
-    expect(searchWebTool?.annotations).toEqual(readOnlyOpenWorldAnnotations);
-    expect(fetchUrlTool?.annotations).toEqual(readOnlyOpenWorldAnnotations);
-    expect(searchDocsTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
+    expect(searchWebTool?.annotations).toEqual(persistentOpenWorldAnnotations);
+    expect(fetchUrlTool?.annotations).toEqual(persistentOpenWorldAnnotations);
+    expect(searchDocsTool?.annotations).toEqual(persistentClosedWorldAnnotations);
     expect(listDocsTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
     expect(listHistoryTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
     expect(readSectionTool?.annotations).toEqual(readOnlyClosedWorldAnnotations);
