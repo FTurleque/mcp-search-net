@@ -50,8 +50,8 @@ describe('2026-08-15 audit follow-up regressions', () => {
     expect(semaphore.active).toBe(0);
   });
 
-  it('keeps the lease metadata and heartbeat private on POSIX, including after renewal', () => {
-    if (process.platform === 'win32') return;
+  it('keeps the lease metadata and heartbeat private on POSIX, including after renewal', (context) => {
+    if (process.platform === 'win32') context.skip();
 
     const root = mkdtempSync(join(tmpdir(), 'mcp-file-lease-permissions-'));
     roots.push(root);
