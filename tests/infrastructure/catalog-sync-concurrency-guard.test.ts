@@ -6,8 +6,12 @@ import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { loadCatalogMigrations } from '../../src/infrastructure/catalog/catalog-migrations.js';
-import { CatalogMigrationRunner } from '../../src/infrastructure/catalog/catalog-migration-runner.js';
-import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import {
+  CatalogMigrationRunner,
+} from '../../src/infrastructure/catalog/catalog-migration-runner.js';
+import {
+  SqliteCatalogRepository,
+} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 const roots: string[] = [];
 const repositories: SqliteCatalogRepository[] = [];
@@ -19,43 +23,46 @@ afterEach(() => {
 });
 
 describe('catalog sync execution concurrency guard', () => {
-  it('rejects a second execution for the same source while allowing another source and PLAN runs', async () => {
-    const fixture = await createFixture();
-    const contender = track(new SqliteCatalogRepository(fixture.path, clock));
+  it(
+    'rejects a second execution for the same source while allowing another source and PLAN runs',
+    async () => {
+      const fixture = await createFixture();
+      const contender = track(new SqliteCatalogRepository(fixture.path, clock));
 
-    const sourceARun = await fixture.repository.startCatalogSyncRun({
-      sourceId: fixture.sourceAId,
-      startedAt: new Date(1_000),
-    });
-
-    await expect(
-      contender.startCatalogSyncRun({
+      const sourceARun = await fixture.repository.startCatalogSyncRun({
         sourceId: fixture.sourceAId,
+        startedAt: new Date(1_000),
+      });
+
+      await expect(
+        contender.startCatalogSyncRun({
+          sourceId: fixture.sourceAId,
+          startedAt: new Date(2_000),
+        }),
+      ).rejects.toThrow('CATALOG_SYNC_RUN_ALREADY_RUNNING');
+
+      const sourceBRun = await contender.startCatalogSyncRun({
+        sourceId: fixture.sourceBId,
         startedAt: new Date(2_000),
-      }),
-    ).rejects.toThrow('CATALOG_SYNC_RUN_ALREADY_RUNNING');
-
-    const sourceBRun = await contender.startCatalogSyncRun({
-      sourceId: fixture.sourceBId,
-      startedAt: new Date(2_000),
-    });
-    const sourceAPlan = await contender.startCatalogSyncRun({
-      sourceId: fixture.sourceAId,
-      runKind: 'PLAN',
-      startedAt: new Date(2_100),
-    });
-
-    await fixture.repository.completeCatalogSyncRun(sourceARun.id, completion(3_000));
-    await contender.completeCatalogSyncRun(sourceBRun.id, completion(3_000));
-    await contender.completeCatalogSyncRun(sourceAPlan.id, completion(3_000));
-
-    await expect(
-      contender.startCatalogSyncRun({
+      });
+      const sourceAPlan = await contender.startCatalogSyncRun({
         sourceId: fixture.sourceAId,
-        startedAt: new Date(4_000),
-      }),
-    ).resolves.toMatchObject({ status: 'RUNNING', sourceId: fixture.sourceAId });
-  });
+        runKind: 'PLAN',
+        startedAt: new Date(2_100),
+      });
+
+      await fixture.repository.completeCatalogSyncRun(sourceARun.id, completion(3_000));
+      await contender.completeCatalogSyncRun(sourceBRun.id, completion(3_000));
+      await contender.completeCatalogSyncRun(sourceAPlan.id, completion(3_000));
+
+      await expect(
+        contender.startCatalogSyncRun({
+          sourceId: fixture.sourceAId,
+          startedAt: new Date(4_000),
+        }),
+      ).resolves.toMatchObject({ status: 'RUNNING', sourceId: fixture.sourceAId });
+    },
+  );
 
   it('treats an unscoped execution as global and prevents overlap in both directions', async () => {
     const fixture = await createFixture();
@@ -155,14 +162,18 @@ describe('catalog sync execution concurrency guard', () => {
     repositories.splice(repositories.indexOf(observer), 1);
 
     const recovery = track(
-      new SqliteCatalogRepository(path, { now: () => new Date(4_000) }, {
-        syncRunLease: {
-          pid: 1_000,
-          hostname: 'test-host',
-          ownerTokenFactory: () => 'recovery-owner',
-          processAlive: () => false,
+      new SqliteCatalogRepository(
+        path,
+        { now: () => new Date(4_000) },
+        {
+          syncRunLease: {
+            pid: 1_000,
+            hostname: 'test-host',
+            ownerTokenFactory: () => 'recovery-owner',
+            processAlive: () => false,
+          },
         },
-      }),
+      ),
     );
 
     expect(readRun(path, newerId).status).toBe('FAILED');
@@ -232,7 +243,11 @@ function readRun(path: string, id: number): {
     const row = database
       .prepare<
         [number],
-        { readonly status: string; readonly error_summary: string | null; readonly owner_token: string | null }
+        {
+          readonly status: string;
+          readonly error_summary: string | null;
+          readonly owner_token: string | null;
+        }
       >('SELECT status, error_summary, owner_token FROM sync_runs WHERE id = ?')
       .get(id);
     if (row === undefined) throw new Error('SYNC_RUN_NOT_FOUND');
