@@ -90,6 +90,8 @@ describe('catalog version purge concurrency', () => {
     await expect(catalog.getDocumentByPublicId('concurrent-guide')).resolves.toMatchObject({
       currentVersionId: version1.id,
     });
+    await expect(catalog.verifyIntegrity()).resolves.toMatchObject({ issues: [] });
+    await expect(catalog.searchDocuments({ query: 'section-v1' })).resolves.toHaveLength(1);
   });
 });
 
