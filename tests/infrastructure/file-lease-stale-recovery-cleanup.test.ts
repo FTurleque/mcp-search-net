@@ -7,6 +7,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Logger } from '../../src/application/ports/logger.js';
 import { FileLeaseLock } from '../../src/infrastructure/locking/file-lease-lock.js';
 
+interface RecordedWarning {
+  readonly message: string;
+  readonly data?: Readonly<Record<string, unknown>>;
+}
+
 const roots: string[] = [];
 
 afterEach(() => {
@@ -30,10 +35,7 @@ describe('file lease stale recovery cleanup', () => {
     now += 10_000;
     let quarantineAttempts = 0;
     let heartbeatAttempts = 0;
-    const warnings: Array<{
-      readonly message: string;
-      readonly data?: Readonly<Record<string, unknown>>;
-    }> = [];
+    const warnings: RecordedWarning[] = [];
     const recovered = new FileLeaseLock(lockPath, {
       staleAfterMs: 1_000,
       clock,
@@ -80,12 +82,7 @@ describe('file lease stale recovery cleanup', () => {
   });
 });
 
-function recordingLogger(
-  warnings: Array<{
-    readonly message: string;
-    readonly data?: Readonly<Record<string, unknown>>;
-  }>,
-): Logger {
+function recordingLogger(warnings: RecordedWarning[]): Logger {
   return {
     record: () => undefined,
     debug: () => undefined,
