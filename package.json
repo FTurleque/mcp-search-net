@@ -22,7 +22,7 @@
     "check:license": "node scripts/check-license.mjs",
     "check:ci-hygiene": "node scripts/check-ci-hygiene.mjs",
     "check:audit-invariants": "node scripts/check-audit-invariants.mjs",
-    "docs:check": "node scripts/check-docs.mjs",
+    "docs:check": "prettier tests/infrastructure/catalog-sync-concurrency-guard.test.ts && node scripts/check-docs.mjs",
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "dev": "tsx src/bootstrap/main.ts",
     "start": "node build/bootstrap/main.js",
