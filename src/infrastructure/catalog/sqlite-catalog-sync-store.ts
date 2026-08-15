@@ -12,10 +12,12 @@ import type {
   CatalogSyncRunStartRequest,
   CatalogSyncRunStatus,
 } from '../../domain/models/catalog.js';
+import { readProcessIdentity } from '../process-identity.js';
 import type { CatalogSyncRunRow } from './catalog-row-mappers.js';
 import { toCatalogSyncRun } from './catalog-row-mappers.js';
 
 const DEFAULT_ABANDONED_RUN_AFTER_MS = 3_600_000;
+const OWNER_TOKEN_IDENTITY_PREFIX = 'v1.';
 
 const INSERT_CATALOG_SYNC_RUN_SQL = `
   INSERT INTO sync_runs (
@@ -142,6 +144,7 @@ export interface CatalogSyncRunLeaseOptions {
   readonly hostname?: string;
   readonly ownerTokenFactory?: () => string;
   readonly processAlive?: (pid: number) => boolean;
+  readonly processIdentity?: (pid: number) => string | undefined;
   readonly abandonedAfterMs?: number;
 }
 
@@ -150,6 +153,7 @@ export class SqliteCatalogSyncStore {
   private readonly hostname: string;
   private readonly ownerTokenFactory: () => string;
   private readonly processAlive: (pid: number) => boolean;
+  private readonly processIdentity: (pid: number) => string | undefined;
   private readonly abandonedAfterMs: number;
   private readonly ownedRuns = new Map<number, string>();
 
@@ -160,8 +164,11 @@ export class SqliteCatalogSyncStore {
   ) {
     this.pid = options.pid ?? process.pid;
     this.hostname = options.hostname ?? hostname();
-    this.ownerTokenFactory = options.ownerTokenFactory ?? randomUUID;
     this.processAlive = options.processAlive ?? isProcessAlive;
+    this.processIdentity = options.processIdentity ?? readProcessIdentity;
+    const ownerProcessIdentity = this.processIdentity(this.pid);
+    this.ownerTokenFactory =
+      options.ownerTokenFactory ?? (() => createOwnerToken(randomUUID(), ownerProcessIdentity));
     this.abandonedAfterMs = options.abandonedAfterMs ?? DEFAULT_ABANDONED_RUN_AFTER_MS;
     if (!Number.isSafeInteger(this.abandonedAfterMs) || this.abandonedAfterMs <= 0) {
       throw new RangeError('abandonedAfterMs must be a positive safe integer');
@@ -309,6 +316,11 @@ export class SqliteCatalogSyncStore {
     const lastHeartbeat = row.heartbeat_at ?? row.started_at;
     if (row.owner_pid !== null && row.owner_hostname === this.hostname) {
       if (!this.processAlive(row.owner_pid)) return true;
+      const recordedIdentity = readOwnerProcessIdentity(row.owner_token);
+      if (recordedIdentity !== undefined) {
+        const activeIdentity = this.processIdentity(row.owner_pid);
+        if (activeIdentity !== undefined && activeIdentity !== recordedIdentity) return true;
+      }
       return false;
     }
     return now - lastHeartbeat > this.abandonedAfterMs;
@@ -328,6 +340,22 @@ export class SqliteCatalogSyncStore {
       .run(validators.etag ?? null, validators.lastModified ?? null, observedAt, documentId);
     if (result.changes !== 1) throw new Error('CATALOG_CURRENT_VERSION_VALIDATOR_REFRESH_FAILED');
   }
+}
+
+function createOwnerToken(entropy: string, processIdentity: string | undefined): string {
+  if (processIdentity === undefined) return entropy;
+  const encodedIdentity = Buffer.from(processIdentity, 'utf8').toString('base64url');
+  return `${OWNER_TOKEN_IDENTITY_PREFIX}${encodedIdentity}.${entropy}`;
+}
+
+function readOwnerProcessIdentity(ownerToken: string | null): string | undefined {
+  if (!ownerToken?.startsWith(OWNER_TOKEN_IDENTITY_PREFIX)) return undefined;
+  const separatorIndex = ownerToken.indexOf('.', OWNER_TOKEN_IDENTITY_PREFIX.length);
+  if (separatorIndex === -1) return undefined;
+  const encodedIdentity = ownerToken.slice(OWNER_TOKEN_IDENTITY_PREFIX.length, separatorIndex);
+  if (!/^[A-Za-z0-9_-]+$/u.test(encodedIdentity)) return undefined;
+  const identity = Buffer.from(encodedIdentity, 'base64url').toString('utf8');
+  return identity === '' ? undefined : identity;
 }
 
 function isProcessAlive(pid: number): boolean {

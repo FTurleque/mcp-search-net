@@ -155,6 +155,7 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
   ): number {
     const maxAgeMs = input.maxSyncRunAgeDays * 24 * 60 * 60 * 1_000;
     const threshold = this.clock.now().getTime() - maxAgeMs;
+    const terminalRunFilter = `status <> 'RUNNING' AND completed_at IS NOT NULL`;
     const detachStalenessEvents = database.prepare<[number, number]>(
       `
         UPDATE staleness_events
@@ -162,10 +163,12 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
         WHERE sync_run_id IN (
           SELECT id
           FROM sync_runs
-          WHERE started_at < ?
+          WHERE ${terminalRunFilter}
+            AND started_at < ?
             AND id NOT IN (
               SELECT id
               FROM sync_runs
+              WHERE ${terminalRunFilter}
               ORDER BY started_at DESC, id DESC
               LIMIT ?
             )
@@ -175,10 +178,12 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
     const deleteSyncRuns = database.prepare<[number, number]>(
       `
         DELETE FROM sync_runs
-        WHERE started_at < ?
+        WHERE ${terminalRunFilter}
+          AND started_at < ?
           AND id NOT IN (
             SELECT id
             FROM sync_runs
+            WHERE ${terminalRunFilter}
             ORDER BY started_at DESC, id DESC
             LIMIT ?
           )
@@ -189,6 +194,6 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
       return deleteSyncRuns.run(threshold, input.keepSyncRuns).changes;
     });
 
-    return retainEventsAndDeleteRuns();
+    return retainEventsAndDeleteRuns.immediate();
   }
 }

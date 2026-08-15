@@ -74,35 +74,29 @@ export class SqliteCatalogVersionPurger implements CatalogVersionPurgeRepository
   ): Promise<CatalogVersionPurgeResult> {
     return Promise.resolve().then(() => {
       const sourceKey = input.sourceKey ?? null;
-      const scannedDocuments = this.countScannedDocuments(sourceKey);
-      const versionIds = this.selectPurgeableDocumentVersionIds(
-        sourceKey,
-        input.keepPreviousVersions,
-      );
-      const candidateSections = this.countSectionsByVersionIds(versionIds);
-      const result: CatalogVersionPurgeResult = {
-        dryRun: input.dryRun,
-        keptPreviousVersions: input.keepPreviousVersions,
-        scannedDocuments,
-        candidateVersions: versionIds.length,
-        candidateSections,
-        purgedVersions: 0,
-        purgedSections: 0,
-      };
+      if (input.dryRun) return this.inspectPurgeCandidates(sourceKey, input);
 
-      if (input.dryRun || versionIds.length === 0) return result;
-
-      const transaction = this.database.transaction((): CatalogVersionPurgeResult => {
+      const purge = this.database.transaction((): CatalogVersionPurgeResult => {
+        const result = this.inspectPurgeCandidates(sourceKey, input);
+        if (result.candidateVersions === 0) return result;
+        const versionIds = this.selectPurgeableDocumentVersionIds(
+          sourceKey,
+          input.keepPreviousVersions,
+        );
         const purgedSections = this.deleteSectionsByVersionIds(versionIds);
         const purgedVersions = this.deleteVersionsByIds(versionIds);
         return {
           ...result,
+          candidateVersions: versionIds.length,
+          candidateSections: purgedSections,
           purgedVersions,
           purgedSections,
         };
       });
 
-      return transaction();
+      // Reserve the writer before candidate selection so a concurrent revision cannot
+      // promote one of the selected versions between the read and delete phases.
+      return purge.immediate();
     });
   }
 
@@ -121,6 +115,26 @@ export class SqliteCatalogVersionPurger implements CatalogVersionPurgeRepository
 
   public close(): void {
     if (this.database.open) this.database.close();
+  }
+
+  private inspectPurgeCandidates(
+    sourceKey: string | null,
+    input: CatalogVersionPurgeInput,
+  ): CatalogVersionPurgeResult {
+    const scannedDocuments = this.countScannedDocuments(sourceKey);
+    const versionIds = this.selectPurgeableDocumentVersionIds(
+      sourceKey,
+      input.keepPreviousVersions,
+    );
+    return {
+      dryRun: input.dryRun,
+      keptPreviousVersions: input.keepPreviousVersions,
+      scannedDocuments,
+      candidateVersions: versionIds.length,
+      candidateSections: this.countSectionsByVersionIds(versionIds),
+      purgedVersions: 0,
+      purgedSections: 0,
+    };
   }
 
   private countScannedDocuments(sourceKey: string | null): number {

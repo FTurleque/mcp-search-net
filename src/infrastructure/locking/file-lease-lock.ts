@@ -14,12 +14,14 @@ import { dirname } from 'node:path';
 
 import type { Clock } from '../../application/ports/clock.js';
 import type { Logger } from '../../application/ports/logger.js';
+import { readProcessIdentity } from '../process-identity.js';
 
 export interface FileLeaseMetadata {
-  readonly schemaVersion: '1.0';
+  readonly schemaVersion: '1.0' | '1.1';
   readonly ownerToken: string;
   readonly pid: number;
   readonly hostname: string;
+  readonly processIdentity?: string | null;
   readonly createdAt: string;
   readonly heartbeatAt: string;
 }
@@ -38,6 +40,7 @@ export interface FileLeaseLockOptions {
   readonly hostname?: string;
   readonly ownerTokenFactory?: () => string;
   readonly processAlive?: (pid: number) => boolean;
+  readonly processIdentity?: (pid: number) => string | undefined;
 }
 
 export class FileLeaseLockError extends Error {
@@ -52,6 +55,7 @@ export class FileLeaseLock {
   private readonly hostname: string;
   private readonly ownerTokenFactory: () => string;
   private readonly processAlive: (pid: number) => boolean;
+  private readonly processIdentity: (pid: number) => string | undefined;
 
   public constructor(
     private readonly lockPath: string,
@@ -61,6 +65,7 @@ export class FileLeaseLock {
     this.hostname = options.hostname ?? hostname();
     this.ownerTokenFactory = options.ownerTokenFactory ?? randomUUID;
     this.processAlive = options.processAlive ?? isProcessAlive;
+    this.processIdentity = options.processIdentity ?? readProcessIdentity;
   }
 
   public acquire(): FileLease {
@@ -99,10 +104,11 @@ export class FileLeaseLock {
   private createMetadata(): FileLeaseMetadata {
     const now = this.options.clock.now().toISOString();
     return {
-      schemaVersion: '1.0',
+      schemaVersion: '1.1',
       ownerToken: this.ownerTokenFactory(),
       pid: this.pid,
       hostname: this.hostname,
+      processIdentity: this.processIdentity(this.pid) ?? null,
       createdAt: now,
       heartbeatAt: now,
     };
@@ -152,7 +158,13 @@ export class FileLeaseLock {
     const ageMs = this.options.clock.now().getTime() - heartbeatAt;
     if (!Number.isFinite(heartbeatAt) || ageMs <= this.options.staleAfterMs) return false;
     if (metadata.hostname !== this.hostname) return false;
-    if (this.processAlive(metadata.pid)) return false;
+
+    if (this.processAlive(metadata.pid)) {
+      const recordedIdentity = metadata.processIdentity;
+      if (recordedIdentity === undefined || recordedIdentity === null) return false;
+      const activeIdentity = this.processIdentity(metadata.pid);
+      if (activeIdentity === undefined || activeIdentity === recordedIdentity) return false;
+    }
 
     // The quarantine name contains only server-generated randomness. Lock metadata is
     // external state and must never influence a filesystem path.
@@ -232,19 +244,24 @@ function readMetadataFile(path: string): FileLeaseMetadata | undefined {
 function isFileLeaseMetadata(value: unknown): value is FileLeaseMetadata {
   if (value === null || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;
-  return (
-    record['schemaVersion'] === '1.0' &&
-    typeof record['ownerToken'] === 'string' &&
-    record['ownerToken'].length > 0 &&
-    Number.isSafeInteger(record['pid']) &&
-    (record['pid'] as number) > 0 &&
-    typeof record['hostname'] === 'string' &&
-    record['hostname'].length > 0 &&
-    typeof record['createdAt'] === 'string' &&
-    Number.isFinite(Date.parse(record['createdAt'])) &&
-    typeof record['heartbeatAt'] === 'string' &&
-    Number.isFinite(Date.parse(record['heartbeatAt']))
-  );
+  const schemaVersion = record['schemaVersion'];
+  if (schemaVersion !== '1.0' && schemaVersion !== '1.1') return false;
+  if (
+    typeof record['ownerToken'] !== 'string' ||
+    record['ownerToken'].length === 0 ||
+    !Number.isSafeInteger(record['pid']) ||
+    (record['pid'] as number) <= 0 ||
+    typeof record['hostname'] !== 'string' ||
+    record['hostname'].length === 0 ||
+    typeof record['createdAt'] !== 'string' ||
+    !Number.isFinite(Date.parse(record['createdAt'])) ||
+    typeof record['heartbeatAt'] !== 'string' ||
+    !Number.isFinite(Date.parse(record['heartbeatAt']))
+  ) {
+    return false;
+  }
+  if (schemaVersion === '1.0') return true;
+  return record['processIdentity'] === null || typeof record['processIdentity'] === 'string';
 }
 
 function isProcessAlive(pid: number): boolean {
