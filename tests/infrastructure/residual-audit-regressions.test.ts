@@ -1,31 +1,14 @@
 /* eslint-disable @typescript-eslint/no-deprecated -- regressions intentionally exercise the retained two-step catalog API */
-import {
-  chmodSync,
-  existsSync,
-  mkdtempSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type {
-  SearchHistoryRecordInput,
-} from '../../src/application/ports/search-history-repository.js';
-import {
-  SqliteCatalogRepository,
-} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
-import {
-  SqliteCatalogVersionPurger,
-} from '../../src/infrastructure/catalog/sqlite-catalog-version-purger.js';
-import {
-  SqliteSearchHistoryRepository,
-} from '../../src/infrastructure/history/sqlite-search-history-repository.js';
+import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import { SqliteCatalogVersionPurger } from '../../src/infrastructure/catalog/sqlite-catalog-version-purger.js';
+import { SqliteSearchHistoryRepository } from '../../src/infrastructure/history/sqlite-search-history-repository.js';
 import { FileLeaseLock } from '../../src/infrastructure/locking/file-lease-lock.js';
 
 interface SyncRunStateRow {
@@ -50,57 +33,54 @@ afterEach(() => {
 });
 
 describe('residual audit persistence regressions', () => {
-  it(
-    'retains sync-run ownership after a failed completion so the same owner can retry',
-    async () => {
-      const path = createPath('sync-retry', 'catalog.db');
-      const repository = new SqliteCatalogRepository(path, clock, {
-        syncRunLease: {
-          pid: 4242,
-          hostname: 'test-host',
-          ownerTokenFactory: () => 'retryable-owner-token',
-          processAlive: () => true,
-          processIdentity: () => 'same-process-lifetime',
-        },
-      });
-      closeables.push(repository);
-      const run = await repository.startCatalogSyncRun({ startedAt: new Date(1_000) });
+  it('retains sync-run ownership after a failed completion so the same owner can retry', async () => {
+    const path = createPath('sync-retry', 'catalog.db');
+    const repository = new SqliteCatalogRepository(path, clock, {
+      syncRunLease: {
+        pid: 4242,
+        hostname: 'test-host',
+        ownerTokenFactory: () => 'retryable-owner-token',
+        processAlive: () => true,
+        processIdentity: () => 'same-process-lifetime',
+      },
+    });
+    closeables.push(repository);
+    const run = await repository.startCatalogSyncRun({ startedAt: new Date(1_000) });
 
-      await expect(
-        repository.completeCatalogSyncRun(run.id, {
-          completedAt: new Date(2_000),
-          status: 'BROKEN' as 'SUCCESS',
-          documentsChecked: 0,
-          documentsAdded: 0,
-          documentsUpdated: 0,
-          documentsUnchanged: 0,
-          documentsFailed: 0,
-        }),
-      ).rejects.toThrow();
+    await expect(
+      repository.completeCatalogSyncRun(run.id, {
+        completedAt: new Date(2_000),
+        status: 'BROKEN' as 'SUCCESS',
+        documentsChecked: 0,
+        documentsAdded: 0,
+        documentsUpdated: 0,
+        documentsUnchanged: 0,
+        documentsFailed: 0,
+      }),
+    ).rejects.toThrow();
 
-      expect(readSyncRun(path, run.id)).toMatchObject({
-        status: 'RUNNING',
-        completed_at: null,
-        owner_token: 'retryable-owner-token',
-      });
+    expect(readSyncRun(path, run.id)).toMatchObject({
+      status: 'RUNNING',
+      completed_at: null,
+      owner_token: 'retryable-owner-token',
+    });
 
-      await expect(
-        repository.completeCatalogSyncRun(run.id, {
-          completedAt: new Date(3_000),
-          status: 'SUCCESS',
-          documentsChecked: 0,
-          documentsAdded: 0,
-          documentsUpdated: 0,
-          documentsUnchanged: 0,
-          documentsFailed: 0,
-        }),
-      ).resolves.toMatchObject({ status: 'SUCCESS', completedAt: new Date(3_000) });
-      expect(readSyncRun(path, run.id)).toMatchObject({
+    await expect(
+      repository.completeCatalogSyncRun(run.id, {
+        completedAt: new Date(3_000),
         status: 'SUCCESS',
-        owner_token: null,
-      });
-    },
-  );
+        documentsChecked: 0,
+        documentsAdded: 0,
+        documentsUpdated: 0,
+        documentsUnchanged: 0,
+        documentsFailed: 0,
+      }),
+    ).resolves.toMatchObject({ status: 'SUCCESS', completedAt: new Date(3_000) });
+    expect(readSyncRun(path, run.id)).toMatchObject({
+      status: 'SUCCESS',
+      owner_token: null,
+    });
+  });
 
   it('keeps a file lease retryable when releasing the lock fails transiently', () => {
     const lockPath = createPath('lease-retry', 'maintenance.lock');
@@ -130,67 +110,66 @@ describe('residual audit persistence regressions', () => {
     expect(existsSync(`${lockPath}.heartbeat`)).toBe(false);
   });
 
-  it(
-    'never purges a staged pending-current version and still allows its later promotion',
-    async () => {
-      const path = createPath('pending-purge', 'catalog.db');
-      const repository = new SqliteCatalogRepository(path, clock);
-      closeables.push(repository);
-      const source = await repository.addSource({
-        sourceKey: 'docs',
-        displayName: 'Documentation',
-        baseUrl: 'https://example.test/',
-        sourceType: 'documentation',
-        language: 'en',
-        freshnessPolicy: 'manual',
-        syncStrategy: 'manual',
-        enabled: true,
-      });
-      const document = await repository.upsertDocument({
-        publicId: 'pending-purge-doc',
-        sourceId: source.id,
-        canonicalUrl: 'https://example.test/pending-purge',
-        stableKey: 'pending-purge',
-        title: 'Pending purge',
-        mimeType: 'text/markdown',
-        language: 'en',
-        status: 'ACTIVE',
-      });
-      const current = await repository.addDocumentVersion({
-        documentId: document.id,
-        contentHash: 'current-v1',
-        isCurrent: true,
-        extractionMode: 'static',
-        contentType: 'text/markdown',
-        metadataJson: '{}',
-      });
-      await repository.replaceDocumentSections(current.id, [section('current-section', 'Current')]);
+  it('never purges a staged pending-current version and still allows its later promotion', async () => {
+    const path = createPath('pending-purge', 'catalog.db');
+    const repository = new SqliteCatalogRepository(path, clock);
+    closeables.push(repository);
+    const source = await repository.addSource({
+      sourceKey: 'docs',
+      displayName: 'Documentation',
+      baseUrl: 'https://example.test/',
+      sourceType: 'documentation',
+      language: 'en',
+      freshnessPolicy: 'manual',
+      syncStrategy: 'manual',
+      enabled: true,
+    });
+    const document = await repository.upsertDocument({
+      publicId: 'pending-purge-doc',
+      sourceId: source.id,
+      canonicalUrl: 'https://example.test/pending-purge',
+      stableKey: 'pending-purge',
+      title: 'Pending purge',
+      mimeType: 'text/markdown',
+      language: 'en',
+      status: 'ACTIVE',
+    });
+    const current = await repository.addDocumentVersion({
+      documentId: document.id,
+      contentHash: 'current-v1',
+      isCurrent: true,
+      extractionMode: 'static',
+      contentType: 'text/markdown',
+      metadataJson: '{}',
+    });
+    await repository.replaceDocumentSections(current.id, [section('current-section', 'Current')]);
 
-      const pending = await repository.addDocumentVersion({
-        documentId: document.id,
-        contentHash: 'pending-v2',
-        isCurrent: true,
-        extractionMode: 'static',
-        contentType: 'text/markdown',
-        metadataJson: '{}',
-      });
-      expect(pending.isCurrent).toBe(false);
+    const pending = await repository.addDocumentVersion({
+      documentId: document.id,
+      contentHash: 'pending-v2',
+      isCurrent: true,
+      extractionMode: 'static',
+      contentType: 'text/markdown',
+      metadataJson: '{}',
+    });
+    expect(pending.isCurrent).toBe(false);
 
-      const purger = new SqliteCatalogVersionPurger(path, clock);
-      closeables.push(purger);
-      await expect(
-        purger.purgeOldDocumentVersions({ keepPreviousVersions: 0, dryRun: false }),
-      ).resolves.toMatchObject({ candidateVersions: 0, purgedVersions: 0 });
+    const purger = new SqliteCatalogVersionPurger(path, clock);
+    closeables.push(purger);
+    await expect(
+      purger.purgeOldDocumentVersions({ keepPreviousVersions: 0, dryRun: false }),
+    ).resolves.toMatchObject({ candidateVersions: 0, purgedVersions: 0 });
 
-      expect(readVersionState(path, pending.id)).toEqual({ is_current: 0, pending_current: 1 });
-      await repository.replaceDocumentSections(pending.id, [section('pending-section', 'Promoted')]);
-      await expect(repository.getCurrentDocumentVersion(document.id)).resolves.toMatchObject({
-        id: pending.id,
-        isCurrent: true,
-      });
-      await expect(repository.verifyIntegrity()).resolves.toMatchObject({ issues: [] });
-    },
-  );
+    expect(readVersionState(path, pending.id)).toEqual({ is_current: 0, pending_current: 1 });
+    await repository.replaceDocumentSections(pending.id, [
+      section('pending-section', 'Promoted'),
+    ]);
+    await expect(repository.getCurrentDocumentVersion(document.id)).resolves.toMatchObject({
+      id: pending.id,
+      isCurrent: true,
+    });
+    await expect(repository.verifyIntegrity()).resolves.toMatchObject({ issues: [] });
+  });
 
   it('hardens persistent search-history database and SQLite sidecars on POSIX', async () => {
     if (process.platform === 'win32') return;
@@ -201,7 +180,18 @@ describe('residual audit persistence regressions', () => {
     closeables.push(repository);
 
     chmodSync(path, 0o666);
-    await repository.append(historyRecord());
+    await repository.append({
+      requestId: 'permission-test-request',
+      tool: 'search_web',
+      query: 'private local query',
+      request: { language: 'en', maxResults: 5 },
+      durationMs: 1,
+      status: 'success',
+      cacheStatus: 'MISS',
+      provider: 'searxng',
+      resultCount: 1,
+      warningCodes: [],
+    });
 
     expect(permissionBits(path)).toBe(0o600);
     expect(permissionBits(directory) & 0o077).toBe(0);
@@ -258,19 +248,4 @@ function readVersionState(path: string, id: number): VersionStateRow {
 
 function permissionBits(path: string): number {
   return statSync(path).mode & 0o777;
-}
-
-function historyRecord(): SearchHistoryRecordInput {
-  return {
-    requestId: 'permission-test-request',
-    tool: 'search_web',
-    query: 'private local query',
-    request: { language: 'en', maxResults: 5 },
-    durationMs: 1,
-    status: 'success',
-    cacheStatus: 'MISS',
-    provider: 'searxng',
-    resultCount: 1,
-    warningCodes: [],
-  };
 }
