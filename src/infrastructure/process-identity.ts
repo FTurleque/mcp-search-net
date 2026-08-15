@@ -31,7 +31,10 @@ function readLinuxProcessIdentity(pid: number): string | undefined {
 
   // /proc/<pid>/stat field 22 is starttime. After removing fields 1 (pid) and
   // 2 (comm), the remaining token array starts at field 3, so starttime is 19.
-  const fields = stat.slice(commandEnd + 1).trim().split(/\s+/u);
+  const fields = stat
+    .slice(commandEnd + 1)
+    .trim()
+    .split(/\s+/u);
   const startTime = fields[19];
   if (startTime === undefined || !/^\d+$/u.test(startTime)) return undefined;
   return `linux:${bootId}:${startTime}`;

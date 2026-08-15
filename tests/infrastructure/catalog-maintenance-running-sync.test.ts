@@ -5,12 +5,8 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  SqliteCatalogMaintenance,
-} from '../../src/infrastructure/catalog/sqlite-catalog-maintenance.js';
-import {
-  SqliteCatalogRepository,
-} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import { SqliteCatalogMaintenance } from '../../src/infrastructure/catalog/sqlite-catalog-maintenance.js';
+import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 const roots: string[] = [];
 const repositories: SqliteCatalogRepository[] = [];
@@ -92,9 +88,10 @@ describe('catalog maintenance running sync retention', () => {
       ).toEqual({ status: 'RUNNING' });
       expect(
         reader
-          .prepare<[number], { sync_run_id: number | null }>(
-            'SELECT sync_run_id FROM staleness_events WHERE document_id = ?',
-          )
+          .prepare<
+            [number],
+            { sync_run_id: number | null }
+          >('SELECT sync_run_id FROM staleness_events WHERE document_id = ?')
           .get(document.id),
       ).toEqual({ sync_run_id: run.id });
     } finally {

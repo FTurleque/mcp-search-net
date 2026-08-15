@@ -7,12 +7,8 @@ import { join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  SqliteCatalogRepository,
-} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
-import {
-  SqliteCatalogVersionPurger,
-} from '../../src/infrastructure/catalog/sqlite-catalog-version-purger.js';
+import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import { SqliteCatalogVersionPurger } from '../../src/infrastructure/catalog/sqlite-catalog-version-purger.js';
 
 const roots: string[] = [];
 const catalogs: SqliteCatalogRepository[] = [];
