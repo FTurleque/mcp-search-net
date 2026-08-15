@@ -1,5 +1,12 @@
 import { fork, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -60,6 +67,76 @@ describe('FileLeaseLock', () => {
     first.release();
     expect(existsSync(fixture.lockPath)).toBe(false);
     expect(existsSync(`${fixture.lockPath}.heartbeat`)).toBe(false);
+  });
+
+  it('rolls back the active lock when initial heartbeat creation fails', () => {
+    const fixture = createFixture();
+    const heartbeatError = new Error('HEARTBEAT_WRITE_FAILED');
+    const lock = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'failed-heartbeat-owner',
+      writeHeartbeatFile: () => {
+        throw heartbeatError;
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      lock.acquire();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(heartbeatError);
+    expect(existsSync(fixture.lockPath)).toBe(false);
+    expect(existsSync(`${fixture.lockPath}.heartbeat`)).toBe(false);
+  });
+
+  it('quarantines a failed acquisition when direct rollback unlink is transiently blocked', () => {
+    const fixture = createFixture();
+    const heartbeatError = new Error('HEARTBEAT_WRITE_FAILED');
+    let lockUnlinkAttempts = 0;
+    const lock = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'failed-heartbeat-owner',
+      writeHeartbeatFile: (path, content) => {
+        writeFileSync(path, content.slice(0, 8), 'utf8');
+        throw heartbeatError;
+      },
+      unlinkFile: (path) => {
+        if (path === fixture.lockPath) {
+          lockUnlinkAttempts += 1;
+          const error = new Error('transient acquire rollback unlink failure') as NodeJS.ErrnoException;
+          error.code = 'EPERM';
+          throw error;
+        }
+        unlinkSync(path);
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      lock.acquire();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(heartbeatError);
+    expect(lockUnlinkAttempts).toBe(1);
+    expect(heartbeatError.cause).toBeInstanceOf(Error);
+    expect(existsSync(fixture.lockPath)).toBe(false);
+    expect(existsSync(`${fixture.lockPath}.heartbeat`)).toBe(false);
+
+    const next = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'next-owner',
+    }).acquire();
+    expect(next.metadata.ownerToken).toBe('next-owner');
+    next.release();
+    expect(existsSync(fixture.lockPath)).toBe(false);
   });
 
   it('recovers only a stale local lock whose owner is confirmed dead', () => {
