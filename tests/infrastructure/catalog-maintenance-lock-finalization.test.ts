@@ -25,9 +25,10 @@ afterEach(() => {
 });
 
 describe('catalog maintenance lock finalization', () => {
-  it('retries a transient lock unlink failure and leaves no lock or heartbeat behind', async () => {
+  it('retries a transient main lock unlink failure and leaves no lock or heartbeat behind', async () => {
     const catalogPath = createCatalogPath('retry-release');
-    let unlinkAttempts = 0;
+    let lockUnlinkAttempts = 0;
+    let heartbeatUnlinkAttempts = 0;
     const options: SqliteCatalogMaintenanceOptions = {
       releaseAttempts: 3,
       lockFactory: (lockPath, lockOptions) =>
@@ -36,13 +37,17 @@ describe('catalog maintenance lock finalization', () => {
           ownerTokenFactory: () => 'maintenance-retry-owner',
           processIdentity: () => 'maintenance-retry-process',
           unlinkFile: (path) => {
-            unlinkAttempts += 1;
-            if (unlinkAttempts === 1) {
-              const error = new Error(
-                'transient maintenance unlink failure',
-              ) as NodeJS.ErrnoException;
-              error.code = 'EBUSY';
-              throw error;
+            if (path.endsWith('.heartbeat')) {
+              heartbeatUnlinkAttempts += 1;
+            } else {
+              lockUnlinkAttempts += 1;
+              if (lockUnlinkAttempts === 1) {
+                const error = new Error(
+                  'transient maintenance lock unlink failure',
+                ) as NodeJS.ErrnoException;
+                error.code = 'EBUSY';
+                throw error;
+              }
             }
             unlinkSync(path);
           },
@@ -53,7 +58,47 @@ describe('catalog maintenance lock finalization', () => {
       new SqliteCatalogMaintenance(catalogPath, clock, undefined, options).run(maintenanceInput),
     ).resolves.toMatchObject({ status: 'maintained', lock: { acquired: true } });
 
-    expect(unlinkAttempts).toBe(2);
+    expect(lockUnlinkAttempts).toBe(2);
+    expect(heartbeatUnlinkAttempts).toBe(1);
+    expect(existsSync(`${catalogPath}.maintenance.lock`)).toBe(false);
+    expect(existsSync(`${catalogPath}.maintenance.lock.heartbeat`)).toBe(false);
+  });
+
+  it('retries heartbeat cleanup after the main lock has already been removed', async () => {
+    const catalogPath = createCatalogPath('retry-heartbeat-release');
+    let lockUnlinkAttempts = 0;
+    let heartbeatUnlinkAttempts = 0;
+    const options: SqliteCatalogMaintenanceOptions = {
+      releaseAttempts: 3,
+      lockFactory: (lockPath, lockOptions) =>
+        new FileLeaseLock(lockPath, {
+          ...lockOptions,
+          ownerTokenFactory: () => 'maintenance-heartbeat-retry-owner',
+          processIdentity: () => 'maintenance-heartbeat-retry-process',
+          unlinkFile: (path) => {
+            if (path.endsWith('.heartbeat')) {
+              heartbeatUnlinkAttempts += 1;
+              if (heartbeatUnlinkAttempts === 1) {
+                const error = new Error(
+                  'transient maintenance heartbeat unlink failure',
+                ) as NodeJS.ErrnoException;
+                error.code = 'EPERM';
+                throw error;
+              }
+            } else {
+              lockUnlinkAttempts += 1;
+            }
+            unlinkSync(path);
+          },
+        }),
+    };
+
+    await expect(
+      new SqliteCatalogMaintenance(catalogPath, clock, undefined, options).run(maintenanceInput),
+    ).resolves.toMatchObject({ status: 'maintained', lock: { acquired: true } });
+
+    expect(lockUnlinkAttempts).toBe(1);
+    expect(heartbeatUnlinkAttempts).toBe(2);
     expect(existsSync(`${catalogPath}.maintenance.lock`)).toBe(false);
     expect(existsSync(`${catalogPath}.maintenance.lock.heartbeat`)).toBe(false);
   });
