@@ -12,7 +12,7 @@ import type {
   CatalogSyncRunStartRequest,
   CatalogSyncRunStatus,
 } from '../../domain/models/catalog.js';
-import { readProcessIdentity } from '../process-identity.js';
+import { compareProcessIdentity, readProcessIdentity } from '../process-identity.js';
 import type { CatalogSyncRunRow } from './catalog-row-mappers.js';
 import { toCatalogSyncRun } from './catalog-row-mappers.js';
 
@@ -181,6 +181,11 @@ export class SqliteCatalogSyncStore {
   }
 
   public start(input: CatalogSyncRunStartRequest): CatalogSyncRun {
+    // Reconcile again immediately before starting. A repository can stay open while another
+    // process dies; constructor-time recovery alone would otherwise leave C014 blocking until
+    // this process is restarted.
+    this.recoverAbandonedRuns();
+
     const ownerToken = this.ownerTokenFactory();
     const startedAt = input.startedAt.getTime();
     const info = this.database
@@ -263,6 +268,8 @@ export class SqliteCatalogSyncStore {
       );
       let recovered = 0;
       for (const row of rows) {
+        const locallyOwnedToken = this.ownedRuns.get(row.id);
+        if (locallyOwnedToken !== undefined && locallyOwnedToken === row.owner_token) continue;
         if (!this.isAbandoned(row, now)) continue;
         recovered += statement.run(
           now,
@@ -351,16 +358,24 @@ export class SqliteCatalogSyncStore {
 
   private isAbandoned(row: RunningSyncRunLeaseRow, now: number): boolean {
     const lastHeartbeat = row.heartbeat_at ?? row.started_at;
+    const leaseExpired = now - lastHeartbeat > this.abandonedAfterMs;
     if (row.owner_pid !== null && row.owner_hostname === this.hostname) {
       if (!this.processAlive(row.owner_pid)) return true;
-      const recordedIdentity = readOwnerProcessIdentity(row.owner_token);
-      if (recordedIdentity !== undefined) {
-        const activeIdentity = this.processIdentity(row.owner_pid);
-        if (activeIdentity !== undefined && activeIdentity !== recordedIdentity) return true;
-      }
-      return false;
+
+      const identity = compareProcessIdentity(
+        readOwnerProcessIdentity(row.owner_token),
+        row.owner_pid,
+        this.processIdentity,
+      );
+      if (identity === 'same') return false;
+      if (identity === 'different') return true;
+
+      // A live PID is not proof of the original process lifetime when identity probing is
+      // unavailable. Once the durable heartbeat lease expires, recovery is safe because the
+      // owner token is atomically cleared and every later stale-owner mutation is fenced.
+      return leaseExpired;
     }
-    return now - lastHeartbeat > this.abandonedAfterMs;
+    return leaseExpired;
   }
 
   private refreshCurrentVersionValidators(
