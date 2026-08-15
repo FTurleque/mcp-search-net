@@ -67,7 +67,6 @@ describe('process lifetime identity', () => {
       syncRunLease: {
         pid: 606,
         hostname: 'test-host',
-        ownerTokenFactory: () => 'sync-owner',
         processAlive: () => true,
         processIdentity: () => 'process-lifetime-a',
         abandonedAfterMs: 1_000,
@@ -77,6 +76,19 @@ describe('process lifetime identity', () => {
     const run = await owner.startCatalogSyncRun({ startedAt: new Date(now) });
     owner.close();
     repositories.splice(repositories.indexOf(owner), 1);
+
+    const beforeRecovery = new Database(path, { readonly: true });
+    try {
+      expect(
+        beforeRecovery
+          .prepare<[number], { owner_token: string | null }>(
+            'SELECT owner_token FROM sync_runs WHERE id = ?',
+          )
+          .get(run.id)?.owner_token,
+      ).toMatch(/^v1\./u);
+    } finally {
+      beforeRecovery.close();
+    }
 
     now = 10_000;
     const observer = new SqliteCatalogRepository(path, clock, {
@@ -96,19 +108,13 @@ describe('process lifetime identity', () => {
     try {
       expect(
         database
-          .prepare<
-            [number],
-            {
-              status: string;
-              owner_token: string | null;
-              owner_process_identity: string | null;
-            }
-          >('SELECT status, owner_token, owner_process_identity FROM sync_runs WHERE id = ?')
+          .prepare<[number], { status: string; owner_token: string | null }>(
+            'SELECT status, owner_token FROM sync_runs WHERE id = ?',
+          )
           .get(run.id),
       ).toEqual({
         status: 'FAILED',
         owner_token: null,
-        owner_process_identity: null,
       });
     } finally {
       database.close();

@@ -17,14 +17,14 @@ import type { CatalogSyncRunRow } from './catalog-row-mappers.js';
 import { toCatalogSyncRun } from './catalog-row-mappers.js';
 
 const DEFAULT_ABANDONED_RUN_AFTER_MS = 3_600_000;
+const OWNER_TOKEN_IDENTITY_PREFIX = 'v1.';
 
 const INSERT_CATALOG_SYNC_RUN_SQL = `
   INSERT INTO sync_runs (
     source_id, run_kind, started_at, completed_at, status,
     documents_checked, documents_added, documents_updated, documents_unchanged,
-    documents_failed, error_summary, owner_token, owner_pid, owner_hostname,
-    owner_process_identity, heartbeat_at
-  ) VALUES (?, ?, ?, NULL, 'RUNNING', 0, 0, 0, 0, 0, NULL, ?, ?, ?, ?, ?)
+    documents_failed, error_summary, owner_token, owner_pid, owner_hostname, heartbeat_at
+  ) VALUES (?, ?, ?, NULL, 'RUNNING', 0, 0, 0, 0, 0, NULL, ?, ?, ?, ?)
 `;
 
 const SELECT_CATALOG_SYNC_RUN_BY_ID_SQL = 'SELECT * FROM sync_runs WHERE id = ?';
@@ -42,8 +42,7 @@ const COMPLETE_CATALOG_SYNC_RUN_SQL = `
     heartbeat_at = ?,
     owner_token = NULL,
     owner_pid = NULL,
-    owner_hostname = NULL,
-    owner_process_identity = NULL
+    owner_hostname = NULL
   WHERE id = ?
     AND status = 'RUNNING'
     AND completed_at IS NULL
@@ -51,8 +50,7 @@ const COMPLETE_CATALOG_SYNC_RUN_SQL = `
 `;
 
 const SELECT_RUNNING_SYNC_RUN_LEASES_SQL = `
-  SELECT id, started_at, heartbeat_at, owner_token, owner_pid, owner_hostname,
-         owner_process_identity
+  SELECT id, started_at, heartbeat_at, owner_token, owner_pid, owner_hostname
   FROM sync_runs
   WHERE status = 'RUNNING' AND completed_at IS NULL
 `;
@@ -65,8 +63,7 @@ const RECOVER_ABANDONED_SYNC_RUN_SQL = `
     heartbeat_at = ?,
     owner_token = NULL,
     owner_pid = NULL,
-    owner_hostname = NULL,
-    owner_process_identity = NULL
+    owner_hostname = NULL
   WHERE id = ?
     AND status = 'RUNNING'
     AND completed_at IS NULL
@@ -112,7 +109,6 @@ type InsertCatalogSyncRunParams = [
   string,
   number,
   string,
-  string | null,
   number,
 ];
 type CompleteCatalogSyncRunParams = [
@@ -141,7 +137,6 @@ interface RunningSyncRunLeaseRow {
   readonly owner_token: string | null;
   readonly owner_pid: number | null;
   readonly owner_hostname: string | null;
-  readonly owner_process_identity: string | null;
 }
 
 export interface CatalogSyncRunLeaseOptions {
@@ -159,7 +154,6 @@ export class SqliteCatalogSyncStore {
   private readonly ownerTokenFactory: () => string;
   private readonly processAlive: (pid: number) => boolean;
   private readonly processIdentity: (pid: number) => string | undefined;
-  private readonly ownerProcessIdentity: string | null;
   private readonly abandonedAfterMs: number;
   private readonly ownedRuns = new Map<number, string>();
 
@@ -170,10 +164,11 @@ export class SqliteCatalogSyncStore {
   ) {
     this.pid = options.pid ?? process.pid;
     this.hostname = options.hostname ?? hostname();
-    this.ownerTokenFactory = options.ownerTokenFactory ?? randomUUID;
     this.processAlive = options.processAlive ?? isProcessAlive;
     this.processIdentity = options.processIdentity ?? readProcessIdentity;
-    this.ownerProcessIdentity = this.processIdentity(this.pid) ?? null;
+    const ownerProcessIdentity = this.processIdentity(this.pid);
+    this.ownerTokenFactory =
+      options.ownerTokenFactory ?? (() => createOwnerToken(randomUUID(), ownerProcessIdentity));
     this.abandonedAfterMs = options.abandonedAfterMs ?? DEFAULT_ABANDONED_RUN_AFTER_MS;
     if (!Number.isSafeInteger(this.abandonedAfterMs) || this.abandonedAfterMs <= 0) {
       throw new RangeError('abandonedAfterMs must be a positive safe integer');
@@ -192,7 +187,6 @@ export class SqliteCatalogSyncStore {
         ownerToken,
         this.pid,
         this.hostname,
-        this.ownerProcessIdentity,
         startedAt,
       );
     const id = Number(info.lastInsertRowid);
@@ -322,11 +316,10 @@ export class SqliteCatalogSyncStore {
     const lastHeartbeat = row.heartbeat_at ?? row.started_at;
     if (row.owner_pid !== null && row.owner_hostname === this.hostname) {
       if (!this.processAlive(row.owner_pid)) return true;
-      if (row.owner_process_identity !== null) {
+      const recordedIdentity = readOwnerProcessIdentity(row.owner_token);
+      if (recordedIdentity !== undefined) {
         const activeIdentity = this.processIdentity(row.owner_pid);
-        if (activeIdentity !== undefined && activeIdentity !== row.owner_process_identity) {
-          return true;
-        }
+        if (activeIdentity !== undefined && activeIdentity !== recordedIdentity) return true;
       }
       return false;
     }
@@ -347,6 +340,22 @@ export class SqliteCatalogSyncStore {
       .run(validators.etag ?? null, validators.lastModified ?? null, observedAt, documentId);
     if (result.changes !== 1) throw new Error('CATALOG_CURRENT_VERSION_VALIDATOR_REFRESH_FAILED');
   }
+}
+
+function createOwnerToken(entropy: string, processIdentity: string | undefined): string {
+  if (processIdentity === undefined) return entropy;
+  const encodedIdentity = Buffer.from(processIdentity, 'utf8').toString('base64url');
+  return `${OWNER_TOKEN_IDENTITY_PREFIX}${encodedIdentity}.${entropy}`;
+}
+
+function readOwnerProcessIdentity(ownerToken: string | null): string | undefined {
+  if (ownerToken === null || !ownerToken.startsWith(OWNER_TOKEN_IDENTITY_PREFIX)) return undefined;
+  const separatorIndex = ownerToken.indexOf('.', OWNER_TOKEN_IDENTITY_PREFIX.length);
+  if (separatorIndex === -1) return undefined;
+  const encodedIdentity = ownerToken.slice(OWNER_TOKEN_IDENTITY_PREFIX.length, separatorIndex);
+  if (!/^[A-Za-z0-9_-]+$/u.test(encodedIdentity)) return undefined;
+  const identity = Buffer.from(encodedIdentity, 'base64url').toString('utf8');
+  return identity === '' ? undefined : identity;
 }
 
 function isProcessAlive(pid: number): boolean {

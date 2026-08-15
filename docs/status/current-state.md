@@ -132,7 +132,6 @@ Les migrations catalogue appliquées dans l’ordre sont :
 - `C011__persist_pending_version_promotion.sql`
 - `C012__make_language_indexes_nocase.sql`
 - `C013__add_sync_run_lease.sql`
-- `C014__add_sync_run_process_identity.sql`
 
 Une migration appliquée est immuable. Toute évolution crée une nouvelle migration. Les runners de
 migration cache, catalogue et historique prennent désormais une transaction SQLite
@@ -164,13 +163,6 @@ lorsque son lease a réellement expiré, le clôt en `FAILED` et efface l’owne
 fencing empêche ensuite l’ancien propriétaire de finaliser le run récupéré ; les observations d’un
 run possédé par l’instance courante renouvellent son heartbeat sans modifier le contrat public du
 repository.
-
-`C014` ajoute l’identité de durée de vie du processus propriétaire aux `sync_runs`. Sur les
-plateformes où cette identité OS est disponible, un PID encore présent mais réutilisé par un nouveau
-processus est distingué du propriétaire original ; en cas de sonde indisponible ou de ligne legacy,
-la récupération reste conservative. La maintenance exclut toujours les runs `RUNNING` de sa
-rétention, et une purge réelle de versions prend sa réservation writer `BEGIN IMMEDIATE` avant de
-sélectionner les candidats afin qu’une promotion concurrente soit observée avant toute suppression.
 
 Le découpage Markdown du fetch et l’ingestion CLI utilisent le même scanner de headings/fences. Les
 fences backtick ou tilde se ferment uniquement avec le même caractère et une longueur compatible ;
