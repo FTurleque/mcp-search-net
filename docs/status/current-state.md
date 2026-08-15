@@ -12,6 +12,15 @@ pas ce document pour connaître l’état présent.
 - Branche d’intégration courante : `develop`. Une correction présente uniquement sur `develop`
   n’est pas déclarée publiée sur `master` ; sa qualification repose sur la CI du SHA exact de la
   PR d’intégration concernée.
+- Baseline `develop` après la remédiation complète #94 :
+  `079a0c7075b185f7045764410b8e6e773e9cc3cb`. Le run post-merge CI `31887986932` / #1199 a
+  terminé en `SUCCESS` sur ce SHA exact pour les jobs Node.js, Docker/live E2E et Windows
+  installation/STDIO packaging. Le job SonarCloud est ignoré sur les pushes `develop` par conception
+  du workflow ; le Quality Gate avait réussi sur la PR #94 avant merge.
+- Audit de suivi du 15 août 2026 : deux défauts techniques résiduels ont été isolés sur cette
+  baseline — handoff non atomique du sémaphore de `SecureHttpGateway` et permissions POSIX du
+  heartbeat `FileLeaseLock`. Leur correction est portée par la PR #95 depuis la branche
+  `agent/fix-audit-followup-20260815` et doit être qualifiée sur son SHA exact avant intégration.
 - Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
 - Hardening post-merge initial : PR #31 regroupe les corrections d’ownership Windows, de release,
   de provenance MCP, de passerelle HTTP et de réconciliation documentaire issues de l’audit V2.
@@ -32,7 +41,9 @@ pas ce document pour connaître l’état présent.
 - Certification native #34 : terminée le 10 août 2026 pour le périmètre retenu Claude Code,
   Claude Desktop et Codex. Les trois clients ont été observés réellement sur Windows 10 avec le
   runtime installé `a70b9a51527543c9417566326bb780121954cef5` et la chaîne déterministe
-  `search_docs -> sectionId réel -> read_doc_section(même sectionId)`.
+  `search_docs -> sectionId réel -> read_doc_section(même sectionId)`. Cette preuve reste historique :
+  une re-certification native sur le SHA `develop` final post-remédiation reste requise et est suivie
+  dans #73.
 - Release 1.1.3 : candidate en cours de qualification. Corrections de détection Claude Desktop
   (exe Anthropic vs. Windows Store), nettoyage complet à la désinstallation (PowerShell
   Remove-Item au lieu de DelTree), câblage MCP post-installation. La publication sera déclenchée
@@ -90,9 +101,11 @@ le serveur n’exécute jamais le contenu récupéré comme instruction.
 La sonde STDIO de référence gèle six tools, quatre resources et neuf templates avec
 `schemaVersion = 1.0`. La certification native retenue couvre Claude Code, Claude Desktop et Codex ;
 elle a été finalisée dans l’issue #34 sur le runtime installé
-`a70b9a51527543c9417566326bb780121954cef5`. IntelliJ/GitHub Copilot et GitHub Copilot CLI restent
-des intégrations de compatibilité supportées par l’installateur mais sont hors périmètre de
-certification. L’état détaillé est `docs/planning/client-certification-current.md`.
+`a70b9a51527543c9417566326bb780121954cef5`. Cette preuve ne qualifie pas automatiquement un SHA
+ultérieur : la re-certification du serveur `develop` post-remédiation reste suivie dans #73.
+IntelliJ/GitHub Copilot et GitHub Copilot CLI restent des intégrations de compatibilité supportées
+par l’installateur mais sont hors périmètre de certification. L’état détaillé est
+`docs/planning/client-certification-current.md`.
 
 ## Stockage, SQLite et migrations catalogue
 
@@ -284,7 +297,7 @@ Le cache SQLite applique d’abord la rétention stale, puis une éviction LRU d
 namespaces recherche et contenu. Les valeurs par défaut sont 2 000 entrées et 256 Mio de payloads
 JSON sérialisés. Une valeur JSON syntaxiquement valide mais incompatible avec le contrat attendu est
 supprimée lors de la lecture et traitée comme un cache miss ; les stale fallbacks utilisent les mêmes
-décodeurs runtime. Le catalogue exécute son contrôle complet d’intégrité après migrations et avant
+decodeurs runtime. Le catalogue exécute son contrôle complet d’intégrité après migrations et avant
 exposition du serveur MCP ; toute incohérence SQLite, FK, current pointer, sections ou FTS bloque le
 démarrage.
 
@@ -316,7 +329,7 @@ le lifecycle. Un résultat d’un ancien SHA est une preuve historique, pas une 
 candidat présent.
 
 Le workflow de publication Windows est manuel. Node.js win-x64 est vérifié par SHA-256 et la
-toolchain Inno Setup est figée sur la version `6.7.1`.
+toolchain Inno Setup est figée sur la version `6.7.3`.
 
 ## Limites connues et suites autorisées
 
@@ -329,9 +342,10 @@ toolchain Inno Setup est figée sur la version `6.7.1`.
 - les entrypoints bootstrap/CLI sont surtout qualifiés par les suites integration/E2E qui exécutent
   des processus réels ; la couverture V8 in-process ne doit pas être interprétée seule comme leur
   niveau de qualification ;
-- la certification native #34 est **terminée à 3/3** pour Claude Code, Claude Desktop et Codex sur
-  le runtime `a70b9a51527543c9417566326bb780121954cef5` ; les intégrations Copilot restent hors
-  périmètre de certification ;
+- la certification native #34 est **historique et terminée à 3/3** pour Claude Code, Claude Desktop
+  et Codex sur le runtime `a70b9a51527543c9417566326bb780121954cef5`. La re-certification native
+  du SHA serveur final post-remédiation reste explicitement ouverte dans #73 ; les intégrations
+  Copilot restent hors périmètre de certification ;
 - le serveur est un MCP STDIO local : il n’embarque aucun LLM et n’exige aucune API commerciale.
 
 ## Gouvernance Git post-V2
@@ -342,6 +356,12 @@ squashé de la PR #8 ne doit jamais être réintégré via un merge brut d’un 
 une intégration de release distincte. La PR #27 est supersédée par cette règle. Les branches
 absorbées n’ont plus vocation à porter du travail unique et peuvent être retirées de la liste des
 branches actives.
+
+Le ruleset actif `Protect integration branches` protège `master` et `develop` contre la suppression
+et les non-fast-forward, impose une PR, la résolution des threads et les quatre checks requis. Le
+paramètre `strict_required_status_checks_policy` reste toutefois à `false` : l’exigence automatique
+d’une branche à jour avant merge demeure un durcissement administratif suivi dans #73 et nécessite
+une mutation du ruleset GitHub.
 
 ## Réconciliation de qualification — audit du 7 août 2026
 
@@ -377,6 +397,6 @@ squash-mergée sur `63289d3bb498132ada4effdafa79039548c02381`, puis `develop` a 
 sans force sur le même SHA.
 
 Une publication ultérieure depuis `master` exige toujours une nouvelle preuve CI réussie attachée
-au SHA exact de `master`. La certification native #34 est désormais clôturée à 3/3 sur le runtime
-installé `a70b9a51527543c9417566326bb780121954cef5`; une future requalification devra de nouveau
-capturer les appels natifs sur le SHA serveur concerné.
+au SHA exact de `master`. La certification native #34 est clôturée à 3/3 sur le runtime installé
+`a70b9a51527543c9417566326bb780121954cef5`; cette preuve reste historique et une future
+requalification doit de nouveau capturer les appels natifs sur le SHA serveur concerné.
