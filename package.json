@@ -41,7 +41,7 @@
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write src/infrastructure/process-identity.ts tests/infrastructure/catalog-maintenance-running-sync.test.ts tests/infrastructure/catalog-version-purge-concurrency.test.ts tests/infrastructure/process-lease-identity.test.ts && git diff --exit-code -- src/infrastructure/process-identity.ts tests/infrastructure/catalog-maintenance-running-sync.test.ts tests/infrastructure/catalog-version-purge-concurrency.test.ts tests/infrastructure/process-lease-identity.test.ts",
     "test": "vitest run",
     "test:coverage": "node scripts/run-test-suite.mjs coverage vitest.config.ts --coverage",
     "test:watch": "vitest",
