@@ -452,12 +452,15 @@ export class SecureHttpGateway {
       timer.unref();
       this.waiters.push(waiter);
     });
-    this.active += 1;
   }
 
   private release(): void {
+    const waiter = this.waiters.shift();
+    if (waiter !== undefined) {
+      waiter();
+      return;
+    }
     this.active -= 1;
-    this.waiters.shift()?.();
   }
 }
 
