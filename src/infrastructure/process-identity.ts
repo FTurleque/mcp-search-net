@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 const PROCESS_IDENTITY_TIMEOUT_MS = 2_000;
+const PROCESS_IDENTITY_COMPARISON_ATTEMPTS = 2;
 const WINDOWS_POWERSHELL_PATH = String.raw`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`;
 const POSIX_PS_PATHS: Readonly<Partial<Record<NodeJS.Platform, string>>> = {
   aix: '/usr/bin/ps',
@@ -10,6 +11,8 @@ const POSIX_PS_PATHS: Readonly<Partial<Record<NodeJS.Platform, string>>> = {
   openbsd: '/bin/ps',
   sunos: '/usr/bin/ps',
 };
+
+export type ProcessIdentityComparison = 'same' | 'different' | 'unavailable';
 
 /**
  * Returns an OS-backed identity for one concrete process lifetime.
@@ -29,6 +32,28 @@ export function readProcessIdentity(pid: number): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Compares one recorded process-lifetime identity with the process currently owning a PID.
+ * A short retry budget absorbs transient identity-probe failures. Callers remain responsible
+ * for applying their lease timeout when the identity cannot be established at all.
+ */
+export function compareProcessIdentity(
+  recordedIdentity: string | null | undefined,
+  pid: number,
+  probe: (pid: number) => string | undefined = readProcessIdentity,
+): ProcessIdentityComparison {
+  if (recordedIdentity === undefined || recordedIdentity === null || recordedIdentity === '') {
+    return 'unavailable';
+  }
+
+  for (let attempt = 0; attempt < PROCESS_IDENTITY_COMPARISON_ATTEMPTS; attempt += 1) {
+    const activeIdentity = probe(pid);
+    if (activeIdentity === undefined) continue;
+    return activeIdentity === recordedIdentity ? 'same' : 'different';
+  }
+  return 'unavailable';
 }
 
 function readLinuxProcessIdentity(pid: number): string | undefined {
