@@ -24,7 +24,7 @@ if (
 
 const requestTimeoutMs = 30_000;
 
-const client = new Client({ name: 'mcp-search-net-installed-probe', version: '1.1.2' });
+const client = new Client({ name: 'mcp-search-net-installed-probe', version: '1.1.3' });
 const transport = new StdioClientTransport({
   command: resolvedLauncher,
   cwd: resolvedInstallRoot,
@@ -57,8 +57,21 @@ try {
   if (listed.isError === true || listed.structuredContent?.schemaVersion !== '1.0') {
     throw new Error('INSTALLED_LIST_DOCS_CONTRACT_INVALID');
   }
+  const history = await client.callTool(
+    { name: 'list_search_history', arguments: { limit: 1 } },
+    undefined,
+    { timeout: requestTimeoutMs },
+  );
+  if (
+    history.isError === true ||
+    history.structuredContent?.schemaVersion !== '1.0' ||
+    history.structuredContent?.data?.enabled !== true ||
+    history.structuredContent?.data?.available !== true
+  ) {
+    throw new Error('INSTALLED_SEARCH_HISTORY_UNAVAILABLE');
+  }
   process.stdout.write(
-    `${JSON.stringify({ status: 'INSTALLED_STDIO_VALID', tools: names, schemaVersion: '1.0' })}\n`,
+    `${JSON.stringify({ status: 'INSTALLED_STDIO_VALID', tools: names, historyAvailable: true, schemaVersion: '1.0' })}\n`,
   );
 } finally {
   await client.close();
