@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  chmodSync,
   closeSync,
   existsSync,
   mkdirSync,
@@ -207,10 +208,13 @@ export class FileLeaseLock {
   }
 
   private writeHeartbeat(metadata: FileLeaseMetadata): void {
-    writeFileSync(this.heartbeatPath(), serializeMetadata(metadata), {
+    const path = this.heartbeatPath();
+    writeFileSync(path, serializeMetadata(metadata), {
       encoding: 'utf8',
       flag: 'w',
+      mode: 0o600,
     });
+    if (process.platform !== 'win32') chmodSync(path, 0o600);
   }
 
   private removeHeartbeatIfOwned(ownerToken: string): void {
