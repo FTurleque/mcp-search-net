@@ -18,6 +18,7 @@ import type { Logger } from '../../application/ports/logger.js';
 import { readProcessIdentity } from '../process-identity.js';
 
 const FAILED_ACQUIRE_CLEANUP_ATTEMPTS = 3;
+const STALE_RECOVERY_CLEANUP_ATTEMPTS = 3;
 
 export interface FileLeaseMetadata {
   readonly schemaVersion: '1.0' | '1.1';
@@ -290,14 +291,63 @@ export class FileLeaseLock {
       if (!existsSync(this.lockPath)) this.renameFile(quarantinePath, this.lockPath);
       throw new FileLeaseLockError(`Lock changed during stale recovery: ${this.lockPath}`);
     }
-    unlinkSync(quarantinePath);
-    this.removeHeartbeatIfOwned(metadata.ownerToken);
+
+    const quarantineCleanupComplete = this.cleanupStaleOwnedFile(
+      quarantinePath,
+      metadata.ownerToken,
+      'quarantine',
+    );
+    const heartbeatCleanupComplete = this.cleanupStaleOwnedFile(
+      this.heartbeatPath(),
+      metadata.ownerToken,
+      'heartbeat',
+    );
     this.options.logger?.warning('file_lease_lock_stale_recovered', {
       lockPath: this.lockPath,
       ownerPid: metadata.pid,
       ageMs,
+      cleanupComplete: quarantineCleanupComplete && heartbeatCleanupComplete,
     });
     return true;
+  }
+
+  private cleanupStaleOwnedFile(
+    path: string,
+    ownerToken: string,
+    target: 'quarantine' | 'heartbeat',
+  ): boolean {
+    if (!existsSync(path)) return true;
+    const metadata = readMetadataFile(path);
+    if (metadata?.ownerToken !== ownerToken) {
+      this.options.logger?.warning('file_lease_lock_stale_cleanup_owner_mismatch', {
+        lockPath: this.lockPath,
+        path,
+        target,
+        pid: this.pid,
+      });
+      return false;
+    }
+
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= STALE_RECOVERY_CLEANUP_ATTEMPTS; attempt += 1) {
+      try {
+        this.unlinkFile(path);
+        return true;
+      } catch (error) {
+        if (isFileSystemError(error, 'ENOENT')) return true;
+        lastError = error;
+      }
+    }
+
+    this.options.logger?.warning('file_lease_lock_stale_cleanup_failed', {
+      lockPath: this.lockPath,
+      path,
+      target,
+      pid: this.pid,
+      attempts: STALE_RECOVERY_CLEANUP_ATTEMPTS,
+      error: lastError instanceof Error ? { name: lastError.name } : 'unknown',
+    });
+    return false;
   }
 
   private readMetadata(): FileLeaseMetadata | undefined {
