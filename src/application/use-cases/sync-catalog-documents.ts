@@ -185,6 +185,7 @@ export class SyncCatalogDocuments {
         syncRunId,
       );
     } catch (error) {
+      if (isCatalogSyncRunOwnershipLost(error)) throw error;
       return this.handleDocumentFailure(
         document,
         source.id,
@@ -782,6 +783,10 @@ function createRedirectVersionMetadata(fetched: FetchedContent): Readonly<Record
         redirectChain: fetched.redirectChain,
         ...(permanentTarget === undefined ? {} : { redirectedPermanently: true }),
       };
+}
+
+function isCatalogSyncRunOwnershipLost(error: unknown): boolean {
+  return error instanceof Error && error.message === 'CATALOG_SYNC_RUN_OWNERSHIP_LOST';
 }
 
 function isMissingRemoteHttpError(
