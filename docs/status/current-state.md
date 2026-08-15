@@ -47,7 +47,7 @@ certification native.
   déplacé vers une quarantaine à nom généré par le serveur afin de libérer le chemin actif ; les
   erreurs secondaires de rollback restent attachées à l’erreur primaire pour diagnostic.
 - Les tests de fault injection couvrent le double fault `heartbeat write failure + lock unlink
-  failure` et vérifient qu’un nouveau propriétaire peut acquérir immédiatement le chemin actif.
+failure` et vérifient qu’un nouveau propriétaire peut acquérir immédiatement le chemin actif.
 
 ## Contrat MCP public
 
