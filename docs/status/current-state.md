@@ -12,22 +12,25 @@ pas ce document pour connaître l’état présent.
 - Branche d’intégration courante : `develop`. Une correction présente uniquement sur `develop`
   n’est pas déclarée publiée sur `master` ; sa qualification repose sur la CI du SHA exact de la
   PR d’intégration concernée.
-- Baseline `develop` intégrée après la PR #95 :
-  `ce697e988af6aec7f1b85dc4cc7b3391112f8bbd`, tree
-  `0600804d3e30f692d550bbed41599d57e75ea013`. Le run post-merge CI `31891721890` / #1202 a
+- Baseline `develop` intégrée après la PR #96 :
+  `3e0f943e6c10e255061cba1636515d5330de5529`, tree
+  `b949ada4181aeda88bd1ef0f52eb471bf52d28b0`. Le run post-merge CI `31894052494` / #1209 a
   terminé en `SUCCESS` sur ce SHA exact pour les jobs Node.js, Docker/live E2E et Windows
   installation/STDIO packaging. Le job GitHub Actions SonarCloud est ignoré sur les pushes
-  `develop` par conception du workflow ; le check natif SonarQubeCloud de la PR #95 avait publié
-  `Quality Gate passed` sur son head qualifié `e5a7466b11af3a600adc7752a3f4526f9ea9f055`.
-- Les deux findings de suivi portés par #95 sont intégrés et revalidés : le handoff du sémaphore de
-  `SecureHttpGateway` ne libère plus transitoirement un slot avant reprise du waiter, et les fichiers
-  metadata/heartbeat de `FileLeaseLock` conservent ou corrigent les permissions POSIX `0600`.
-- Audit complet de suivi du 15 août 2026 sur `ce697e988af6aec7f1b85dc4cc7b3391112f8bbd` : la PR #96
-  `fix: close post-audit qualification findings`, depuis
-  `agent/fix-post-audit-remediation-20260815`, corrige l’attente effective du Quality Gate Sonar,
-  la finalisation retryable/exception-safe du lock de maintenance catalogue et le reporting Vitest
-  POSIX sous Windows. Cette PR doit être qualifiée sur son SHA exact avant toute intégration ; le SHA
-  final `develop` post-#96 n’est pas anticipé dans ce document.
+  `develop` par conception du workflow ; la PR #96 avait auparavant qualifié son head exact
+  `a701d50f3ed739849c87a91071f196662376dc21` avec le run `31893237992` / #1208 en `SUCCESS`,
+  incluant `SonarCloud Code Analysis`, et le check natif SonarQubeCloud avait publié
+  `Quality Gate passed`.
+- Les findings portés par #95 et #96 sont intégrés et revalidés : handoff sans slot transitoire dans
+  le sémaphore `SecureHttpGateway`, permissions POSIX `0600` des metadata/heartbeat de
+  `FileLeaseLock`, attente effective du Quality Gate Sonar, finalisation retryable du lock de
+  maintenance et reporting Vitest POSIX correct sous Windows.
+- Audit complet de suivi du 15 août 2026 sur `3e0f943e6c10e255061cba1636515d5330de5529` : la PR #97
+  `fix: close residual audit findings`, depuis `agent/fix-residual-audit-20260815`, ferme les deux
+  défauts techniques résiduels identifiés : exclusion durable des synchronisations catalogue
+  `EXECUTION` incompatibles et finalisation réellement reprenable du heartbeat de `FileLeaseLock`.
+  La PR doit être qualifiée sur son SHA exact avant intégration ; son futur merge SHA `develop` ne
+  doit jamais être anticipé dans ce document.
 - Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
 - Hardening post-merge initial : PR #31 regroupe les corrections d’ownership Windows, de release,
   de provenance MCP, de passerelle HTTP et de réconciliation documentaire issues de l’audit V2.
@@ -152,6 +155,7 @@ Les migrations catalogue appliquées dans l’ordre sont :
 - `C011__persist_pending_version_promotion.sql`
 - `C012__make_language_indexes_nocase.sql`
 - `C013__add_sync_run_lease.sql`
+- `C014__guard_concurrent_sync_execution.sql`
 
 Une migration appliquée est immuable. Toute évolution crée une nouvelle migration. Les runners de
 migration cache, catalogue et historique prennent désormais une transaction SQLite
@@ -183,6 +187,14 @@ lorsque son lease a réellement expiré, le clôt en `FAILED` et efface l’owne
 fencing empêche ensuite l’ancien propriétaire de finaliser le run récupéré ; les observations d’un
 run possédé par l’instance courante renouvellent son heartbeat sans modifier le contrat public du
 repository.
+
+`C014` impose au niveau SQLite l’exclusion des runs `EXECUTION` incompatibles. Deux exécutions
+ciblées sur la même source ne peuvent plus être `RUNNING` simultanément ; une exécution globale
+(`source_id IS NULL`) exclut toute autre exécution globale ou ciblée, tandis que deux sources
+différentes et les runs `PLAN` peuvent continuer à coexister. La migration réconcilie d’abord les
+anciens overlaps en conservant le run compatible le plus récent et en clôturant les owners devenus
+obsolètes en `FAILED`, puis des triggers `INSERT`/`UPDATE` rendent l’invariant durable entre
+connexions et processus.
 
 Le découpage Markdown du fetch et l’ingestion CLI utilisent le même scanner de headings/fences. Les
 fences backtick ou tilde se ferment uniquement avec le même caractère et une longueur compatible ;

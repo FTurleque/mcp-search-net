@@ -84,8 +84,17 @@ describe('CatalogMigrationRunner', () => {
     const versionColumns = database
       .prepare("SELECT name FROM pragma_table_info('document_versions') ORDER BY cid")
       .all() as { name: string }[];
+    const syncGuardTriggers = database
+      .prepare(
+        `SELECT name
+         FROM sqlite_master
+         WHERE type = 'trigger'
+           AND name LIKE 'tr_sync_runs_guard_execution_scope_%'
+         ORDER BY name`,
+      )
+      .all() as { name: string }[];
     expect(applied.map(({ version }) => version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
     ]);
     expect(applied.every(({ checksum }) => checksum.length === 64)).toBe(true);
     expect(ftsDefinition.sql).toContain('contentless_delete = 1');
@@ -98,6 +107,10 @@ describe('CatalogMigrationRunner', () => {
         'heartbeat_at',
       ]),
     );
+    expect(syncGuardTriggers.map(({ name }) => name)).toEqual([
+      'tr_sync_runs_guard_execution_scope_insert',
+      'tr_sync_runs_guard_execution_scope_update',
+    ]);
     expect(versionColumns.map(({ name }) => name)).toContain('pending_current');
     database.close();
   });
@@ -182,7 +195,7 @@ describe('CatalogMigrationRunner', () => {
         .prepare('SELECT pending_current FROM document_versions WHERE id = 20')
         .get() as { pending_current: number };
       expect(versions.map(({ version }) => version)).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
       ]);
       expect(sectionSql.sql).not.toContain('UNIQUE (document_version_id, content_hash)');
       expect(legacyRun).toEqual({

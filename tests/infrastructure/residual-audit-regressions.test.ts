@@ -87,17 +87,22 @@ describe('residual audit persistence regressions', () => {
 
   it('keeps a file lease retryable when releasing the lock fails transiently', () => {
     const lockPath = createPath('lease-retry', 'maintenance.lock');
-    let unlinkAttempts = 0;
+    let lockUnlinkAttempts = 0;
+    let heartbeatUnlinkAttempts = 0;
     const lease = new FileLeaseLock(lockPath, {
       staleAfterMs: 1_000,
       clock,
       ownerTokenFactory: () => 'retryable-file-owner',
       unlinkFile: (path) => {
-        unlinkAttempts += 1;
-        if (unlinkAttempts === 1) {
-          const error = new Error('transient unlink failure') as NodeJS.ErrnoException;
-          error.code = 'EBUSY';
-          throw error;
+        if (path.endsWith('.heartbeat')) {
+          heartbeatUnlinkAttempts += 1;
+        } else {
+          lockUnlinkAttempts += 1;
+          if (lockUnlinkAttempts === 1) {
+            const error = new Error('transient unlink failure') as NodeJS.ErrnoException;
+            error.code = 'EBUSY';
+            throw error;
+          }
         }
         unlinkSync(path);
       },
@@ -108,7 +113,8 @@ describe('residual audit persistence regressions', () => {
     expect(() => lease.renew()).not.toThrow();
 
     expect(() => lease.release()).not.toThrow();
-    expect(unlinkAttempts).toBe(2);
+    expect(lockUnlinkAttempts).toBe(2);
+    expect(heartbeatUnlinkAttempts).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
     expect(existsSync(`${lockPath}.heartbeat`)).toBe(false);
   });
