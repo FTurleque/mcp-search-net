@@ -40,7 +40,7 @@ function readLinuxProcessIdentity(pid: number): string | undefined {
 function readWindowsProcessIdentity(pid: number): string | undefined {
   const command = [
     `$processInfo = Get-Process -Id ${String(pid)} -ErrorAction Stop`,
-    "$processInfo.StartTime.ToUniversalTime().Ticks",
+    '$processInfo.StartTime.ToUniversalTime().Ticks',
   ].join('; ');
   const ticks = execFileSync(
     'powershell.exe',

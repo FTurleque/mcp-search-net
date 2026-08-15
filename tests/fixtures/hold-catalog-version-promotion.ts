@@ -31,7 +31,9 @@ configureSqliteConnection(database);
 
 try {
   database.exec('BEGIN IMMEDIATE');
-  database.prepare('UPDATE document_versions SET is_current = 0 WHERE document_id = ?').run(documentId);
+  database
+    .prepare('UPDATE document_versions SET is_current = 0 WHERE document_id = ?')
+    .run(documentId);
   database
     .prepare('UPDATE document_versions SET is_current = 1 WHERE id = ? AND document_id = ?')
     .run(versionId, documentId);

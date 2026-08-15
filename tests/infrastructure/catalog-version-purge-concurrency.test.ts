@@ -7,8 +7,12 @@ import { join, resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
-import { SqliteCatalogVersionPurger } from '../../src/infrastructure/catalog/sqlite-catalog-version-purger.js';
+import {
+  SqliteCatalogRepository,
+} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import {
+  SqliteCatalogVersionPurger,
+} from '../../src/infrastructure/catalog/sqlite-catalog-version-purger.js';
 
 const roots: string[] = [];
 const catalogs: SqliteCatalogRepository[] = [];
@@ -121,14 +125,12 @@ async function addVersionWithSection(
 function readHashes(path: string): readonly string[] {
   const database = new Database(path, { readonly: true });
   try {
-    return (
-      database
-        .prepare<[], { content_hash: string }>(
-          'SELECT content_hash FROM document_versions ORDER BY id',
-        )
-        .all()
-        .map((row) => row.content_hash)
-    );
+    return database
+      .prepare<[], { content_hash: string }>(
+        'SELECT content_hash FROM document_versions ORDER BY id',
+      )
+      .all()
+      .map((row) => row.content_hash);
   } finally {
     database.close();
   }

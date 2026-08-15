@@ -5,8 +5,12 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { SqliteCatalogMaintenance } from '../../src/infrastructure/catalog/sqlite-catalog-maintenance.js';
-import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import {
+  SqliteCatalogMaintenance,
+} from '../../src/infrastructure/catalog/sqlite-catalog-maintenance.js';
+import {
+  SqliteCatalogRepository,
+} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 const roots: string[] = [];
 const repositories: SqliteCatalogRepository[] = [];
