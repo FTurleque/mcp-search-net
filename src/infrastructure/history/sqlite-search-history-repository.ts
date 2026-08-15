@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 import Database from 'better-sqlite3';
@@ -65,7 +65,7 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
   private readonly deleteOverflowStatement: Database.Statement<[number]>;
 
   public constructor(
-    path: string,
+    private readonly path: string,
     private readonly clock: Clock,
     private readonly retentionDays: number,
     private readonly maxEntries: number,
@@ -76,11 +76,13 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
     if (!Number.isSafeInteger(maxEntries) || maxEntries < 100 || maxEntries > 1_000_000) {
       throw new RangeError('maxEntries must be an integer between 100 and 1000000');
     }
-    mkdirSync(dirname(path), { recursive: true });
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.database = new Database(path, { timeout: SQLITE_BUSY_TIMEOUT_MS });
     try {
+      hardenHistoryStoragePermissions(path);
       configureSqliteConnection(this.database);
       new HistoryMigrationRunner(this.database, this.clock).apply();
+      hardenHistoryStoragePermissions(path);
     } catch (error) {
       if (this.database.open) this.database.close();
       throw error;
@@ -126,6 +128,7 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
       this.pruneExpired(executedAt);
       this.deleteOverflowStatement.run(this.maxEntries);
     })();
+    hardenHistoryStoragePermissions(this.path);
     return Promise.resolve(true);
   }
 
@@ -151,6 +154,7 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
     const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
     const items = pageRows.map(toEntry);
     const nextBeforeId = hasMore ? items.at(-1)?.id : undefined;
+    hardenHistoryStoragePermissions(this.path);
     return Promise.resolve({
       enabled: true,
       available: true,
@@ -167,6 +171,13 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
   private pruneExpired(now: number): void {
     const retentionCutoff = now - this.retentionDays * 86_400_000;
     this.deleteExpiredStatement.run(retentionCutoff);
+  }
+}
+
+function hardenHistoryStoragePermissions(path: string): void {
+  if (process.platform === 'win32') return;
+  for (const candidate of [path, `${path}-wal`, `${path}-shm`]) {
+    if (existsSync(candidate)) chmodSync(candidate, 0o600);
   }
 }
 
