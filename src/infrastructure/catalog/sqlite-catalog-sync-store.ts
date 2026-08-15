@@ -310,8 +310,7 @@ export class SqliteCatalogSyncStore {
         .prepare<[number], OwnedCatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
         .get(syncRunId);
       if (
-        row === undefined ||
-        row.status !== 'RUNNING' ||
+        row?.status !== 'RUNNING' ||
         row.completed_at !== null ||
         row.owner_token !== ownerToken
       ) {
