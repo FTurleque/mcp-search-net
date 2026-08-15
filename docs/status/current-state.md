@@ -16,15 +16,15 @@ certification native.
 - Branche d’intégration courante : `develop`.
 - Une capacité présente uniquement sur `develop` n’est pas déclarée publiée tant qu’elle n’a pas été
   portée sur `master` par le flux de release.
-- Dernière baseline post-merge enregistrée avant ce hardening : merge de la PR #97 dans `develop`,
-  commit `2810bcf49b740f9d5447430334fca2ebc16cedc2`, tree fonctionnel
-  `166af00af4a6c88fc21d7137e437a13e37b69faa`. La CI #1218 / `31898491231` a terminé en `SUCCESS`
+- Dernière baseline post-merge enregistrée avant ce hardening : merge de la PR #98 dans `develop`,
+  commit `6a129923ce5b6d2cb2e0ea5814f316eb0b90ab50`, tree fonctionnel
+  `76f7efea52663c6714a29364b9411dce0709e2cf`. La CI #1228 / `31901946951` a terminé en `SUCCESS`
   sur ce SHA pour Node.js, Docker/live E2E et Windows installation/STDIO packaging ; le job Sonar
   GitHub Actions est ignoré sur les pushes `develop` par conception.
-- Le même tree avait été qualifié sur le head exact de la PR #97
-  `6c79fb421e781b7b3576c17fdf77ace7ebbba788` par la CI #1217 / `31896496042`, avec
+- Le même tree avait été qualifié sur le head exact de la PR #98
+  `b535130732115db233cdab4241927f2505e079be` par la CI #1227 / `31900524051`, avec
   `SonarCloud Code Analysis` en succès et le Quality Gate SonarQubeCloud à 0 nouvelle issue,
-  0 Security Hotspot, 100 % de couverture sur le nouveau code et 0 % de duplication.
+  0 Security Hotspot, 86,4 % de couverture sur le nouveau code et 0 % de duplication.
 - Le ruleset `Protect integration branches` protège la branche par défaut et `develop`, exige les PR,
   la résolution des threads et les quatre checks courants. Le mode strict est actif : une PR doit
   être à jour avec sa base avant merge (`strict_required_status_checks_policy=true`).
@@ -38,7 +38,10 @@ certification native.
   deux exécutions ciblées sur la même source s’excluent ; deux sources différentes et les runs
   `PLAN` peuvent coexister.
 - Le fencing du `syncRunId` et la promotion d’une révision courante partagent la même transaction
-  SQLite. Un ancien owner ne peut pas promouvoir une révision après perte de son lease.
+  SQLite. Une observation portant un `syncRunId` sans token d’ownership local est rejetée en
+  fail-closed ; après une première perte de lease, toutes les mutations suivantes du même ancien
+  owner restent donc rejetées. `SyncCatalogDocuments` traite `CATALOG_SYNC_RUN_OWNERSHIP_LOST`
+  comme une erreur fatale du run et n’essaie pas de poursuivre avec les documents suivants.
 - `FileLease.release()` est reprenable : une suppression réussie du lock principal suivie d’un échec
   transitoire du heartbeat ne marque pas prématurément le lease comme libéré.
 - L’acquisition `FileLeaseLock.acquire()` est également exception-safe : si la création initiale du
@@ -46,8 +49,13 @@ certification native.
   puis le lock principal est supprimé. Si l’unlink direct est transitoirement bloqué, le lock est
   déplacé vers une quarantaine à nom généré par le serveur afin de libérer le chemin actif ; les
   erreurs secondaires de rollback restent attachées à l’erreur primaire pour diagnostic.
-- Les tests de fault injection couvrent le double fault `heartbeat write failure + lock unlink
-failure` et vérifient qu’un nouveau propriétaire peut acquérir immédiatement le chemin actif.
+- La récupération d’un `FileLease` stale libère d’abord le namespace actif par rename ownership-safe.
+  La suppression de la quarantaine et de l’ancien heartbeat est ensuite retentée avec un budget
+  borné ; un `EPERM`/`EBUSY` résiduel est journalisé sans rendre de nouveau le lock stale actif ni
+  empêcher à lui seul une nouvelle acquisition.
+- Les tests de fault injection couvrent les doubles fautes d’acquisition, les changements d’owner,
+  les suppressions `ENOENT`, le fencing répété d’un ancien owner et les échecs de cleanup après
+  quarantaine stale.
 
 ## Contrat MCP public
 
@@ -139,6 +147,8 @@ nouveau numéro et checksum.
 
 - Une révision courante est atomique : document, version, sections, FTS, pointeur courant et
   observation de synchronisation sont validés dans la même transaction.
+- Toute observation de synchronisation doit être portée par un `syncRunId` encore détenu localement ;
+  l’absence du token local ou l’échec du heartbeat durable fence la mutation avant commit.
 - Les sections sont chunkées et bornées avant persistance ; deux occurrences identiques à des
   positions différentes restent distinctes.
 - `C011` persiste l’intention `pending_current` pour les primitives legacy afin qu’une version ne

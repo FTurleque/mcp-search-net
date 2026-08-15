@@ -9,6 +9,8 @@ const packageJson = readJson('package.json');
 const packageLock = readJson('package-lock.json');
 const currentStatePath = 'docs/status/current-state.md';
 const currentState = readText(currentStatePath);
+const clientCertificationPath = 'docs/planning/client-certification-current.md';
+const clientCertification = readText(clientCertificationPath);
 
 const markdownFiles = [
   'README.md',
@@ -140,11 +142,21 @@ function validatePublicContractInventory() {
     ['read_doc_section', serverV2],
     ['list_search_history', historyTool],
   ];
+  requireText(
+    clientCertification,
+    'six tools',
+    `${clientCertificationPath}: inventaire automatisé doit annoncer six tools`,
+  );
   for (const [tool, implementation] of tools) {
     requireText(implementation, `'${tool}'`, `outil absent du serveur: ${tool}`);
     requireText(toolsReference, `\`${tool}\``, `docs/reference/tools.md: outil absent ${tool}`);
     requireText(currentState, `\`${tool}\``, `${currentStatePath}: outil absent ${tool}`);
     requireText(readme, `\`${tool}\``, `README.md: outil absent ${tool}`);
+    requireText(
+      clientCertification,
+      `\`${tool}\``,
+      `${clientCertificationPath}: outil absent ${tool}`,
+    );
   }
   for (const option of ['maxSnippetChars', 'compact']) {
     requireText(

@@ -92,17 +92,18 @@ describe('SqliteCatalogRepository document revisions', () => {
     const first = await fixture.repository.commitDocumentRevision(
       revisionInput('hash-v1', 'Stable content before observation failure'),
     );
+    const run = await fixture.repository.startCatalogSyncRun({ startedAt: new Date(1_000) });
 
     await expect(
       fixture.repository.commitDocumentRevision(
         revisionInput('hash-v2', 'Content that must not become current'),
         {
-          syncRunId: 999_999,
+          syncRunId: run.id,
           aliases: [{ url: 'https://example.test/old-guide', aliasType: 'OLD_URL' }],
-          events: [{ eventType: 'CONTENT_HASH_CHANGED', detailsJson: '{}' }],
+          events: [{ eventType: 'CONTENT_HASH_CHANGED', detailsJson: '{invalid' }],
         },
       ),
-    ).rejects.toThrow(/FOREIGN KEY/u);
+    ).rejects.toThrow('CATALOG_STALENESS_EVENT_DETAILS_INVALID');
 
     const database = new Database(fixture.path, { readonly: true });
     expect(
