@@ -161,9 +161,7 @@ describe('residual audit persistence regressions', () => {
     ).resolves.toMatchObject({ candidateVersions: 0, purgedVersions: 0 });
 
     expect(readVersionState(path, pending.id)).toEqual({ is_current: 0, pending_current: 1 });
-    await repository.replaceDocumentSections(pending.id, [
-      section('pending-section', 'Promoted'),
-    ]);
+    await repository.replaceDocumentSections(pending.id, [section('pending-section', 'Promoted')]);
     await expect(repository.getCurrentDocumentVersion(document.id)).resolves.toMatchObject({
       id: pending.id,
       isCurrent: true,
