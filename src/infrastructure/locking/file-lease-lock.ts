@@ -230,7 +230,9 @@ export class FileLeaseLock {
   ): void {
     if (readMetadataFile(quarantinePath)?.ownerToken !== ownerToken) {
       cleanupFailures.push(
-        new FileLeaseLockError(`Quarantined lock ownership changed unexpectedly: ${quarantinePath}`),
+        new FileLeaseLockError(
+          `Quarantined lock ownership changed unexpectedly: ${quarantinePath}`,
+        ),
       );
       return;
     }
@@ -389,7 +391,10 @@ function attachCleanupFailures(primaryError: unknown, cleanupFailures: readonly 
   const cleanupCause =
     cleanupFailures.length === 1
       ? cleanupFailures[0]
-      : new AggregateError(cleanupFailures, 'File lease acquisition rollback had multiple failures');
+      : new AggregateError(
+          cleanupFailures,
+          'File lease acquisition rollback had multiple failures',
+        );
   const cause =
     primaryError.cause === undefined
       ? cleanupCause
