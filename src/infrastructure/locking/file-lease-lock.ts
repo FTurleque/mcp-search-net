@@ -133,18 +133,20 @@ export class FileLeaseLock {
       release: () => {
         if (released) return;
         const onDisk = this.readMetadata();
-        if (onDisk?.ownerToken === current.ownerToken && existsSync(this.lockPath)) {
+        const lockExists = existsSync(this.lockPath);
+        if (onDisk?.ownerToken === current.ownerToken && lockExists) {
           this.unlinkFile(this.lockPath);
-          released = true;
-          this.removeHeartbeatIfOwned(current.ownerToken);
-          return;
-        }
-        if (existsSync(this.lockPath)) {
+        } else if (lockExists) {
           this.options.logger?.warning('file_lease_lock_release_owner_mismatch', {
             lockPath: this.lockPath,
             pid: current.pid,
           });
         }
+
+        // Finalization is deliberately resumable. If the main lock was removed but heartbeat
+        // cleanup fails (for example transient EBUSY/EPERM on Windows), released stays false so
+        // a retry resumes from the remaining heartbeat instead of returning early.
+        this.removeHeartbeatIfOwned(current.ownerToken);
         released = true;
       },
     };
@@ -219,7 +221,7 @@ export class FileLeaseLock {
 
   private removeHeartbeatIfOwned(ownerToken: string): void {
     const path = this.heartbeatPath();
-    if (readMetadataFile(path)?.ownerToken === ownerToken && existsSync(path)) unlinkSync(path);
+    if (readMetadataFile(path)?.ownerToken === ownerToken && existsSync(path)) this.unlinkFile(path);
   }
 
   private heartbeatPath(): string {
