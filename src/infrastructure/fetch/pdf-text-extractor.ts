@@ -243,7 +243,7 @@ async function reservePdfWorker(
   deadline: number,
   timeoutError: PdfTimeoutErrorFactory,
 ): Promise<PdfWorkerClient> {
-  while (true) {
+  for (;;) {
     for (const client of pdfWorkerPool) {
       if (client.reserve()) return client;
     }
