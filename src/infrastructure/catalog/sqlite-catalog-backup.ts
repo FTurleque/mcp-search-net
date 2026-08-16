@@ -10,6 +10,7 @@ import { verifyCatalogIntegrity } from './catalog-integrity.js';
 import { openCatalogDatabase } from './catalog-database.js';
 
 const SAFE_BACKUP_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.db$/u;
+const BACKUP_TEMP_CLEANUP_ATTEMPTS = 3;
 
 export interface CatalogBackupOutput {
   readonly schemaVersion: '1.0';
@@ -22,10 +23,16 @@ export interface CatalogBackupOutput {
   readonly verifiedAt: string;
 }
 
+export interface SqliteCatalogBackupOptions {
+  readonly removeTemporaryFile?: (path: string) => void;
+  readonly onTemporaryCleanupFailure?: (path: string, error: unknown) => void;
+}
+
 export class SqliteCatalogBackup {
   public constructor(
     private readonly catalogPath: string,
     private readonly clock: Clock,
+    private readonly options: SqliteCatalogBackupOptions = {},
   ) {}
 
   public async run(destinationRequest: string): Promise<CatalogBackupOutput> {
@@ -42,31 +49,39 @@ export class SqliteCatalogBackup {
       backupDirectory,
       `.partial-${process.pid}-${this.clock.now().getTime()}-${fileName}`,
     );
-    const source = openCatalogDatabase(sourcePath);
+
     try {
-      const metadata = await source.backup(temporaryPath);
+      const source = openCatalogDatabase(sourcePath);
+      let pages: number;
+      try {
+        const metadata = await source.backup(temporaryPath);
+        pages = metadata.totalPages;
+      } finally {
+        source.close();
+      }
+
       hardenPrivateFile(temporaryPath);
       this.verifySnapshot(temporaryPath);
       const sha256 = await sha256File(temporaryPath);
       const bytes = statSync(temporaryPath).size;
-
-      linkSync(temporaryPath, finalPath);
-      hardenPrivateFile(finalPath);
-      rmSync(temporaryPath);
-
-      return {
+      const verifiedAt = this.clock.now().toISOString();
+      const output: CatalogBackupOutput = {
         schemaVersion: '1.0',
         status: 'backed_up',
         sourcePath,
         destinationPath: finalPath,
         bytes,
         sha256,
-        pages: metadata.totalPages,
-        verifiedAt: this.clock.now().toISOString(),
+        pages,
+        verifiedAt,
       };
+
+      // The hard-link creation is the no-overwrite commit point. The temporary file was already
+      // hardened, verified and hashed; both names therefore refer to the same validated inode.
+      linkSync(temporaryPath, finalPath);
+      return output;
     } finally {
-      source.close();
-      rmSync(temporaryPath, { force: true });
+      this.cleanupTemporaryFile(temporaryPath);
     }
   }
 
@@ -78,6 +93,31 @@ export class SqliteCatalogBackup {
       if (report.issues.length > 0) throw new Error('CATALOG_BACKUP_INTEGRITY_FAILED');
     } finally {
       snapshot.close();
+    }
+  }
+
+  private cleanupTemporaryFile(path: string): void {
+    const removeTemporaryFile =
+      this.options.removeTemporaryFile ?? ((target: string) => rmSync(target, { force: true }));
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= BACKUP_TEMP_CLEANUP_ATTEMPTS; attempt += 1) {
+      try {
+        removeTemporaryFile(path);
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    try {
+      if (this.options.onTemporaryCleanupFailure !== undefined) {
+        this.options.onTemporaryCleanupFailure(path, lastError);
+      } else {
+        process.emitWarning(`CATALOG_BACKUP_TEMP_CLEANUP_FAILED: ${path}`);
+      }
+    } catch {
+      // Backup publication/failure semantics must never be changed by diagnostic reporting.
     }
   }
 }
