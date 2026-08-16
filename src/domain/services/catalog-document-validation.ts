@@ -19,16 +19,25 @@ const DOCUMENT_STATUSES = new Set<DocumentStatus>([
   'UNAVAILABLE',
 ]);
 
-export function normalizeCatalogDocumentInput(input: CatalogDocumentInput): CatalogDocumentInput {
-  if (!Number.isSafeInteger(input.sourceId) || input.sourceId <= 0) {
-    throw new Error('CATALOG_DOCUMENT_SOURCE_ID_INVALID');
-  }
+export interface CatalogDocumentDescriptorInput {
+  readonly canonicalUrl: string;
+  readonly stableKey: string;
+  readonly title: string;
+  readonly mimeType: string;
+  readonly language: string;
+}
 
-  const publicId = boundedRequiredText(
-    input.publicId,
-    MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
-    'CATALOG_DOCUMENT_PUBLIC_ID_INVALID',
-  );
+export interface NormalizedCatalogDocumentDescriptor {
+  readonly canonicalUrl: string;
+  readonly stableKey: string;
+  readonly title: string;
+  readonly mimeType: string;
+  readonly language: string;
+}
+
+export function normalizeCatalogDocumentDescriptor(
+  input: CatalogDocumentDescriptorInput,
+): NormalizedCatalogDocumentDescriptor {
   const stableKey = boundedRequiredText(
     input.stableKey,
     MAX_CATALOG_STABLE_KEY_CHARACTERS,
@@ -47,17 +56,32 @@ export function normalizeCatalogDocumentInput(input: CatalogDocumentInput): Cata
   }
   const boundedTitle = truncateUnicode(title, MAX_EXTERNAL_TITLE_CHARACTERS);
 
-  const canonicalUrl = normalizeHttpUrl(input.canonicalUrl);
-  if (!DOCUMENT_STATUSES.has(input.status)) throw new Error('CATALOG_DOCUMENT_STATUS_INVALID');
-
   return {
-    ...input,
-    publicId,
-    canonicalUrl,
+    canonicalUrl: normalizeHttpUrl(input.canonicalUrl),
     stableKey,
     title: boundedTitle,
     mimeType,
     language,
+  };
+}
+
+export function normalizeCatalogDocumentInput(input: CatalogDocumentInput): CatalogDocumentInput {
+  if (!Number.isSafeInteger(input.sourceId) || input.sourceId <= 0) {
+    throw new Error('CATALOG_DOCUMENT_SOURCE_ID_INVALID');
+  }
+
+  const publicId = boundedRequiredText(
+    input.publicId,
+    MAX_EXTERNAL_DOCUMENT_PUBLIC_ID_CHARACTERS,
+    'CATALOG_DOCUMENT_PUBLIC_ID_INVALID',
+  );
+  const descriptor = normalizeCatalogDocumentDescriptor(input);
+  if (!DOCUMENT_STATUSES.has(input.status)) throw new Error('CATALOG_DOCUMENT_STATUS_INVALID');
+
+  return {
+    ...input,
+    ...descriptor,
+    publicId,
   };
 }
 

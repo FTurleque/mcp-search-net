@@ -16,17 +16,18 @@ certification native.
 - Branche d’intégration courante : `develop`.
 - Une capacité présente uniquement sur `develop` n’est pas déclarée publiée tant qu’elle n’a pas été
   portée sur `master` par le flux de release.
-- Dernière baseline post-merge intégrée : merge de la PR #101 dans `develop`, commit
-  `893fef0b64b16d8e3c9ca6c859a389b30d0af1fd`, tree fonctionnel
-  `d883ad0381ac14b00261812cbc3c4dba25b2bc88`. La CI #1252 / `31911224166` a terminé en `SUCCESS`
+- Dernière baseline post-merge intégrée : merge de la PR #102 dans `develop`, commit
+  `ad549294560ecd818b93890204989e6c00eb28f0`, tree fonctionnel
+  `1afa9baade6c17b06f7c52ff3f3969e62295be26`. La CI #1295 / `31954236669` a terminé en `SUCCESS`
   sur ce SHA pour Node.js, Docker/live E2E et Windows installation/STDIO packaging ; le job Sonar
   GitHub Actions est ignoré sur les pushes `develop` par conception.
-- Le même tree avait été qualifié sur le head exact de la PR #101
-  `d6f2ed20264fc40ae53adb3eb1b31b5c7284d027` par la CI #1251 / `31910100257`, avec
-  `SonarCloud Code Analysis` en succès et le Quality Gate SonarQubeCloud passé : 0 nouvelle issue,
-  0 Security Hotspot, 100 % de couverture sur le nouveau code et 0 % de duplication.
-- La PR #102 porte le hardening post-audit suivant sur une branche dédiée et reste volontairement
-  draft/non mergée jusqu’à qualification et instruction explicite d’intégration.
+- Le head exact de la PR #102 `b990819d3b71d0f87b3a03fb8393b653c08c1feb` avait été qualifié par
+  la CI #1294 / `31951616820` avec `SonarCloud Code Analysis` en succès et le Quality Gate
+  SonarQubeCloud passé : 83,9 % de couverture sur le nouveau code, 0 nouvelle issue, 0 Security
+  Hotspot et 0,1 % de duplication sur le nouveau code.
+- Le nouvel audit complet de cette baseline a identifié une queue de hardening supplémentaire. Le
+  candidat de correction est développé sur `agent/fix-audit-complete-20260816` et n’est pas déclaré
+  intégré à `develop` tant qu’une PR n’a pas été explicitement mergée.
 - Le ruleset `Protect integration branches` protège la branche par défaut et `develop`, exige les PR,
   la résolution des threads et les quatre checks courants. Le mode strict est actif : une PR doit
   être à jour avec sa base avant merge (`strict_required_status_checks_policy=true`).
@@ -86,6 +87,30 @@ certification native.
   quarantaine stale, le renouvellement concurrent d’un sync-run pendant une sonde d’identité,
   les courses release/renew entre générations de `FileLease`, les reprises de catalogue après dérive
   de configuration et l’absence de mutation physique pendant la lecture de l’historique.
+
+## Hardening porté par le candidat post-#102
+
+Les garanties suivantes décrivent le candidat `agent/fix-audit-complete-20260816`. Elles ne deviennent
+une propriété de `develop` qu’après intégration explicite de la PR correspondante :
+
+- les renouvellements `FileLease` ne tronquent plus le heartbeat vivant : une génération complète est
+  écrite sur un fichier de staging serveur puis publiée par rename atomique. Un lecteur ne peut donc
+  plus interpréter une écriture partielle comme un heartbeat absent ;
+- une lease expirée dont le PID local est encore vivant n’est jamais récupérée si l’identité de vie du
+  processus ne peut pas être établie. Seul un owner mort ou une réutilisation de PID confirmée permet
+  la récupération, ce qui préserve l’exclusion pendant les opérations SQLite synchrones longues ;
+- les `sourceKey` catalogue et langues héritées sont canonicalisés une seule fois avant de construire
+  les documents. Les collisions de clés source après canonicalisation et les collisions de
+  `stable_key` après normalisation sont rejetées avant ouverture de la base ;
+- les invariants documentaires du domaine (`stable_key`, titre, URL, langue BCP-47, MIME) sont partagés
+  avec le parser YAML. Une configuration invalide échoue donc avant création/migration de
+  `catalog.db`, avant `sync_run` et avant fetch réseau ;
+- l’empreinte de reprise inclut désormais l’état persistant `enabled` des sources effectivement
+  référencées, en plus de l’ordre et des métadonnées documentaires. Un changement d’activation entre
+  deux lots échoue avant création du run ;
+- l’extraction PDF s’exécute dans un worker Node isolé, destructible à la deadline et borné en mémoire.
+  Les limites de pages et caractères sont complétées par une limite d’items texte afin de borner le
+  travail intermédiaire avant assemblage complet.
 
 ## Contrat MCP public
 
@@ -218,9 +243,9 @@ sur une IP approuvée après résolution DNS afin de fermer les scénarios de DN
 - contrôle robots.txt lorsque configuré.
 
 Le fallback Crawl4AI reçoit du contenu neutralisé et non une URL publique libre à recrawler. Les
-liens extraits sont revalidés et bornés avant exposition. L’extraction PDF borne taille, pages,
-caractères et durée. Les sanitizers neutralisent scripts, iframes, formulaires, handlers actifs et
-schémas de lien dangereux.
+liens extraits sont revalidés et bornés avant exposition. Sur le candidat post-#102, l’extraction PDF
+est en plus isolée dans un worker borné et destructible à la deadline ; les sanitizers neutralisent
+scripts, iframes, formulaires, handlers actifs et schémas de lien dangereux.
 
 ## Supply chain et release Windows
 

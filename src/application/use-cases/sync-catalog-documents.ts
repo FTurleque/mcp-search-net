@@ -471,7 +471,10 @@ function createExecutionPlan(
       (document) => options.sourceKey === undefined || document.sourceKey === options.sourceKey,
     )
     .filter((document) => document.enabled);
-  const configurationFingerprint = fingerprintCatalogSyncConfiguration(configuredDocuments);
+  const configurationFingerprint = fingerprintCatalogSyncConfiguration(
+    configuredDocuments,
+    sourceByKey,
+  );
   validateResumeConfiguration(
     options.resumeAfter,
     options.resumeConfigurationFingerprint,
@@ -517,15 +520,23 @@ function validateResumeConfiguration(
 
 function fingerprintCatalogSyncConfiguration(
   documents: readonly CatalogSyncDocumentInput[],
+  sourceByKey: ReadonlyMap<string, CatalogSource>,
 ): string {
-  const projection = documents.map((document) => ({
-    sourceKey: document.sourceKey,
-    stableKey: document.stableKey,
-    title: document.title,
-    url: document.url,
-    language: document.language,
-    mimeType: document.mimeType,
-  }));
+  const sourceKeys = [...new Set(documents.map((document) => document.sourceKey))];
+  const projection = {
+    sources: sourceKeys.map((sourceKey) => ({
+      sourceKey,
+      enabled: sourceByKey.get(sourceKey)?.enabled ?? null,
+    })),
+    documents: documents.map((document) => ({
+      sourceKey: document.sourceKey,
+      stableKey: document.stableKey,
+      title: document.title,
+      url: document.url,
+      language: document.language,
+      mimeType: document.mimeType,
+    })),
+  };
   return sha256(JSON.stringify(projection));
 }
 
