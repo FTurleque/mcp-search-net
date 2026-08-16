@@ -126,7 +126,20 @@ function parseDocuments(
   if (value === undefined) return [];
   if (!Array.isArray(value))
     throw new Error(`catalog source ${sourceKey} documents must be an array`);
-  return value.map((entry, index) => parseDocument(sourceKey, index, entry, sourceLanguage));
+
+  const documents = value.map((entry, index) =>
+    parseDocument(sourceKey, index, entry, sourceLanguage),
+  );
+  const stableKeys = new Set<string>();
+  for (const document of documents) {
+    if (stableKeys.has(document.stableKey)) {
+      throw new Error(
+        `catalog source ${sourceKey} contains duplicate stable_key ${document.stableKey}`,
+      );
+    }
+    stableKeys.add(document.stableKey);
+  }
+  return documents;
 }
 
 function parseDocument(
