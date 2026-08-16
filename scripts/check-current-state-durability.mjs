@@ -3,7 +3,13 @@ import { resolve } from 'node:path';
 import process from 'node:process';
 
 const currentStatePath = resolve(import.meta.dirname, '..', 'docs/status/current-state.md');
+const projectMapPath = resolve(
+  import.meta.dirname,
+  '..',
+  '.github/skills/maintain-mcp-search-net/references/project-map.md',
+);
 const currentState = readFileSync(currentStatePath, 'utf8');
+const projectMap = readFileSync(projectMapPath, 'utf8');
 const failures = [];
 
 for (const [pattern, description] of [
@@ -23,6 +29,18 @@ for (const [needle, description] of [
   ['Git et GitHub restent l’autorité', 'autorité live Git/GitHub'],
 ]) {
   if (!currentState.includes(needle)) failures.push(`invariant absent: ${description}`);
+}
+
+const publicTools = [
+  'search_web',
+  'fetch_url',
+  'search_docs',
+  'list_docs',
+  'read_doc_section',
+  'list_search_history',
+];
+for (const tool of publicTools) {
+  if (!projectMap.includes(tool)) failures.push(`project-map: outil public absent ${tool}`);
 }
 
 if (failures.length > 0) {
