@@ -19,10 +19,11 @@ describe('catalog FTS payload integrity', () => {
   it('fails closed on stale indexed content and rebuilds from authoritative sections', async () => {
     const path = await createHealthyCatalog();
     corruptIndexedContent(path);
+    const openVerifiedCatalog = (): void => {
+      new SqliteCatalogRepository(path, clock, { verifyIntegrityOnOpen: true }).close();
+    };
 
-    expect(
-      () => new SqliteCatalogRepository(path, clock, { verifyIntegrityOnOpen: true }),
-    ).toThrow(ConfigurationError);
+    expect(openVerifiedCatalog).toThrow(ConfigurationError);
 
     const recovery = new SqliteCatalogRepository(path, clock);
     try {
@@ -39,9 +40,7 @@ describe('catalog FTS payload integrity', () => {
       recovery.close();
     }
 
-    expect(() =>
-      new SqliteCatalogRepository(path, clock, { verifyIntegrityOnOpen: true }).close(),
-    ).not.toThrow();
+    expect(openVerifiedCatalog).not.toThrow();
   });
 });
 
