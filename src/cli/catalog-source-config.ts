@@ -7,9 +7,7 @@ import type {
   CatalogSyncStrategy,
   NewCatalogSource,
 } from '../domain/models/catalog.js';
-import {
-  normalizeCatalogDocumentDescriptor,
-} from '../domain/services/catalog-document-validation.js';
+import { normalizeCatalogDocumentDescriptor } from '../domain/services/catalog-document-validation.js';
 import { validateNewCatalogSource } from '../domain/services/catalog-source-validation.js';
 import { parseStrictYaml } from '../infrastructure/config/yaml-loader.js';
 
