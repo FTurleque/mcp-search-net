@@ -141,9 +141,10 @@ async function corruptCatalogContent(): Promise<{
       .prepare<[string, number]>('UPDATE document_section_fts SET content = ? WHERE rowid = ?')
       .run('obsolete indexed content', before.rowid);
     const after = database
-      .prepare<[number], { readonly rowid: number }>(
-        'SELECT rowid FROM document_section_fts WHERE rowid = ?',
-      )
+      .prepare<
+        [number],
+        { readonly rowid: number }
+      >('SELECT rowid FROM document_section_fts WHERE rowid = ?')
       .get(before.rowid);
     expect(after?.rowid).toBe(before.rowid);
   } finally {

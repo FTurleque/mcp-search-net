@@ -17,56 +17,53 @@ afterEach(() => {
 });
 
 describe('catalog FTS logical integrity', () => {
-  it(
-    'detects stale content with the same rowid, fails closed, and recovers after rebuild',
-    async () => {
-      const path = await healthyCatalog();
-      sabotageFts(path, "content = 'obsolete phantom phrase'");
+  it('detects stale content with the same rowid, fails closed, and recovers after rebuild', async () => {
+    const path = await healthyCatalog();
+    sabotageFts(path, "content = 'obsolete phantom phrase'");
 
-      const diagnosticRepository = new SqliteCatalogRepository(path, clock);
-      try {
-        const report = await diagnosticRepository.verifyIntegrity();
-        expect(report.issues).toContainEqual(
-          expect.objectContaining({
-            code: 'FTS_ENTRY_CONTENT_MISMATCH',
-            sourceKey: 'docs',
-            documentPublicId: 'guide',
-          }),
-        );
-        expect(report.counts.currentSections).toBe(1);
-        expect(report.counts.indexedSections).toBe(1);
-
-        const falsePositive = await diagnosticRepository.searchDocuments({
-          query: 'obsolete phantom phrase',
-        });
-        expect(falsePositive).toHaveLength(1);
-      } finally {
-        diagnosticRepository.close();
-      }
-
-      expect(() => new SqliteCatalogRepository(path, clock, startupOptions)).toThrow(
-        ConfigurationError,
+    const diagnosticRepository = new SqliteCatalogRepository(path, clock);
+    try {
+      const report = await diagnosticRepository.verifyIntegrity();
+      expect(report.issues).toContainEqual(
+        expect.objectContaining({
+          code: 'FTS_ENTRY_CONTENT_MISMATCH',
+          sourceKey: 'docs',
+          documentPublicId: 'guide',
+        }),
       );
+      expect(report.counts.currentSections).toBe(1);
+      expect(report.counts.indexedSections).toBe(1);
 
-      const recoveryRepository = new SqliteCatalogRepository(path, clock);
-      try {
-        await expect(recoveryRepository.rebuildSearchIndex()).resolves.toEqual({
-          indexedSections: 1,
-        });
-        await expect(recoveryRepository.verifyIntegrity()).resolves.toMatchObject({ issues: [] });
-        await expect(
-          recoveryRepository.searchDocuments({ query: 'authoritative searchable phrase' }),
-        ).resolves.toHaveLength(1);
-        await expect(
-          recoveryRepository.searchDocuments({ query: 'obsolete phantom phrase' }),
-        ).resolves.toHaveLength(0);
-      } finally {
-        recoveryRepository.close();
-      }
+      const falsePositive = await diagnosticRepository.searchDocuments({
+        query: 'obsolete phantom phrase',
+      });
+      expect(falsePositive).toHaveLength(1);
+    } finally {
+      diagnosticRepository.close();
+    }
 
-      expect(() => new SqliteCatalogRepository(path, clock, startupOptions).close()).not.toThrow();
-    },
-  );
+    expect(() => new SqliteCatalogRepository(path, clock, startupOptions)).toThrow(
+      ConfigurationError,
+    );
+
+    const recoveryRepository = new SqliteCatalogRepository(path, clock);
+    try {
+      await expect(recoveryRepository.rebuildSearchIndex()).resolves.toEqual({
+        indexedSections: 1,
+      });
+      await expect(recoveryRepository.verifyIntegrity()).resolves.toMatchObject({ issues: [] });
+      await expect(
+        recoveryRepository.searchDocuments({ query: 'authoritative searchable phrase' }),
+      ).resolves.toHaveLength(1);
+      await expect(
+        recoveryRepository.searchDocuments({ query: 'obsolete phantom phrase' }),
+      ).resolves.toHaveLength(0);
+    } finally {
+      recoveryRepository.close();
+    }
+
+    expect(() => new SqliteCatalogRepository(path, clock, startupOptions).close()).not.toThrow();
+  });
 
   it('detects indexed metadata divergence without changing the FTS rowid', async () => {
     const path = await healthyCatalog();
@@ -149,9 +146,10 @@ function sabotageFts(path: string, assignment: string): void {
     if (row === undefined) throw new Error('Expected populated FTS fixture');
     database.exec(`UPDATE document_section_fts SET ${assignment} WHERE rowid = ${row.rowid}`);
     const preserved = database
-      .prepare<[number], { readonly rowid: number }>(
-        'SELECT rowid FROM document_section_fts WHERE rowid = ?',
-      )
+      .prepare<
+        [number],
+        { readonly rowid: number }
+      >('SELECT rowid FROM document_section_fts WHERE rowid = ?')
       .get(row.rowid);
     expect(preserved?.rowid).toBe(row.rowid);
   } finally {
