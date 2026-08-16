@@ -42,6 +42,17 @@ describe('extractPdfText', () => {
     );
   });
 
+  it('applies the operation deadline while an ephemeral worker is starting', async () => {
+    const first = extractPdfText(makeTextPdf(['Pooled document A'], false));
+    const second = extractPdfText(makeTextPdf(['Pooled document B'], false));
+    const deadline = performance.now() + 25;
+
+    await expect(
+      extractPdfText(makeTextPdf(['Ephemeral deadline'], false), deadline),
+    ).rejects.toBeInstanceOf(RequestTimeoutError);
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+  });
+
   it('rejects an already expired operation deadline before worker dispatch', async () => {
     const pdf = makeTextPdf(['Deadline documentation'], false);
 
