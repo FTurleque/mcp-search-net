@@ -26,6 +26,7 @@ import {
 import { WebUrl } from '../../domain/value-objects/web-url.js';
 
 const CATALOG_EXTRACTION_CONTRACT_VERSION = 1;
+const CONFIGURATION_FINGERPRINT_PATTERN = /^[a-f0-9]{64}$/u;
 
 export interface SyncCatalogResumeCursor {
   readonly sourceKey: string;
@@ -41,6 +42,7 @@ export interface SyncCatalogDocumentsOptions {
   readonly maxRedirects: number;
   readonly rateLimitMs?: number;
   readonly resumeAfter?: SyncCatalogResumeCursor;
+  readonly resumeConfigurationFingerprint?: string;
 }
 
 export type SyncedCatalogDocumentStatus = 'added' | 'updated' | 'unchanged' | 'failed' | 'skipped';
@@ -68,6 +70,7 @@ export interface SyncCatalogDocumentsOutput {
   readonly skippedCount: number;
   readonly documents: readonly SyncedCatalogDocumentEntry[];
   readonly resumeAfter?: SyncCatalogResumeCursor;
+  readonly resumeConfigurationFingerprint?: string;
   readonly rateLimitMs: number;
   readonly limited: boolean;
 }
@@ -90,6 +93,7 @@ type Delay = (milliseconds: number) => Promise<void>;
 interface SyncExecutionPlan {
   readonly selectedDocuments: readonly CatalogSyncDocumentInput[];
   readonly continuationCursor?: SyncCatalogResumeCursor;
+  readonly configurationFingerprint: string;
   readonly rateLimitMs: number;
   readonly limited: boolean;
   readonly scopedSourceId?: number;
@@ -420,7 +424,12 @@ export class SyncCatalogDocuments {
       syncRun,
       ...counts,
       documents: entries,
-      ...(continuationCursor === undefined ? {} : { resumeAfter: continuationCursor }),
+      ...(continuationCursor === undefined
+        ? {}
+        : {
+            resumeAfter: continuationCursor,
+            resumeConfigurationFingerprint: plan.configurationFingerprint,
+          }),
       rateLimitMs: plan.rateLimitMs,
       limited: plan.limited,
     };
@@ -462,6 +471,12 @@ function createExecutionPlan(
       (document) => options.sourceKey === undefined || document.sourceKey === options.sourceKey,
     )
     .filter((document) => document.enabled);
+  const configurationFingerprint = fingerprintCatalogSyncConfiguration(configuredDocuments);
+  validateResumeConfiguration(
+    options.resumeAfter,
+    options.resumeConfigurationFingerprint,
+    configurationFingerprint,
+  );
   const resumedDocuments = applyResumeCursor(configuredDocuments, options.resumeAfter);
   const selectedDocuments = applyLimit(resumedDocuments, options.limit);
   const limited = options.limit !== undefined && resumedDocuments.length > selectedDocuments.length;
@@ -471,10 +486,47 @@ function createExecutionPlan(
   return {
     selectedDocuments,
     ...(continuationCursor === undefined ? {} : { continuationCursor }),
+    configurationFingerprint,
     rateLimitMs: normalizeRateLimit(options.rateLimitMs),
     limited,
     ...(scopedSource === undefined ? {} : { scopedSourceId: scopedSource.id }),
   };
+}
+
+function validateResumeConfiguration(
+  cursor: SyncCatalogResumeCursor | undefined,
+  providedFingerprint: string | undefined,
+  currentFingerprint: string,
+): void {
+  if (cursor === undefined) {
+    if (providedFingerprint !== undefined) {
+      throw new Error('CATALOG_RESUME_FINGERPRINT_WITHOUT_CURSOR');
+    }
+    return;
+  }
+  if (providedFingerprint === undefined) {
+    throw new Error('CATALOG_RESUME_FINGERPRINT_REQUIRED');
+  }
+  if (!CONFIGURATION_FINGERPRINT_PATTERN.test(providedFingerprint)) {
+    throw new Error('CATALOG_RESUME_FINGERPRINT_INVALID');
+  }
+  if (providedFingerprint !== currentFingerprint) {
+    throw new Error('CATALOG_RESUME_CONFIGURATION_CHANGED');
+  }
+}
+
+function fingerprintCatalogSyncConfiguration(
+  documents: readonly CatalogSyncDocumentInput[],
+): string {
+  const projection = documents.map((document) => ({
+    sourceKey: document.sourceKey,
+    stableKey: document.stableKey,
+    title: document.title,
+    url: document.url,
+    language: document.language,
+    mimeType: document.mimeType,
+  }));
+  return sha256(JSON.stringify(projection));
 }
 
 function skippedDocumentEntry(

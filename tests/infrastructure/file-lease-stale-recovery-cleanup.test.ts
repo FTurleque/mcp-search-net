@@ -47,7 +47,7 @@ describe('file lease stale recovery cleanup', () => {
           quarantineAttempts += 1;
           throw fileSystemError('EBUSY', 'stale quarantine is busy');
         }
-        if (path.endsWith('.heartbeat') && heartbeatAttempts < 3) {
+        if (path.includes('.heartbeat-') && heartbeatAttempts < 3) {
           heartbeatAttempts += 1;
           throw fileSystemError('EPERM', 'stale heartbeat is busy');
         }
@@ -78,7 +78,13 @@ describe('file lease stale recovery cleanup', () => {
 
     recovered.release();
     expect(readdirSync(root).some((name) => name === 'maintenance.lock')).toBe(false);
-    expect(readdirSync(root).some((name) => name === 'maintenance.lock.heartbeat')).toBe(false);
+    const remainingHeartbeats = readdirSync(root).filter((name) =>
+      name.startsWith('maintenance.lock.heartbeat-'),
+    );
+    expect(remainingHeartbeats).toHaveLength(1);
+    expect(
+      JSON.parse(readFileSync(join(root, remainingHeartbeats[0] ?? ''), 'utf8')),
+    ).toMatchObject({ ownerToken: 'stale-owner' });
   });
 });
 

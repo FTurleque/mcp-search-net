@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   chmodSync,
   closeSync,
@@ -21,7 +21,7 @@ const FAILED_ACQUIRE_CLEANUP_ATTEMPTS = 3;
 const STALE_RECOVERY_CLEANUP_ATTEMPTS = 3;
 
 export interface FileLeaseMetadata {
-  readonly schemaVersion: '1.0' | '1.1';
+  readonly schemaVersion: '1.0' | '1.1' | '1.2';
   readonly ownerToken: string;
   readonly pid: number;
   readonly hostname: string;
@@ -99,7 +99,7 @@ export class FileLeaseLock {
         try {
           this.writeHeartbeat(metadata);
         } catch (error) {
-          this.rollbackFailedAcquire(metadata.ownerToken, error);
+          this.rollbackFailedAcquire(metadata, error);
           throw error;
         }
         return this.createLease(metadata);
@@ -122,7 +122,7 @@ export class FileLeaseLock {
   private createMetadata(): FileLeaseMetadata {
     const now = this.options.clock.now().toISOString();
     return {
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       ownerToken: this.ownerTokenFactory(),
       pid: this.pid,
       hostname: this.hostname,
@@ -159,23 +159,23 @@ export class FileLeaseLock {
 
         // Finalization is deliberately resumable. If the main lock was removed but heartbeat
         // cleanup fails (for example transient EBUSY/EPERM on Windows), released stays false so
-        // a retry resumes from the remaining heartbeat instead of returning early.
-        this.removeHeartbeatIfOwned(current.ownerToken);
+        // a retry resumes from the remaining owner-scoped heartbeat instead of returning early.
+        this.removeHeartbeatIfOwned(current);
         released = true;
       },
     };
   }
 
-  private rollbackFailedAcquire(ownerToken: string, primaryError: unknown): void {
-    if (readMetadataFile(this.lockPath)?.ownerToken !== ownerToken) return;
+  private rollbackFailedAcquire(metadata: FileLeaseMetadata, primaryError: unknown): void {
+    if (readMetadataFile(this.lockPath)?.ownerToken !== metadata.ownerToken) return;
 
     const cleanupFailures: unknown[] = [];
-    this.removeFailedAcquireHeartbeat(cleanupFailures);
+    this.removeFailedAcquireHeartbeat(metadata, cleanupFailures);
     let activeLockRemoved = false;
 
     for (let attempt = 1; attempt <= FAILED_ACQUIRE_CLEANUP_ATTEMPTS; attempt += 1) {
       const current = readMetadataFile(this.lockPath);
-      if (current?.ownerToken !== ownerToken) {
+      if (current?.ownerToken !== metadata.ownerToken) {
         activeLockRemoved = true;
         break;
       }
@@ -196,7 +196,7 @@ export class FileLeaseLock {
       try {
         this.renameFile(this.lockPath, quarantinePath);
         activeLockRemoved = true;
-        this.cleanupFailedAcquireQuarantine(quarantinePath, ownerToken, cleanupFailures);
+        this.cleanupFailedAcquireQuarantine(quarantinePath, metadata.ownerToken, cleanupFailures);
         break;
       } catch (renameError) {
         if (isFileSystemError(renameError, 'ENOENT')) {
@@ -217,8 +217,11 @@ export class FileLeaseLock {
     attachCleanupFailures(primaryError, cleanupFailures);
   }
 
-  private removeFailedAcquireHeartbeat(cleanupFailures: unknown[]): void {
-    const path = this.heartbeatPath();
+  private removeFailedAcquireHeartbeat(
+    metadata: FileLeaseMetadata,
+    cleanupFailures: unknown[],
+  ): void {
+    const path = this.heartbeatPath(metadata);
     if (!existsSync(path)) return;
     try {
       this.unlinkFile(path);
@@ -284,8 +287,8 @@ export class FileLeaseLock {
         });
       }
       // A different process lifetime proves PID reuse. If identity cannot be established,
-      // the expired durable heartbeat is the lease authority; ownership-safe quarantine below
-      // ensures the former owner can no longer remove a replacement lock.
+      // the expired durable heartbeat remains the lease authority. New-format heartbeat files
+      // are owner-scoped, so stale cleanup cannot delete a replacement owner's liveness record.
     }
 
     // The quarantine name contains only server-generated randomness. Lock metadata is
@@ -310,7 +313,7 @@ export class FileLeaseLock {
       'quarantine',
     );
     const heartbeatCleanupComplete = this.cleanupStaleOwnedFile(
-      this.heartbeatPath(),
+      this.heartbeatPath(metadata),
       metadata.ownerToken,
       'heartbeat',
     );
@@ -365,26 +368,29 @@ export class FileLeaseLock {
   private readMetadata(): FileLeaseMetadata | undefined {
     const metadata = readMetadataFile(this.lockPath);
     if (metadata === undefined) return undefined;
-    const heartbeat = readMetadataFile(this.heartbeatPath());
+    const heartbeat = readMetadataFile(this.heartbeatPath(metadata));
     return heartbeat?.ownerToken === metadata.ownerToken
       ? { ...metadata, heartbeatAt: heartbeat.heartbeatAt }
       : metadata;
   }
 
   private writeHeartbeat(metadata: FileLeaseMetadata): void {
-    const path = this.heartbeatPath();
+    const path = this.heartbeatPath(metadata);
     this.writeHeartbeatFile(path, serializeMetadata(metadata));
     if (process.platform !== 'win32') chmodSync(path, 0o600);
   }
 
-  private removeHeartbeatIfOwned(ownerToken: string): void {
-    const path = this.heartbeatPath();
-    if (readMetadataFile(path)?.ownerToken === ownerToken && existsSync(path))
+  private removeHeartbeatIfOwned(metadata: FileLeaseMetadata): void {
+    const path = this.heartbeatPath(metadata);
+    if (readMetadataFile(path)?.ownerToken === metadata.ownerToken && existsSync(path)) {
       this.unlinkFile(path);
+    }
   }
 
-  private heartbeatPath(): string {
-    return `${this.lockPath}.heartbeat`;
+  private heartbeatPath(metadata: Pick<FileLeaseMetadata, 'schemaVersion' | 'ownerToken'>): string {
+    return metadata.schemaVersion === '1.2'
+      ? `${this.lockPath}.heartbeat-${ownerTokenFingerprint(metadata.ownerToken)}`
+      : `${this.lockPath}.heartbeat`;
   }
 }
 
@@ -416,7 +422,7 @@ function isFileLeaseMetadata(value: unknown): value is FileLeaseMetadata {
   if (value === null || typeof value !== 'object') return false;
   const record = value as Record<string, unknown>;
   const schemaVersion = record['schemaVersion'];
-  if (schemaVersion !== '1.0' && schemaVersion !== '1.1') return false;
+  if (schemaVersion !== '1.0' && schemaVersion !== '1.1' && schemaVersion !== '1.2') return false;
   if (
     typeof record['ownerToken'] !== 'string' ||
     record['ownerToken'].length === 0 ||
@@ -433,6 +439,10 @@ function isFileLeaseMetadata(value: unknown): value is FileLeaseMetadata {
   }
   if (schemaVersion === '1.0') return true;
   return record['processIdentity'] === null || typeof record['processIdentity'] === 'string';
+}
+
+function ownerTokenFingerprint(ownerToken: string): string {
+  return createHash('sha256').update(ownerToken).digest('hex');
 }
 
 function isProcessAlive(pid: number): boolean {

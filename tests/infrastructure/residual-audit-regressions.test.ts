@@ -1,5 +1,13 @@
 /* eslint-disable @typescript-eslint/no-deprecated -- regressions intentionally exercise the retained two-step catalog API */
-import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, unlinkSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -94,7 +102,7 @@ describe('residual audit persistence regressions', () => {
       clock,
       ownerTokenFactory: () => 'retryable-file-owner',
       unlinkFile: (path) => {
-        if (path.endsWith('.heartbeat')) {
+        if (path.includes('.heartbeat-')) {
           heartbeatUnlinkAttempts += 1;
         } else {
           lockUnlinkAttempts += 1;
@@ -116,7 +124,9 @@ describe('residual audit persistence regressions', () => {
     expect(lockUnlinkAttempts).toBe(2);
     expect(heartbeatUnlinkAttempts).toBe(1);
     expect(existsSync(lockPath)).toBe(false);
-    expect(existsSync(`${lockPath}.heartbeat`)).toBe(false);
+    expect(
+      readdirSync(dirname(lockPath)).some((name) => name.startsWith('maintenance.lock.heartbeat-')),
+    ).toBe(false);
   });
 
   it('never purges a staged pending-current version and still allows its later promotion', async () => {

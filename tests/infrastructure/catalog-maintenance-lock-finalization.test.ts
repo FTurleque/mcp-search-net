@@ -1,6 +1,6 @@
-import { existsSync, mkdtempSync, rmSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -37,7 +37,7 @@ describe('catalog maintenance lock finalization', () => {
           ownerTokenFactory: () => 'maintenance-retry-owner',
           processIdentity: () => 'maintenance-retry-process',
           unlinkFile: (path) => {
-            if (path.endsWith('.heartbeat')) {
+            if (path.includes('.heartbeat-')) {
               heartbeatUnlinkAttempts += 1;
             } else {
               lockUnlinkAttempts += 1;
@@ -61,7 +61,7 @@ describe('catalog maintenance lock finalization', () => {
     expect(lockUnlinkAttempts).toBe(2);
     expect(heartbeatUnlinkAttempts).toBe(1);
     expect(existsSync(`${catalogPath}.maintenance.lock`)).toBe(false);
-    expect(existsSync(`${catalogPath}.maintenance.lock.heartbeat`)).toBe(false);
+    expect(maintenanceHeartbeatFiles(catalogPath)).toEqual([]);
   });
 
   it('retries heartbeat cleanup after the main lock has already been removed', async () => {
@@ -76,7 +76,7 @@ describe('catalog maintenance lock finalization', () => {
           ownerTokenFactory: () => 'maintenance-heartbeat-retry-owner',
           processIdentity: () => 'maintenance-heartbeat-retry-process',
           unlinkFile: (path) => {
-            if (path.endsWith('.heartbeat')) {
+            if (path.includes('.heartbeat-')) {
               heartbeatUnlinkAttempts += 1;
               if (heartbeatUnlinkAttempts === 1) {
                 const error = new Error(
@@ -100,7 +100,7 @@ describe('catalog maintenance lock finalization', () => {
     expect(lockUnlinkAttempts).toBe(1);
     expect(heartbeatUnlinkAttempts).toBe(2);
     expect(existsSync(`${catalogPath}.maintenance.lock`)).toBe(false);
-    expect(existsSync(`${catalogPath}.maintenance.lock.heartbeat`)).toBe(false);
+    expect(maintenanceHeartbeatFiles(catalogPath)).toEqual([]);
   });
 
   it('preserves the exact maintenance failure when lock release also exhausts its retries', async () => {
@@ -163,6 +163,12 @@ function createCatalogPath(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), `mcp-maintenance-${prefix}-`));
   roots.push(root);
   return join(root, 'catalog.db');
+}
+
+function maintenanceHeartbeatFiles(catalogPath: string): string[] {
+  return readdirSync(dirname(catalogPath)).filter((name) =>
+    name.startsWith('catalog.db.maintenance.lock.heartbeat-'),
+  );
 }
 
 function fakeLease(overrides: Pick<FileLease, 'renew' | 'release'>): FileLease {

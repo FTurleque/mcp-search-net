@@ -52,4 +52,22 @@ describe('catalog source config strictness', () => {
       'catalog source openai document 1 contains unknown property: unexpected_document_key',
     );
   });
+
+  it('rejects duplicate stable keys inside one source before synchronization can start', () => {
+    const config = VALID_CONFIG.replace(
+      '        enabled: true\n',
+      `        enabled: true
+      - stable_key: overview
+        title: Duplicate overview
+        url: https://platform.openai.com/docs/overview-v2
+        language: en-US
+        mime_type: text/html
+        enabled: true
+`,
+    );
+
+    expect(() => parseCatalogSourceConfig(config)).toThrow(
+      'catalog source openai contains duplicate stable_key overview',
+    );
+  });
 });

@@ -16,15 +16,17 @@ certification native.
 - Branche d’intégration courante : `develop`.
 - Une capacité présente uniquement sur `develop` n’est pas déclarée publiée tant qu’elle n’a pas été
   portée sur `master` par le flux de release.
-- Dernière baseline post-merge intégrée avant ce hardening : merge de la PR #100 dans `develop`,
-  commit `b36251c58af715696ee78946f505810a1cc46da9`, tree fonctionnel
-  `868b95bc0044bd8df7ffee4b898570c84ea7dd6e`. La CI #1242 / `31907796018` a terminé en `SUCCESS`
+- Dernière baseline post-merge intégrée : merge de la PR #101 dans `develop`, commit
+  `893fef0b64b16d8e3c9ca6c859a389b30d0af1fd`, tree fonctionnel
+  `d883ad0381ac14b00261812cbc3c4dba25b2bc88`. La CI #1252 / `31911224166` a terminé en `SUCCESS`
   sur ce SHA pour Node.js, Docker/live E2E et Windows installation/STDIO packaging ; le job Sonar
   GitHub Actions est ignoré sur les pushes `develop` par conception.
-- Le même tree avait été qualifié sur le head exact de la PR #100
-  `1985ccb5b10b4c799225a2503cdb53898666aa3c` par la CI #1241 / `31907147510`, avec
-  `SonarCloud Code Analysis` en succès et le Quality Gate SonarQubeCloud à 0 nouvelle issue,
-  0 Security Hotspot, 97,7 % de couverture sur le nouveau code et 0 % de duplication.
+- Le même tree avait été qualifié sur le head exact de la PR #101
+  `d6f2ed20264fc40ae53adb3eb1b31b5c7284d027` par la CI #1251 / `31910100257`, avec
+  `SonarCloud Code Analysis` en succès et le Quality Gate SonarQubeCloud passé : 0 nouvelle issue,
+  0 Security Hotspot, 100 % de couverture sur le nouveau code et 0 % de duplication.
+- La PR #102 porte le hardening post-audit suivant sur une branche dédiée et reste volontairement
+  draft/non mergée jusqu’à qualification et instruction explicite d’intégration.
 - Le ruleset `Protect integration branches` protège la branche par défaut et `develop`, exige les PR,
   la résolution des threads et les quatre checks courants. Le mode strict est actif : une PR doit
   être à jour avec sa base avant merge (`strict_required_status_checks_policy=true`).
@@ -55,10 +57,23 @@ certification native.
   puis le lock principal est supprimé. Si l’unlink direct est transitoirement bloqué, le lock est
   déplacé vers une quarantaine à nom généré par le serveur afin de libérer le chemin actif ; les
   erreurs secondaires de rollback restent attachées à l’erreur primaire pour diagnostic.
+- Les nouveaux `FileLease` utilisent le format `1.2` avec un heartbeat propre à chaque génération.
+  Son chemin est dérivé d’un SHA-256 du token d’owner, jamais du token brut. Un ancien owner ne peut
+  donc plus supprimer ou écraser le heartbeat d’un owner de remplacement pendant `release`, `renew`
+  ou cleanup stale. La lecture des anciens formats `1.0`/`1.1` et de leur heartbeat partagé reste
+  conservée pour compatibilité de récupération.
 - La récupération d’un `FileLease` stale libère d’abord le namespace actif par rename ownership-safe.
   La suppression de la quarantaine et de l’ancien heartbeat est ensuite retentée avec un budget
   borné ; un `EPERM`/`EBUSY` résiduel est journalisé sans rendre de nouveau le lock stale actif ni
   empêcher à lui seul une nouvelle acquisition.
+- La configuration catalogue refuse deux `stable_key` identiques dans une même source avant toute
+  ouverture ou migration de `catalog.db` sur les chemins `load-sources` et `sync`. Deux déclarations
+  ne peuvent plus converger silencieusement vers le même `publicId` documentaire.
+- Une reprise de synchronisation limitée est liée à la configuration effective qui a produit le
+  curseur. Le rapport émet `resumeAfter` avec `resumeConfigurationFingerprint`; la reprise exige les
+  deux valeurs et compare l’empreinte avant création du `sync_run`. Une modification ou un
+  réordonnancement de la configuration échoue avec `CATALOG_RESUME_CONFIGURATION_CHANGED` au lieu de
+  sauter silencieusement des documents.
 - `list_search_history` est une lecture réellement non mutante : les lignes hors fenêtre de rétention
   sont exclues par le prédicat SQL de lecture sans `DELETE` ni chmod déclenché par le tool call. La
   purge physique reste effectuée sur les chemins d’écriture/rétention.
@@ -68,8 +83,9 @@ certification native.
   lectures read-only/idempotentes.
 - Les tests de fault injection couvrent les doubles fautes d’acquisition, les changements d’owner,
   les suppressions `ENOENT`, le fencing répété d’un ancien owner, les échecs de cleanup après
-  quarantaine stale, le renouvellement concurrent d’un sync-run pendant une sonde d’identité et
-  l’absence de mutation physique pendant la lecture de l’historique.
+  quarantaine stale, le renouvellement concurrent d’un sync-run pendant une sonde d’identité,
+  les courses release/renew entre générations de `FileLease`, les reprises de catalogue après dérive
+  de configuration et l’absence de mutation physique pendant la lecture de l’historique.
 
 ## Contrat MCP public
 
