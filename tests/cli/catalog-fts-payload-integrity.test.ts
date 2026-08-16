@@ -9,6 +9,23 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
+interface SectionIdentityRow {
+  readonly section_id: number;
+  readonly document_id: number;
+}
+
+type FtsReplacementParams = [
+  number,
+  number,
+  number,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+];
+
 const execFileAsync = promisify(execFile);
 const roots: string[] = [];
 const clock = { now: () => new Date('2026-08-16T18:00:00.000Z') };
@@ -87,7 +104,7 @@ async function createCorruptCatalog(): Promise<string> {
   const database = new Database(path);
   try {
     const row = database
-      .prepare<[], { readonly section_id: number; readonly document_id: number }>(
+      .prepare<[], SectionIdentityRow>(
         `
         SELECT document_sections.id AS section_id, documents.id AS document_id
         FROM document_sections
@@ -101,27 +118,26 @@ async function createCorruptCatalog(): Promise<string> {
       .get();
     if (row === undefined) throw new Error('TEST_SECTION_NOT_FOUND');
 
-    database.prepare<[number]>('DELETE FROM document_section_fts WHERE rowid = ?').run(row.section_id);
-    database
-      .prepare<[number, number, number, string, string, string, string, string, string]>(
-        `
-        INSERT INTO document_section_fts(
-          rowid, section_id, document_id, source_key, language,
-          title, heading, heading_path, content
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      )
-      .run(
-        row.section_id,
-        row.section_id,
-        row.document_id,
-        'docs',
-        'en',
-        'Guide',
-        'Guide',
-        '',
-        'obsolete indexed payload',
-      );
+    const remove = database.prepare<[number]>('DELETE FROM document_section_fts WHERE rowid = ?');
+    remove.run(row.section_id);
+
+    const insert = database.prepare<FtsReplacementParams>(`
+      INSERT INTO document_section_fts(
+        rowid, section_id, document_id, source_key, language,
+        title, heading, heading_path, content
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insert.run(
+      row.section_id,
+      row.section_id,
+      row.document_id,
+      'docs',
+      'en',
+      'Guide',
+      'Guide',
+      '',
+      'obsolete indexed payload',
+    );
   } finally {
     database.close();
   }
