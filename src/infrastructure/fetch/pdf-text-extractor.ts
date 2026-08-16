@@ -14,6 +14,7 @@ const MAX_PDF_TEXT_ITEMS = 200_000;
 const PDF_EXTRACTION_TIMEOUT_MS = 10_000;
 const PDF_WORKER_MAX_OLD_GENERATION_MB = 256;
 const PDF_WORKER_MAX_YOUNG_GENERATION_MB = 32;
+const PDF_ENVELOPE_SCAN_BYTES = 1_024;
 
 const require = createRequire(import.meta.url);
 const PDFJS_MODULE_URL = pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.mjs')).href;
@@ -44,6 +45,9 @@ export async function extractPdfText(
   const deadline = operationLimited ? operationDeadline : localDeadline;
   const remaining = Math.ceil(deadline - performance.now());
   if (remaining <= 0) throw pdfTimeoutError(operationLimited);
+  if (!hasPdfEnvelope(body)) {
+    throw new ExtractionError('The PDF could not be parsed or its text could not be extracted');
+  }
 
   const workerBody = Uint8Array.from(body);
   const worker = new Worker(PDF_WORKER_URL, {
@@ -110,6 +114,32 @@ export async function extractPdfText(
       );
     });
   });
+}
+
+function hasPdfEnvelope(body: Uint8Array): boolean {
+  const headerEnd = Math.min(body.length, PDF_ENVELOPE_SCAN_BYTES);
+  const trailerStart = Math.max(0, body.length - PDF_ENVELOPE_SCAN_BYTES);
+  return (
+    containsAscii(body, '%PDF-', 0, headerEnd) &&
+    containsAscii(body, '%%EOF', trailerStart, body.length)
+  );
+}
+
+function containsAscii(body: Uint8Array, needle: string, start: number, end: number): boolean {
+  const bytes = Buffer.from(needle, 'ascii');
+  if (bytes.length === 0 || end - start < bytes.length) return false;
+  const lastStart = end - bytes.length;
+  for (let offset = start; offset <= lastStart; offset += 1) {
+    let matches = true;
+    for (let index = 0; index < bytes.length; index += 1) {
+      if (body[offset + index] !== bytes[index]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
 }
 
 function isPdfWorkerMessage(value: unknown): value is PdfWorkerMessage {
