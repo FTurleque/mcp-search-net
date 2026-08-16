@@ -421,25 +421,84 @@ describe('SyncCatalogDocuments', () => {
     expect(result.rateLimitMs).toBe(250);
   });
 
-  it('resumes after a previously processed document cursor', async () => {
-    const repository = new CatalogSyncRepositoryStub([enabledSource]);
-    const fetcher = new ContentFetcherStub(fetchedContent({ contentHash: 'api-hash' }));
+  it('resumes only with the fingerprint emitted for the same document configuration', async () => {
+    const firstRepository = new CatalogSyncRepositoryStub([enabledSource]);
+    const firstFetcher = new ContentFetcherStub(fetchedContent({ contentHash: 'guide-hash' }));
+    const first = await new SyncCatalogDocuments(firstRepository, firstFetcher, fixedClock).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument, secondDeclaredDocument],
+      limit: 1,
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
 
+    expect(first).toMatchObject({
+      limited: true,
+      resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+    });
+    expect(first.resumeConfigurationFingerprint).toMatch(/^[a-f0-9]{64}$/u);
+
+    const repository = new CatalogSyncRepositoryStub([enabledSource]);
+    const fetcher = new ContentFetcherStub(
+      fetchedContent({
+        requestedUrl: secondDeclaredDocument.url,
+        finalUrl: secondDeclaredDocument.url,
+        canonicalUrl: secondDeclaredDocument.url,
+        title: 'Fetched API',
+        contentHash: 'api-hash',
+      }),
+    );
     const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
       sourceKey: 'enabled-docs',
       documents: [declaredDocument, secondDeclaredDocument],
       timeoutMs: 1_000,
       maxResponseBytes: 10_000,
       maxRedirects: 3,
-      resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+      resumeAfter: first.resumeAfter,
+      resumeConfigurationFingerprint: first.resumeConfigurationFingerprint,
     });
 
     expect(fetcher.requests).toHaveLength(1);
     expect(result).toMatchObject({
       checkedCount: 1,
       resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+      resumeConfigurationFingerprint: first.resumeConfigurationFingerprint,
       documents: [{ stableKey: 'api', status: 'added' }],
     });
+  });
+
+  it('rejects a stale resume cursor before starting a sync run when configuration order changes', async () => {
+    const firstRepository = new CatalogSyncRepositoryStub([enabledSource]);
+    const first = await new SyncCatalogDocuments(
+      firstRepository,
+      new ContentFetcherStub(fetchedContent({ contentHash: 'guide-hash' })),
+      fixedClock,
+    ).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument, secondDeclaredDocument],
+      limit: 1,
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    const repository = new CatalogSyncRepositoryStub([enabledSource]);
+    const fetcher = new ContentFetcherStub();
+    await expect(
+      new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+        sourceKey: 'enabled-docs',
+        documents: [secondDeclaredDocument, declaredDocument],
+        timeoutMs: 1_000,
+        maxResponseBytes: 10_000,
+        maxRedirects: 3,
+        resumeAfter: first.resumeAfter,
+        resumeConfigurationFingerprint: first.resumeConfigurationFingerprint,
+      }),
+    ).rejects.toThrow('CATALOG_RESUME_CONFIGURATION_CHANGED');
+
+    expect(repository.startedRuns).toHaveLength(0);
+    expect(fetcher.requests).toHaveLength(0);
   });
 
   it('marks a permanently redirected document without changing its stable key', async () => {
