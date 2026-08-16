@@ -97,7 +97,7 @@ export class FileLeaseLock {
       try {
         writeExclusive(this.lockPath, metadata);
         try {
-          this.writeHeartbeat(metadata);
+          this.writeInitialHeartbeat(metadata);
         } catch (error) {
           this.rollbackFailedAcquire(metadata, error);
           throw error;
@@ -141,7 +141,7 @@ export class FileLeaseLock {
         if (released) throw new FileLeaseLockError('Cannot renew a released lock');
         const onDisk = this.requireOwnedMetadata(current.ownerToken);
         current = { ...onDisk, heartbeatAt: this.options.clock.now().toISOString() };
-        this.writeHeartbeat(current);
+        this.publishHeartbeat(current);
         this.requireOwnedMetadata(current.ownerToken);
       },
       release: () => {
@@ -285,10 +285,13 @@ export class FileLeaseLock {
           ownerPid: metadata.pid,
           ageMs,
         });
+        // A live PID without a comparable process-lifetime identity is ambiguous. Recovering
+        // solely from an expired heartbeat could violate mutual exclusion while the owner is
+        // blocked in a synchronous critical section, so fail closed and require later/manual
+        // recovery instead. Only a confirmed PID reuse may recover a live-PID lease.
+        return false;
       }
-      // A different process lifetime proves PID reuse. If identity cannot be established,
-      // the expired durable heartbeat remains the lease authority. New-format heartbeat files
-      // are owner-scoped, so stale cleanup cannot delete a replacement owner's liveness record.
+      // identity === 'different' proves PID reuse, so stale recovery may continue.
     }
 
     // The quarantine name contains only server-generated randomness. Lock metadata is
@@ -374,10 +377,32 @@ export class FileLeaseLock {
       : metadata;
   }
 
-  private writeHeartbeat(metadata: FileLeaseMetadata): void {
+  private writeInitialHeartbeat(metadata: FileLeaseMetadata): void {
     const path = this.heartbeatPath(metadata);
     this.writeHeartbeatFile(path, serializeMetadata(metadata));
     if (process.platform !== 'win32') chmodSync(path, 0o600);
+  }
+
+  private publishHeartbeat(metadata: FileLeaseMetadata): void {
+    const path = this.heartbeatPath(metadata);
+    const stagingPath = `${this.lockPath}.renew-stage-${randomUUID()}`;
+    try {
+      this.writeHeartbeatFile(stagingPath, serializeMetadata(metadata));
+      if (process.platform !== 'win32') chmodSync(stagingPath, 0o600);
+      this.renameFile(stagingPath, path);
+      if (process.platform !== 'win32') chmodSync(path, 0o600);
+    } catch (error) {
+      if (existsSync(stagingPath)) {
+        try {
+          this.unlinkFile(stagingPath);
+        } catch (cleanupError) {
+          if (!isFileSystemError(cleanupError, 'ENOENT')) {
+            attachCleanupFailures(error, [cleanupError]);
+          }
+        }
+      }
+      throw error;
+    }
   }
 
   private removeHeartbeatIfOwned(metadata: FileLeaseMetadata): void {
