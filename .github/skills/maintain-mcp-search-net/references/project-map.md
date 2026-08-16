@@ -13,7 +13,8 @@
 
 ## Frontières stables
 
-- Le sous-contrat V1 expose exactement `search_web` et `fetch_url`; le serveur complet ajoute `search_docs`, `list_docs` et `read_doc_section` en lecture seule.
+- Le sous-contrat V1 expose exactement `search_web` et `fetch_url` ; le serveur complet ajoute `search_docs`, `list_docs`, `read_doc_section` et `list_search_history`.
+- `search_web`, `fetch_url` et `search_docs` peuvent produire des effets locaux de cache/historique ; `list_docs`, `read_doc_section` et `list_search_history` sont des lectures read-only/idempotentes.
 - `cache.sqlite` est un cache Web ; `catalog.db` est le catalogue V2 persistant séparé et son FTS est dérivé.
 - Le serveur n'utilise aucun LLM interne ni API payante obligatoire.
 - `search_web` découvre des URLs et ne télécharge jamais les pages de résultats.
