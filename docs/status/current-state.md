@@ -52,12 +52,13 @@ migrations, seuils qualité, workflows CI ou règles de gouvernance :
 
 ## Invariants de durcissement post-audit
 
-- `document_section_fts` est un index dérivé reconstructible : l’intégrité vérifie non seulement la
-  présence et l’appartenance des rowids, mais aussi l’égalité de `section_id`, `document_id`,
-  `source_key`, `language`, `title`, `heading`, `heading_path` et `content` avec les sections courantes
-  recherchables. Une divergence logique est signalée explicitement par
-  `FTS_ENTRY_CONTENT_MISMATCH` et les chemins fail-closed la refusent ; `rebuild-index` reste le
-  chemin administratif de réparation.
+- `document_section_fts` est un index dérivé reconstructible et observable. Depuis C015 il conserve
+  sa projection de recherche afin que l’intégrité puisse comparer exactement `section_id`,
+  `document_id`, `source_key`, `language`, `title`, `heading`, `heading_path` et `content` aux sections
+  courantes recherchables sans retokeniser tout le catalogue. Une divergence logique est signalée
+  par `FTS_ENTRY_CONTENT_MISMATCH` et les chemins fail-closed la refusent ; `rebuild-index` reste le
+  chemin administratif de réparation. Ce choix échange un surcoût de stockage borné contre une
+  vérification de startup directe et déterministe.
 - Le hard-link final reste l’unique point de commit métier d’un backup catalogue. Le cleanup de la
   famille temporaire SQLite est post-opération, borné et réessayé uniquement pour les erreurs
   filesystem transitoires ; un échec persistant produit un diagnostic structuré sur stderr sans
@@ -140,6 +141,7 @@ Les migrations catalogue immuables appliquées dans l’ordre sont :
 - `C012__make_language_indexes_nocase.sql`
 - `C013__add_sync_run_lease.sql`
 - `C014__guard_concurrent_sync_execution.sql`
+- `C015__make_document_section_fts_observable.sql`
 
 La migration historique courante est :
 

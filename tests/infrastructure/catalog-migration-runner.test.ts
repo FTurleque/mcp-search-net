@@ -94,10 +94,11 @@ describe('CatalogMigrationRunner', () => {
       )
       .all() as { name: string }[];
     expect(applied.map(({ version }) => version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     ]);
     expect(applied.every(({ checksum }) => checksum.length === 64)).toBe(true);
-    expect(ftsDefinition.sql).toContain('contentless_delete = 1');
+    expect(ftsDefinition.sql).not.toContain("content = ''");
+    expect(ftsDefinition.sql).not.toContain('contentless_delete = 1');
     expect(syncColumns.map(({ name }) => name)).toEqual(
       expect.arrayContaining([
         'run_kind',
@@ -179,6 +180,21 @@ describe('CatalogMigrationRunner', () => {
           "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'document_sections'",
         )
         .get() as { sql: string };
+      const ftsRow = database
+        .prepare(
+          `SELECT section_id, document_id, source_key, language, title, heading, heading_path, content
+           FROM document_section_fts WHERE rowid = 30`,
+        )
+        .get() as {
+        section_id: number;
+        document_id: number;
+        source_key: string;
+        language: string;
+        title: string;
+        heading: string;
+        heading_path: string;
+        content: string;
+      };
       const legacyRun = database
         .prepare(
           `SELECT run_kind, owner_token, owner_pid, owner_hostname, heartbeat_at
@@ -195,9 +211,19 @@ describe('CatalogMigrationRunner', () => {
         .prepare('SELECT pending_current FROM document_versions WHERE id = 20')
         .get() as { pending_current: number };
       expect(versions.map(({ version }) => version)).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
       ]);
       expect(sectionSql.sql).not.toContain('UNIQUE (document_version_id, content_hash)');
+      expect(ftsRow).toEqual({
+        section_id: 30,
+        document_id: 10,
+        source_key: 'legacy',
+        language: 'en',
+        title: 'Legacy guide',
+        heading: 'Legacy',
+        heading_path: 'Legacy',
+        content: 'migration searchable sentinel',
+      });
       expect(legacyRun).toEqual({
         run_kind: 'EXECUTION',
         owner_token: null,
