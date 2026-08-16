@@ -163,7 +163,7 @@ class PdfWorkerClient {
     }
 
     const active = this.activeRequest;
-    if (active === undefined || active.requestId !== message.requestId) return;
+    if (active?.requestId !== message.requestId) return;
     clearTimeout(active.timer);
     this.activeRequest = undefined;
     this.worker.unref();
