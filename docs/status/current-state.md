@@ -23,6 +23,12 @@ restent des preuves historiques.
 - L’issue #73 reste le tracker de clôture pour les preuves de certification native Claude Code,
   Claude Desktop et Codex contre le SHA serveur finalement intégré.
 
+Les jalons historiques/stratégiques encore suivis par les invariants automatisés restent :
+
+- Hardening post-audit complet : PR #37 mergée ; qualification historique `31126841127`.
+- La décision d’architecture embeddings reste `prototype-local-vector-index` avec
+  `adoptEmbeddingRuntimeNow: false` ; l’adoption d’un runtime embeddings n’est donc pas implicite.
+
 ## Hardening du candidat post-audit
 
 Le candidat ferme cinq écarts résiduels sans modifier les dépendances, migrations, seuils qualité,
