@@ -80,14 +80,12 @@ sources:
       `stable_key: guide\n        url: https://docs.example/${'x'.repeat(4_100)}`,
       'CATALOG_DOCUMENT_URL_INVALID',
     ],
-  ])(
-    'rejects invalid %s metadata before synchronization',
-    (_label, documentFields, errorCode) => {
-      const urlLine = documentFields.includes('\n        url:')
-        ? ''
-        : '\n        url: https://docs.example/guide';
-      expect(() =>
-        parseCatalogSourceConfig(`
+  ])('rejects invalid %s metadata before synchronization', (_label, documentFields, errorCode) => {
+    const urlLine = documentFields.includes('\n        url:')
+      ? ''
+      : '\n        url: https://docs.example/guide';
+    expect(() =>
+      parseCatalogSourceConfig(`
 schema_version: 1
 sources:
   docs:
@@ -97,7 +95,6 @@ sources:
       - ${documentFields}
         title: Guide${urlLine}
 `),
-      ).toThrow(errorCode);
-    },
-  );
+    ).toThrow(errorCode);
+  });
 });
