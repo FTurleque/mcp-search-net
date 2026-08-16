@@ -118,6 +118,7 @@ class ResumeRepository
       documentId: document.id,
       ...input.version,
       fetchedAt: now,
+      isCurrent: true,
     };
     return {
       document,
@@ -153,6 +154,7 @@ class ResumeRepository
     return {
       id: syncRunId,
       sourceId: source.id,
+      runKind: 'EXECUTION',
       startedAt: now,
       ...input,
     };
