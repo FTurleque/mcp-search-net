@@ -11,15 +11,16 @@ restent des preuves historiques.
 - Branche de release et source de vérité publiée : `master`.
 - Branche d’intégration courante : `develop`.
 - Intégration V2 : PR #8 mergée.
-- Baseline `develop` intégrée avant le candidat post-audit courant : merge de la PR #103,
-  `17ac4224f159f2f43d3c29f5390d66a403b2bd8f`, tree
-  `118c1366b12f5dee24d23cdd82ba4406d8398db3`.
-- La CI post-merge #1337 / `31963224930` a terminé en succès sur ce SHA pour la validation Node.js,
-  Docker/live E2E et le packaging/lifecycle Windows. Le job Sonar est ignoré sur les pushes
-  `develop` par conception ; le head exact de la PR #103 avait passé le Quality Gate Sonar.
-- Le nouvel audit complet de cette baseline n’a identifié aucun P0, P1 ou P2 résiduel. Cinq P3 de
-  résilience/exploitation sont corrigés sur le candidat `agent/fix-post-audit-p3-20260816` ; ces
-  corrections ne sont pas déclarées intégrées à `develop` avant merge explicite de leur PR.
+- Preuve historique de qualification du 16 août 2026 : la PR #105 a été intégrée avec le merge SHA
+  `6de03bb80abb582ff84dea841f2f9f82062b6d73` et le tree
+  `eb4c082d3ac2e4c98962938e7256adba453206bc`.
+- La qualification post-merge CI #1346 / run `31970524353` a terminé en succès sur ce SHA pour la
+  validation Node.js, Docker/live E2E et le packaging/lifecycle Windows. Le job Sonar est ignoré sur
+  les pushes `develop` par conception ; le head exact de la PR #105 avait passé le Quality Gate
+  Sonar.
+- Ces identifiants sont des preuves historiques datées. Ils ne prétendent pas représenter le HEAD
+  courant après de futurs merges ; Git et GitHub restent l’autorité pour l’état live des branches,
+  PR et checks.
 - L’issue #73 reste le tracker de clôture pour les preuves de certification native Claude Code,
   Claude Desktop et Codex contre le SHA serveur finalement intégré.
 
@@ -29,10 +30,10 @@ Les jalons historiques/stratégiques encore suivis par les invariants automatis�
 - La décision d’architecture embeddings reste `prototype-local-vector-index` avec
   `adoptEmbeddingRuntimeNow: false` ; l’adoption d’un runtime embeddings n’est donc pas implicite.
 
-## Hardening du candidat post-audit
+## Hardening qualifié par la PR #105
 
-Le candidat ferme cinq écarts résiduels sans modifier les dépendances, migrations, seuils qualité,
-workflows CI ou règles de gouvernance :
+La PR #105 a intégré cinq corrections de résilience/exploitation sans modifier les dépendances,
+migrations, seuils qualité, workflows CI ou règles de gouvernance :
 
 1. le pool PDF reste strictement borné à deux slots et devient auto-réparant ; une création de worker
    de remplacement qui échoue transitoirement laisse le slot réessayable avec backoff au lieu de
@@ -48,6 +49,19 @@ workflows CI ou règles de gouvernance :
 5. les commandes CLI métier ouvrent le catalogue avec l’integrity gate actif. `verify`, `health` et
    `rebuild-index` conservent un chemin administratif explicite capable de diagnostiquer/réparer une
    incohérence FTS ; `purge-versions` vérifie également l’intégrité avant toute suppression.
+
+## Invariants de durcissement post-audit
+
+- `document_section_fts` est un index dérivé reconstructible : l’intégrité vérifie non seulement la
+  présence et l’appartenance des rowids, mais aussi l’égalité de `section_id`, `document_id`,
+  `source_key`, `language`, `title`, `heading`, `heading_path` et `content` avec les sections courantes
+  recherchables. Une divergence logique est signalée explicitement par
+  `FTS_ENTRY_CONTENT_MISMATCH` et les chemins fail-closed la refusent ; `rebuild-index` reste le
+  chemin administratif de réparation.
+- Le hard-link final reste l’unique point de commit métier d’un backup catalogue. Le cleanup de la
+  famille temporaire SQLite est post-opération, borné et réessayé uniquement pour les erreurs
+  filesystem transitoires ; un échec persistant produit un diagnostic structuré sur stderr sans
+  masquer une erreur primaire pré-commit ni transformer un backup déjà publié en faux échec.
 
 ## Contrat MCP public
 
@@ -100,8 +114,9 @@ privés sont maintenus en `0700` et les fichiers SQLite/WAL/SHM en `0600`. Les c
 `busy_timeout`, WAL et `foreign_keys=ON` ; les migrations sont sérialisées.
 
 Le catalogue vérifie `PRAGMA integrity_check`, `PRAGMA foreign_key_check`, les pointeurs/flags de
-version courante et la cohérence FTS sur les chemins fail-closed. Promotion de version, sections,
-FTS, pointeur courant et observation de synchronisation partagent une transaction SQLite.
+version courante et la cohérence FTS structurelle et logique sur les chemins fail-closed. Promotion
+de version, sections, FTS, pointeur courant et observation de synchronisation partagent une
+transaction SQLite.
 
 L’historique reste fail-open pour le résultat métier principal. La rétention est bornée, les lectures
 n’effectuent pas de purge physique et les formes évidentes de secrets sont expurgées avant

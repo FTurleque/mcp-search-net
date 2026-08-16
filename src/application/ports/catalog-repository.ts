@@ -55,7 +55,8 @@ export type CatalogIntegrityIssueCode =
   | 'CURRENT_VERSION_WITHOUT_SECTIONS'
   | 'CURRENT_VERSION_FLAG_NOT_POINTED'
   | 'CURRENT_SECTION_MISSING_FROM_FTS'
-  | 'FTS_ENTRY_ORPHANED';
+  | 'FTS_ENTRY_ORPHANED'
+  | 'FTS_ENTRY_CONTENT_MISMATCH';
 
 export interface CatalogIntegrityIssue {
   readonly code: CatalogIntegrityIssueCode;
