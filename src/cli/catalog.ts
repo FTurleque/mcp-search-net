@@ -26,7 +26,7 @@ import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.j
 import { StructuredLogger } from '../infrastructure/logging/structured-logger.js';
 import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-security-policy.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
-import { loadCatalogSourceConfig, type CatalogSourceConfig } from './catalog-source-config.js';
+import { parseResumeFingerprint, preloadCatalogSourceConfig } from './catalog-sync-preflight.js';
 import { ingestTextDocument } from './catalog-ingest-text.js';
 import { assertStrictCliArguments, type StrictCliArgumentSpec } from './strict-cli-arguments.js';
 import { parseStrictInteger } from './strict-integer.js';
@@ -37,7 +37,6 @@ const SYNC_STRATEGIES = ['manual', 'polling'] as const;
 
 const DEFAULT_KEEP_PREVIOUS_VERSIONS = 3;
 const MAX_CATALOG_SYNC_RATE_LIMIT_MS = 10_000;
-const RESUME_FINGERPRINT_PATTERN = /^[a-fA-F0-9]{64}$/u;
 const DRY_RUN_UNSUPPORTED_SYNC_OPTIONS = [
   '--config',
   '--limit',
@@ -200,17 +199,11 @@ async function main(argv: readonly string[]): Promise<void> {
     }
   }
 
-  let catalogSourceConfig: CatalogSourceConfig | undefined;
-  if (options.command === 'load-sources') {
-    if (options.sourceConfig === undefined) throw new Error(usage());
-    catalogSourceConfig = await loadCatalogSourceConfig(options.sourceConfig.filePath);
-  } else if (options.command === 'sync') {
-    if (options.sync === undefined) throw new Error(usage());
-    if (options.sync.filePath === undefined) {
-      throw new Error('catalog sync requires --file <catalog-sources.yml>');
-    }
-    catalogSourceConfig = await loadCatalogSourceConfig(options.sync.filePath);
-  }
+  const catalogSourceConfig = await preloadCatalogSourceConfig(
+    options.command,
+    options.sourceConfig?.filePath,
+    options.sync?.filePath,
+  );
 
   const repository = new SqliteCatalogRepository(options.path, clock);
   try {
@@ -566,23 +559,6 @@ function parseResumeAfter(
     throw new Error('--resume-after must use <sourceKey>:<stableKey>');
   }
   return { sourceKey, stableKey };
-}
-
-function parseResumeFingerprint(
-  value: string | undefined,
-  resumeAfter: SyncCatalogResumeCursor | undefined,
-): string | undefined {
-  if (resumeAfter === undefined) {
-    if (value !== undefined) throw new Error('--resume-fingerprint requires --resume-after');
-    return undefined;
-  }
-  if (value === undefined) {
-    throw new Error('--resume-after requires --resume-fingerprint from the previous sync output');
-  }
-  if (!RESUME_FINGERPRINT_PATTERN.test(value)) {
-    throw new Error('--resume-fingerprint must be a SHA-256 hexadecimal value');
-  }
-  return value.toLowerCase();
 }
 
 function parseSourceType(value: string): CatalogSourceType {

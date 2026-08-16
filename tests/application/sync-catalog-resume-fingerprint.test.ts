@@ -250,6 +250,64 @@ describe('SyncCatalogDocuments resume fingerprint', () => {
     expect(repository.startCalls).toBe(0);
     expect(fetcher.calls).toBe(0);
   });
+
+  it('rejects a fingerprint when no resume cursor is supplied', async () => {
+    const repository = new ResumeRepository();
+    const fetcher = new ResumeFetcher();
+
+    await expect(
+      new SyncCatalogDocuments(repository, fetcher, clock).execute({
+        sourceKey: source.sourceKey,
+        documents: [guide, api],
+        timeoutMs: 1_000,
+        maxResponseBytes: 10_000,
+        maxRedirects: 3,
+        resumeConfigurationFingerprint: 'a'.repeat(64),
+      }),
+    ).rejects.toThrow('CATALOG_RESUME_FINGERPRINT_WITHOUT_CURSOR');
+
+    expect(repository.startCalls).toBe(0);
+    expect(fetcher.calls).toBe(0);
+  });
+
+  it('rejects a resume cursor when its configuration fingerprint is missing', async () => {
+    const repository = new ResumeRepository();
+    const fetcher = new ResumeFetcher();
+
+    await expect(
+      new SyncCatalogDocuments(repository, fetcher, clock).execute({
+        sourceKey: source.sourceKey,
+        documents: [guide, api],
+        timeoutMs: 1_000,
+        maxResponseBytes: 10_000,
+        maxRedirects: 3,
+        resumeAfter: { sourceKey: source.sourceKey, stableKey: guide.stableKey },
+      }),
+    ).rejects.toThrow('CATALOG_RESUME_FINGERPRINT_REQUIRED');
+
+    expect(repository.startCalls).toBe(0);
+    expect(fetcher.calls).toBe(0);
+  });
+
+  it('rejects a malformed resume fingerprint before starting a sync run', async () => {
+    const repository = new ResumeRepository();
+    const fetcher = new ResumeFetcher();
+
+    await expect(
+      new SyncCatalogDocuments(repository, fetcher, clock).execute({
+        sourceKey: source.sourceKey,
+        documents: [guide, api],
+        timeoutMs: 1_000,
+        maxResponseBytes: 10_000,
+        maxRedirects: 3,
+        resumeAfter: { sourceKey: source.sourceKey, stableKey: guide.stableKey },
+        resumeConfigurationFingerprint: 'not-a-sha256',
+      }),
+    ).rejects.toThrow('CATALOG_RESUME_FINGERPRINT_INVALID');
+
+    expect(repository.startCalls).toBe(0);
+    expect(fetcher.calls).toBe(0);
+  });
 });
 
 function requireResumeCursor(value: SyncCatalogResumeCursor | undefined): SyncCatalogResumeCursor {

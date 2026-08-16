@@ -1,8 +1,5 @@
 import type { SyncCatalogResumeCursor } from '../application/use-cases/sync-catalog-documents.js';
-import {
-  loadCatalogSourceConfig,
-  type CatalogSourceConfig,
-} from './catalog-source-config.js';
+import { loadCatalogSourceConfig, type CatalogSourceConfig } from './catalog-source-config.js';
 
 const RESUME_FINGERPRINT_PATTERN = /^[a-fA-F0-9]{64}$/u;
 
