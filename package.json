@@ -59,7 +59,7 @@
     "benchmark:v1": "node scripts/benchmark-v1.mjs",
     "install:user": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1",
     "install:user:run": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1 -StartServices -RunAfterInstall",
-    "check": "npm run format:check"
+    "check": "node scripts/prettier-diagnostic.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
