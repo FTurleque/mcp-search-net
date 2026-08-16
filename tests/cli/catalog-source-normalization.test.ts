@@ -65,7 +65,11 @@ sources:
 
   it.each([
     ['stable key', `stable_key: ${'x'.repeat(513)}`, 'CATALOG_DOCUMENT_STABLE_KEY_INVALID'],
-    ['language', 'stable_key: guide\n        language: not_a_language', 'CATALOG_DOCUMENT_LANGUAGE_INVALID'],
+    [
+      'language',
+      'stable_key: guide\n        language: not_a_language',
+      'CATALOG_DOCUMENT_LANGUAGE_INVALID',
+    ],
     [
       'mime type',
       `stable_key: guide\n        mime_type: ${'x'.repeat(256)}`,
@@ -76,10 +80,14 @@ sources:
       `stable_key: guide\n        url: https://docs.example/${'x'.repeat(4_100)}`,
       'CATALOG_DOCUMENT_URL_INVALID',
     ],
-  ])('rejects invalid %s metadata before synchronization', (_label, documentFields, errorCode) => {
-    const urlLine = documentFields.includes('\n        url:') ? '' : '\n        url: https://docs.example/guide';
-    expect(() =>
-      parseCatalogSourceConfig(`
+  ])(
+    'rejects invalid %s metadata before synchronization',
+    (_label, documentFields, errorCode) => {
+      const urlLine = documentFields.includes('\n        url:')
+        ? ''
+        : '\n        url: https://docs.example/guide';
+      expect(() =>
+        parseCatalogSourceConfig(`
 schema_version: 1
 sources:
   docs:
@@ -89,6 +97,7 @@ sources:
       - ${documentFields}
         title: Guide${urlLine}
 `),
-    ).toThrow(errorCode);
-  });
+      ).toThrow(errorCode);
+    },
+  );
 });
