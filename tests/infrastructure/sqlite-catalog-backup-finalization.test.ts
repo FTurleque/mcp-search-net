@@ -29,7 +29,9 @@ describe('SqliteCatalogBackup finalization', () => {
     expect(result.status).toBe('backed_up');
     expect(cleanupAttempts).toBe(2);
     expect(existsSync(result.destinationPath)).toBe(true);
-    expect(readdirSync(join(fixture.root, 'backups')).filter((name) => name.startsWith('.partial-'))).toEqual([]);
+    expect(
+      readdirSync(join(fixture.root, 'backups')).filter((name) => name.startsWith('.partial-')),
+    ).toEqual([]);
   });
 
   it('keeps a published backup successful and reports persistent temporary cleanup failure', async () => {
