@@ -37,7 +37,7 @@ describe('SqliteCatalogBackup finalization', () => {
   it('keeps a published backup successful and reports persistent temporary cleanup failure', async () => {
     const fixture = createCatalogFixture();
     let cleanupAttempts = 0;
-    const cleanupFailures: Array<{ path: string; error: unknown }> = [];
+    const cleanupFailures: { path: string; error: unknown }[] = [];
 
     const result = await new SqliteCatalogBackup(fixture.path, fixture.clock, {
       removeTemporaryFile: () => {
