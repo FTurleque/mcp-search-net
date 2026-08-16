@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ExtractionError,
   OcrRequiredNotSupportedError,
+  RequestTimeoutError,
 } from '../../src/domain/errors/domain-errors.js';
 import { extractPdfText } from '../../src/infrastructure/fetch/pdf-text-extractor.js';
 
@@ -23,6 +24,53 @@ describe('extractPdfText', () => {
     expect(text).toContain('First page documentation');
     expect(text).toContain('Second page reference');
     expect(text.indexOf('First page')).toBeLessThan(text.indexOf('Second page'));
+  });
+
+  it('supports more concurrent PDF requests than the prewarmed worker pool', async () => {
+    const results = await Promise.all([
+      extractPdfText(makeTextPdf(['Concurrent document A'], false)),
+      extractPdfText(makeTextPdf(['Concurrent document B'], false)),
+      extractPdfText(makeTextPdf(['Concurrent document C'], false)),
+    ]);
+
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('Concurrent document A'),
+        expect.stringContaining('Concurrent document B'),
+        expect.stringContaining('Concurrent document C'),
+      ]),
+    );
+  });
+
+  it('rejects an already expired operation deadline before worker dispatch', async () => {
+    const pdf = makeTextPdf(['Deadline documentation'], false);
+
+    await expect(extractPdfText(pdf, performance.now() - 1)).rejects.toBeInstanceOf(
+      RequestTimeoutError,
+    );
+  });
+
+  it('terminates timed-out pooled workers and remains able to extract subsequent PDFs', async () => {
+    const slowPdf = makeTextPdf(
+      Array.from({ length: 200 }, (_value, index) => `Page ${index} ${'x'.repeat(3_000)}`),
+      true,
+    );
+    const deadline = performance.now() + 25;
+
+    const timedOut = await Promise.allSettled([
+      extractPdfText(slowPdf, deadline),
+      extractPdfText(slowPdf, deadline),
+    ]);
+
+    expect(timedOut).toHaveLength(2);
+    for (const result of timedOut) {
+      expect(result.status).toBe('rejected');
+      if (result.status === 'rejected') expect(result.reason).toBeInstanceOf(RequestTimeoutError);
+    }
+
+    await expect(extractPdfText(makeTextPdf(['Recovered after timeout'], false))).resolves.toContain(
+      'Recovered after timeout',
+    );
   });
 
   it('rejects PDFs exceeding the fixed page extraction budget', async () => {
@@ -49,9 +97,15 @@ describe('extractPdfText', () => {
     );
   });
 
-  it('maps an invalid PDF to the extraction error', async () => {
+  it('rejects a malformed PDF envelope before worker extraction', async () => {
     await expect(
       extractPdfText(new TextEncoder().encode('%PDF-1.4\nnot a valid document')),
+    ).rejects.toBeInstanceOf(ExtractionError);
+  });
+
+  it('maps a structurally invalid PDF with a complete envelope to an extraction error', async () => {
+    await expect(
+      extractPdfText(new TextEncoder().encode('%PDF-1.4\nnot a valid document\n%%EOF')),
     ).rejects.toBeInstanceOf(ExtractionError);
   });
 });
