@@ -155,6 +155,37 @@ export function verifyCatalogIntegrity(database: Database.Database): CatalogInte
     (row) => `Current section ${row.section_id} for document ${row.public_id} is missing from FTS`,
   );
 
+  appendSectionIssues(
+    database,
+    issues,
+    'FTS_ENTRY_CONTENT_MISMATCH',
+    `
+      SELECT
+        catalog_sources.source_key,
+        documents.public_id,
+        document_sections.id AS section_id
+      FROM document_sections
+      INNER JOIN document_versions
+        ON document_versions.id = document_sections.document_version_id
+       AND document_versions.is_current = 1
+      INNER JOIN documents
+        ON documents.id = document_versions.document_id
+       AND documents.current_version_id = document_versions.id
+      INNER JOIN catalog_sources ON catalog_sources.id = documents.source_id
+      INNER JOIN document_section_fts ON document_section_fts.rowid = document_sections.id
+      WHERE catalog_sources.enabled = 1
+        AND documents.status = 'ACTIVE'
+        AND (
+          document_section_fts.title IS NOT documents.title
+          OR document_section_fts.heading IS NOT coalesce(document_sections.heading, '')
+          OR document_section_fts.heading_path IS NOT coalesce(document_sections.heading_path, '')
+          OR document_section_fts.content IS NOT document_sections.content
+        )
+      ORDER BY catalog_sources.source_key, documents.public_id, document_sections.id
+    `,
+    (row) => `FTS row ${row.section_id} for document ${row.public_id} has stale indexed content`,
+  );
+
   const orphanedFtsRows = database
     .prepare<[], { readonly section_id: number }>(
       `
