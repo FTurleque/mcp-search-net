@@ -201,19 +201,28 @@ function contextualizeDocumentValidationError(
   try {
     url = new URL(rawUrl);
   } catch {
-    return new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`, {
-      cause: error,
-    });
+    return new Error(
+      `catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`,
+      {
+        cause: error,
+      },
+    );
   }
   if (url.username !== '' || url.password !== '') {
-    return new Error(`catalog source ${sourceKey} document ${index + 1} url must not contain credentials`, {
-      cause: error,
-    });
+    return new Error(
+      `catalog source ${sourceKey} document ${index + 1} url must not contain credentials`,
+      {
+        cause: error,
+      },
+    );
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    return new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`, {
-      cause: error,
-    });
+    return new Error(
+      `catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`,
+      {
+        cause: error,
+      },
+    );
   }
   return error;
 }
