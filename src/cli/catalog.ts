@@ -26,10 +26,7 @@ import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.j
 import { StructuredLogger } from '../infrastructure/logging/structured-logger.js';
 import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-security-policy.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
-import {
-  loadCatalogSourceConfig,
-  type CatalogSourceConfig,
-} from './catalog-source-config.js';
+import { loadCatalogSourceConfig, type CatalogSourceConfig } from './catalog-source-config.js';
 import { ingestTextDocument } from './catalog-ingest-text.js';
 import { assertStrictCliArguments, type StrictCliArgumentSpec } from './strict-cli-arguments.js';
 import { parseStrictInteger } from './strict-integer.js';
