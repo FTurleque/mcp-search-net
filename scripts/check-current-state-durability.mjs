@@ -14,7 +14,10 @@ const failures = [];
 
 for (const [pattern, description] of [
   [/candidat post-audit/iu, 'candidat post-audit éphémère'],
-  [/branche de correction/iu, 'branche de correction éphémère'],
+  [
+    /branche de correction[^.\n]*(?:candidat|courante|à merger|à intégrer)/iu,
+    'branche de correction présentée comme état live',
+  ],
   [/avant (?:le )?merge explicite/iu, 'vérité conditionnée au prochain merge'],
   [
     /corrections? (?:ne sont|n’est) pas (?:encore )?(?:intégrées?|mergées?)/iu,
