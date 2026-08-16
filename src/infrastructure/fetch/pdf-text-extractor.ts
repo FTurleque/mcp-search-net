@@ -131,10 +131,9 @@ class PdfWorkerClient {
       }, remaining);
       timer.unref();
       this.activeRequest = { requestId, resolve, reject, timer };
-      this.worker.postMessage(
-        { type: 'extract', requestId, body: workerBody },
-        [workerBody.buffer],
-      );
+      this.worker.postMessage({ type: 'extract', requestId, body: workerBody }, [
+        workerBody.buffer,
+      ]);
     });
   }
 
