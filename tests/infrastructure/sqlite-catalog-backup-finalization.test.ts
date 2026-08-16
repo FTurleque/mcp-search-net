@@ -19,10 +19,10 @@ describe('SqliteCatalogBackup finalization', () => {
     let cleanupAttempts = 0;
 
     const result = await new SqliteCatalogBackup(fixture.path, fixture.clock, {
-      removeTemporaryFile: (path) => {
+      removeTemporaryFiles: (paths) => {
         cleanupAttempts += 1;
         if (cleanupAttempts === 1) throw new Error('injected cleanup failure');
-        rmSync(path, { force: true });
+        paths.forEach((path) => rmSync(path, { force: true }));
       },
     }).run('cleanup-retry.db');
 
@@ -40,7 +40,7 @@ describe('SqliteCatalogBackup finalization', () => {
     const cleanupFailures: { path: string; error: unknown }[] = [];
 
     const result = await new SqliteCatalogBackup(fixture.path, fixture.clock, {
-      removeTemporaryFile: () => {
+      removeTemporaryFiles: () => {
         cleanupAttempts += 1;
         throw new Error('persistent cleanup failure');
       },
