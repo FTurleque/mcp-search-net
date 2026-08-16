@@ -26,7 +26,7 @@ describe('extractPdfText', () => {
     expect(text.indexOf('First page')).toBeLessThan(text.indexOf('Second page'));
   });
 
-  it('supports more concurrent PDF requests than the prewarmed worker pool', async () => {
+  it('queues more concurrent PDF requests than the fixed worker pool can execute at once', async () => {
     const results = await Promise.all([
       extractPdfText(makeTextPdf(['Concurrent document A'], false)),
       extractPdfText(makeTextPdf(['Concurrent document B'], false)),
@@ -42,13 +42,17 @@ describe('extractPdfText', () => {
     );
   });
 
-  it('applies the operation deadline while an ephemeral worker is starting', async () => {
-    const first = extractPdfText(makeTextPdf(['Pooled document A'], false));
-    const second = extractPdfText(makeTextPdf(['Pooled document B'], false));
-    const deadline = performance.now() + 25;
+  it('applies the operation deadline while waiting for a pooled worker', async () => {
+    const busyPdf = makeTextPdf(
+      Array.from({ length: 200 }, (_value, index) => `Busy page ${index} ${'x'.repeat(1_000)}`),
+      true,
+    );
+    const first = extractPdfText(busyPdf);
+    const second = extractPdfText(busyPdf);
+    const deadline = performance.now() + 5;
 
     await expect(
-      extractPdfText(makeTextPdf(['Ephemeral deadline'], false), deadline),
+      extractPdfText(makeTextPdf(['Queued deadline'], false), deadline),
     ).rejects.toBeInstanceOf(RequestTimeoutError);
     await expect(Promise.all([first, second])).resolves.toHaveLength(2);
   });
