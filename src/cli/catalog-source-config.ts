@@ -7,6 +7,7 @@ import type {
   CatalogSyncStrategy,
   NewCatalogSource,
 } from '../domain/models/catalog.js';
+import { normalizeCatalogDocumentDescriptor } from '../domain/services/catalog-document-validation.js';
 import { validateNewCatalogSource } from '../domain/services/catalog-source-validation.js';
 import { parseStrictYaml } from '../infrastructure/config/yaml-loader.js';
 
@@ -67,6 +68,7 @@ export function parseCatalogSourceConfig(content: string): CatalogSourceConfig {
   );
 
   if (entries.length === 0) throw new Error('catalog-sources.yml must declare at least one source');
+  assertDistinctCanonicalSourceKeys(entries);
   return {
     sources: entries.map((entry) => entry.source),
     documents: entries.flatMap((entry) => entry.documents),
@@ -76,6 +78,18 @@ export function parseCatalogSourceConfig(content: string): CatalogSourceConfig {
 interface CatalogSourceConfigEntry {
   readonly source: NewCatalogSource;
   readonly documents: readonly CatalogSourceDocumentConfig[];
+}
+
+function assertDistinctCanonicalSourceKeys(entries: readonly CatalogSourceConfigEntry[]): void {
+  const sourceKeys = new Set<string>();
+  for (const entry of entries) {
+    if (sourceKeys.has(entry.source.sourceKey)) {
+      throw new Error(
+        `catalog source config contains duplicate canonical source key ${entry.source.sourceKey}`,
+      );
+    }
+    sourceKeys.add(entry.source.sourceKey);
+  }
 }
 
 function parseCatalogSourceEntry(sourceKey: string, value: unknown): CatalogSourceConfigEntry {
@@ -114,7 +128,11 @@ function parseCatalogSourceEntry(sourceKey: string, value: unknown): CatalogSour
   }
   return {
     source: parsedSource,
-    documents: parseDocuments(sourceKey, source['documents'], language),
+    documents: parseDocuments(
+      parsedSource.sourceKey,
+      source['documents'],
+      parsedSource.language,
+    ),
   };
 }
 
@@ -151,14 +169,20 @@ function parseDocument(
   const context = `catalog source ${sourceKey} document ${index + 1}`;
   const document = asRecord(value, context);
   assertOnlyProperties(document, DOCUMENT_PROPERTIES, context);
-  const stableKey = requiredString(document, 'stable_key', sourceKey);
-  return {
-    sourceKey,
-    stableKey,
+  const descriptor = normalizeCatalogDocumentDescriptor({
+    stableKey: requiredString(document, 'stable_key', sourceKey),
     title: requiredString(document, 'title', sourceKey),
-    url: validateDocumentUrl(requiredString(document, 'url', sourceKey), sourceKey, index),
+    canonicalUrl: requiredString(document, 'url', sourceKey),
     language: optionalString(document, 'language') ?? sourceLanguage,
     mimeType: optionalString(document, 'mime_type') ?? 'text/html',
+  });
+  return {
+    sourceKey,
+    stableKey: descriptor.stableKey,
+    title: descriptor.title,
+    url: descriptor.canonicalUrl,
+    language: descriptor.language,
+    mimeType: descriptor.mimeType,
     enabled: optionalBoolean(document, 'enabled') ?? true,
   };
 }
@@ -209,24 +233,6 @@ function optionalBoolean(
   if (value === undefined) return undefined;
   if (typeof value !== 'boolean') throw new Error(`${propertyName} must be a boolean`);
   return value;
-}
-
-function validateDocumentUrl(value: string, sourceKey: string, index: number): string {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`);
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`);
-  }
-  if (url.username !== '' || url.password !== '') {
-    throw new Error(
-      `catalog source ${sourceKey} document ${index + 1} url must not contain credentials`,
-    );
-  }
-  return url.toString();
 }
 
 function parseSourceType(value: string, sourceKey: string): CatalogSourceType {
