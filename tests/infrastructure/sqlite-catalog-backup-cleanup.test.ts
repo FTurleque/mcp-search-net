@@ -12,13 +12,9 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type {
-  CatalogBackupCleanupDiagnostic,
-} from '../../src/infrastructure/catalog/sqlite-catalog-backup.js';
+import type { CatalogBackupCleanupDiagnostic } from '../../src/infrastructure/catalog/sqlite-catalog-backup.js';
 import { SqliteCatalogBackup } from '../../src/infrastructure/catalog/sqlite-catalog-backup.js';
-import {
-  SqliteCatalogRepository,
-} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 const roots: string[] = [];
 const clock = { now: () => new Date('2026-08-16T21:00:00.000Z') };
@@ -133,18 +129,12 @@ describe('SqliteCatalogBackup cleanup resilience', () => {
       );
       expect(partialArtifacts(fixture.root)).toHaveLength(4);
 
-      const snapshot = new Database(result.destinationPath, {
-        readonly: true,
-        fileMustExist: true,
-      });
+      const snapshot = new Database(result.destinationPath, { readonly: true, fileMustExist: true });
       try {
         expect(snapshot.pragma('integrity_check', { simple: true })).toBe('ok');
         expect(
-          snapshot
-            .prepare<[], { readonly source_key: string }>(
-              'SELECT source_key FROM catalog_sources',
-            )
-            .get()?.source_key,
+          snapshot.prepare<[], { readonly source_key: string }>('SELECT source_key FROM catalog_sources').get()
+            ?.source_key,
         ).toBe('docs');
       } finally {
         snapshot.close();

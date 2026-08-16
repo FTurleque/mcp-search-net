@@ -6,9 +6,7 @@ import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ConfigurationError } from '../../src/domain/errors/domain-errors.js';
-import {
-  SqliteCatalogRepository,
-} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 const roots: string[] = [];
 const clock = { now: () => new Date('2026-08-16T20:00:00.000Z') };

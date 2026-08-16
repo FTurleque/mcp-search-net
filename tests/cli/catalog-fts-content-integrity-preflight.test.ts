@@ -7,9 +7,7 @@ import { promisify } from 'node:util';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import {
-  SqliteCatalogRepository,
-} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 const execFileAsync = promisify(execFile);
 const roots: string[] = [];
