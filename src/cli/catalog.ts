@@ -440,9 +440,7 @@ function parseSync(argv: readonly string[], path: string): CatalogCommandOptions
       ...(sourceKey === undefined ? {} : { sourceKey }),
       ...(filePath === undefined ? {} : { filePath: resolve(filePath) }),
       ...(resumeAfter === undefined ? {} : { resumeAfter }),
-      ...(resumeConfigurationFingerprint === undefined
-        ? {}
-        : { resumeConfigurationFingerprint }),
+      ...(resumeConfigurationFingerprint === undefined ? {} : { resumeConfigurationFingerprint }),
     },
   };
 }

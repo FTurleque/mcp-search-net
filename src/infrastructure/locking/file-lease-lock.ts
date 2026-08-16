@@ -196,11 +196,7 @@ export class FileLeaseLock {
       try {
         this.renameFile(this.lockPath, quarantinePath);
         activeLockRemoved = true;
-        this.cleanupFailedAcquireQuarantine(
-          quarantinePath,
-          metadata.ownerToken,
-          cleanupFailures,
-        );
+        this.cleanupFailedAcquireQuarantine(quarantinePath, metadata.ownerToken, cleanupFailures);
         break;
       } catch (renameError) {
         if (isFileSystemError(renameError, 'ENOENT')) {
