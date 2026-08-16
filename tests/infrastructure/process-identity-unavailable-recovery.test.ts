@@ -42,7 +42,7 @@ describe('process identity unavailable recovery', () => {
     owner.release();
   });
 
-  it('reclaims an expired file lease when the pid is alive but process identity is unavailable', () => {
+  it('fails closed for an expired file lease when the pid is alive but process identity is unavailable', () => {
     const fixture = createFixture();
     const recording = createRecordingLogger();
     const owner = new FileLeaseLock(fixture.lockPath, {
@@ -56,24 +56,24 @@ describe('process identity unavailable recovery', () => {
     }).acquire();
 
     fixture.advance(2_000);
-    const replacement = new FileLeaseLock(fixture.lockPath, {
-      staleAfterMs: 1_000,
-      clock: fixture.clock,
-      logger: recording.logger,
-      pid: 505,
-      hostname: 'test-host',
-      ownerTokenFactory: () => 'replacement-owner',
-      processAlive: (pid) => pid === 404,
-      processIdentity: () => undefined,
-    }).acquire();
+    expect(() =>
+      new FileLeaseLock(fixture.lockPath, {
+        staleAfterMs: 1_000,
+        clock: fixture.clock,
+        logger: recording.logger,
+        pid: 505,
+        hostname: 'test-host',
+        ownerTokenFactory: () => 'replacement-owner',
+        processAlive: (pid) => pid === 404,
+        processIdentity: () => undefined,
+      }).acquire(),
+    ).toThrow('Lock is owned by pid 404 on test-host');
 
-    expect(replacement.metadata.ownerToken).toBe('replacement-owner');
     expect(recording.warnings).toContain('file_lease_lock_stale_identity_unavailable');
-    expect(recording.warnings).toContain('file_lease_lock_stale_recovered');
-    expect(() => owner.renew()).toThrow('Lock ownership changed unexpectedly');
+    expect(recording.warnings).not.toContain('file_lease_lock_stale_recovered');
+    expect(() => owner.renew()).not.toThrow();
 
     owner.release();
-    replacement.release();
   });
 
   it('retries a transient identity probe before falling back to lease timeout semantics', () => {
