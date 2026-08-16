@@ -15,6 +15,7 @@ const PDF_EXTRACTION_TIMEOUT_MS = 10_000;
 const PDF_WORKER_MAX_OLD_GENERATION_MB = 256;
 const PDF_WORKER_MAX_YOUNG_GENERATION_MB = 32;
 const PDF_ENVELOPE_SCAN_BYTES = 1_024;
+const PDF_WORKER_POOL_SIZE = 2;
 
 const require = createRequire(import.meta.url);
 const PDFJS_MODULE_URL = pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.mjs')).href;
@@ -36,6 +37,162 @@ interface PdfWorkerFailure {
 
 type PdfWorkerMessage = PdfWorkerSuccess | PdfWorkerFailure;
 
+interface PdfWorkerReadyEnvelope {
+  readonly type: 'ready';
+}
+
+interface PdfWorkerResultEnvelope {
+  readonly type: 'result';
+  readonly requestId: number;
+  readonly result: PdfWorkerMessage;
+}
+
+type PdfWorkerEnvelope = PdfWorkerReadyEnvelope | PdfWorkerResultEnvelope;
+
+interface ActivePdfRequest {
+  readonly requestId: number;
+  readonly resolve: (value: string) => void;
+  readonly reject: (reason: unknown) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
+class PdfWorkerClient {
+  private readonly worker: Worker;
+  private readonly readyPromise: Promise<void>;
+  private resolveReady!: () => void;
+  private rejectReady!: (reason: unknown) => void;
+  private activeRequest: ActivePdfRequest | undefined;
+  private nextRequestId = 1;
+  private ready = false;
+  private dead = false;
+
+  public constructor() {
+    this.readyPromise = new Promise<void>((resolve, reject) => {
+      this.resolveReady = resolve;
+      this.rejectReady = reject;
+    });
+    this.worker = new Worker(PDF_WORKER_URL, {
+      workerData: {
+        pdfModuleUrl: PDFJS_MODULE_URL,
+        maxPages: MAX_PDF_PAGES,
+        maxTextCharacters: MAX_PDF_TEXT_CHARACTERS,
+        maxTextItems: MAX_PDF_TEXT_ITEMS,
+      },
+      resourceLimits: {
+        maxOldGenerationSizeMb: PDF_WORKER_MAX_OLD_GENERATION_MB,
+        maxYoungGenerationSizeMb: PDF_WORKER_MAX_YOUNG_GENERATION_MB,
+        stackSizeMb: 4,
+      },
+    });
+    this.worker.on('message', (message: unknown) => this.handleMessage(message));
+    this.worker.on('error', (error) => this.handleWorkerFailure(error));
+    this.worker.on('exit', (code) => {
+      if (!this.dead) {
+        this.handleWorkerFailure(
+          new ExtractionError(`The isolated PDF worker exited unexpectedly (code ${code})`),
+        );
+      }
+    });
+  }
+
+  public get available(): boolean {
+    return this.ready && !this.dead && this.activeRequest === undefined;
+  }
+
+  public async waitUntilReady(): Promise<void> {
+    await this.readyPromise;
+  }
+
+  public async extract(
+    body: Uint8Array,
+    deadline: number,
+    operationLimited: boolean,
+  ): Promise<string> {
+    await this.readyPromise;
+    if (!this.available) throw new ExtractionError('The isolated PDF worker is unavailable');
+    const remaining = Math.ceil(deadline - performance.now());
+    if (remaining <= 0) throw pdfTimeoutError(operationLimited);
+
+    const workerBody = Uint8Array.from(body);
+    const requestId = this.nextRequestId;
+    this.nextRequestId += 1;
+    this.worker.ref();
+
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.activeRequest = undefined;
+        this.dead = true;
+        void this.worker.terminate();
+        reject(pdfTimeoutError(operationLimited));
+      }, remaining);
+      timer.unref();
+      this.activeRequest = { requestId, resolve, reject, timer };
+      this.worker.postMessage(
+        { type: 'extract', requestId, body: workerBody },
+        [workerBody.buffer],
+      );
+    });
+  }
+
+  public terminate(): void {
+    if (this.dead) return;
+    this.dead = true;
+    if (this.activeRequest !== undefined) {
+      clearTimeout(this.activeRequest.timer);
+      this.activeRequest.reject(new ExtractionError('The isolated PDF worker was terminated'));
+      this.activeRequest = undefined;
+    }
+    void this.worker.terminate();
+  }
+
+  private handleMessage(message: unknown): void {
+    if (!isPdfWorkerEnvelope(message)) {
+      this.handleWorkerFailure(new ExtractionError('The PDF worker returned an invalid response'));
+      return;
+    }
+    if (message.type === 'ready') {
+      if (!this.ready) {
+        this.ready = true;
+        this.worker.unref();
+        this.resolveReady();
+      }
+      return;
+    }
+
+    const active = this.activeRequest;
+    if (active === undefined || active.requestId !== message.requestId) return;
+    clearTimeout(active.timer);
+    this.activeRequest = undefined;
+    this.worker.unref();
+    if (message.result.ok) active.resolve(message.result.text);
+    else active.reject(pdfWorkerFailure(message.result));
+  }
+
+  private handleWorkerFailure(error: unknown): void {
+    if (this.dead) return;
+    this.dead = true;
+    if (!this.ready) this.rejectReady(error);
+    const active = this.activeRequest;
+    if (active !== undefined) {
+      clearTimeout(active.timer);
+      this.activeRequest = undefined;
+      active.reject(
+        error instanceof ExtractionError
+          ? error
+          : new ExtractionError('The isolated PDF worker failed', { cause: error }),
+      );
+    }
+  }
+}
+
+const pdfWorkerPool = await Promise.all(
+  Array.from({ length: PDF_WORKER_POOL_SIZE }, async () => {
+    const client = new PdfWorkerClient();
+    await client.waitUntilReady();
+    return client;
+  }),
+);
+
 export async function extractPdfText(
   body: Uint8Array,
   operationDeadline?: number,
@@ -43,76 +200,36 @@ export async function extractPdfText(
   const localDeadline = performance.now() + PDF_EXTRACTION_TIMEOUT_MS;
   const operationLimited = operationDeadline !== undefined && operationDeadline <= localDeadline;
   const deadline = operationLimited ? operationDeadline : localDeadline;
-  const remaining = Math.ceil(deadline - performance.now());
-  if (remaining <= 0) throw pdfTimeoutError(operationLimited);
+  if (deadline - performance.now() <= 0) throw pdfTimeoutError(operationLimited);
   if (!hasPdfEnvelope(body)) {
     throw new ExtractionError('The PDF could not be parsed or its text could not be extracted');
   }
 
-  const workerBody = Uint8Array.from(body);
-  const worker = new Worker(PDF_WORKER_URL, {
-    workerData: {
-      body: workerBody,
-      pdfModuleUrl: PDFJS_MODULE_URL,
-      maxPages: MAX_PDF_PAGES,
-      maxTextCharacters: MAX_PDF_TEXT_CHARACTERS,
-      maxTextItems: MAX_PDF_TEXT_ITEMS,
-    },
-    transferList: [workerBody.buffer],
-    resourceLimits: {
-      maxOldGenerationSizeMb: PDF_WORKER_MAX_OLD_GENERATION_MB,
-      maxYoungGenerationSizeMb: PDF_WORKER_MAX_YOUNG_GENERATION_MB,
-      stackSizeMb: 4,
-    },
-  });
+  const pooledClient = pdfWorkerPool.find((client) => client.available);
+  const client = pooledClient ?? (await createReadyPdfWorkerClient());
+  try {
+    return await client.extract(body, deadline, operationLimited);
+  } finally {
+    if (pooledClient === undefined) client.terminate();
+    replaceDeadPooledWorkers();
+  }
+}
 
-  return new Promise<string>((resolve, reject) => {
-    let settled = false;
-    const finish = (callback: () => void): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      worker.removeAllListeners();
-      void worker.terminate();
-      callback();
-    };
+async function createReadyPdfWorkerClient(): Promise<PdfWorkerClient> {
+  const client = new PdfWorkerClient();
+  await client.waitUntilReady();
+  return client;
+}
 
-    const timer = setTimeout(() => {
-      finish(() => reject(pdfTimeoutError(operationLimited)));
-    }, remaining);
-
-    worker.once('message', (message: unknown) => {
-      finish(() => {
-        if (!isPdfWorkerMessage(message)) {
-          reject(new ExtractionError('The PDF worker returned an invalid response'));
-          return;
-        }
-        if (message.ok) {
-          resolve(message.text);
-          return;
-        }
-        reject(pdfWorkerFailure(message));
-      });
-    });
-    worker.once('error', (error) => {
-      finish(() =>
-        reject(
-          new ExtractionError('The isolated PDF worker failed', {
-            cause: error,
-          }),
-        ),
-      );
-    });
-    worker.once('exit', (code) => {
-      if (settled) return;
-      finish(() =>
-        reject(
-          new ExtractionError(
-            `The isolated PDF worker exited before completing extraction (code ${code})`,
-          ),
-        ),
-      );
-    });
+function replaceDeadPooledWorkers(): void {
+  pdfWorkerPool.forEach((client, index) => {
+    if (client.available) return;
+    void createReadyPdfWorkerClient()
+      .then((replacement) => {
+        if (!client.available) pdfWorkerPool[index] = replacement;
+        else replacement.terminate();
+      })
+      .catch(() => undefined);
   });
 }
 
@@ -140,6 +257,17 @@ function containsAscii(body: Uint8Array, needle: string, start: number, end: num
     if (matches) return true;
   }
   return false;
+}
+
+function isPdfWorkerEnvelope(value: unknown): value is PdfWorkerEnvelope {
+  if (value === null || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  if (record['type'] === 'ready') return true;
+  return (
+    record['type'] === 'result' &&
+    Number.isSafeInteger(record['requestId']) &&
+    isPdfWorkerMessage(record['result'])
+  );
 }
 
 function isPdfWorkerMessage(value: unknown): value is PdfWorkerMessage {
@@ -183,6 +311,7 @@ function createPdfWorkerSource(): string {
   return `
 import { parentPort, workerData } from 'node:worker_threads';
 
+const { getDocument, VerbosityLevel } = await import(workerData.pdfModuleUrl);
 const MAX_PAGES = workerData.maxPages;
 const MAX_TEXT_CHARACTERS = workerData.maxTextCharacters;
 const MAX_TEXT_ITEMS = workerData.maxTextItems;
@@ -203,12 +332,11 @@ function normalizePdfText(value) {
     .trim();
 }
 
-async function extract() {
-  const { getDocument, VerbosityLevel } = await import(workerData.pdfModuleUrl);
+async function extract(body) {
   let loadingTask;
   try {
     loadingTask = getDocument({
-      data: new Uint8Array(workerData.body),
+      data: new Uint8Array(body),
       disableAutoFetch: true,
       disableFontFace: true,
       disableRange: true,
@@ -261,17 +389,27 @@ async function extract() {
   }
 }
 
-extract().then(
-  (text) => parentPort?.postMessage({ ok: true, text }),
-  (error) =>
+parentPort?.on('message', async (message) => {
+  if (message?.type !== 'extract' || !Number.isSafeInteger(message.requestId)) return;
+  try {
+    const text = await extract(message.body);
+    parentPort?.postMessage({ type: 'result', requestId: message.requestId, result: { ok: true, text } });
+  } catch (error) {
     parentPort?.postMessage({
-      ok: false,
-      code:
-        error !== null && typeof error === 'object' && typeof error.code === 'string'
-          ? error.code
-          : 'PARSE_FAILED',
-      message: error instanceof Error ? error.message : String(error),
-    }),
-);
+      type: 'result',
+      requestId: message.requestId,
+      result: {
+        ok: false,
+        code:
+          error !== null && typeof error === 'object' && typeof error.code === 'string'
+            ? error.code
+            : 'PARSE_FAILED',
+        message: error instanceof Error ? error.message : String(error),
+      },
+    });
+  }
+});
+
+parentPort?.postMessage({ type: 'ready' });
 `;
 }
