@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export function preparePrivateSqliteStorage(path: string): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  preparePrivateDirectory(dirname(path));
 }
 
 export function preparePrivateDirectory(path: string): void {

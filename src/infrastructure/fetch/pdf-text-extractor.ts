@@ -7,6 +7,7 @@ import {
   OcrRequiredNotSupportedError,
   RequestTimeoutError,
 } from '../../domain/errors/domain-errors.js';
+import { RecoveringWorkerPool } from './recovering-worker-pool.js';
 
 const MAX_PDF_PAGES = 200;
 const MAX_PDF_TEXT_CHARACTERS = 1_000_000;
@@ -17,6 +18,7 @@ const PDF_WORKER_MAX_YOUNG_GENERATION_MB = 32;
 const PDF_ENVELOPE_SCAN_BYTES = 1_024;
 const PDF_WORKER_POOL_SIZE = 2;
 const PDF_WORKER_AVAILABILITY_POLL_MS = 10;
+const PDF_WORKER_REPAIR_RETRY_MS = 50;
 
 const require = createRequire(import.meta.url);
 const PDFJS_MODULE_URL = pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.mjs')).href;
@@ -207,13 +209,18 @@ class PdfWorkerClient {
   }
 }
 
-const pdfWorkerPool = await Promise.all(
-  Array.from({ length: PDF_WORKER_POOL_SIZE }, async () => {
-    const client = new PdfWorkerClient();
-    await client.waitUntilReady();
-    return client;
-  }),
-);
+async function createReadyPdfWorkerClient(): Promise<PdfWorkerClient> {
+  const client = new PdfWorkerClient();
+  await client.waitUntilReady();
+  return client;
+}
+
+const pdfWorkerPool = new RecoveringWorkerPool(createReadyPdfWorkerClient, {
+  size: PDF_WORKER_POOL_SIZE,
+  retryDelayMs: PDF_WORKER_REPAIR_RETRY_MS,
+  pollIntervalMs: PDF_WORKER_AVAILABILITY_POLL_MS,
+});
+await pdfWorkerPool.initialize();
 
 export async function extractPdfText(
   body: Uint8Array,
@@ -231,51 +238,12 @@ export async function extractPdfText(
     throw new ExtractionError('The PDF could not be parsed or its text could not be extracted');
   }
 
-  const client = await reservePdfWorker(deadline, timeoutError);
+  const client = await pdfWorkerPool.reserve(deadline, timeoutError);
   try {
     return await client.extract(body, deadline, timeoutError);
   } finally {
-    if (client.failed) replaceFailedPooledWorker(client);
+    if (client.failed) pdfWorkerPool.reportFailure(client);
   }
-}
-
-async function reservePdfWorker(
-  deadline: number,
-  timeoutError: PdfTimeoutErrorFactory,
-): Promise<PdfWorkerClient> {
-  for (;;) {
-    for (const client of pdfWorkerPool) {
-      if (client.reserve()) return client;
-    }
-
-    const remaining = Math.ceil(deadline - performance.now());
-    if (remaining <= 0) throw timeoutError();
-    await waitForPdfWorker(Math.min(PDF_WORKER_AVAILABILITY_POLL_MS, remaining));
-  }
-}
-
-async function waitForPdfWorker(milliseconds: number): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, milliseconds);
-    timer.unref();
-  });
-}
-
-async function createReadyPdfWorkerClient(): Promise<PdfWorkerClient> {
-  const client = new PdfWorkerClient();
-  await client.waitUntilReady();
-  return client;
-}
-
-function replaceFailedPooledWorker(client: PdfWorkerClient): void {
-  const index = pdfWorkerPool.indexOf(client);
-  if (index === -1 || !client.failed) return;
-  void createReadyPdfWorkerClient()
-    .then((replacement) => {
-      if (pdfWorkerPool[index] === client && client.failed) pdfWorkerPool[index] = replacement;
-      else replacement.terminate();
-    })
-    .catch(() => undefined);
 }
 
 function hasPdfEnvelope(body: Uint8Array): boolean {

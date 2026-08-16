@@ -10,6 +10,7 @@ import { verifyCatalogIntegrity } from './catalog-integrity.js';
 import { openCatalogDatabase } from './catalog-database.js';
 
 const SAFE_BACKUP_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.db$/u;
+const SQLITE_TEMPORARY_SUFFIXES = ['', '-wal', '-shm', '-journal'] as const;
 
 export interface CatalogBackupOutput {
   readonly schemaVersion: '1.0';
@@ -22,11 +23,20 @@ export interface CatalogBackupOutput {
   readonly verifiedAt: string;
 }
 
+export interface SqliteCatalogBackupOptions {
+  readonly removeFile?: (path: string) => void;
+}
+
 export class SqliteCatalogBackup {
+  private readonly removeFile: (path: string) => void;
+
   public constructor(
     private readonly catalogPath: string,
     private readonly clock: Clock,
-  ) {}
+    options: SqliteCatalogBackupOptions = {},
+  ) {
+    this.removeFile = options.removeFile ?? removeFile;
+  }
 
   public async run(destinationRequest: string): Promise<CatalogBackupOutput> {
     const requestedSourcePath = resolve(this.catalogPath);
@@ -45,16 +55,13 @@ export class SqliteCatalogBackup {
     const source = openCatalogDatabase(sourcePath);
     try {
       const metadata = await source.backup(temporaryPath);
+      source.close();
+
       hardenPrivateFile(temporaryPath);
       this.verifySnapshot(temporaryPath);
       const sha256 = await sha256File(temporaryPath);
       const bytes = statSync(temporaryPath).size;
-
-      linkSync(temporaryPath, finalPath);
-      hardenPrivateFile(finalPath);
-      rmSync(temporaryPath);
-
-      return {
+      const output: CatalogBackupOutput = {
         schemaVersion: '1.0',
         status: 'backed_up',
         sourcePath,
@@ -64,9 +71,16 @@ export class SqliteCatalogBackup {
         pages: metadata.totalPages,
         verifiedAt: this.clock.now().toISOString(),
       };
+
+      // The hard-link is the durable commit point. The temporary inode is already private and
+      // verified, so the published name is immediately a complete 0600 snapshot. No operation
+      // after this point is allowed to turn a successful publication into a reported failure.
+      linkSync(temporaryPath, finalPath);
+      this.cleanupTemporaryFamily(temporaryPath);
+      return output;
     } finally {
-      source.close();
-      rmSync(temporaryPath, { force: true });
+      if (source.open) source.close();
+      this.cleanupTemporaryFamily(temporaryPath);
     }
   }
 
@@ -78,6 +92,17 @@ export class SqliteCatalogBackup {
       if (report.issues.length > 0) throw new Error('CATALOG_BACKUP_INTEGRITY_FAILED');
     } finally {
       snapshot.close();
+    }
+  }
+
+  private cleanupTemporaryFamily(path: string): void {
+    for (const suffix of SQLITE_TEMPORARY_SUFFIXES) {
+      try {
+        this.removeFile(`${path}${suffix}`);
+      } catch {
+        // Publication is already committed or a primary error is already in flight. Cleanup is
+        // deliberately best effort so a transient EPERM/EBUSY cannot falsify the backup outcome.
+      }
     }
   }
 }
@@ -99,4 +124,8 @@ async function sha256File(path: string): Promise<string> {
     stream.on('error', rejectHash);
   });
   return hash.digest('hex');
+}
+
+function removeFile(path: string): void {
+  rmSync(path, { force: true });
 }

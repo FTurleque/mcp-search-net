@@ -1,116 +1,47 @@
 # État courant de `mcp-search-net`
 
-Ce document décrit l’état **fonctionnel et architectural autoritatif** du produit courant : contrat
-MCP, stockage, migrations, sécurité, invariants de concurrence, packaging et politique de
-qualification. Les fichiers datés sous `docs/planning/` restent des preuves historiques.
+Ce document décrit l’état fonctionnel et architectural autoritatif du produit courant. Les SHA et
+exécutions CI cités ici sont des **preuves datées de qualification** et non une identité dynamique du
+HEAD Git : le HEAD réel reste déterminé par le dépôt. Les documents datés sous `docs/planning/`
+restent des preuves historiques.
 
-Les SHA de merge et les exécutions CI exact-head sont des **preuves GitHub datées** : ils ne sont pas
-utilisés comme identité auto-référente de ce fichier, car tout commit modifiant ce document crée par
-définition un nouveau SHA. L’issue #73 reste le tracker de clôture pour les preuves manuelles de
-certification native.
-
-## Version et branches
+## Version, branches et qualification
 
 - Version SemVer : `1.1.3`.
 - Branche de release et source de vérité publiée : `master`.
 - Branche d’intégration courante : `develop`.
-- Une capacité présente uniquement sur `develop` n’est pas déclarée publiée tant qu’elle n’a pas été
-  portée sur `master` par le flux de release.
-- Dernière baseline post-merge intégrée : merge de la PR #102 dans `develop`, commit
-  `ad549294560ecd818b93890204989e6c00eb28f0`, tree fonctionnel
-  `1afa9baade6c17b06f7c52ff3f3969e62295be26`. La CI #1295 / `31954236669` a terminé en `SUCCESS`
-  sur ce SHA pour Node.js, Docker/live E2E et Windows installation/STDIO packaging ; le job Sonar
-  GitHub Actions est ignoré sur les pushes `develop` par conception.
-- Le head exact de la PR #102 `b990819d3b71d0f87b3a03fb8393b653c08c1feb` avait été qualifié par
-  la CI #1294 / `31951616820` avec `SonarCloud Code Analysis` en succès et le Quality Gate
-  SonarQubeCloud passé : 83,9 % de couverture sur le nouveau code, 0 nouvelle issue, 0 Security
-  Hotspot et 0,1 % de duplication sur le nouveau code.
-- Le nouvel audit complet de cette baseline a identifié une queue de hardening supplémentaire. Le
-  candidat de correction est développé sur `agent/fix-audit-complete-20260816` et n’est pas déclaré
-  intégré à `develop` tant qu’une PR n’a pas été explicitement mergée.
-- Le ruleset `Protect integration branches` protège la branche par défaut et `develop`, exige les PR,
-  la résolution des threads et les quatre checks courants. Le mode strict est actif : une PR doit
-  être à jour avec sa base avant merge (`strict_required_status_checks_policy=true`).
-- La politique SemVer de release impose l’égalité entre paramètre de publication, `package.json`,
-  `package-lock.json` et version embarquée ; toute dérive bloque la publication.
+- Intégration V2 : PR #8 mergée.
+- Baseline `develop` intégrée avant le candidat post-audit courant : merge de la PR #103,
+  `17ac4224f159f2f43d3c29f5390d66a403b2bd8f`, tree
+  `118c1366b12f5dee24d23cdd82ba4406d8398db3`.
+- La CI post-merge #1337 / `31963224930` a terminé en succès sur ce SHA pour la validation Node.js,
+  Docker/live E2E et le packaging/lifecycle Windows. Le job Sonar est ignoré sur les pushes
+  `develop` par conception ; le head exact de la PR #103 avait passé le Quality Gate Sonar.
+- Le nouvel audit complet de cette baseline n’a identifié aucun P0, P1 ou P2 résiduel. Cinq P3 de
+  résilience/exploitation sont corrigés sur le candidat `agent/fix-post-audit-p3-20260816` ; ces
+  corrections ne sont pas déclarées intégrées à `develop` avant merge explicite de leur PR.
+- L’issue #73 reste le tracker de clôture pour les preuves de certification native Claude Code,
+  Claude Desktop et Codex contre le SHA serveur finalement intégré.
 
-## Findings post-audit fermés dans le code courant
+## Hardening du candidat post-audit
 
-- Les synchronisations catalogue `EXECUTION` incompatibles sont exclues durablement par SQLite via
-  `C014__guard_concurrent_sync_execution.sql`. Une exécution globale exclut toute autre exécution ;
-  deux exécutions ciblées sur la même source s’excluent ; deux sources différentes et les runs
-  `PLAN` peuvent coexister.
-- Le fencing du `syncRunId` et la promotion d’une révision courante partagent la même transaction
-  SQLite. Une observation portant un `syncRunId` sans token d’ownership local est rejetée en
-  fail-closed ; après une première perte de lease, toutes les mutations suivantes du même ancien
-  owner restent donc rejetées. `SyncCatalogDocuments` traite `CATALOG_SYNC_RUN_OWNERSHIP_LOST`
-  comme une erreur fatale du run et n’essaie pas de poursuivre avec les documents suivants.
-- La récupération des sync-runs abandonnés sépare désormais décision et commit : les sondes OS de
-  liveness/identité de processus sont exécutées hors transaction d’écriture SQLite, puis une courte
-  transaction `BEGIN IMMEDIATE` applique uniquement les récupérations dont `started_at`,
-  `heartbeat_at`, owner token, PID et hostname correspondent encore au snapshot observé. Un owner
-  qui renouvelle son heartbeat pendant une sonde lente invalide donc la récupération candidate au
-  lieu d’être écrasé, sans conserver un write-lock SQLite pendant PowerShell/`ps`.
-- `FileLease.release()` est reprenable : une suppression réussie du lock principal suivie d’un échec
-  transitoire du heartbeat ne marque pas prématurément le lease comme libéré.
-- L’acquisition `FileLeaseLock.acquire()` est également exception-safe : si la création initiale du
-  heartbeat échoue, le heartbeat éventuellement partiel est nettoyé tant que l’ownership est certain,
-  puis le lock principal est supprimé. Si l’unlink direct est transitoirement bloqué, le lock est
-  déplacé vers une quarantaine à nom généré par le serveur afin de libérer le chemin actif ; les
-  erreurs secondaires de rollback restent attachées à l’erreur primaire pour diagnostic.
-- Les nouveaux `FileLease` utilisent le format `1.2` avec un heartbeat propre à chaque génération.
-  Son chemin est dérivé d’un SHA-256 du token d’owner, jamais du token brut. Un ancien owner ne peut
-  donc plus supprimer ou écraser le heartbeat d’un owner de remplacement pendant `release`, `renew`
-  ou cleanup stale. La lecture des anciens formats `1.0`/`1.1` et de leur heartbeat partagé reste
-  conservée pour compatibilité de récupération.
-- La récupération d’un `FileLease` stale libère d’abord le namespace actif par rename ownership-safe.
-  La suppression de la quarantaine et de l’ancien heartbeat est ensuite retentée avec un budget
-  borné ; un `EPERM`/`EBUSY` résiduel est journalisé sans rendre de nouveau le lock stale actif ni
-  empêcher à lui seul une nouvelle acquisition.
-- La configuration catalogue refuse deux `stable_key` identiques dans une même source avant toute
-  ouverture ou migration de `catalog.db` sur les chemins `load-sources` et `sync`. Deux déclarations
-  ne peuvent plus converger silencieusement vers le même `publicId` documentaire.
-- Une reprise de synchronisation limitée est liée à la configuration effective qui a produit le
-  curseur. Le rapport émet `resumeAfter` avec `resumeConfigurationFingerprint`; la reprise exige les
-  deux valeurs et compare l’empreinte avant création du `sync_run`. Une modification ou un
-  réordonnancement de la configuration échoue avec `CATALOG_RESUME_CONFIGURATION_CHANGED` au lieu de
-  sauter silencieusement des documents.
-- `list_search_history` est une lecture réellement non mutante : les lignes hors fenêtre de rétention
-  sont exclues par le prédicat SQL de lecture sans `DELETE` ni chmod déclenché par le tool call. La
-  purge physique reste effectuée sur les chemins d’écriture/rétention.
-- Les annotations MCP reflètent les effets persistants réels : `search_web`, `fetch_url` et
-  `search_docs` ne sont pas annoncés read-only/idempotents car ils peuvent écrire cache et/ou
-  historique local ; `list_docs`, `read_doc_section` et `list_search_history` restent annoncés comme
-  lectures read-only/idempotentes.
-- Les tests de fault injection couvrent les doubles fautes d’acquisition, les changements d’owner,
-  les suppressions `ENOENT`, le fencing répété d’un ancien owner, les échecs de cleanup après
-  quarantaine stale, le renouvellement concurrent d’un sync-run pendant une sonde d’identité,
-  les courses release/renew entre générations de `FileLease`, les reprises de catalogue après dérive
-  de configuration et l’absence de mutation physique pendant la lecture de l’historique.
+Le candidat ferme cinq écarts résiduels sans modifier les dépendances, migrations, seuils qualité,
+workflows CI ou règles de gouvernance :
 
-## Hardening porté par le candidat post-#102
-
-Les garanties suivantes décrivent le candidat `agent/fix-audit-complete-20260816`. Elles ne deviennent
-une propriété de `develop` qu’après intégration explicite de la PR correspondante :
-
-- les renouvellements `FileLease` ne tronquent plus le heartbeat vivant : une génération complète est
-  écrite sur un fichier de staging serveur puis publiée par rename atomique. Un lecteur ne peut donc
-  plus interpréter une écriture partielle comme un heartbeat absent ;
-- une lease expirée dont le PID local est encore vivant n’est jamais récupérée si l’identité de vie du
-  processus ne peut pas être établie. Seul un owner mort ou une réutilisation de PID confirmée permet
-  la récupération, ce qui préserve l’exclusion pendant les opérations SQLite synchrones longues ;
-- les `sourceKey` catalogue et langues héritées sont canonicalisés une seule fois avant de construire
-  les documents. Les collisions de clés source après canonicalisation et les collisions de
-  `stable_key` après normalisation sont rejetées avant ouverture de la base ;
-- les invariants documentaires du domaine (`stable_key`, titre, URL, langue BCP-47, MIME) sont partagés
-  avec le parser YAML. Une configuration invalide échoue donc avant création/migration de
-  `catalog.db`, avant `sync_run` et avant fetch réseau ;
-- l’empreinte de reprise inclut désormais l’état persistant `enabled` des sources effectivement
-  référencées, en plus de l’ordre et des métadonnées documentaires. Un changement d’activation entre
-  deux lots échoue avant création du run ;
-- l’extraction PDF s’exécute dans un worker Node isolé, destructible à la deadline et borné en mémoire.
-  Les limites de pages et caractères sont complétées par une limite d’items texte afin de borner le
-  travail intermédiaire avant assemblage complet.
+1. le pool PDF reste strictement borné à deux slots et devient auto-réparant ; une création de worker
+   de remplacement qui échoue transitoirement laisse le slot réessayable avec backoff au lieu de
+   réduire définitivement la capacité du processus ;
+2. le backup catalogue formalise le hard-link final comme point de commit. Le snapshot temporaire
+   est déjà privé, vérifié et fermé avant publication ; les nettoyages post-commit de la famille
+   SQLite temporaire sont best-effort et ne peuvent plus transformer une publication réussie en
+   faux échec métier ;
+3. les répertoires persistants SQLite préexistants sont rechmodés en `0700` sur POSIX, pas seulement
+   créés avec un mode souhaité ; les fichiers SQLite et sidecars restent durcis en `0600` ;
+4. lorsque `verifyIntegrityOnOpen` est demandé, le catalogue est vérifié avant récupération des
+   sync-runs abandonnés afin qu’aucune mutation de récupération ne précède le verdict d’intégrité ;
+5. les commandes CLI métier ouvrent le catalogue avec l’integrity gate actif. `verify`, `health` et
+   `rebuild-index` conservent un chemin administratif explicite capable de diagnostiquer/réparer une
+   incohérence FTS ; `purge-versions` vérifie également l’intégrité avant toute suppression.
 
 ## Contrat MCP public
 
@@ -123,13 +54,9 @@ Le serveur STDIO expose exactement six outils :
 - `read_doc_section`
 - `list_search_history`
 
-Les annotations de side effects sont intentionnellement différenciées :
-
-- `search_web`, `fetch_url` et `search_docs` ont `readOnlyHint: false` et `idempotentHint: false`, car
-  un appel peut modifier le cache local et/ou ajouter une occurrence à l’historique local ; ces
-  effets restent non destructifs (`destructiveHint: false`) ;
-- `list_docs`, `read_doc_section` et `list_search_history` ont `readOnlyHint: true` et
-  `idempotentHint: true` ; leur exécution ne modifie pas l’état persistant applicatif.
+`search_web`, `fetch_url` et `search_docs` ne sont pas annoncés read-only/idempotents, car ils peuvent
+écrire cache et/ou historique local. `list_docs`, `read_doc_section` et `list_search_history` sont des
+lectures read-only/idempotentes.
 
 Les quatre resources statiques sont :
 
@@ -150,13 +77,9 @@ Les neuf resource templates sont :
 - `mcp-search-net://sections/page/{offset}`
 - `mcp-search-net://sections/{sectionId}`
 
-Le workflow documentaire recommandé est `search_docs` puis `read_doc_section` avec le `sectionId`
-réel retourné. `search_web` et `fetch_url` servent au Web frais ou absent du catalogue.
-`list_search_history` inspecte uniquement l’historique local déjà enregistré et ne relance aucune
-recherche.
-
-Toutes les sorties provenant du Web ou du catalogue sont considérées comme contenu externe non
-fiable. Le serveur n’exécute jamais le contenu récupéré comme instruction.
+Le workflow documentaire portable recommandé est `search_docs` puis `read_doc_section` avec le
+`sectionId` réellement retourné. Tout contenu Web ou documentaire est traité comme contenu externe
+non fiable et n’est jamais exécuté comme instruction.
 
 ## Stockage SQLite
 
@@ -164,27 +87,23 @@ Trois bases ont des responsabilités distinctes :
 
 - `cache.sqlite` : cache Web ;
 - `catalog.db` : catalogue documentaire ;
-- `history.sqlite` : historique local des occurrences validées de `search_web` et `search_docs`.
+- `history.sqlite` : historique local des occurrences validées de recherche.
 
-Les chemins doivent être distincts, y compris après canonicalisation des liens/répertoires. Sous
-POSIX, les fichiers SQLite et leurs WAL/SHM sont durcis en `0600` et les répertoires privés en
-`0700`. Les connexions utilisent `busy_timeout`, WAL, `foreign_keys=ON` et une initialisation de
-schéma sérialisée par transaction `BEGIN IMMEDIATE`.
+Les chemins doivent rester distincts, y compris après canonicalisation. Sous POSIX, les répertoires
+privés sont maintenus en `0700` et les fichiers SQLite/WAL/SHM en `0600`. Les connexions utilisent un
+`busy_timeout`, WAL et `foreign_keys=ON` ; les migrations sont sérialisées.
 
-Le catalogue vérifie au démarrage `PRAGMA integrity_check`, `PRAGMA foreign_key_check`, les pointeurs
-et flags de version courante ainsi que la cohérence du FTS. Les mises à jour de source et la
-reconstruction FTS associée sont transactionnelles.
+Le catalogue vérifie `PRAGMA integrity_check`, `PRAGMA foreign_key_check`, les pointeurs/flags de
+version courante et la cohérence FTS sur les chemins fail-closed. Promotion de version, sections,
+FTS, pointeur courant et observation de synchronisation partagent une transaction SQLite.
 
-L’historique est fail-open : une panne de `history.sqlite` n’annule pas une recherche principale
-réussie. La rétention est bornée en durée et en nombre d’entrées. Les lectures appliquent la fenêtre
-de rétention comme filtre sans muter la base ; la purge physique des entrées expirées intervient lors
-des écritures. Les formes évidentes de secrets Bearer/JWT/PAT/API-key/password/secret/signature sont
-remplacées par `[REDACTED]` avant persistance ; `history.enabled: false` permet de désactiver
-entièrement cette journalisation locale.
+L’historique reste fail-open pour le résultat métier principal. La rétention est bornée, les lectures
+n’effectuent pas de purge physique et les formes évidentes de secrets sont expurgées avant
+persistance.
 
 ## Migrations catalogue et historique
 
-Les migrations catalogue appliquées dans l’ordre sont :
+Les migrations catalogue immuables appliquées dans l’ordre sont :
 
 - `C001__create_catalog_sources.sql`
 - `C002__create_documents.sql`
@@ -205,63 +124,50 @@ La migration historique courante est :
 
 - `H001__create_search_history.sql`
 
-Une migration appliquée est immuable. Toute évolution de schéma crée une nouvelle migration avec un
-nouveau numéro et checksum.
+Toute évolution de schéma crée une nouvelle migration numérotée et checksumée ; une migration déjà
+appliquée n’est jamais réécrite.
 
-## Invariants catalogue
+## Concurrence et récupération
 
-- Une révision courante est atomique : document, version, sections, FTS, pointeur courant et
-  observation de synchronisation sont validés dans la même transaction.
-- Toute observation de synchronisation doit être portée par un `syncRunId` encore détenu localement ;
-  l’absence du token local ou l’échec du heartbeat durable fence la mutation avant commit.
-- La décision de récupération d’un sync-run abandonné peut effectuer des sondes OS lentes, mais ces
-  sondes ne tiennent jamais le writer SQLite. Le commit de récupération est un CAS durable sur le
-  snapshot exact de lease observé afin qu’un renouvellement concurrent gagne toujours la course.
-- Les sections sont chunkées et bornées avant persistance ; deux occurrences identiques à des
-  positions différentes restent distinctes.
-- `C011` persiste l’intention `pending_current` pour les primitives legacy afin qu’une version ne
-  devienne courante qu’avec ses sections et son FTS.
-- `C012` conserve les filtres de langue BCP-47 indexables avec `COLLATE NOCASE`.
-- `C013` ajoute owner token, PID, hostname, process identity et heartbeat aux runs de
-  synchronisation. La récupération d’un owner mort clôt le run et invalide son ancien token.
-- `C014` réconcilie les overlaps historiques puis impose les gardes `INSERT`/`UPDATE` entre toutes
-  les connexions/processus.
+- Les synchronisations `EXECUTION` incompatibles sont exclues durablement par SQLite : une exécution
+  globale exclut toute autre exécution ; deux exécutions ciblées de même source s’excluent ; deux
+  sources distinctes et les runs `PLAN` peuvent coexister.
+- Les mutations portées par un `syncRunId` sont fenced par ownership durable. Une perte de lease est
+  fatale pour le run et l’ancien owner ne peut plus publier d’observation/révision.
+- La récupération des sync-runs sépare les sondes OS potentiellement lentes de la transaction
+  d’écriture ; le commit de récupération compare le snapshot exact observé.
+- Les `FileLease` publient leur heartbeat par staging + rename atomique, utilisent un heartbeat
+  owner-scoped et échouent fermé si un PID local est vivant mais que son identité ne peut être
+  établie. Seul un PID mort ou une réutilisation confirmée permet une récupération stale.
+- Les opérations de maintenance utilisent une lease dédiée et ne doivent jamais permettre à un
+  second owner de voler l’exclusion pendant une opération SQLite synchrone longue.
 
-## Sécurité réseau et contenu
+## Synchronisation catalogue
 
-La politique de fetch public bloque localhost, réseaux privés, link-local, multicast et plages
-réservées. Chaque destination initiale et chaque redirect sont revalidés ; la connexion est épinglée
-sur une IP approuvée après résolution DNS afin de fermer les scénarios de DNS rebinding.
+Les `sourceKey`, langues et métadonnées documentaires sont normalisés avant effets persistants. Les
+collisions après canonicalisation échouent avant ouverture du catalogue ou fetch réseau. Une reprise
+limitée est liée à une empreinte incluant l’ordre des documents et l’état persistant `enabled` des
+sources référencées ; toute dérive invalide le curseur avant création du sync-run.
 
-`SecureHttpGateway` applique :
+Les téléchargements sont bornés en taille, redirects et temps. L’extraction PDF est isolée dans des
+workers Node bornés en mémoire avec limites de pages, caractères et items texte. Le pool ne crée pas
+de workers de débordement : les demandes excédentaires attendent un slot dans leur deadline.
 
-- deadline absolue ;
-- budget d’octets partagé sur toute la chaîne ;
-- limite de redirects ;
-- limite de concurrence ;
-- temporisation par origine avec nombre d’origines mémorisées borné ;
-- contrôle robots.txt lorsque configuré.
+## Réseau et sécurité
 
-Le fallback Crawl4AI reçoit du contenu neutralisé et non une URL publique libre à recrawler. Les
-liens extraits sont revalidés et bornés avant exposition. Sur le candidat post-#102, l’extraction PDF
-est en plus isolée dans un worker borné et destructible à la deadline ; les sanitizers neutralisent
-scripts, iframes, formulaires, handlers actifs et schémas de lien dangereux.
+- seuls HTTP/HTTPS sont acceptés ;
+- localhost, metadata cloud, réseaux privés/réservés, credentials d’URL et DNS mixtes sont bloqués ;
+- les redirections sont résolues et revalidées ;
+- la connexion réseau est épinglée sur une adresse DNS approuvée ;
+- les budgets de bytes/deadline couvrent les redirects et contrôles associés ;
+- Crawl4AI reçoit du contenu déjà récupéré et neutralisé via `raw://`, jamais une URL publique à
+  télécharger directement ;
+- le serveur MCP n’expose aucun port applicatif et écrit uniquement JSON-RPC sur stdout ;
+- le conteneur MCP est non-root, filesystem read-only, capabilities supprimées et sans socket Docker ;
+- les images fournisseurs sont figées par digest ;
+- les erreurs publiques ne reflètent pas les métadonnées distantes non fiables.
 
-## Supply chain et release Windows
-
-- Runtime supporté : Node.js `24.18.0`.
-- `@modelcontextprotocol/sdk@1.30.0` et `better-sqlite3@13.0.3` sont fixés.
-- `.npmrc` impose `strict-allow-scripts=true` avec allowlist explicite des scripts d’installation.
-- Les images Docker critiques sont fixées par digest.
-- Les GitHub Actions utilisées dans les workflows sont fixées par SHA.
-- La CI exécute audit npm complet et audit production ; un workflow quotidien refait les audits.
-- Inno Setup `6.7.3` est téléchargé depuis une URL fixe et vérifié par SHA-256 avant exécution.
-- Le runtime Node Windows embarqué est également vérifié par SHA-256.
-- Le job de qualification de release n’a que des permissions de lecture. Le job de publication
-  séparé reçoit `contents: write`, ne checkout pas le repository, télécharge les artefacts qualifiés
-  du même run et revérifie leurs SHA-256 avant création d’une release immutable.
-
-## Variables d’environnement supportées
+## Variables d’environnement principales
 
 - `MCP_CONFIG_PATH`
 - `MCP_PROFILE`
@@ -275,32 +181,17 @@ scripts, iframes, formulaires, handlers actifs et schémas de lien dangereux.
 - `MCP_CRAWL4AI_TOKEN`
 - `MCP_ALLOWED_PUBLIC_PORTS`
 
-Les aliases historiques documentés dans les configurations utilisateur restent gérés lorsqu’ils
-sont explicitement prévus par le loader, mais les noms ci-dessus constituent le contrat courant.
+La validation de configuration est stricte. En profil production, le HTTP public est interdit et les
+jetons de développement connus sont refusés.
 
-## Certification native
+## Qualification et release
 
-La dernière matrice native 3/3 historiquement finalisée couvre Claude Code, Claude Desktop et Codex
-sur Windows 10 avec le runtime serveur
-`a70b9a51527543c9417566326bb780121954cef5`. Elle vérifie la chaîne réelle :
+Une release n’est considérée qualifiée que si les checks sont attachés au SHA exact du candidat. La
+politique SemVer impose l’égalité entre la version demandée, `package.json`, `package-lock.json` et la
+version embarquée. Le packaging Windows vérifie le runtime Node et l’installateur Inno Setup avant
+exécution, préserve les intégrations MCP préexistantes non gérées et couvre clean install, upgrade,
+rollback et uninstall.
 
-`search_docs -> sectionId réel -> read_doc_section(exactement le même sectionId)`.
-
-Cette preuve reste valide uniquement pour son SHA/version client/OS. Elle **ne qualifie pas** un
-nouveau SHA serveur. L’issue #73 reste ouverte jusqu’à une nouvelle observation native Claude Code +
-Claude Desktop + Codex contre la baseline finale choisie pour la clôture. Le harness automatisé et
-la sonde STDIO ne peuvent jamais transformer seuls cette étape en PASS natif.
-
-## Ancrages historiques conservés
-
-Les éléments suivants restent volontairement présents pour maintenir la traçabilité et les gates de
-réconciliation documentaire :
-
-- Intégration V2 : PR #8 mergée dans `master` le 5 août 2026.
-- Hardening post-audit complet : PR #37 mergée dans `master` le 6 août 2026.
-- Qualification de la PR #37 : run `31126841127`.
-- Décision embeddings : `prototype-local-vector-index`.
-- `adoptEmbeddingRuntimeNow: false`.
-
-Ces ancrages sont historiques ; ils ne remplacent pas les checks attachés au SHA exact d’un nouveau
-candidat.
+Les tests ne doivent pas être affaiblis pour faire passer la CI. Les seuils de couverture, contrôles
+supply-chain, audits npm, suites security/resilience/integration et exact-head gates font partie de la
+qualification normale.

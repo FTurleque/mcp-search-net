@@ -76,7 +76,9 @@ export class SqliteSearchHistoryRepository implements SearchHistoryRepository {
     if (!Number.isSafeInteger(maxEntries) || maxEntries < 100 || maxEntries > 1_000_000) {
       throw new RangeError('maxEntries must be an integer between 100 and 1000000');
     }
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    const storageDirectory = dirname(path);
+    mkdirSync(storageDirectory, { recursive: true, mode: 0o700 });
+    if (process.platform !== 'win32') chmodSync(storageDirectory, 0o700);
     this.database = new Database(path, { timeout: SQLITE_BUSY_TIMEOUT_MS });
     try {
       hardenHistoryStoragePermissions(path);
