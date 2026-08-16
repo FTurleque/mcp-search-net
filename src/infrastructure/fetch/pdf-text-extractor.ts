@@ -16,6 +16,7 @@ const PDF_WORKER_MAX_OLD_GENERATION_MB = 256;
 const PDF_WORKER_MAX_YOUNG_GENERATION_MB = 32;
 const PDF_ENVELOPE_SCAN_BYTES = 1_024;
 const PDF_WORKER_POOL_SIZE = 2;
+const PDF_WORKER_AVAILABILITY_POLL_MS = 10;
 
 const require = createRequire(import.meta.url);
 const PDFJS_MODULE_URL = pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.mjs')).href;
@@ -56,11 +57,6 @@ interface ActivePdfRequest {
   readonly resolve: (value: string) => void;
   readonly reject: (reason: unknown) => void;
   readonly timer: ReturnType<typeof setTimeout>;
-}
-
-interface ReservedPdfWorker {
-  readonly client: PdfWorkerClient;
-  readonly pooled: boolean;
 }
 
 class PdfWorkerClient {
@@ -235,26 +231,34 @@ export async function extractPdfText(
     throw new ExtractionError('The PDF could not be parsed or its text could not be extracted');
   }
 
-  const reservation = await reservePdfWorker();
+  const client = await reservePdfWorker(deadline, timeoutError);
   try {
-    return await reservation.client.extract(body, deadline, timeoutError);
+    return await client.extract(body, deadline, timeoutError);
   } finally {
-    if (!reservation.pooled) reservation.client.terminate();
-    else if (reservation.client.failed) replaceFailedPooledWorker(reservation.client);
+    if (client.failed) replaceFailedPooledWorker(client);
   }
 }
 
-async function reservePdfWorker(): Promise<ReservedPdfWorker> {
-  for (const client of pdfWorkerPool) {
-    if (client.reserve()) return { client, pooled: true };
-  }
+async function reservePdfWorker(
+  deadline: number,
+  timeoutError: PdfTimeoutErrorFactory,
+): Promise<PdfWorkerClient> {
+  while (true) {
+    for (const client of pdfWorkerPool) {
+      if (client.reserve()) return client;
+    }
 
-  const client = await createReadyPdfWorkerClient();
-  if (!client.reserve()) {
-    client.terminate();
-    throw new ExtractionError('The isolated PDF worker could not be reserved');
+    const remaining = Math.ceil(deadline - performance.now());
+    if (remaining <= 0) throw timeoutError();
+    await waitForPdfWorker(Math.min(PDF_WORKER_AVAILABILITY_POLL_MS, remaining));
   }
-  return { client, pooled: false };
+}
+
+async function waitForPdfWorker(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, milliseconds);
+    timer.unref();
+  });
 }
 
 async function createReadyPdfWorkerClient(): Promise<PdfWorkerClient> {
