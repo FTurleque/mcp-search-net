@@ -68,9 +68,9 @@ describe('extractPdfText', () => {
       if (result.status === 'rejected') expect(result.reason).toBeInstanceOf(RequestTimeoutError);
     }
 
-    await expect(extractPdfText(makeTextPdf(['Recovered after timeout'], false))).resolves.toContain(
-      'Recovered after timeout',
-    );
+    await expect(
+      extractPdfText(makeTextPdf(['Recovered after timeout'], false)),
+    ).resolves.toContain('Recovered after timeout');
   });
 
   it('rejects PDFs exceeding the fixed page extraction budget', async () => {
