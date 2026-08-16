@@ -99,6 +99,10 @@ class PdfWorkerClient {
     return this.ready && !this.dead && this.activeRequest === undefined;
   }
 
+  public get failed(): boolean {
+    return this.dead;
+  }
+
   public async waitUntilReady(): Promise<void> {
     await this.readyPromise;
   }
@@ -211,7 +215,7 @@ export async function extractPdfText(
     return await client.extract(body, deadline, operationLimited);
   } finally {
     if (pooledClient === undefined) client.terminate();
-    replaceDeadPooledWorkers();
+    else if (pooledClient.failed) replaceFailedPooledWorker(pooledClient);
   }
 }
 
@@ -221,16 +225,15 @@ async function createReadyPdfWorkerClient(): Promise<PdfWorkerClient> {
   return client;
 }
 
-function replaceDeadPooledWorkers(): void {
-  pdfWorkerPool.forEach((client, index) => {
-    if (client.available) return;
-    void createReadyPdfWorkerClient()
-      .then((replacement) => {
-        if (!client.available) pdfWorkerPool[index] = replacement;
-        else replacement.terminate();
-      })
-      .catch(() => undefined);
-  });
+function replaceFailedPooledWorker(client: PdfWorkerClient): void {
+  const index = pdfWorkerPool.indexOf(client);
+  if (index === -1 || !client.failed) return;
+  void createReadyPdfWorkerClient()
+    .then((replacement) => {
+      if (pdfWorkerPool[index] === client && client.failed) pdfWorkerPool[index] = replacement;
+      else replacement.terminate();
+    })
+    .catch(() => undefined);
 }
 
 function hasPdfEnvelope(body: Uint8Array): boolean {
