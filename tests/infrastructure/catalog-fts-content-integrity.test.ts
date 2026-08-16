@@ -6,7 +6,9 @@ import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { ConfigurationError } from '../../src/domain/errors/domain-errors.js';
-import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import {
+  SqliteCatalogRepository,
+} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 const roots: string[] = [];
 const clock = { now: () => new Date('2026-08-16T20:00:00.000Z') };
@@ -17,51 +19,56 @@ afterEach(() => {
 });
 
 describe('catalog FTS logical integrity', () => {
-  it('detects stale content with the same rowid, fails closed, and recovers after rebuild', async () => {
-    const path = await healthyCatalog();
-    sabotageFts(path, "content = 'obsolete phantom phrase'");
+  it(
+    'detects stale content with the same rowid, fails closed, and recovers after rebuild',
+    async () => {
+      const path = await healthyCatalog();
+      sabotageFts(path, "content = 'obsolete phantom phrase'");
 
-    const diagnosticRepository = new SqliteCatalogRepository(path, clock);
-    try {
-      const report = await diagnosticRepository.verifyIntegrity();
-      expect(report.issues).toContainEqual(
-        expect.objectContaining({
-          code: 'FTS_ENTRY_CONTENT_MISMATCH',
-          sourceKey: 'docs',
-          documentPublicId: 'guide',
-        }),
+      const diagnosticRepository = new SqliteCatalogRepository(path, clock);
+      try {
+        const report = await diagnosticRepository.verifyIntegrity();
+        expect(report.issues).toContainEqual(
+          expect.objectContaining({
+            code: 'FTS_ENTRY_CONTENT_MISMATCH',
+            sourceKey: 'docs',
+            documentPublicId: 'guide',
+          }),
+        );
+        expect(report.counts.currentSections).toBe(1);
+        expect(report.counts.indexedSections).toBe(1);
+
+        const falsePositive = await diagnosticRepository.searchDocuments({
+          query: 'obsolete phantom phrase',
+        });
+        expect(falsePositive).toHaveLength(1);
+      } finally {
+        diagnosticRepository.close();
+      }
+
+      expect(() => new SqliteCatalogRepository(path, clock, startupOptions)).toThrow(
+        ConfigurationError,
       );
-      expect(report.counts.currentSections).toBe(1);
-      expect(report.counts.indexedSections).toBe(1);
 
-      const falsePositive = await diagnosticRepository.searchDocuments({
-        query: 'obsolete phantom phrase',
-      });
-      expect(falsePositive).toHaveLength(1);
-    } finally {
-      diagnosticRepository.close();
-    }
+      const recoveryRepository = new SqliteCatalogRepository(path, clock);
+      try {
+        await expect(recoveryRepository.rebuildSearchIndex()).resolves.toEqual({
+          indexedSections: 1,
+        });
+        await expect(recoveryRepository.verifyIntegrity()).resolves.toMatchObject({ issues: [] });
+        await expect(
+          recoveryRepository.searchDocuments({ query: 'authoritative searchable phrase' }),
+        ).resolves.toHaveLength(1);
+        await expect(
+          recoveryRepository.searchDocuments({ query: 'obsolete phantom phrase' }),
+        ).resolves.toHaveLength(0);
+      } finally {
+        recoveryRepository.close();
+      }
 
-    expect(() => new SqliteCatalogRepository(path, clock, startupOptions)).toThrow(
-      ConfigurationError,
-    );
-
-    const recoveryRepository = new SqliteCatalogRepository(path, clock);
-    try {
-      await expect(recoveryRepository.rebuildSearchIndex()).resolves.toEqual({ indexedSections: 1 });
-      await expect(recoveryRepository.verifyIntegrity()).resolves.toMatchObject({ issues: [] });
-      await expect(
-        recoveryRepository.searchDocuments({ query: 'authoritative searchable phrase' }),
-      ).resolves.toHaveLength(1);
-      await expect(
-        recoveryRepository.searchDocuments({ query: 'obsolete phantom phrase' }),
-      ).resolves.toHaveLength(0);
-    } finally {
-      recoveryRepository.close();
-    }
-
-    expect(() => new SqliteCatalogRepository(path, clock, startupOptions).close()).not.toThrow();
-  });
+      expect(() => new SqliteCatalogRepository(path, clock, startupOptions).close()).not.toThrow();
+    },
+  );
 
   it('detects indexed metadata divergence without changing the FTS rowid', async () => {
     const path = await healthyCatalog();
@@ -77,9 +84,9 @@ describe('catalog FTS logical integrity', () => {
           documentPublicId: 'guide',
         }),
       );
-      expect(report.issues.filter((issue) => issue.code === 'FTS_ENTRY_CONTENT_MISMATCH')).toHaveLength(
-        1,
-      );
+      expect(
+        report.issues.filter((issue) => issue.code === 'FTS_ENTRY_CONTENT_MISMATCH'),
+      ).toHaveLength(1);
     } finally {
       repository.close();
     }

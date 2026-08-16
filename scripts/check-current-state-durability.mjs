@@ -10,7 +10,10 @@ for (const [pattern, description] of [
   [/candidat post-audit/iu, 'candidat post-audit éphémère'],
   [/branche de correction/iu, 'branche de correction éphémère'],
   [/avant (?:le )?merge explicite/iu, 'vérité conditionnée au prochain merge'],
-  [/corrections? (?:ne sont|n’est) pas (?:encore )?(?:intégrées?|mergées?)/iu, 'statut de merge dynamique'],
+  [
+    /corrections? (?:ne sont|n’est) pas (?:encore )?(?:intégrées?|mergées?)/iu,
+    'statut de merge dynamique',
+  ],
 ]) {
   if (pattern.test(currentState)) failures.push(description);
 }

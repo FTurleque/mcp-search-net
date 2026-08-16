@@ -7,7 +7,9 @@ import { promisify } from 'node:util';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
+import {
+  SqliteCatalogRepository,
+} from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
 const execFileAsync = promisify(execFile);
 const roots: string[] = [];
@@ -137,9 +139,9 @@ async function corruptCatalogContent(): Promise<{
       .prepare<[], { readonly rowid: number }>('SELECT rowid FROM document_section_fts LIMIT 1')
       .get();
     if (before === undefined) throw new Error('Expected populated FTS fixture');
-    database.prepare<[string, number]>(
-      'UPDATE document_section_fts SET content = ? WHERE rowid = ?',
-    ).run('obsolete indexed content', before.rowid);
+    database
+      .prepare<[string, number]>('UPDATE document_section_fts SET content = ? WHERE rowid = ?')
+      .run('obsolete indexed content', before.rowid);
     const after = database
       .prepare<[number], { readonly rowid: number }>(
         'SELECT rowid FROM document_section_fts WHERE rowid = ?',
