@@ -11,6 +11,7 @@ import { openCatalogDatabase } from './catalog-database.js';
 
 const SAFE_BACKUP_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.db$/u;
 const BACKUP_TEMP_CLEANUP_ATTEMPTS = 3;
+const SQLITE_TEMPORARY_SIDECAR_SUFFIXES = ['', '-wal', '-shm', '-journal'] as const;
 
 export interface CatalogBackupOutput {
   readonly schemaVersion: '1.0';
@@ -24,7 +25,7 @@ export interface CatalogBackupOutput {
 }
 
 export interface SqliteCatalogBackupOptions {
-  readonly removeTemporaryFile?: (path: string) => void;
+  readonly removeTemporaryFiles?: (paths: readonly string[]) => void;
   readonly onTemporaryCleanupFailure?: (path: string, error: unknown) => void;
 }
 
@@ -81,7 +82,7 @@ export class SqliteCatalogBackup {
       linkSync(temporaryPath, finalPath);
       return output;
     } finally {
-      this.cleanupTemporaryFile(temporaryPath);
+      this.cleanupTemporaryFiles(temporaryPath);
     }
   }
 
@@ -96,14 +97,18 @@ export class SqliteCatalogBackup {
     }
   }
 
-  private cleanupTemporaryFile(path: string): void {
-    const removeTemporaryFile =
-      this.options.removeTemporaryFile ?? ((target: string) => rmSync(target, { force: true }));
+  private cleanupTemporaryFiles(path: string): void {
+    const paths = SQLITE_TEMPORARY_SIDECAR_SUFFIXES.map((suffix) => `${path}${suffix}`);
+    const removeTemporaryFiles =
+      this.options.removeTemporaryFiles ??
+      ((targets: readonly string[]) => {
+        for (const target of targets) rmSync(target, { force: true });
+      });
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= BACKUP_TEMP_CLEANUP_ATTEMPTS; attempt += 1) {
       try {
-        removeTemporaryFile(path);
+        removeTemporaryFiles(paths);
         return;
       } catch (error) {
         lastError = error;
