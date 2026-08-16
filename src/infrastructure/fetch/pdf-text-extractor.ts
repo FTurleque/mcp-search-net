@@ -56,6 +56,11 @@ interface ActivePdfRequest {
   readonly timer: ReturnType<typeof setTimeout>;
 }
 
+interface ReservedPdfWorker {
+  readonly client: PdfWorkerClient;
+  readonly pooled: boolean;
+}
+
 class PdfWorkerClient {
   private readonly worker: Worker;
   private readonly readyPromise: Promise<void>;
@@ -65,6 +70,7 @@ class PdfWorkerClient {
   private nextRequestId = 1;
   private ready = false;
   private dead = false;
+  private reserved = false;
 
   public constructor() {
     this.readyPromise = new Promise<void>((resolve, reject) => {
@@ -96,11 +102,17 @@ class PdfWorkerClient {
   }
 
   public get available(): boolean {
-    return this.ready && !this.dead && this.activeRequest === undefined;
+    return this.ready && !this.dead && !this.reserved && this.activeRequest === undefined;
   }
 
   public get failed(): boolean {
     return this.dead;
+  }
+
+  public reserve(): boolean {
+    if (!this.available) return false;
+    this.reserved = true;
+    return true;
   }
 
   public async waitUntilReady(): Promise<void> {
@@ -113,9 +125,14 @@ class PdfWorkerClient {
     operationLimited: boolean,
   ): Promise<string> {
     await this.readyPromise;
-    if (!this.available) throw new ExtractionError('The isolated PDF worker is unavailable');
+    if (!this.reserved || this.dead || this.activeRequest !== undefined) {
+      throw new ExtractionError('The isolated PDF worker is unavailable');
+    }
     const remaining = Math.ceil(deadline - performance.now());
-    if (remaining <= 0) throw pdfTimeoutError(operationLimited);
+    if (remaining <= 0) {
+      this.reserved = false;
+      throw pdfTimeoutError(operationLimited);
+    }
 
     const workerBody = Uint8Array.from(body);
     const requestId = this.nextRequestId;
@@ -125,6 +142,7 @@ class PdfWorkerClient {
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.activeRequest = undefined;
+        this.reserved = false;
         this.dead = true;
         void this.worker.terminate();
         reject(pdfTimeoutError(operationLimited));
@@ -140,6 +158,7 @@ class PdfWorkerClient {
   public terminate(): void {
     if (this.dead) return;
     this.dead = true;
+    this.reserved = false;
     if (this.activeRequest !== undefined) {
       clearTimeout(this.activeRequest.timer);
       this.activeRequest.reject(new ExtractionError('The isolated PDF worker was terminated'));
@@ -166,6 +185,7 @@ class PdfWorkerClient {
     if (active?.requestId !== message.requestId) return;
     clearTimeout(active.timer);
     this.activeRequest = undefined;
+    this.reserved = false;
     this.worker.unref();
     if (message.result.ok) active.resolve(message.result.text);
     else active.reject(pdfWorkerFailure(message.result));
@@ -174,6 +194,7 @@ class PdfWorkerClient {
   private handleWorkerFailure(error: unknown): void {
     if (this.dead) return;
     this.dead = true;
+    this.reserved = false;
     if (!this.ready) this.rejectReady(error);
     const active = this.activeRequest;
     if (active !== undefined) {
@@ -208,14 +229,26 @@ export async function extractPdfText(
     throw new ExtractionError('The PDF could not be parsed or its text could not be extracted');
   }
 
-  const pooledClient = pdfWorkerPool.find((client) => client.available);
-  const client = pooledClient ?? (await createReadyPdfWorkerClient());
+  const reservation = await reservePdfWorker();
   try {
-    return await client.extract(body, deadline, operationLimited);
+    return await reservation.client.extract(body, deadline, operationLimited);
   } finally {
-    if (pooledClient === undefined) client.terminate();
-    else if (pooledClient.failed) replaceFailedPooledWorker(pooledClient);
+    if (!reservation.pooled) reservation.client.terminate();
+    else if (reservation.client.failed) replaceFailedPooledWorker(reservation.client);
   }
+}
+
+async function reservePdfWorker(): Promise<ReservedPdfWorker> {
+  for (const client of pdfWorkerPool) {
+    if (client.reserve()) return { client, pooled: true };
+  }
+
+  const client = await createReadyPdfWorkerClient();
+  if (!client.reserve()) {
+    client.terminate();
+    throw new ExtractionError('The isolated PDF worker could not be reserved');
+  }
+  return { client, pooled: false };
 }
 
 async function createReadyPdfWorkerClient(): Promise<PdfWorkerClient> {
