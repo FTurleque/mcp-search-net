@@ -48,9 +48,9 @@ describe('SqliteCatalogBackup cleanup recovery', () => {
     expect(existsSync(result.destinationPath)).toBe(true);
     expect(waits).toEqual([7]);
     expect(diagnostics).toEqual([]);
-    expect(readdirSync(join(fixture.root, 'backups')).filter((name) => name.startsWith('.partial-'))).toEqual(
-      [],
-    );
+    expect(
+      readdirSync(join(fixture.root, 'backups')).filter((name) => name.startsWith('.partial-')),
+    ).toEqual([]);
   });
 
   it('keeps publication successful and reports a persistent cleanup failure once', async () => {
