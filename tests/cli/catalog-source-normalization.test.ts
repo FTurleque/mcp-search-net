@@ -97,4 +97,40 @@ sources:
 `),
     ).toThrow(errorCode);
   });
+
+  it.each([
+    ['malformed URL', 'not a url', 'url must be an HTTP(S) URL'],
+    ['credential-bearing URL', 'https://user:secret@docs.example/guide', 'url must not contain credentials'],
+    ['non-HTTP URL', 'file:///tmp/guide', 'url must be an HTTP(S) URL'],
+  ])('contextualizes an invalid %s before catalog open', (_label, url, expectedMessage) => {
+    expect(() =>
+      parseCatalogSourceConfig(`
+schema_version: 1
+sources:
+  docs:
+    display_name: Docs
+    base_url: https://docs.example/
+    documents:
+      - stable_key: guide
+        title: Guide
+        url: ${url}
+`),
+    ).toThrow(expectedMessage);
+  });
+
+  it('rejects document titles containing control characters during preflight', () => {
+    expect(() =>
+      parseCatalogSourceConfig(`
+schema_version: 1
+sources:
+  docs:
+    display_name: Docs
+    base_url: https://docs.example/
+    documents:
+      - stable_key: guide
+        title: "Bad\\u0001Title"
+        url: https://docs.example/guide
+`),
+    ).toThrow('CATALOG_DOCUMENT_TITLE_INVALID');
+  });
 });
