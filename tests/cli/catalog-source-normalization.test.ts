@@ -100,7 +100,11 @@ sources:
 
   it.each([
     ['malformed URL', 'not a url', 'url must be an HTTP(S) URL'],
-    ['credential-bearing URL', 'https://user:secret@docs.example/guide', 'url must not contain credentials'],
+    [
+      'credential-bearing URL',
+      'https://user:secret@docs.example/guide',
+      'url must not contain credentials',
+    ],
     ['non-HTTP URL', 'file:///tmp/guide', 'url must be an HTTP(S) URL'],
   ])('contextualizes an invalid %s before catalog open', (_label, url, expectedMessage) => {
     expect(() =>
