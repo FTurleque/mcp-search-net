@@ -42,7 +42,7 @@ describe('SqliteCatalogRepository document revisions', () => {
       )
       .get() as { sql: string };
     database.close();
-    expect(ftsDefinition.sql).toContain('contentless_delete = 1');
+    expect(ftsDefinition.sql).not.toContain('contentless_delete = 1');
   });
 
   it('rolls back every revision write when section insertion fails, then recovers after reopen', async () => {
@@ -221,6 +221,9 @@ describe('SqliteCatalogRepository document revisions', () => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(999, 999, 999, 'sample', 'en', 'Orphan', 'Orphan', 'Orphan', 'orphan');
+    database
+      .prepare("INSERT INTO document_section_fts(document_section_fts) VALUES ('rebuild')")
+      .run();
     database.close();
 
     const report = await fixture.repository.verifyIntegrity();
