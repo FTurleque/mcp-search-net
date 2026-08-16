@@ -16,9 +16,7 @@ const PDF_WORKER_MAX_OLD_GENERATION_MB = 256;
 const PDF_WORKER_MAX_YOUNG_GENERATION_MB = 32;
 
 const require = createRequire(import.meta.url);
-const PDFJS_MODULE_URL = pathToFileURL(
-  require.resolve('pdfjs-dist/legacy/build/pdf.mjs'),
-).href;
+const PDFJS_MODULE_URL = pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.mjs')).href;
 const PDF_WORKER_SOURCE = createPdfWorkerSource();
 const PDF_WORKER_URL = new URL(
   `data:text/javascript;base64,${Buffer.from(PDF_WORKER_SOURCE, 'utf8').toString('base64')}`,
