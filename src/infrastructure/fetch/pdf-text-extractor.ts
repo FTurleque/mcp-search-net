@@ -24,6 +24,8 @@ const PDF_WORKER_URL = new URL(
   `data:text/javascript;base64,${Buffer.from(PDF_WORKER_SOURCE, 'utf8').toString('base64')}`,
 );
 
+type PdfTimeoutErrorFactory = () => Error;
+
 interface PdfWorkerSuccess {
   readonly ok: true;
   readonly text: string;
@@ -122,7 +124,7 @@ class PdfWorkerClient {
   public async extract(
     body: Uint8Array,
     deadline: number,
-    operationLimited: boolean,
+    timeoutError: PdfTimeoutErrorFactory,
   ): Promise<string> {
     await this.readyPromise;
     if (!this.reserved || this.dead || this.activeRequest !== undefined) {
@@ -131,7 +133,7 @@ class PdfWorkerClient {
     const remaining = Math.ceil(deadline - performance.now());
     if (remaining <= 0) {
       this.reserved = false;
-      throw pdfTimeoutError(operationLimited);
+      throw timeoutError();
     }
 
     const workerBody = Uint8Array.from(body);
@@ -145,7 +147,7 @@ class PdfWorkerClient {
         this.reserved = false;
         this.dead = true;
         void this.worker.terminate();
-        reject(pdfTimeoutError(operationLimited));
+        reject(timeoutError());
       }, remaining);
       timer.unref();
       this.activeRequest = { requestId, resolve, reject, timer };
@@ -222,16 +224,20 @@ export async function extractPdfText(
   operationDeadline?: number,
 ): Promise<string> {
   const localDeadline = performance.now() + PDF_EXTRACTION_TIMEOUT_MS;
-  const operationLimited = operationDeadline !== undefined && operationDeadline <= localDeadline;
-  const deadline = operationLimited ? operationDeadline : localDeadline;
-  if (deadline - performance.now() <= 0) throw pdfTimeoutError(operationLimited);
+  let deadline = localDeadline;
+  let timeoutError: PdfTimeoutErrorFactory = pdfExtractionTimeoutError;
+  if (operationDeadline !== undefined && operationDeadline <= localDeadline) {
+    deadline = operationDeadline;
+    timeoutError = operationDeadlineExceededError;
+  }
+  if (deadline - performance.now() <= 0) throw timeoutError();
   if (!hasPdfEnvelope(body)) {
     throw new ExtractionError('The PDF could not be parsed or its text could not be extracted');
   }
 
   const reservation = await reservePdfWorker();
   try {
-    return await reservation.client.extract(body, deadline, operationLimited);
+    return await reservation.client.extract(body, deadline, timeoutError);
   } finally {
     if (!reservation.pooled) reservation.client.terminate();
     else if (reservation.client.failed) replaceFailedPooledWorker(reservation.client);
@@ -336,14 +342,16 @@ function pdfWorkerFailure(failure: PdfWorkerFailure): Error {
   });
 }
 
-function pdfTimeoutError(operationLimited: boolean): Error {
-  return operationLimited
-    ? new RequestTimeoutError('fetch_url operation deadline exceeded during PDF extraction')
-    : new ExtractionError('The PDF extraction timed out');
+function operationDeadlineExceededError(): RequestTimeoutError {
+  return new RequestTimeoutError('fetch_url operation deadline exceeded during PDF extraction');
+}
+
+function pdfExtractionTimeoutError(): ExtractionError {
+  return new ExtractionError('The PDF extraction timed out');
 }
 
 function createPdfWorkerSource(): string {
-  return `
+  return String.raw`
 import { parentPort, workerData } from 'node:worker_threads';
 
 const { getDocument, VerbosityLevel } = await import(workerData.pdfModuleUrl);
@@ -359,11 +367,11 @@ function fail(code, message) {
 
 function normalizePdfText(value) {
   return value
-    .replace(/\\0/gu, '')
-    .replace(/\\r\\n?/gu, '\\n')
-    .replace(/[^\\S\\n]+/gu, ' ')
-    .replace(/ *\\n */gu, '\\n')
-    .replace(/\\n{3,}/gu, '\\n\\n')
+    .replace(/\0/gu, '')
+    .replace(/\r\n?/gu, '\n')
+    .replace(/[^\S\n]+/gu, ' ')
+    .replace(/ *\n */gu, '\n')
+    .replace(/\n{3,}/gu, '\n\n')
     .trim();
 }
 
@@ -403,7 +411,7 @@ async function extract(body) {
         if (extractedCharacters + pageCharacters > MAX_TEXT_CHARACTERS) {
           fail('TEXT_LIMIT', 'PDF text character limit exceeded');
         }
-        fragments.push(item.str, item.hasEOL ? '\\n' : ' ');
+        fragments.push(item.str, item.hasEOL ? '\n' : ' ');
       }
 
       const pageText = normalizePdfText(fragments.join(''));
@@ -416,7 +424,7 @@ async function extract(body) {
       }
     }
 
-    const text = pages.join('\\n\\n').trim();
+    const text = pages.join('\n\n').trim();
     if (text === '') fail('OCR_REQUIRED', 'PDF contains no extractable text');
     return text;
   } finally {
