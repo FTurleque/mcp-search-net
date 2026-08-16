@@ -4,9 +4,10 @@ Ce document décrit l’état **fonctionnel et architectural autoritatif** du pr
 MCP, stockage, migrations, sécurité, invariants de concurrence, packaging et politique de
 qualification. Les fichiers datés sous `docs/planning/` restent des preuves historiques.
 
-Les SHA de merge et les exécutions CI exact-head sont des **preuves GitHub datées** : ils ne sont pas
-utilisés comme identité auto-référente de ce fichier, car tout commit modifiant ce document crée par
-définition un nouveau SHA. L’issue #73 reste le tracker de clôture pour les preuves manuelles de
+L’identité exacte du HEAD courant d’une branche reste fournie par Git/GitHub et n’est volontairement
+pas dupliquée ici comme une valeur « courante » auto-référente : tout commit modifiant ce document
+crée par définition un nouveau SHA. Les SHA de merge et exécutions CI mentionnés ci-dessous sont des
+**preuves GitHub datées**. L’issue #73 reste le tracker de clôture pour les preuves manuelles de
 certification native.
 
 ## Version et branches
@@ -16,18 +17,16 @@ certification native.
 - Branche d’intégration courante : `develop`.
 - Une capacité présente uniquement sur `develop` n’est pas déclarée publiée tant qu’elle n’a pas été
   portée sur `master` par le flux de release.
-- Dernière baseline post-merge intégrée : merge de la PR #102 dans `develop`, commit
-  `ad549294560ecd818b93890204989e6c00eb28f0`, tree fonctionnel
-  `1afa9baade6c17b06f7c52ff3f3969e62295be26`. La CI #1295 / `31954236669` a terminé en `SUCCESS`
-  sur ce SHA pour Node.js, Docker/live E2E et Windows installation/STDIO packaging ; le job Sonar
-  GitHub Actions est ignoré sur les pushes `develop` par conception.
-- Le head exact de la PR #102 `b990819d3b71d0f87b3a03fb8393b653c08c1feb` avait été qualifié par
-  la CI #1294 / `31951616820` avec `SonarCloud Code Analysis` en succès et le Quality Gate
-  SonarQubeCloud passé : 83,9 % de couverture sur le nouveau code, 0 nouvelle issue, 0 Security
-  Hotspot et 0,1 % de duplication sur le nouveau code.
-- Le nouvel audit complet de cette baseline a identifié une queue de hardening supplémentaire. Le
-  candidat de correction est développé sur `agent/fix-audit-complete-20260816` et n’est pas déclaré
-  intégré à `develop` tant qu’une PR n’a pas été explicitement mergée.
+- Preuve d’intégration et de qualification du 16 août 2026 : la PR #103 a été mergée dans `develop`
+  par le commit `17ac4224f159f2f43d3c29f5390d66a403b2bd8f`, tree
+  `118c1366b12f5dee24d23cdd82ba4406d8398db3`. La CI #1337 / `31963224930` a terminé en `SUCCESS`
+  sur ce merge SHA pour Node.js, Docker/live E2E et Windows installation/STDIO packaging ; le job
+  Sonar GitHub Actions est ignoré sur les pushes `develop` par conception.
+- La PR #103 avait auparavant passé le Quality Gate SonarQube Cloud : 80,2 % de couverture sur le
+  nouveau code, 0 nouvelle issue, 0 Security Hotspot et 0,0 % de duplication sur le nouveau code.
+- L’état d’une PR de correction en cours n’est pas recopié dans ce document : GitHub reste la source
+  de vérité pour savoir si un candidat est draft, ouvert, mergé ou fermé. Ce choix évite qu’un merge
+  rende immédiatement ce document factuellement faux.
 - Le ruleset `Protect integration branches` protège la branche par défaut et `develop`, exige les PR,
   la résolution des threads et les quatre checks courants. Le mode strict est actif : une PR doit
   être à jour avec sa base avant merge (`strict_required_status_checks_policy=true`).
@@ -88,10 +87,10 @@ certification native.
   les courses release/renew entre générations de `FileLease`, les reprises de catalogue après dérive
   de configuration et l’absence de mutation physique pendant la lecture de l’historique.
 
-## Hardening porté par le candidat post-#102
+## Hardening intégré par la PR #103
 
-Les garanties suivantes décrivent le candidat `agent/fix-audit-complete-20260816`. Elles ne deviennent
-une propriété de `develop` qu’après intégration explicite de la PR correspondante :
+Les garanties suivantes ont été intégrées à `develop` par la PR #103 et qualifiées par la CI/Sonar
+référencés plus haut :
 
 - les renouvellements `FileLease` ne tronquent plus le heartbeat vivant : une génération complète est
   écrite sur un fichier de staging serveur puis publiée par rename atomique. Un lecteur ne peut donc
@@ -111,6 +110,16 @@ une propriété de `develop` qu’après intégration explicite de la PR corresp
 - l’extraction PDF s’exécute dans un worker Node isolé, destructible à la deadline et borné en mémoire.
   Les limites de pages et caractères sont complétées par une limite d’items texte afin de borner le
   travail intermédiaire avant assemblage complet.
+
+## Invariants de résilience des opérations auxiliaires
+
+- Le pool PDF conserve un nombre fixe de slots. Un worker mort déclenche une réparation idempotente ;
+  un échec transitoire de création du remplaçant applique un délai de retry et le prochain appel
+  retente la réparation au lieu de perdre définitivement de la capacité jusqu’au redémarrage.
+- La publication d’un backup catalogue utilise la création du hard-link final comme point de commit
+  no-overwrite. La connexion SQLite source est fermée, le temporaire est durci, vérifié et hashé avant
+  ce commit. Le nettoyage du nom `.partial-*` est ensuite une finalisation best-effort avec retries :
+  une panne de cleanup ne transforme jamais un backup déjà publié et valide en faux échec métier.
 
 ## Contrat MCP public
 
@@ -243,9 +252,9 @@ sur une IP approuvée après résolution DNS afin de fermer les scénarios de DN
 - contrôle robots.txt lorsque configuré.
 
 Le fallback Crawl4AI reçoit du contenu neutralisé et non une URL publique libre à recrawler. Les
-liens extraits sont revalidés et bornés avant exposition. Sur le candidat post-#102, l’extraction PDF
-est en plus isolée dans un worker borné et destructible à la deadline ; les sanitizers neutralisent
-scripts, iframes, formulaires, handlers actifs et schémas de lien dangereux.
+liens extraits sont revalidés et bornés avant exposition. Depuis la PR #103, l’extraction PDF est en
+plus isolée dans un worker borné et destructible à la deadline ; les sanitizers neutralisent scripts,
+iframes, formulaires, handlers actifs et schémas de lien dangereux.
 
 ## Supply chain et release Windows
 
