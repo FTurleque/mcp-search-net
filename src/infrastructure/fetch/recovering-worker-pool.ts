@@ -95,8 +95,7 @@ export class RecoveringWorkerPool<T extends RecoverableWorker> {
           replacement.terminate();
           throw new Error('Worker factory returned a failed worker');
         }
-        if (slot.worker === undefined) slot.worker = replacement;
-        else replacement.terminate();
+        slot.worker = replacement;
         slot.retryAt = 0;
       })
       .catch(() => {
