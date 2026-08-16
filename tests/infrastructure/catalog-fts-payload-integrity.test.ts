@@ -94,7 +94,42 @@ async function createHealthyCatalog(): Promise<string> {
 function corruptIndexedContent(path: string): void {
   const database = new Database(path);
   try {
-    database.prepare("UPDATE document_section_fts SET content = 'obsolete indexed payload'").run();
+    const row = database
+      .prepare<[], { readonly section_id: number; readonly document_id: number }>(
+        `
+        SELECT document_sections.id AS section_id, documents.id AS document_id
+        FROM document_sections
+        INNER JOIN document_versions
+          ON document_versions.id = document_sections.document_version_id
+        INNER JOIN documents ON documents.id = document_versions.document_id
+        WHERE documents.public_id = 'guide'
+        LIMIT 1
+      `,
+      )
+      .get();
+    if (row === undefined) throw new Error('TEST_SECTION_NOT_FOUND');
+
+    database.prepare<[number]>('DELETE FROM document_section_fts WHERE rowid = ?').run(row.section_id);
+    database
+      .prepare<[number, number, number, string, string, string, string, string, string]>(
+        `
+        INSERT INTO document_section_fts(
+          rowid, section_id, document_id, source_key, language,
+          title, heading, heading_path, content
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      )
+      .run(
+        row.section_id,
+        row.section_id,
+        row.document_id,
+        'docs',
+        'en',
+        'Guide',
+        'Guide',
+        '',
+        'obsolete indexed payload',
+      );
   } finally {
     database.close();
   }
