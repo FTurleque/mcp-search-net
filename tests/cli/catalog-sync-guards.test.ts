@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 describe('catalog sync preflight guards', () => {
-  it('rejects duplicate stable keys before creating or migrating the catalog database', async () => {
+  it('rejects duplicate stable keys before catalog DB creation', async () => {
     const fixture = createFixture();
     const sourcePath = join(fixture.root, 'catalog-sources.yml');
     writeFileSync(
@@ -48,7 +48,7 @@ sources:
     expect(existsSync(fixture.dbPath)).toBe(false);
   });
 
-  it('rejects a resume cursor without its configuration fingerprint before opening the catalog', async () => {
+  it('rejects a resume cursor without fingerprint before catalog open', async () => {
     const fixture = createFixture();
     const sourcePath = join(fixture.root, 'catalog-sources.yml');
     writeFileSync(sourcePath, validSourceConfig(), 'utf8');
@@ -130,7 +130,11 @@ async function runCatalog(args: readonly string[]): Promise<{
     );
     return { exitCode: 0, stdout, stderr };
   } catch (error) {
-    const failure = error as { readonly code?: unknown; readonly stdout?: string; readonly stderr?: string };
+    const failure = error as {
+      readonly code?: unknown;
+      readonly stdout?: string;
+      readonly stderr?: string;
+    };
     return {
       exitCode: typeof failure.code === 'number' ? failure.code : 1,
       stdout: failure.stdout ?? '',
