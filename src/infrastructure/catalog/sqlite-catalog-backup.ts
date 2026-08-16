@@ -138,7 +138,11 @@ export class SqliteCatalogBackup {
       } catch (error) {
         lastError = error;
         if (attempt < this.cleanupAttempts) {
-          await this.waitForRetry(this.cleanupRetryDelayMs * attempt);
+          try {
+            await this.waitForRetry(this.cleanupRetryDelayMs * attempt);
+          } catch {
+            // The retry delay is advisory. Cleanup stays fail-open and proceeds to the next attempt.
+          }
         }
       }
     }
@@ -181,7 +185,9 @@ function waitForRetry(delayMs: number): Promise<void> {
 
 function emitCleanupWarning(failure: CatalogBackupCleanupFailure): void {
   const detail =
-    failure.error instanceof Error ? `${failure.error.name}: ${failure.error.message}` : String(failure.error);
+    failure.error instanceof Error
+      ? `${failure.error.name}: ${failure.error.message}`
+      : String(failure.error);
   process.emitWarning(
     `Catalog backup temporary cleanup failed for ${failure.path} after ${failure.attempts} attempts`,
     {
