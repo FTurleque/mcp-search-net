@@ -83,13 +83,13 @@ export class SqliteCatalogRepository implements CatalogRepository {
       database = openCatalogDatabase(path);
       new CatalogMigrationRunner(database, clock).apply();
       syncStore = new SqliteCatalogSyncStore(database, clock, options.syncRunLease);
-      syncStore.recoverAbandonedRuns();
       if (options.verifyIntegrityOnOpen === true) {
         const integrity = verifyCatalogIntegrity(database);
         if (integrity.issues.length > 0) {
           throw new ConfigurationError('Catalog integrity verification failed');
         }
       }
+      syncStore.recoverAbandonedRuns();
     } catch (error) {
       if (database?.open === true) database.close();
       if (error instanceof ConfigurationError) throw error;

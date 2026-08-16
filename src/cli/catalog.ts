@@ -60,6 +60,8 @@ type CatalogCommand =
   | 'rebuild-index'
   | 'purge-versions';
 
+const UNVERIFIED_ADMIN_COMMANDS = new Set<CatalogCommand>(['verify', 'health', 'rebuild-index']);
+
 const CATALOG_ARGUMENT_SPECS: Readonly<Record<CatalogCommand, StrictCliArgumentSpec>> = {
   init: { valueOptions: ['--path'] },
   status: { valueOptions: ['--path'] },
@@ -205,7 +207,9 @@ async function main(argv: readonly string[]): Promise<void> {
     options.sync?.filePath,
   );
 
-  const repository = new SqliteCatalogRepository(options.path, clock);
+  const repository = new SqliteCatalogRepository(options.path, clock, {
+    verifyIntegrityOnOpen: !UNVERIFIED_ADMIN_COMMANDS.has(options.command),
+  });
   try {
     if (options.command === 'load-sources') {
       if (catalogSourceConfig === undefined) throw new Error(usage());

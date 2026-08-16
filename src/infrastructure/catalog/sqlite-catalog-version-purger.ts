@@ -2,11 +2,13 @@ import type Database from 'better-sqlite3';
 
 import type { Clock } from '../../application/ports/clock.js';
 import type { CatalogSearchIndexRebuildResult } from '../../domain/models/catalog.js';
+import { ConfigurationError } from '../../domain/errors/domain-errors.js';
 import type {
   CatalogVersionPurgeInput,
   CatalogVersionPurgeRepository,
   CatalogVersionPurgeResult,
 } from '../../application/use-cases/purge-catalog-versions.js';
+import { verifyCatalogIntegrity } from './catalog-integrity.js';
 import { openCatalogDatabase } from './catalog-database.js';
 import { CatalogMigrationRunner } from './catalog-migration-runner.js';
 import {
@@ -68,7 +70,17 @@ export class SqliteCatalogVersionPurger implements CatalogVersionPurgeRepository
     private readonly clock: Clock,
   ) {
     this.database = openCatalogDatabase(path);
-    new CatalogMigrationRunner(this.database, this.clock).apply();
+    try {
+      new CatalogMigrationRunner(this.database, this.clock).apply();
+      const integrity = verifyCatalogIntegrity(this.database);
+      if (integrity.issues.length > 0) {
+        throw new ConfigurationError('Catalog integrity verification failed');
+      }
+    } catch (error) {
+      if (this.database.open) this.database.close();
+      if (error instanceof ConfigurationError) throw error;
+      throw new ConfigurationError('Catalog integrity verification failed', { cause: error });
+    }
   }
 
   public purgeOldDocumentVersions(
