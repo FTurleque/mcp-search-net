@@ -20,8 +20,8 @@ describe('catalog FTS payload integrity', () => {
     const path = await createHealthyCatalog();
     corruptIndexedContent(path);
 
-    expect(() =>
-      new SqliteCatalogRepository(path, clock, { verifyIntegrityOnOpen: true }),
+    expect(
+      () => new SqliteCatalogRepository(path, clock, { verifyIntegrityOnOpen: true }),
     ).toThrow(ConfigurationError);
 
     const recovery = new SqliteCatalogRepository(path, clock);
