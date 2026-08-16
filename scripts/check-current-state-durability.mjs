@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import process from 'node:process';
 
@@ -15,10 +16,9 @@ for (const target of targets) {
   const source = readFileSync(path, 'utf8');
   const config = (await prettier.resolveConfig(path)) ?? {};
   const formatted = await prettier.format(source, { ...config, filepath: path });
-  process.stdout.write(`PRETTIER_BEGIN ${target}\n`);
-  process.stdout.write(`${Buffer.from(formatted, 'utf8').toString('base64')}\n`);
-  process.stdout.write(`PRETTIER_END ${target}\n`);
+  writeFileSync(path, formatted, 'utf8');
 }
 
-process.stderr.write('PRETTIER_DIAGNOSTIC_ONLY\n');
+execFileSync('git', ['diff', '--', ...targets], { stdio: 'inherit' });
+process.stderr.write('PRETTIER_DIFF_DIAGNOSTIC_ONLY\n');
 process.exit(1);
