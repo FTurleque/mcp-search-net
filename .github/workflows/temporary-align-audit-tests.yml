@@ -1,0 +1,233 @@
+name: Temporary align audit regression tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  align-tests:
+    if: github.event.pull_request.number == 102 && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+      - name: Align regression tests with generation-scoped heartbeat and resume fingerprint contracts
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path: str, old: str, new: str, count: int = 1) -> None:
+              file = Path(path)
+              text = file.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} occurrence(s), found {actual}')
+              file.write_text(text.replace(old, new, count))
+
+          path = 'tests/application/sync-catalog-documents.test.ts'
+          old = """  it('resumes after a previously processed document cursor', async () => {
+            const repository = new CatalogSyncRepositoryStub([enabledSource]);
+            const fetcher = new ContentFetcherStub(fetchedContent({ contentHash: 'api-hash' }));
+
+            const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+              sourceKey: 'enabled-docs',
+              documents: [declaredDocument, secondDeclaredDocument],
+              timeoutMs: 1_000,
+              maxResponseBytes: 10_000,
+              maxRedirects: 3,
+              resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+            });
+
+            expect(fetcher.requests).toHaveLength(1);
+            expect(result).toMatchObject({
+              checkedCount: 1,
+              resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+              documents: [{ stableKey: 'api', status: 'added' }],
+            });
+          });
+          """
+          new = """  it('resumes after a previously processed document cursor', async () => {
+            const initialRepository = new CatalogSyncRepositoryStub([enabledSource]);
+            const initialFetcher = new ContentFetcherStub(
+              fetchedContent({ contentHash: 'guide-hash' }),
+            );
+            const initial = await new SyncCatalogDocuments(
+              initialRepository,
+              initialFetcher,
+              fixedClock,
+            ).execute({
+              sourceKey: 'enabled-docs',
+              documents: [declaredDocument, secondDeclaredDocument],
+              limit: 1,
+              timeoutMs: 1_000,
+              maxResponseBytes: 10_000,
+              maxRedirects: 3,
+            });
+
+            expect(initialFetcher.requests).toHaveLength(1);
+            expect(initial).toMatchObject({
+              limited: true,
+              resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+            });
+            expect(initial.resumeConfigurationFingerprint).toMatch(/^[a-f0-9]{64}$/u);
+            const resumeConfigurationFingerprint = initial.resumeConfigurationFingerprint;
+            if (resumeConfigurationFingerprint === undefined) {
+              throw new Error('EXPECTED_RESUME_CONFIGURATION_FINGERPRINT');
+            }
+
+            const repository = new CatalogSyncRepositoryStub([enabledSource]);
+            const fetcher = new ContentFetcherStub(fetchedContent({ contentHash: 'api-hash' }));
+            const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
+              sourceKey: 'enabled-docs',
+              documents: [declaredDocument, secondDeclaredDocument],
+              timeoutMs: 1_000,
+              maxResponseBytes: 10_000,
+              maxRedirects: 3,
+              resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+              resumeConfigurationFingerprint,
+            });
+
+            expect(fetcher.requests).toHaveLength(1);
+            expect(result).toMatchObject({
+              checkedCount: 1,
+              resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+              documents: [{ stableKey: 'api', status: 'added' }],
+            });
+          });
+          """
+          replace_exact(path, old, new)
+
+          path = 'tests/infrastructure/audit-followup-2026-08-15.test.ts'
+          replace_exact(
+              path,
+              "import { chmodSync, mkdtempSync, rmSync, statSync } from 'node:fs';",
+              "import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';",
+          )
+          replace_exact(
+              path,
+              """    const heartbeatPath = `${lockPath}.heartbeat`;
+
+              expect(fileMode(lockPath)).toBe(0o600);
+              expect(fileMode(heartbeatPath)).toBe(0o600);
+          """,
+              """    const heartbeatNames = readdirSync(root).filter((name) =>
+                name.startsWith('maintenance.lock.heartbeat-'),
+              );
+              expect(heartbeatNames).toHaveLength(1);
+              const heartbeatPath = join(root, heartbeatNames[0] ?? '');
+              expect(JSON.parse(readFileSync(heartbeatPath, 'utf8'))).toMatchObject({
+                ownerToken: 'permission-owner',
+              });
+
+              expect(fileMode(lockPath)).toBe(0o600);
+              expect(fileMode(heartbeatPath)).toBe(0o600);
+          """,
+          )
+          replace_exact(
+              path,
+              """    expect(fileMode(lockPath)).toBe(0o600);
+              expect(fileMode(heartbeatPath)).toBe(0o600);
+              lease.release();
+          """,
+              """    expect(fileMode(lockPath)).toBe(0o600);
+              expect(fileMode(heartbeatPath)).toBe(0o600);
+              lease.release();
+              expect(
+                readdirSync(root).filter((name) => name.startsWith('maintenance.lock.heartbeat-')),
+              ).toEqual([]);
+          """,
+          )
+
+          path = 'tests/infrastructure/catalog-maintenance-lock-finalization.test.ts'
+          replace_exact(
+              path,
+              "import { existsSync, mkdtempSync, rmSync, unlinkSync } from 'node:fs';",
+              "import { existsSync, mkdtempSync, readdirSync, rmSync, unlinkSync } from 'node:fs';",
+          )
+          replace_exact(
+              path,
+              "import { join } from 'node:path';",
+              "import { dirname, join } from 'node:path';",
+          )
+          replace_exact(path, "if (path.endsWith('.heartbeat')) {", "if (path.includes('.heartbeat-')) {", 2)
+          replace_exact(
+              path,
+              "expect(existsSync(`${catalogPath}.maintenance.lock.heartbeat`)).toBe(false);",
+              "expect(maintenanceHeartbeatFiles(catalogPath)).toEqual([]);",
+              2,
+          )
+          file = Path(path)
+          text = file.read_text()
+          helper = """
+
+          function maintenanceHeartbeatFiles(catalogPath: string): string[] {
+            return readdirSync(dirname(catalogPath)).filter((name) =>
+              name.startsWith('catalog.db.maintenance.lock.heartbeat-'),
+            );
+          }
+          """
+          if 'function maintenanceHeartbeatFiles(' in text:
+              raise SystemExit(f'{path}: helper already exists')
+          file.write_text(text.rstrip() + helper + '\n')
+
+          path = 'tests/infrastructure/file-lease-stale-recovery-cleanup.test.ts'
+          replace_exact(path, "if (path.endsWith('.heartbeat') && heartbeatAttempts < 3) {", "if (path.includes('.heartbeat-') && heartbeatAttempts < 3) {")
+          replace_exact(
+              path,
+              """    recovered.release();
+              expect(readdirSync(root).some((name) => name === 'maintenance.lock')).toBe(false);
+              expect(readdirSync(root).some((name) => name === 'maintenance.lock.heartbeat')).toBe(false);
+          """,
+              """    recovered.release();
+              expect(readdirSync(root).some((name) => name === 'maintenance.lock')).toBe(false);
+              const remainingHeartbeats = readdirSync(root).filter((name) =>
+                name.startsWith('maintenance.lock.heartbeat-'),
+              );
+              expect(remainingHeartbeats).toHaveLength(1);
+              expect(
+                JSON.parse(readFileSync(join(root, remainingHeartbeats[0] ?? ''), 'utf8')),
+              ).toMatchObject({ ownerToken: 'stale-owner' });
+          """,
+          )
+
+          path = 'tests/infrastructure/residual-audit-regressions.test.ts'
+          replace_exact(
+              path,
+              "import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, unlinkSync } from 'node:fs';",
+              "import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync, unlinkSync } from 'node:fs';",
+          )
+          replace_exact(path, "if (path.endsWith('.heartbeat')) {", "if (path.includes('.heartbeat-')) {")
+          replace_exact(
+              path,
+              "expect(existsSync(`${lockPath}.heartbeat`)).toBe(false);",
+              "expect(readdirSync(dirname(lockPath)).some((name) => name.startsWith('maintenance.lock.heartbeat-'))).toBe(false);",
+          )
+          PY
+          npx prettier --write \
+            tests/application/sync-catalog-documents.test.ts \
+            tests/infrastructure/audit-followup-2026-08-15.test.ts \
+            tests/infrastructure/catalog-maintenance-lock-finalization.test.ts \
+            tests/infrastructure/file-lease-stale-recovery-cleanup.test.ts \
+            tests/infrastructure/residual-audit-regressions.test.ts
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            tests/application/sync-catalog-documents.test.ts \
+            tests/infrastructure/audit-followup-2026-08-15.test.ts \
+            tests/infrastructure/catalog-maintenance-lock-finalization.test.ts \
+            tests/infrastructure/file-lease-stale-recovery-cleanup.test.ts \
+            tests/infrastructure/residual-audit-regressions.test.ts
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git commit -m 'test: align regressions with lease and resume contracts'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
