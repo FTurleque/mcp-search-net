@@ -59,18 +59,21 @@ const api = {
   enabled: true,
 };
 
-class ResumeRepository implements Pick<
-  CatalogRepository,
-  | 'listSources'
-  | 'getDocumentByPublicId'
-  | 'getCurrentDocumentVersion'
-  | 'upsertDocument'
-  | 'touchDocumentObservation'
-  | 'recordDocumentObservation'
-  | 'commitDocumentRevision'
-  | 'startCatalogSyncRun'
-  | 'completeCatalogSyncRun'
-> {
+class ResumeRepository
+  implements
+    Pick<
+      CatalogRepository,
+      | 'listSources'
+      | 'getDocumentByPublicId'
+      | 'getCurrentDocumentVersion'
+      | 'upsertDocument'
+      | 'touchDocumentObservation'
+      | 'recordDocumentObservation'
+      | 'commitDocumentRevision'
+      | 'startCatalogSyncRun'
+      | 'completeCatalogSyncRun'
+    >
+{
   public startCalls = 0;
   private nextRunId = 1;
 
