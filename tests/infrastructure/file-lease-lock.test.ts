@@ -141,7 +141,7 @@ describe('FileLeaseLock', () => {
     expect(existsSync(fixture.lockPath)).toBe(false);
   });
 
-  it('keeps the active namespace free when owner-scoped heartbeat and quarantine cleanup both fail', () => {
+  it('isolates failed-acquire heartbeat cleanup from future owners', () => {
     const fixture = createFixture();
     const heartbeatError = new Error('HEARTBEAT_WRITE_FAILED');
     const recording = createRecordingLogger();
