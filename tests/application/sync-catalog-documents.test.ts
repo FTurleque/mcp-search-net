@@ -438,6 +438,11 @@ describe('SyncCatalogDocuments', () => {
       resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
     });
     expect(first.resumeConfigurationFingerprint).toMatch(/^[a-f0-9]{64}$/u);
+    const resumeAfter = first.resumeAfter;
+    const resumeConfigurationFingerprint = first.resumeConfigurationFingerprint;
+    if (resumeAfter === undefined || resumeConfigurationFingerprint === undefined) {
+      throw new Error('EXPECTED_RESUME_STATE');
+    }
 
     const repository = new CatalogSyncRepositoryStub([enabledSource]);
     const fetcher = new ContentFetcherStub(
@@ -455,15 +460,15 @@ describe('SyncCatalogDocuments', () => {
       timeoutMs: 1_000,
       maxResponseBytes: 10_000,
       maxRedirects: 3,
-      resumeAfter: first.resumeAfter,
-      resumeConfigurationFingerprint: first.resumeConfigurationFingerprint,
+      resumeAfter,
+      resumeConfigurationFingerprint,
     });
 
     expect(fetcher.requests).toHaveLength(1);
     expect(result).toMatchObject({
       checkedCount: 1,
       resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
-      resumeConfigurationFingerprint: first.resumeConfigurationFingerprint,
+      resumeConfigurationFingerprint,
       documents: [{ stableKey: 'api', status: 'added' }],
     });
   });
@@ -482,6 +487,11 @@ describe('SyncCatalogDocuments', () => {
       maxResponseBytes: 10_000,
       maxRedirects: 3,
     });
+    const resumeAfter = first.resumeAfter;
+    const resumeConfigurationFingerprint = first.resumeConfigurationFingerprint;
+    if (resumeAfter === undefined || resumeConfigurationFingerprint === undefined) {
+      throw new Error('EXPECTED_RESUME_STATE');
+    }
 
     const repository = new CatalogSyncRepositoryStub([enabledSource]);
     const fetcher = new ContentFetcherStub();
@@ -492,8 +502,8 @@ describe('SyncCatalogDocuments', () => {
         timeoutMs: 1_000,
         maxResponseBytes: 10_000,
         maxRedirects: 3,
-        resumeAfter: first.resumeAfter,
-        resumeConfigurationFingerprint: first.resumeConfigurationFingerprint,
+        resumeAfter,
+        resumeConfigurationFingerprint,
       }),
     ).rejects.toThrow('CATALOG_RESUME_CONFIGURATION_CHANGED');
 
