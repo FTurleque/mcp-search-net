@@ -124,7 +124,11 @@ async function runCatalog(args: readonly string[]): Promise<{
     );
     return { exitCode: 0, stdout, stderr };
   } catch (error) {
-    const failure = error as { readonly code?: unknown; readonly stdout?: string; readonly stderr?: string };
+    const failure = error as {
+      readonly code?: unknown;
+      readonly stdout?: string;
+      readonly stderr?: string;
+    };
     return {
       exitCode: typeof failure.code === 'number' ? failure.code : 1,
       stdout: failure.stdout ?? '',
