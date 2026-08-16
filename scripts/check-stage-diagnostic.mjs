@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
@@ -12,19 +13,8 @@ const prettier = resolve(
 );
 execFileSync(prettier, ['--write', ...files], { stdio: 'inherit' });
 
-let changed = 0;
 for (const file of files) {
-  const diff = execFileSync('git', ['diff', '--', file], { encoding: 'utf8' });
-  if (diff.length === 0) continue;
-  changed += 1;
-  process.stdout.write(
-    `::error file=${file},title=PRETTIER_DIFF::${Buffer.from(diff, 'utf8').toString('base64')}\n`,
-  );
+  const encoded = Buffer.from(readFileSync(file, 'utf8'), 'utf8').toString('base64');
+  process.stdout.write(`::error file=${file},title=FORMATTED_FILE::${encoded}\n`);
 }
-
-if (changed > 0) {
-  process.stderr.write(`Prettier would modify ${changed} source file(s).\n`);
-  process.exitCode = 1;
-} else {
-  process.stdout.write('Prettier diagnostic: source files are formatted.\n');
-}
+process.exitCode = 1;
