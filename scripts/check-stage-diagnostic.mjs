@@ -1,29 +1,30 @@
-import { spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const stages = [
-  ['format', ['run', 'format:check']],
-  ['lint', ['run', 'lint']],
-  ['typecheck', ['run', 'typecheck']],
-  ['build', ['run', 'build']],
-  ['client-contract', ['run', 'client:contract-report']],
-  ['coverage', ['run', 'test:coverage']],
+const files = [
+  'src/cli/catalog.ts',
+  'src/infrastructure/locking/file-lease-lock.ts',
 ];
+const prettier = resolve(
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? 'prettier.cmd' : 'prettier',
+);
+execFileSync(prettier, ['--write', ...files], { stdio: 'inherit' });
 
-for (const [name, args] of stages) {
-  const result = spawnSync(npm, args, {
-    encoding: 'utf8',
-    env: process.env,
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
-  if (result.status === 0) {
-    process.stdout.write(`CHECK_STAGE_PASS ${name}\n`);
-    continue;
-  }
-  const tail = output.slice(-12000);
-  const encoded = Buffer.from(tail, 'utf8').toString('base64');
-  process.stdout.write(`::error title=CHECK_STAGE_${name}::${encoded}\n`);
-  process.exitCode = result.status ?? 1;
-  break;
+let changed = 0;
+for (const file of files) {
+  const diff = execFileSync('git', ['diff', '--', file], { encoding: 'utf8' });
+  if (diff.length === 0) continue;
+  changed += 1;
+  process.stdout.write(
+    `::error file=${file},title=PRETTIER_DIFF::${Buffer.from(diff, 'utf8').toString('base64')}\n`,
+  );
+}
+
+if (changed > 0) {
+  process.stderr.write(`Prettier would modify ${changed} source file(s).\n`);
+  process.exitCode = 1;
+} else {
+  process.stdout.write('Prettier diagnostic: source files are formatted.\n');
 }
