@@ -165,13 +165,19 @@ function parseDocument(
   const context = `catalog source ${sourceKey} document ${index + 1}`;
   const document = asRecord(value, context);
   assertOnlyProperties(document, DOCUMENT_PROPERTIES, context);
-  const descriptor = normalizeCatalogDocumentDescriptor({
-    stableKey: requiredString(document, 'stable_key', sourceKey),
-    title: requiredString(document, 'title', sourceKey),
-    canonicalUrl: requiredString(document, 'url', sourceKey),
-    language: optionalString(document, 'language') ?? sourceLanguage,
-    mimeType: optionalString(document, 'mime_type') ?? 'text/html',
-  });
+  const rawUrl = requiredString(document, 'url', sourceKey);
+  let descriptor: ReturnType<typeof normalizeCatalogDocumentDescriptor>;
+  try {
+    descriptor = normalizeCatalogDocumentDescriptor({
+      stableKey: requiredString(document, 'stable_key', sourceKey),
+      title: requiredString(document, 'title', sourceKey),
+      canonicalUrl: rawUrl,
+      language: optionalString(document, 'language') ?? sourceLanguage,
+      mimeType: optionalString(document, 'mime_type') ?? 'text/html',
+    });
+  } catch (error) {
+    throw contextualizeDocumentValidationError(error, rawUrl, sourceKey, index);
+  }
   return {
     sourceKey,
     stableKey: descriptor.stableKey,
@@ -181,6 +187,35 @@ function parseDocument(
     mimeType: descriptor.mimeType,
     enabled: optionalBoolean(document, 'enabled') ?? true,
   };
+}
+
+function contextualizeDocumentValidationError(
+  error: unknown,
+  rawUrl: string,
+  sourceKey: string,
+  index: number,
+): unknown {
+  if (!(error instanceof Error) || error.message !== 'CATALOG_DOCUMENT_URL_INVALID') return error;
+
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`, {
+      cause: error,
+    });
+  }
+  if (url.username !== '' || url.password !== '') {
+    return new Error(`catalog source ${sourceKey} document ${index + 1} url must not contain credentials`, {
+      cause: error,
+    });
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    return new Error(`catalog source ${sourceKey} document ${index + 1} url must be an HTTP(S) URL`, {
+      cause: error,
+    });
+  }
+  return error;
 }
 
 function asRecord(value: unknown, context: string): Record<string, unknown> {
