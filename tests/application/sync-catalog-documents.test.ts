@@ -422,9 +422,34 @@ describe('SyncCatalogDocuments', () => {
   });
 
   it('resumes after a previously processed document cursor', async () => {
+    const initialRepository = new CatalogSyncRepositoryStub([enabledSource]);
+    const initialFetcher = new ContentFetcherStub(fetchedContent({ contentHash: 'guide-hash' }));
+    const initial = await new SyncCatalogDocuments(
+      initialRepository,
+      initialFetcher,
+      fixedClock,
+    ).execute({
+      sourceKey: 'enabled-docs',
+      documents: [declaredDocument, secondDeclaredDocument],
+      limit: 1,
+      timeoutMs: 1_000,
+      maxResponseBytes: 10_000,
+      maxRedirects: 3,
+    });
+
+    expect(initialFetcher.requests).toHaveLength(1);
+    expect(initial).toMatchObject({
+      limited: true,
+      resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+    });
+    expect(initial.resumeConfigurationFingerprint).toMatch(/^[a-f0-9]{64}$/u);
+    const resumeConfigurationFingerprint = initial.resumeConfigurationFingerprint;
+    if (resumeConfigurationFingerprint === undefined) {
+      throw new Error('EXPECTED_RESUME_CONFIGURATION_FINGERPRINT');
+    }
+
     const repository = new CatalogSyncRepositoryStub([enabledSource]);
     const fetcher = new ContentFetcherStub(fetchedContent({ contentHash: 'api-hash' }));
-
     const result = await new SyncCatalogDocuments(repository, fetcher, fixedClock).execute({
       sourceKey: 'enabled-docs',
       documents: [declaredDocument, secondDeclaredDocument],
@@ -432,6 +457,7 @@ describe('SyncCatalogDocuments', () => {
       maxResponseBytes: 10_000,
       maxRedirects: 3,
       resumeAfter: { sourceKey: 'enabled-docs', stableKey: 'guide' },
+      resumeConfigurationFingerprint,
     });
 
     expect(fetcher.requests).toHaveLength(1);

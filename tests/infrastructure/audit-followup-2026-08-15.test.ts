@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -62,7 +62,14 @@ describe('2026-08-15 audit follow-up regressions', () => {
       clock: { now: () => new Date(now) },
       ownerTokenFactory: () => 'permission-owner',
     }).acquire();
-    const heartbeatPath = `${lockPath}.heartbeat`;
+    const heartbeatNames = readdirSync(root).filter((name) =>
+      name.startsWith('maintenance.lock.heartbeat-'),
+    );
+    expect(heartbeatNames).toHaveLength(1);
+    const heartbeatPath = join(root, heartbeatNames[0] ?? '');
+    expect(JSON.parse(readFileSync(heartbeatPath, 'utf8'))).toMatchObject({
+      ownerToken: 'permission-owner',
+    });
 
     expect(fileMode(lockPath)).toBe(0o600);
     expect(fileMode(heartbeatPath)).toBe(0o600);
@@ -75,6 +82,9 @@ describe('2026-08-15 audit follow-up regressions', () => {
     expect(fileMode(lockPath)).toBe(0o600);
     expect(fileMode(heartbeatPath)).toBe(0o600);
     lease.release();
+    expect(
+      readdirSync(root).filter((name) => name.startsWith('maintenance.lock.heartbeat-')),
+    ).toEqual([]);
   });
 });
 
