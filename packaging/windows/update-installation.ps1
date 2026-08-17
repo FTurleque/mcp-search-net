@@ -24,6 +24,20 @@ $TransactionPath = Join-Path $RollbackRoot 'transaction.json'
 $OwnershipMarkerPath = Join-Path $InstallRoot '.mcp-search-net-installation.json'
 $ManagedApplicationName = 'mcp-search-net'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$MoveFileReplaceExisting = 0x1
+$MoveFileWriteThrough = 0x8
+
+if (-not ([System.Management.Automation.PSTypeName]'McpSearchNet.NativeFileOps').Type) {
+    Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+namespace McpSearchNet {
+    public static class NativeFileOps {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern bool MoveFileEx(string existingFileName, string newFileName, uint flags);
+    }
+}
+'@
+}
 
 function Normalize-ComparablePath {
     param([Parameter(Mandatory)] [string] $Path)
@@ -81,11 +95,11 @@ function Test-OwnershipMarker {
     if (-not (Test-Path -LiteralPath $OwnershipMarkerPath -PathType Leaf)) { return $false }
     try {
         $marker = Get-Content -LiteralPath $OwnershipMarkerPath -Raw | ConvertFrom-Json
-        return (
-            [string]$marker.schemaVersion -eq '1.0' -and
-            [string]$marker.name -eq $ManagedApplicationName -and
-            [guid]::TryParse([string]$marker.installationId, [ref]([guid]::Empty))
-        )
+        if ([string]$marker.schemaVersion -ne '1.0' -or [string]$marker.name -ne $ManagedApplicationName) {
+            return $false
+        }
+        $null = [guid]::Parse([string]$marker.installationId)
+        return $true
     }
     catch {
         return $false
@@ -109,6 +123,27 @@ function Test-LegacyOwnedInstallation {
     )
 }
 
+function Test-RecoverableTransactionOwnership {
+    if (-not (Test-Path -LiteralPath $TransactionPath -PathType Leaf)) { return $false }
+    try {
+        $transaction = Read-TransactionManifest
+        if ([string]$transaction.phase -ne 'activating' -and [string]$transaction.phase -ne 'committed') {
+            return $false
+        }
+        $entries = @($transaction.entries)
+        if ($entries.Count -lt 3) { return $false }
+        $relativePaths = @($entries | ForEach-Object { [string]$_.relativePath })
+        return (
+            $relativePaths -contains 'app' -and
+            $relativePaths -contains 'bin' -and
+            $relativePaths -contains 'BUILD-MANIFEST.json'
+        )
+    }
+    catch {
+        return $false
+    }
+}
+
 function Assert-SafeInstallRoot {
     foreach ($forbiddenRoot in (Get-ForbiddenInstallRoots)) {
         if (Test-SamePath -Left $InstallRoot -Right ([string]$forbiddenRoot)) {
@@ -130,6 +165,7 @@ function Assert-SafeInstallRoot {
     if ($children.Count -eq 0) { return }
     if (Test-OwnershipMarker) { return }
     if (Test-LegacyOwnedInstallation) { return }
+    if (Test-RecoverableTransactionOwnership) { return }
 
     throw "MCP_UPDATE_UNSAFE_INSTALL_ROOT: dossier non vide sans preuve d'ownership mcp-search-net : $InstallRoot"
 }
@@ -144,6 +180,22 @@ function Get-Sha256Hex {
     }
     finally {
         $sha.Dispose()
+    }
+}
+
+function Publish-DurableFile {
+    param(
+        [Parameter(Mandatory)] [string] $TemporaryPath,
+        [Parameter(Mandatory)] [string] $Path
+    )
+
+    $flags = $MoveFileWriteThrough
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        $flags = $flags -bor $MoveFileReplaceExisting
+    }
+    if (-not [McpSearchNet.NativeFileOps]::MoveFileEx($TemporaryPath, $Path, [uint32]$flags)) {
+        $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        throw (New-Object System.ComponentModel.Win32Exception($errorCode, "Publication atomique durable impossible vers '$Path'"))
     }
 }
 
@@ -174,13 +226,7 @@ function Write-DurableUtf8File {
         $stream.Flush($true)
         $stream.Dispose()
         $stream = $null
-
-        if (Test-Path -LiteralPath $Path -PathType Leaf) {
-            [System.IO.File]::Replace($temporaryPath, $Path, $null, $true)
-        }
-        else {
-            [System.IO.File]::Move($temporaryPath, $Path)
-        }
+        Publish-DurableFile -TemporaryPath $temporaryPath -Path $Path
     }
     finally {
         if ($null -ne $stream) { $stream.Dispose() }
@@ -589,9 +635,7 @@ try {
 
         $activationCount++
         if ($TestCrashActivationAfterEntries -gt 0 -and $activationCount -eq $TestCrashActivationAfterEntries) {
-            Write-Host "MCP_UPDATE_TEST_CRASH_AFTER_ENTRY:$activationCount"
-            [System.Diagnostics.Process]::GetCurrentProcess().Kill()
-            throw "MCP_UPDATE_TEST_CRASH_FAILED_TO_TERMINATE:$activationCount"
+            [System.Environment]::FailFast("MCP_UPDATE_TEST_CRASH_AFTER_ENTRY:$activationCount")
         }
         if ($TestFailActivationAfterEntries -gt 0 -and $activationCount -eq $TestFailActivationAfterEntries) {
             throw "MCP_UPDATE_TEST_ACTIVATION_FAILURE:$activationCount"
