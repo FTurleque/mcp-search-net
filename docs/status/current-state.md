@@ -12,13 +12,13 @@ ici : GitHub reste l’autorité pour savoir si un candidat est ouvert, mergé o
 - Branche de release et source de vérité publiée : `master`.
 - Branche d’intégration courante : `develop`.
 - Intégration V2 : PR #8 mergée.
-- Qualification datée du 16 août 2026 : la PR #105 a été mergée dans `develop` au SHA
-  `6de03bb80abb582ff84dea841f2f9f82062b6d73`, tree
-  `eb4c082d3ac2e4c98962938e7256adba453206bc`.
-- La CI post-merge #1346 / `31970524353` a terminé en succès sur ce SHA pour la validation Node.js,
+- Qualification datée du 17 août 2026 : la PR #108 a été mergée dans `develop` au SHA
+  `afcd6fea58979f9e9aa6504e80b56995dd240441`, tree
+  `d60ccb2b24acf1a447b98953b2fafc32f1af4a02`.
+- La CI post-merge #1380 / `32022131363` a terminé en succès sur ce SHA pour la validation Node.js,
   Docker/live E2E et le packaging/lifecycle Windows. Le job Sonar est ignoré sur les pushes
-  `develop` par conception ; le head exact de la PR #105 avait passé le Quality Gate Sonar avec
-  90,9 % de couverture sur le nouveau code, 0 nouvelle issue et 0 hotspot de sécurité.
+  `develop` par conception ; le head exact de la PR #108 avait passé le Quality Gate Sonar avec
+  94,3 % de couverture sur le nouveau code, 0 nouvelle issue et 0 hotspot de sécurité.
 - L’issue #73 reste le tracker de clôture pour les preuves de certification native Claude Code,
   Claude Desktop et Codex contre le SHA serveur finalement intégré.
 
@@ -36,10 +36,13 @@ ou de l’état d’une branche de correction :
 1. le pool PDF reste strictement borné à deux slots et auto-réparant ; une création de worker de
    remplacement qui échoue transitoirement laisse le slot réessayable avec backoff au lieu de
    réduire définitivement la capacité du processus ;
-2. le backup catalogue formalise le hard-link final comme point de commit. Le snapshot temporaire
-   est déjà privé, vérifié et fermé avant publication ; le nettoyage de la famille SQLite temporaire
-   utilise des retries bornés et un diagnostic sur échec persistant, sans jamais transformer une
-   publication réussie en faux échec métier ;
+2. le backup catalogue sépare désormais visibilité atomique et durabilité. Le snapshot temporaire
+   privé et vérifié est synchronisé avant publication ; le hard-link rend ensuite le snapshot final
+   visible atomiquement, puis le fichier publié et son répertoire parent sont synchronisés avant que
+   `backed_up` puisse être retourné. Si cette confirmation échoue après publication, le nom final est
+   supprimé et le rollback du répertoire est lui-même synchronisé ; un rollback non confirmable
+   échoue explicitement. Le nettoyage post-commit de la famille SQLite temporaire conserve ses
+   retries bornés et reste fail-open une fois le commit durable acquis ;
 3. les répertoires persistants SQLite préexistants sont rechmodés en `0700` sur POSIX, pas seulement
    créés avec un mode souhaité ; les fichiers SQLite et sidecars restent durcis en `0600` ;
 4. lorsque `verifyIntegrityOnOpen` est demandé, le catalogue est vérifié avant récupération des

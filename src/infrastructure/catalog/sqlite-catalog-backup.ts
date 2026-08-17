@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, linkSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import process from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -15,6 +16,8 @@ const SAFE_BACKUP_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.db$/u;
 const SQLITE_TEMPORARY_SUFFIXES = ['', '-wal', '-shm', '-journal'] as const;
 const DEFAULT_CLEANUP_ATTEMPTS = 3;
 const DEFAULT_CLEANUP_RETRY_DELAY_MS = 25;
+
+type DurabilitySync = (path: string) => Promise<void>;
 
 export interface CatalogBackupOutput {
   readonly schemaVersion: '1.0';
@@ -39,6 +42,8 @@ export interface SqliteCatalogBackupOptions {
   readonly cleanupRetryDelayMs?: number;
   readonly waitForRetry?: (delayMs: number) => Promise<void>;
   readonly onCleanupFailure?: (failure: CatalogBackupCleanupFailure) => void;
+  readonly syncFile?: DurabilitySync;
+  readonly syncDirectory?: DurabilitySync;
 }
 
 export class SqliteCatalogBackup {
@@ -47,6 +52,8 @@ export class SqliteCatalogBackup {
   private readonly cleanupRetryDelayMs: number;
   private readonly waitForRetry: (delayMs: number) => Promise<void>;
   private readonly onCleanupFailure: (failure: CatalogBackupCleanupFailure) => void;
+  private readonly syncFile: DurabilitySync;
+  private readonly syncDirectory: DurabilitySync;
 
   public constructor(
     private readonly catalogPath: string,
@@ -58,6 +65,8 @@ export class SqliteCatalogBackup {
     this.cleanupRetryDelayMs = options.cleanupRetryDelayMs ?? DEFAULT_CLEANUP_RETRY_DELAY_MS;
     this.waitForRetry = options.waitForRetry ?? waitForRetry;
     this.onCleanupFailure = options.onCleanupFailure ?? emitCleanupWarning;
+    this.syncFile = options.syncFile ?? syncRegularFile;
+    this.syncDirectory = options.syncDirectory ?? syncDirectory;
 
     if (!Number.isSafeInteger(this.cleanupAttempts) || this.cleanupAttempts <= 0) {
       throw new RangeError('cleanupAttempts must be a positive safe integer');
@@ -101,15 +110,59 @@ export class SqliteCatalogBackup {
         verifiedAt: this.clock.now().toISOString(),
       };
 
-      // The hard-link is the durable commit point. The temporary inode is already private and
-      // verified, so the published name is immediately a complete 0600 snapshot. Cleanup runs in
-      // finally with bounded retries and diagnostics; it can never turn publication into failure.
-      linkSync(temporaryPath, finalPath);
+      await this.commitPublication(temporaryPath, finalPath, backupDirectory);
       return output;
     } finally {
       if (source.open) source.close();
       await this.cleanupTemporaryFamily(temporaryPath);
     }
+  }
+
+  private async commitPublication(
+    temporaryPath: string,
+    finalPath: string,
+    backupDirectory: string,
+  ): Promise<void> {
+    try {
+      // Flush the verified inode before introducing the public directory entry. A successful
+      // FileHandle.sync() requests both file data and metadata synchronization from the OS.
+      await this.syncFile(temporaryPath);
+    } catch (error) {
+      throw new Error('CATALOG_BACKUP_DURABILITY_FAILED', { cause: error });
+    }
+
+    // The hard-link remains the atomic visibility point: callers can never observe a partially
+    // copied final snapshot. It is not, by itself, the durability commit point.
+    linkSync(temporaryPath, finalPath);
+
+    try {
+      // The hard-link changes file metadata and the parent directory. Flush both before reporting
+      // success so a completed backup does not depend only on deferred filesystem write-back.
+      await this.syncFile(finalPath);
+      await this.syncDirectory(backupDirectory);
+    } catch (error) {
+      await this.rollbackPublication(finalPath, backupDirectory, error);
+    }
+  }
+
+  private async rollbackPublication(
+    finalPath: string,
+    backupDirectory: string,
+    commitError: unknown,
+  ): Promise<never> {
+    try {
+      rmSync(finalPath, { force: true });
+      // Confirm removal of the public name before returning failure. If this flush also fails, the
+      // caller receives an explicit rollback failure because on-disk state cannot be certified.
+      await this.syncDirectory(backupDirectory);
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [commitError, rollbackError],
+        'CATALOG_BACKUP_DURABILITY_ROLLBACK_FAILED',
+        { cause: rollbackError },
+      );
+    }
+    throw new Error('CATALOG_BACKUP_DURABILITY_FAILED', { cause: commitError });
   }
 
   private verifySnapshot(path: string): void {
@@ -150,8 +203,8 @@ export class SqliteCatalogBackup {
     try {
       this.onCleanupFailure({ path, attempts: this.cleanupAttempts, error: lastError });
     } catch {
-      // Diagnostics are deliberately fail-open after the cleanup budget is exhausted. Publication
-      // may already be committed, and a diagnostic sink must never falsify the business outcome.
+      // Diagnostics are deliberately fail-open after the cleanup budget is exhausted. A durability
+      // commit has already completed at this point, so cleanup must not falsify the business result.
     }
   }
 }
@@ -173,6 +226,27 @@ async function sha256File(path: string): Promise<string> {
     stream.on('error', rejectHash);
   });
   return hash.digest('hex');
+}
+
+async function syncRegularFile(path: string): Promise<void> {
+  // Use a write-capable descriptor because Windows FlushFileBuffers requires GENERIC_WRITE.
+  const handle = await open(path, 'r+');
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  // Node documents that Windows can open a directory with a+ while POSIX directories are opened
+  // read-only. FileHandle.sync() then delegates the durability request to the platform filesystem.
+  const handle = await open(path, process.platform === 'win32' ? 'a+' : 'r');
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
 }
 
 function removeFile(path: string): void {
