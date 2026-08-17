@@ -78,7 +78,9 @@ jobs:
               [ref]$parseErrors
             ) | Out-Null
             if ($parseErrors.Count -gt 0) {
-              $details = ($parseErrors | ForEach-Object { $_.Message }) -join '; '
+              $details = ($parseErrors | ForEach-Object {
+                "line=$($_.Extent.StartLineNumber) column=$($_.Extent.StartColumnNumber) text=<$($_.Extent.Text)> message=$($_.Message)"
+              }) -join '; '
               throw "PowerShell parse failed for $($file.FullName): $details"
             }
           }
