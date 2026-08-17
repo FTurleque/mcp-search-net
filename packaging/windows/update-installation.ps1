@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 if ($env:OS -ne 'Windows_NT') {
-    throw 'Ce programme nécessite Windows x64.'
+    throw 'Ce programme necessite Windows x64.'
 }
 
 $PackageRoot = [System.IO.Path]::GetFullPath($PackageRoot)
@@ -33,7 +33,7 @@ function Assert-PathInsideRoot {
     )
     $prefix = $fullRoot + [System.IO.Path]::DirectorySeparatorChar
     if (-not $fullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Chemin hors de la racine autorisée : $fullPath"
+        throw "Chemin hors de la racine autorisee : $fullPath"
     }
 }
 
@@ -55,7 +55,7 @@ function Remove-PathWithRetry {
             }
         }
     }
-    throw "Impossible de supprimer '$Path'. Dernière erreur : $($lastError.Exception.Message)"
+    throw "Impossible de supprimer '$Path'. Derniere erreur : $($lastError.Exception.Message)"
 }
 
 function Move-PathWithRetry {
@@ -83,7 +83,7 @@ function Move-PathWithRetry {
             }
         }
     }
-    throw "Impossible de déplacer '$Source' vers '$Destination'. Dernière erreur : $($lastError.Exception.Message)"
+    throw "Impossible de deplacer '$Source' vers '$Destination'. Derniere erreur : $($lastError.Exception.Message)"
 }
 
 function Get-CurrentProcessLineage {
@@ -122,7 +122,7 @@ function Stop-InstalledMcpProcesses {
 
     $matches = @(Get-InstalledMcpProcesses)
     foreach ($process in $matches) {
-        Write-Host "Arrêt du serveur MCP installé PID=$($process.ProcessId) ($($process.Name))..."
+        Write-Host "Arret du serveur MCP installe PID=$($process.ProcessId) ($($process.Name))..."
         Stop-Process -Id ([int]$process.ProcessId) -Force -ErrorAction Stop
     }
     if ($matches.Count -gt 0) { Start-Sleep -Milliseconds 500 }
@@ -192,7 +192,7 @@ function Recover-InterruptedTransaction {
 
     $transaction = Read-TransactionManifest
     if ([string]$transaction.phase -eq 'committed') {
-        Write-Host 'Nettoyage d’une transaction de mise à jour déjà commitée.'
+        Write-Host "Nettoyage d'une transaction de mise a jour deja commitee."
         if (Test-Path -LiteralPath $StageRoot) { Remove-PathWithRetry -Path $StageRoot }
         Remove-PathWithRetry -Path $RollbackRoot
         return
@@ -201,7 +201,7 @@ function Recover-InterruptedTransaction {
         throw "MCP_UPDATE_RECOVERY_REQUIRED: phase inconnue '$($transaction.phase)'."
     }
 
-    Write-Warning 'Transaction de mise à jour interrompue détectée ; restauration de la version précédente.'
+    Write-Warning 'Transaction de mise a jour interrompue ; restauration de la version precedente.'
     Restore-Transaction -Transaction $transaction
 }
 
