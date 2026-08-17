@@ -183,7 +183,7 @@ begin
   ChkCopilotCli.Enabled    := False; ChkCopilotCli.Checked    := False; LblCliStatus.Caption     := Reason;
   ChkClaudeDesktop.Enabled := False; ChkClaudeDesktop.Checked := False; LblDesktopStatus.Caption := Reason;
   ChkClaudeCode.Enabled    := False; ChkClaudeCode.Checked    := False; LblCodeStatus.Caption    := Reason;
-  ChkCodex.Enabled         := False; ChkCodex.Checked         := False; LblCodexStatus.Caption   := Reason;
+  ChkCodex.Enabled         := False; ChkCodex.Checked         := False; LblCodexStatus.Caption    := Reason;
 end;
 
 procedure RunIntegPreflight;
@@ -217,8 +217,8 @@ begin
   SetIntegAvailability(ChkCopilotJB,     LblCopilotStatus, 'CopilotJetBrains');
   SetIntegAvailability(ChkCopilotCli,    LblCliStatus,     'CopilotCli');
   SetIntegAvailability(ChkClaudeDesktop, LblDesktopStatus, 'ClaudeDesktop');
-  SetIntegAvailability(ChkClaudeCode,    LblCodeStatus,    'ClaudeCode');
-  SetIntegAvailability(ChkCodex,         LblCodexStatus,   'CodexDesktop');
+  SetIntegAvailability(ChkClaudeCode,    LblCodeStatus,     'ClaudeCode');
+  SetIntegAvailability(ChkCodex,         LblCodexStatus,    'CodexDesktop');
 end;
 
 procedure InitializeWizard;
@@ -321,7 +321,7 @@ begin
      (ResultCode <> 0) then
   begin
     Result := 'La mise à jour transactionnelle a échoué (code ' + IntToStr(ResultCode) + '). ' +
-              'La version précédente a été restaurée lorsque son activation avait commencé.';
+              'Aucune nouvelle version n''a été considérée comme commise ; consultez le journal si le rollback a lui-même échoué.';
   end;
 end;
 
@@ -433,9 +433,10 @@ begin
   if not DirExists(Path) then exit;
   PS     := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   TmpPs1 := ExpandConstant('{tmp}\mcp-cleanup.ps1');
-  Script := 'Remove-Item -LiteralPath ''' + Path + ''' -Recurse -Force -ErrorAction SilentlyContinue';
+  Script := 'param([string]$TargetPath)' + #13#10 +
+            'Remove-Item -LiteralPath $TargetPath -Recurse -Force -ErrorAction SilentlyContinue';
   SaveStringToFile(TmpPs1, Script, False);
-  Exec(PS, '-NoProfile -ExecutionPolicy Bypass -File "' + TmpPs1 + '"',
+  Exec(PS, '-NoProfile -ExecutionPolicy Bypass -File "' + TmpPs1 + '" -TargetPath "' + Path + '"',
        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   DeleteFile(TmpPs1);
 end;
@@ -467,6 +468,7 @@ begin
   PsRemoveTree(ExpandConstant('{app}\.config-backups'));
   DeleteFile(ExpandConstant('{app}\.env'));
   DeleteFile(ExpandConstant('{app}\mcp-client-integrations.json'));
+  DeleteFile(ExpandConstant('{app}\.mcp-search-net-installation.json'));
   RegDeleteKeyIncludingSubkeys(HKCU, InstallerRegistryPath());
 end;
 
