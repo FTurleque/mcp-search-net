@@ -411,6 +411,7 @@ var
   MessageText: String;
 begin
   DeleteUserDataOnUninstall := False;
+  { Silent uninstall therefore preserves them. }
   if IsSmokeBuild() or UninstallSilent() then exit;
   DataRoot := ExpandConstant('{app}\data');
   if not DirExists(DataRoot) and not FileExists(ExpandConstant('{app}\.env')) then exit;
