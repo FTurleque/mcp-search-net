@@ -19,8 +19,6 @@ describe('scheduled dependency audit coverage', () => {
     expect(dependencyAuditWorkflow).toContain('persist-credentials: false');
     expect(dependencyAuditWorkflow).toContain('run: npm ci');
     expect(dependencyAuditWorkflow).toContain('run: npm audit --audit-level=moderate');
-    expect(dependencyAuditWorkflow).toContain(
-      'run: npm audit --omit=dev --audit-level=moderate',
-    );
+    expect(dependencyAuditWorkflow).toContain('run: npm audit --omit=dev --audit-level=moderate');
   });
 });
