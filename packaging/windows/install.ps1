@@ -16,20 +16,14 @@ if ($env:OS -ne 'Windows_NT') {
 
 $PackageRoot = Split-Path $MyInvocation.MyCommand.Path -Parent
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
-
-Write-Host "Installation de mcp-search-net dans $InstallRoot"
-New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
-
-$Exclude = @('.git', 'install.ps1')
-foreach ($entry in Get-ChildItem -LiteralPath $PackageRoot -Force) {
-    if ($Exclude -contains $entry.Name) { continue }
-    $dest = Join-Path $InstallRoot $entry.Name
-    if ($entry.PSIsContainer) {
-        Copy-Item -LiteralPath $entry.FullName -Destination $dest -Recurse -Force
-    } else {
-        Copy-Item -LiteralPath $entry.FullName -Destination $dest -Force
-    }
+$Updater = Join-Path $PackageRoot 'scripts\update-installation.ps1'
+if (-not (Test-Path -LiteralPath $Updater -PathType Leaf)) {
+    throw "Moteur de mise à jour absent : $Updater"
 }
+
+Write-Host "Installation / mise à jour de mcp-search-net dans $InstallRoot"
+& $Updater -PackageRoot $PackageRoot -InstallRoot $InstallRoot
+if ($LASTEXITCODE -ne 0) { throw "update-installation.ps1 a échoué (code $LASTEXITCODE)." }
 
 & (Join-Path $InstallRoot 'scripts\configure-install.ps1') -InstallRoot $InstallRoot
 if ($LASTEXITCODE -ne 0) { throw "configure-install.ps1 a échoué (code $LASTEXITCODE)." }
@@ -50,9 +44,10 @@ if ($AddToPath) {
 }
 
 Write-Host ''
-Write-Host 'Installation terminée.' -ForegroundColor Green
+Write-Host 'Installation / mise à jour terminée.' -ForegroundColor Green
 Write-Host "Lanceur MCP  : $(Join-Path $InstallRoot 'bin\mcp-search-net.cmd')"
 Write-Host "Config MCP   : $(Join-Path $InstallRoot 'mcp.json.example')"
+Write-Host 'Configuration et données existantes conservées automatiquement.'
 Write-Host "Démarrer les fournisseurs Docker avec :"
 Write-Host "  cd '$InstallRoot'"
-Write-Host "  docker compose up -d searxng crawl4ai"
+Write-Host '  docker compose up -d searxng crawl4ai'
