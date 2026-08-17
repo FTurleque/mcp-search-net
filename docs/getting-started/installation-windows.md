@@ -120,7 +120,10 @@ suppression d’un fichier programme obsolète et le redémarrage du serveur MCP
 
 ```text
 <installation>\
-├── app\                 application compilée, dépendances et migrations runtime
+├── app\                 application compilée et dépendances runtime
+│   ├── migrations\
+│   ├── catalog-migrations\
+│   └── history-migrations\
 ├── bin\                 launchers MCP, Docker et opérations catalogue
 ├── config\              configuration persistante
 ├── data\                cache, catalogue et historique SQLite persistants
