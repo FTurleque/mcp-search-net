@@ -117,7 +117,7 @@ try {
             throw
         }
     }
-    if (-not $rollbackObserved) { throw 'Le fault injection de rollback n’a pas échoué comme attendu.' }
+    if (-not $rollbackObserved) { throw "Le fault injection de rollback n'a pas échoué comme attendu." }
 
     Assert-Contains (Join-Path $InstallRoot 'app\version.txt') '1.1.0'
     Assert-Contains (Join-Path $InstallRoot 'app\new.txt') 'new-v2'
