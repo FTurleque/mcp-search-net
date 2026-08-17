@@ -35,8 +35,8 @@ démarre SearXNG et Crawl4AI. Un runtime téléchargé invérifiable est supprim
 Crawl4AI. Ce fichier n’est pas remplacé lors d’une mise à jour et ne doit pas être commité.
 
 Une installation existante conserve `config\application.yml`, `config\official-sources.yml`,
-`config\searxng\settings.yml` et `data`. Les nouvelles valeurs de référence sont placées à côté avec
-le suffixe `.default`.
+`config\application.docker.yml`, `config\searxng\settings.yml` et `data`. Les nouvelles valeurs de
+référence sont placées à côté avec le suffixe `.default`.
 
 ## Setup et ZIP de release
 
@@ -53,6 +53,10 @@ Le runtime Node.js 24.18.0 est embarqué dans ces artefacts. Le pipeline refuse 
 version demandée diffère de `package.json`, de `package-lock.json` ou de la version réellement
 embarquée. Inno Setup est figé sur la version 6.7.3 dans le workflow de publication.
 
+Le setup et le ZIP utilisent le même moteur `scripts\update-installation.ps1`. Le setup n’écrase
+jamais directement le répertoire installé : il extrait le ZIP exact de release dans un dossier
+temporaire puis demande au moteur de mise à jour d’activer ce payload.
+
 Le post-install peut configurer les clients MCP détectés. Les règles d’ownership sont strictes :
 
 - une entrée `mcp-search-net` préexistante et non gérée est préservée ;
@@ -65,6 +69,53 @@ Le post-install peut configurer les clients MCP détectés. Les règles d’owne
 
 L’état d’ownership est conservé dans `mcp-client-integrations.json`.
 
+## Mise à jour sur place
+
+Pour passer d’une version installée à une version plus récente, **il n’est pas nécessaire de
+désinstaller mcp-search-net**. Télécharger le nouveau `mcp-search-net-<version>-windows-x64-setup.exe`
+et l’exécuter normalement. L’`AppId` Inno reste stable et le setup reprend automatiquement le
+répertoire de l’installation existante.
+
+La mise à jour fonctionne de la même manière avec le ZIP : extraire la nouvelle release puis relancer
+`install.ps1` vers le même `InstallRoot`.
+
+Le moteur prépare la nouvelle version dans `.install-staging`, écrit un journal dans
+`.install-rollback\transaction.json`, puis remplace les surfaces programme gérées :
+
+- `app` ;
+- `bin` ;
+- `runtime` ;
+- `scripts` ;
+- `docker` ;
+- les fichiers racine gérés (`compose*.yaml`, manifeste de build, licence et notices).
+
+Les anciens fichiers programme absents de la nouvelle release disparaissent donc réellement : une
+mise à jour n’est pas une simple copie par-dessus l’ancienne version.
+
+Les éléments persistants sont conservés :
+
+- `.env` et les secrets locaux ;
+- `data` et toutes les bases SQLite ;
+- `config\application.yml` ;
+- `config\application.docker.yml` ;
+- `config\official-sources.yml` ;
+- `config\searxng\settings.yml` ;
+- `mcp-client-integrations.json` et les backups de configuration.
+
+Les fichiers `*.default` sont, eux, remplacés par les valeurs de référence de la nouvelle version.
+Cela permet de comparer une configuration personnalisée à la configuration courante sans perdre les
+choix de l’utilisateur.
+
+Avant l’activation, les processus serveur MCP qui utilisent l’installation courante sont arrêtés afin
+d’éviter les verrous Windows. Si une activation échoue, les composants déjà remplacés sont retirés et
+la version précédente est restaurée. Si Windows ou le setup est interrompu au milieu de l’activation,
+le journal restant est détecté au prochain lancement et la transaction incomplète est restaurée avant
+de tenter une nouvelle mise à jour.
+
+Le setup qualifié exécute en CI une installation réelle puis une seconde installation sur le même
+dossier. La recette vérifie la conservation de `.env`, de la configuration et des données, la
+suppression d’un fichier programme obsolète et le redémarrage du serveur MCP via sa sonde STDIO.
+
 ## Arborescence installée
 
 ```text
@@ -75,13 +126,11 @@ L’état d’ownership est conservé dans `mcp-client-integrations.json`.
 ├── data\                cache, catalogue et historique SQLite persistants
 ├── runtime\             Node.js portable
 │   └── node-v24.18.0-win-x64\
+├── scripts\             configuration et moteur de mise à jour
+├── docker\              sources Compose/Docker distribuées
 ├── .env                  secrets fournisseurs générés localement
-├── .npmrc                politique npm strict-allow-scripts
 ├── compose.yaml
 ├── compose.hybrid.yaml
-├── migrations\
-├── catalog-migrations\
-├── history-migrations\
 ├── mcp.json.example
 ├── mcp.container.json.example
 ├── mcp-client-integrations.json
@@ -126,20 +175,13 @@ nécessaire. Crawl4AI reste uniquement sur `backend` et ne dispose d’aucun egr
 Le service MCP appartient au profil explicite `stdio`, donc un simple `docker compose up -d` ne
 lance pas de processus STDIO orphelin.
 
-## Mise à jour et désinstallation depuis les sources
+## Désinstallation
 
-Relancer l’installateur historique construit d’abord `.install-staging`, vérifie le package, renomme
-l’application précédente puis active la nouvelle. Si l’activation échoue, l’ancienne application est
-restaurée. La configuration, les données et `.env` restent conservés.
+La désinstallation retire les composants programme gérés. Par défaut elle conserve la configuration
+et les données persistantes. En mode interactif, le setup demande explicitement si ces données doivent
+également être supprimées ; le choix destructif n’est jamais implicite.
 
-La recette automatisée propre/mise à jour/désinstallation s’exécute sous PowerShell 5.1 avec :
-
-```powershell
-$nodeRoot = Split-Path -Parent (Get-Command node).Source
-.\scripts\test-installation.ps1 -NodeRuntimeSource $nodeRoot
-```
-
-Puis :
+Pour l’installation historique depuis les sources :
 
 ```powershell
 .\scripts\uninstall-user.ps1
