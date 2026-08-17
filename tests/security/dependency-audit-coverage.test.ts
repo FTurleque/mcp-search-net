@@ -7,9 +7,7 @@ const dependencyAuditWorkflow = readFileSync('.github/workflows/dependency-audit
 describe('scheduled dependency audit coverage', () => {
   it('audits both the release and integration branches on every scheduled run', () => {
     expect(dependencyAuditWorkflow).toContain('fail-fast: false');
-    expect(dependencyAuditWorkflow).toMatch(
-      /matrix:\s*\n\s*ref:\s*\n\s*- master\s*\n\s*- develop/u,
-    );
+    expect(dependencyAuditWorkflow).toMatch(/matrix:\s*\n\s*ref:\s*\n\s*- master\s*\n\s*- develop/u);
     expect(dependencyAuditWorkflow).toContain('ref: ${{ matrix.ref }}');
   });
 
