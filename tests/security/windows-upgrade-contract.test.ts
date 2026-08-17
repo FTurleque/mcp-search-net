@@ -37,6 +37,7 @@ describe('Windows in-place upgrade contract', () => {
     expect(updater).toContain("$OwnershipMarkerPath = Join-Path $InstallRoot '.mcp-search-net-installation.json'");
     expect(updater).toContain('MCP_UPDATE_UNSAFE_INSTALL_ROOT');
     expect(updater).toContain('Test-LegacyOwnedInstallation');
+    expect(updater).toContain('Test-RecoverableTransactionOwnership');
     expect(updater).toContain('Assert-SafeInstallRoot');
     expect(updater).toContain('Ensure-OwnershipMarker');
     expect(updater).toContain("[string]$manifest.name -ne $ManagedApplicationName");
@@ -46,7 +47,7 @@ describe('Windows in-place upgrade contract', () => {
     expect(updater).toContain('[System.IO.FileOptions]::WriteThrough');
     expect(updater).toContain('$stream.Flush($true)');
     expect(updater).toContain('MoveFileEx');
-    expect(updater).toContain('MOVEFILE_WRITE_THROUGH');
+    expect(updater).toContain('$MoveFileWriteThrough = 0x8');
     expect(updater).toContain("schemaVersion = '1.1'");
     expect(updater).toContain('checksumSha256');
     expect(updater).toContain("Write-TransactionManifest -Phase 'activating'");
@@ -79,7 +80,7 @@ describe('Windows in-place upgrade contract', () => {
 
   it('passes uninstall cleanup targets as data instead of interpolating them into PowerShell source', () => {
     expect(innoTemplate).toContain("Script := 'param([string]$TargetPath)");
-    expect(innoTemplate).toContain('-TargetPath "' + "' + Path + '" + '"');
+    expect(innoTemplate).toContain("-TargetPath \\\"' + Path + '\\\"");
     expect(innoTemplate).not.toContain("Remove-Item -LiteralPath ''' + Path + '''");
   });
 
