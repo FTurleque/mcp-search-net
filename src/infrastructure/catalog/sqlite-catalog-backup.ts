@@ -159,7 +159,7 @@ export class SqliteCatalogBackup {
       throw new AggregateError(
         [commitError, rollbackError],
         'CATALOG_BACKUP_DURABILITY_ROLLBACK_FAILED',
-        { cause: commitError },
+        { cause: rollbackError },
       );
     }
     throw new Error('CATALOG_BACKUP_DURABILITY_FAILED', { cause: commitError });
