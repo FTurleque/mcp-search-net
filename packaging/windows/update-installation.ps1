@@ -98,18 +98,15 @@ function Get-CurrentProcessLineage {
     return [int[]]$lineage.Keys
 }
 
-function Stop-InstalledMcpProcesses {
-    if ($SkipProcessStop -or -not (Test-Path -LiteralPath $InstallRoot -PathType Container)) { return }
-
+function Get-InstalledMcpProcesses {
     $needles = @(
         (Join-Path $InstallRoot 'bin\mcp-search-net.cmd'),
-        (Join-Path $InstallRoot 'app\build\bootstrap\main.js'),
-        (Join-Path $InstallRoot 'runtime\node-v24.18.0-win-x64\node.exe')
+        (Join-Path $InstallRoot 'app\build\bootstrap\main.js')
     )
     $excluded = @{}
     foreach ($processId in (Get-CurrentProcessLineage)) { $excluded[[int]$processId] = $true }
 
-    $matches = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         if ($null -eq $_.CommandLine -or $excluded.ContainsKey([int]$_.ProcessId)) { return $false }
         foreach ($needle in $needles) {
             if ($_.CommandLine.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
@@ -118,22 +115,19 @@ function Stop-InstalledMcpProcesses {
         }
         return $false
     })
+}
 
+function Stop-InstalledMcpProcesses {
+    if ($SkipProcessStop -or -not (Test-Path -LiteralPath $InstallRoot -PathType Container)) { return }
+
+    $matches = @(Get-InstalledMcpProcesses)
     foreach ($process in $matches) {
         Write-Host "Arrêt du serveur MCP installé PID=$($process.ProcessId) ($($process.Name))..."
         Stop-Process -Id ([int]$process.ProcessId) -Force -ErrorAction Stop
     }
     if ($matches.Count -gt 0) { Start-Sleep -Milliseconds 500 }
 
-    $remaining = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        if ($null -eq $_.CommandLine -or $excluded.ContainsKey([int]$_.ProcessId)) { return $false }
-        foreach ($needle in $needles) {
-            if ($_.CommandLine.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-                return $true
-            }
-        }
-        return $false
-    })
+    $remaining = @(Get-InstalledMcpProcesses)
     if ($remaining.Count -gt 0) {
         throw "MCP_UPDATE_PROCESS_LOCK: $($remaining.Count) processus mcp-search-net restent actifs."
     }
@@ -145,13 +139,12 @@ function Write-TransactionManifest {
         [Parameter(Mandatory)] [object[]] $Entries
     )
 
-    $manifest = [ordered]@{
+    [ordered]@{
         schemaVersion = '1.0'
         phase = $Phase
         entries = $Entries
         updatedAt = (Get-Date).ToUniversalTime().ToString('o')
-    }
-    $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $TransactionPath -Encoding UTF8
+    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $TransactionPath -Encoding UTF8
 }
 
 function Read-TransactionManifest {
@@ -169,7 +162,7 @@ function Read-TransactionManifest {
 function Restore-Transaction {
     param([Parameter(Mandatory)] [object] $Transaction)
 
-    foreach ($entry in @($Transaction.entries) | Sort-Object -Property order -Descending) {
+    foreach ($entry in (@($Transaction.entries) | Sort-Object -Property order -Descending)) {
         $relativePath = [string]$entry.relativePath
         $target = Join-Path $InstallRoot $relativePath
         $staged = Join-Path $StageRoot $relativePath
@@ -182,11 +175,8 @@ function Restore-Transaction {
                 Move-PathWithRetry -Source $backup -Destination $target
             }
         }
-        else {
-            # A missing staged entry means it was already activated. Remove it when rolling back.
-            if ((-not (Test-Path -LiteralPath $staged)) -and (Test-Path -LiteralPath $target)) {
-                Remove-PathWithRetry -Path $target
-            }
+        elseif ((-not (Test-Path -LiteralPath $staged)) -and (Test-Path -LiteralPath $target)) {
+            Remove-PathWithRetry -Path $target
         }
     }
 
@@ -240,9 +230,7 @@ function Assert-Package {
 
     try {
         $manifest = Get-Content -LiteralPath (Join-Path $PackageRoot 'BUILD-MANIFEST.json') -Raw | ConvertFrom-Json
-        if ([string]::IsNullOrWhiteSpace([string]$manifest.version)) {
-            throw 'version absente'
-        }
+        if ([string]::IsNullOrWhiteSpace([string]$manifest.version)) { throw 'version absente' }
     }
     catch {
         throw "MCP_UPDATE_INVALID_PACKAGE: BUILD-MANIFEST.json invalide : $($_.Exception.Message)"
@@ -261,8 +249,7 @@ function Add-StagedDirectory {
     $source = Join-Path $PackageRoot $SourceRelativePath
     $staged = Join-Path $StageRoot $TargetRelativePath
     $target = Join-Path $InstallRoot $TargetRelativePath
-    $parent = Split-Path $staged -Parent
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    New-Item -ItemType Directory -Force -Path (Split-Path $staged -Parent) | Out-Null
     Copy-Item -LiteralPath $source -Destination $staged -Recurse -Force
     $script:order++
     $entries.Add([PSCustomObject]@{
@@ -281,8 +268,7 @@ function Add-StagedFile {
     $source = Join-Path $PackageRoot $SourceRelativePath
     $staged = Join-Path $StageRoot $TargetRelativePath
     $target = Join-Path $InstallRoot $TargetRelativePath
-    $parent = Split-Path $staged -Parent
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    New-Item -ItemType Directory -Force -Path (Split-Path $staged -Parent) | Out-Null
     Copy-Item -LiteralPath $source -Destination $staged -Force
     $script:order++
     $entries.Add([PSCustomObject]@{
@@ -300,7 +286,6 @@ Recover-InterruptedTransaction
 Stop-InstalledMcpProcesses
 
 New-Item -ItemType Directory -Force -Path $StageRoot | Out-Null
-
 foreach ($directory in @('app', 'bin', 'runtime', 'scripts', 'docker')) {
     Add-StagedDirectory -SourceRelativePath $directory -TargetRelativePath $directory
 }
@@ -352,8 +337,7 @@ try {
 catch {
     $activationError = $_
     try {
-        $transaction = Read-TransactionManifest
-        Restore-Transaction -Transaction $transaction
+        Restore-Transaction -Transaction (Read-TransactionManifest)
     }
     catch {
         throw "MCP_UPDATE_ROLLBACK_FAILED: activation='$($activationError.Exception.Message)' rollback='$($_.Exception.Message)'"
@@ -363,6 +347,10 @@ catch {
 
 if (Test-Path -LiteralPath $StageRoot) { Remove-PathWithRetry -Path $StageRoot }
 if (Test-Path -LiteralPath $RollbackRoot) { Remove-PathWithRetry -Path $RollbackRoot }
+
+# Legacy Inno releases copied install.ps1 into {app}; it is no longer part of the installed runtime.
+$legacyInstaller = Join-Path $InstallRoot 'install.ps1'
+if (Test-Path -LiteralPath $legacyInstaller -PathType Leaf) { Remove-PathWithRetry -Path $legacyInstaller }
 
 $installedManifest = Get-Content -LiteralPath (Join-Path $InstallRoot 'BUILD-MANIFEST.json') -Raw | ConvertFrom-Json
 Write-Host "MCP_UPDATE_COMMITTED version=$($installedManifest.version) root=$InstallRoot"
