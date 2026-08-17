@@ -41,8 +41,8 @@ export async function ingestTextDocument(
   const source = await repository.getSourceByKey(options.sourceKey);
   if (source === undefined) throw new Error(`Unknown catalog source ${options.sourceKey}`);
 
-  const canonicalUrl = WebUrl.createTransport(options.canonicalUrl).value;
   const content = await readBoundedTextFile(options.filePath);
+  const canonicalUrl = WebUrl.createTransport(options.canonicalUrl).value;
   const contentHash = sha256(content);
   const stableKey = options.stableKey ?? stableKeyFromUrl(canonicalUrl);
   const revision = await repository.commitDocumentRevision({
