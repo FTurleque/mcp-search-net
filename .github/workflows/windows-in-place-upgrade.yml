@@ -86,7 +86,7 @@ jobs:
           }
           Write-Host "WINDOWS_UPGRADE_POWERSHELL_PARSE_VALID files=$($files.Count)"
 
-      - name: Exercise synthetic v1 to v2 update and rollback
+      - name: Exercise ownership, crash recovery and post-commit cleanup
         shell: powershell
         run: .\scripts\test-packaged-upgrade.ps1
 
@@ -130,7 +130,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $setup = Join-Path $PWD "target\dist\.smoke\mcp-search-net-$env:RELEASE_VERSION-windows-x64-smoke-setup.exe"
-          $root = Join-Path $env:RUNNER_TEMP 'mcp-search-net setup upgrade with spaces'
+          $root = Join-Path $env:RUNNER_TEMP 'mcp-search-net O''Brien setup with spaces'
           $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="{0}"' -f $root),'/TASKS="!addtopath"')
 
           function Invoke-Setup([string] $Path, [string[]] $Arguments) {
@@ -139,6 +139,10 @@ jobs:
           }
 
           Invoke-Setup $setup $args
+          $ownershipMarker = Join-Path $root '.mcp-search-net-installation.json'
+          if (-not (Test-Path -LiteralPath $ownershipMarker -PathType Leaf)) {
+            throw 'Le setup n a pas créé le marqueur d ownership.'
+          }
           $envBefore = Get-Content -LiteralPath (Join-Path $root '.env') -Raw
           Add-Content -LiteralPath (Join-Path $root 'config\application.yml') -Value "`n# preserved-setup-user-config"
           Add-Content -LiteralPath (Join-Path $root 'config\application.docker.yml') -Value "`n# preserved-setup-docker-config"

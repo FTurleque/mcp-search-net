@@ -1,9 +1,11 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory)] [string] $PackageRoot,
     [Parameter(Mandatory)] [string] $InstallRoot,
     [switch] $SkipProcessStop,
-    [int] $TestFailActivationAfterEntries = 0
+    [int] $TestFailActivationAfterEntries = 0,
+    [int] $TestCrashActivationAfterEntries = 0,
+    [switch] $TestFailPostCommitCleanup
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,6 +21,33 @@ $StageRoot = Join-Path $InstallRoot '.install-staging'
 $RollbackRoot = Join-Path $InstallRoot '.install-rollback'
 $RollbackOldRoot = Join-Path $RollbackRoot 'old'
 $TransactionPath = Join-Path $RollbackRoot 'transaction.json'
+$OwnershipMarkerPath = Join-Path $InstallRoot '.mcp-search-net-installation.json'
+$ManagedApplicationName = 'mcp-search-net'
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$MoveFileReplaceExisting = 0x1
+$MoveFileWriteThrough = 0x8
+
+if (-not ([System.Management.Automation.PSTypeName]'McpSearchNet.NativeFileOps').Type) {
+    Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+namespace McpSearchNet {
+    public static class NativeFileOps {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern bool MoveFileEx(string existingFileName, string newFileName, uint flags);
+    }
+}
+'@
+}
+
+function Normalize-ComparablePath {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    $trimChars = [char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    return [System.IO.Path]::GetFullPath($Path).TrimEnd($trimChars)
+}
 
 function Assert-PathInsideRoot {
     param(
@@ -27,15 +56,197 @@ function Assert-PathInsideRoot {
     )
 
     $fullPath = [System.IO.Path]::GetFullPath($Path)
-    $trimChars = [char[]]@(
-        [System.IO.Path]::DirectorySeparatorChar,
-        [System.IO.Path]::AltDirectorySeparatorChar
-    )
-    $fullRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd($trimChars)
+    $fullRoot = Normalize-ComparablePath -Path $Root
     $prefix = $fullRoot + [System.IO.Path]::DirectorySeparatorChar
     if (-not $fullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Chemin hors de la racine autorisee : $fullPath"
     }
+}
+
+function Test-SamePath {
+    param(
+        [Parameter(Mandatory)] [string] $Left,
+        [Parameter(Mandatory)] [string] $Right
+    )
+
+    return (Normalize-ComparablePath -Path $Left).Equals(
+        (Normalize-ComparablePath -Path $Right),
+        [System.StringComparison]::OrdinalIgnoreCase
+    )
+}
+
+function Get-ForbiddenInstallRoots {
+    $candidates = @(
+        [System.IO.Path]::GetPathRoot($InstallRoot),
+        $env:USERPROFILE,
+        $env:LOCALAPPDATA,
+        $env:APPDATA,
+        $env:ProgramData,
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        $env:SystemRoot,
+        $env:TEMP,
+        [System.IO.Path]::GetTempPath()
+    )
+    return @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+}
+
+function Test-OwnershipMarker {
+    if (-not (Test-Path -LiteralPath $OwnershipMarkerPath -PathType Leaf)) { return $false }
+    try {
+        $marker = Get-Content -LiteralPath $OwnershipMarkerPath -Raw | ConvertFrom-Json
+        if ([string]$marker.schemaVersion -ne '1.0' -or [string]$marker.name -ne $ManagedApplicationName) {
+            return $false
+        }
+        $null = [guid]::Parse([string]$marker.installationId)
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-LegacyOwnedInstallation {
+    $manifestPath = Join-Path $InstallRoot 'BUILD-MANIFEST.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return $false }
+    try {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        if ([string]$manifest.name -ne $ManagedApplicationName) { return $false }
+    }
+    catch {
+        return $false
+    }
+
+    return (
+        (Test-Path -LiteralPath (Join-Path $InstallRoot 'app\build\bootstrap\main.js') -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $InstallRoot 'bin\mcp-search-net.cmd') -PathType Leaf)
+    )
+}
+
+function Test-RecoverableTransactionOwnership {
+    if (-not (Test-Path -LiteralPath $TransactionPath -PathType Leaf)) { return $false }
+    try {
+        $transaction = Read-TransactionManifest
+        if ([string]$transaction.phase -ne 'activating' -and [string]$transaction.phase -ne 'committed') {
+            return $false
+        }
+        $entries = @($transaction.entries)
+        if ($entries.Count -lt 3) { return $false }
+        $relativePaths = @($entries | ForEach-Object { [string]$_.relativePath })
+        return (
+            $relativePaths -contains 'app' -and
+            $relativePaths -contains 'bin' -and
+            $relativePaths -contains 'BUILD-MANIFEST.json'
+        )
+    }
+    catch {
+        return $false
+    }
+}
+
+function Assert-SafeInstallRoot {
+    foreach ($forbiddenRoot in (Get-ForbiddenInstallRoots)) {
+        if (Test-SamePath -Left $InstallRoot -Right ([string]$forbiddenRoot)) {
+            throw "MCP_UPDATE_UNSAFE_INSTALL_ROOT: racine systeme ou utilisateur interdite : $InstallRoot"
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $InstallRoot)) { return }
+    if (-not (Test-Path -LiteralPath $InstallRoot -PathType Container)) {
+        throw "MCP_UPDATE_UNSAFE_INSTALL_ROOT: le chemin existe mais n'est pas un dossier : $InstallRoot"
+    }
+
+    $rootItem = Get-Item -LiteralPath $InstallRoot -Force
+    if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "MCP_UPDATE_UNSAFE_INSTALL_ROOT: une racine d'installation de type reparse point est refusee : $InstallRoot"
+    }
+
+    $children = @(Get-ChildItem -LiteralPath $InstallRoot -Force)
+    if ($children.Count -eq 0) { return }
+    if (Test-OwnershipMarker) { return }
+    if (Test-LegacyOwnedInstallation) { return }
+    if (Test-RecoverableTransactionOwnership) { return }
+
+    throw "MCP_UPDATE_UNSAFE_INSTALL_ROOT: dossier non vide sans preuve d'ownership mcp-search-net : $InstallRoot"
+}
+
+function Get-Sha256Hex {
+    param([Parameter(Mandatory)] [string] $Value)
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $Utf8NoBom.GetBytes($Value)
+        return ([System.BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        $sha.Dispose()
+    }
+}
+
+function Publish-DurableFile {
+    param(
+        [Parameter(Mandatory)] [string] $TemporaryPath,
+        [Parameter(Mandatory)] [string] $Path
+    )
+
+    $flags = $MoveFileWriteThrough
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        $flags = $flags -bor $MoveFileReplaceExisting
+    }
+    if (-not [McpSearchNet.NativeFileOps]::MoveFileEx($TemporaryPath, $Path, [uint32]$flags)) {
+        $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        throw (New-Object System.ComponentModel.Win32Exception($errorCode, "Publication atomique durable impossible vers '$Path'"))
+    }
+}
+
+function Write-DurableUtf8File {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Content
+    )
+
+    $directory = Split-Path $Path -Parent
+    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    }
+
+    $temporaryPath = Join-Path $directory ('.' + [System.IO.Path]::GetFileName($Path) + '.tmp-' + [guid]::NewGuid().ToString('N'))
+    $stream = $null
+    try {
+        $bytes = $Utf8NoBom.GetBytes($Content)
+        $stream = [System.IO.FileStream]::new(
+            $temporaryPath,
+            [System.IO.FileMode]::CreateNew,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::None,
+            4096,
+            [System.IO.FileOptions]::WriteThrough
+        )
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+        $stream.Dispose()
+        $stream = $null
+        Publish-DurableFile -TemporaryPath $temporaryPath -Path $Path
+    }
+    finally {
+        if ($null -ne $stream) { $stream.Dispose() }
+        if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
+            Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Ensure-OwnershipMarker {
+    if (Test-OwnershipMarker) { return }
+
+    $marker = [ordered]@{
+        schemaVersion = '1.0'
+        name = $ManagedApplicationName
+        installationId = [guid]::NewGuid().ToString('D')
+        createdAt = (Get-Date).ToUniversalTime().ToString('o')
+    }
+    $content = ($marker | ConvertTo-Json -Depth 4) + "`r`n"
+    Write-DurableUtf8File -Path $OwnershipMarkerPath -Content $content
 }
 
 function Remove-PathWithRetry {
@@ -134,18 +345,38 @@ function Stop-InstalledMcpProcesses {
     }
 }
 
+function New-TransactionCore {
+    param(
+        [Parameter(Mandatory)] [string] $Phase,
+        [Parameter(Mandatory)] [object[]] $Entries,
+        [Parameter(Mandatory)] [string] $UpdatedAt
+    )
+
+    return [ordered]@{
+        schemaVersion = '1.1'
+        phase = $Phase
+        entries = $Entries
+        updatedAt = $UpdatedAt
+    }
+}
+
 function Write-TransactionManifest {
     param(
         [Parameter(Mandatory)] [string] $Phase,
         [Parameter(Mandatory)] [object[]] $Entries
     )
 
-    [ordered]@{
-        schemaVersion = '1.0'
-        phase = $Phase
-        entries = $Entries
-        updatedAt = (Get-Date).ToUniversalTime().ToString('o')
-    } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $TransactionPath -Encoding UTF8
+    $updatedAt = (Get-Date).ToUniversalTime().ToString('o')
+    $core = New-TransactionCore -Phase $Phase -Entries $Entries -UpdatedAt $updatedAt
+    $checksum = Get-Sha256Hex -Value ($core | ConvertTo-Json -Depth 8 -Compress)
+    $manifest = [ordered]@{
+        schemaVersion = $core.schemaVersion
+        phase = $core.phase
+        entries = $core.entries
+        updatedAt = $core.updatedAt
+        checksumSha256 = $checksum
+    }
+    Write-DurableUtf8File -Path $TransactionPath -Content (($manifest | ConvertTo-Json -Depth 8) + "`r`n")
 }
 
 function Read-TransactionManifest {
@@ -153,11 +384,29 @@ function Read-TransactionManifest {
         throw "MCP_UPDATE_RECOVERY_REQUIRED: transaction absente dans $RollbackRoot"
     }
     try {
-        return (Get-Content -LiteralPath $TransactionPath -Raw | ConvertFrom-Json)
+        $transaction = Get-Content -LiteralPath $TransactionPath -Raw | ConvertFrom-Json
     }
     catch {
         throw "MCP_UPDATE_RECOVERY_REQUIRED: journal de transaction illisible : $($_.Exception.Message)"
     }
+
+    $schemaVersion = [string]$transaction.schemaVersion
+    if ($schemaVersion -eq '1.0') {
+        return $transaction
+    }
+    if ($schemaVersion -ne '1.1') {
+        throw "MCP_UPDATE_RECOVERY_REQUIRED: schema de transaction inconnu '$schemaVersion'."
+    }
+
+    $core = New-TransactionCore `
+        -Phase ([string]$transaction.phase) `
+        -Entries @($transaction.entries) `
+        -UpdatedAt ([string]$transaction.updatedAt)
+    $actualChecksum = Get-Sha256Hex -Value ($core | ConvertTo-Json -Depth 8 -Compress)
+    if ([string]$transaction.checksumSha256 -ne $actualChecksum) {
+        throw 'MCP_UPDATE_RECOVERY_REQUIRED: checksum du journal de transaction invalide.'
+    }
+    return $transaction
 }
 
 function Restore-Transaction {
@@ -186,9 +435,28 @@ function Restore-Transaction {
     if (Test-Path -LiteralPath $RollbackRoot) { Remove-PathWithRetry -Path $RollbackRoot }
 }
 
+function Recover-UnpublishedTransaction {
+    $backupItems = @()
+    if (Test-Path -LiteralPath $RollbackOldRoot -PathType Container) {
+        $backupItems = @(Get-ChildItem -LiteralPath $RollbackOldRoot -Force)
+    }
+    if ($backupItems.Count -gt 0) {
+        throw 'MCP_UPDATE_RECOVERY_REQUIRED: journal absent alors que des backups d activation existent.'
+    }
+
+    Write-Warning 'Transaction interrompue avant publication du journal ; nettoyage du staging non active.'
+    if (Test-Path -LiteralPath $StageRoot) { Remove-PathWithRetry -Path $StageRoot }
+    if (Test-Path -LiteralPath $RollbackRoot) { Remove-PathWithRetry -Path $RollbackRoot }
+}
+
 function Recover-InterruptedTransaction {
     if (-not (Test-Path -LiteralPath $RollbackRoot -PathType Container)) {
         if (Test-Path -LiteralPath $StageRoot) { Remove-PathWithRetry -Path $StageRoot }
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $TransactionPath -PathType Leaf)) {
+        Recover-UnpublishedTransaction
         return
     }
 
@@ -232,11 +500,46 @@ function Assert-Package {
 
     try {
         $manifest = Get-Content -LiteralPath (Join-Path $PackageRoot 'BUILD-MANIFEST.json') -Raw | ConvertFrom-Json
+        if ([string]$manifest.name -ne $ManagedApplicationName) { throw 'nom application invalide' }
         if ([string]::IsNullOrWhiteSpace([string]$manifest.version)) { throw 'version absente' }
+        return $manifest
     }
     catch {
         throw "MCP_UPDATE_INVALID_PACKAGE: BUILD-MANIFEST.json invalide : $($_.Exception.Message)"
     }
+}
+
+function Invoke-PostCommitCleanup {
+    $cleanupFailures = New-Object System.Collections.Generic.List[string]
+
+    if ($TestFailPostCommitCleanup) {
+        $cleanupFailures.Add('fault-injection')
+    }
+    else {
+        foreach ($path in @($StageRoot, $RollbackRoot)) {
+            try {
+                if (Test-Path -LiteralPath $path) { Remove-PathWithRetry -Path $path }
+            }
+            catch {
+                $cleanupFailures.Add("$path : $($_.Exception.Message)")
+            }
+        }
+    }
+
+    $legacyInstaller = Join-Path $InstallRoot 'install.ps1'
+    try {
+        if (Test-Path -LiteralPath $legacyInstaller -PathType Leaf) {
+            Remove-PathWithRetry -Path $legacyInstaller
+        }
+    }
+    catch {
+        $cleanupFailures.Add("$legacyInstaller : $($_.Exception.Message)")
+    }
+
+    foreach ($failure in $cleanupFailures) {
+        Write-Warning "MCP_UPDATE_CLEANUP_PENDING: $failure"
+    }
+    return $cleanupFailures.Count
 }
 
 $entries = @()
@@ -280,10 +583,12 @@ function Add-StagedFile {
     }
 }
 
-Assert-Package
+$packageManifest = Assert-Package
+Assert-SafeInstallRoot
 New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
 Assert-PathInsideRoot -Path $StageRoot -Root $InstallRoot
 Assert-PathInsideRoot -Path $RollbackRoot -Root $InstallRoot
+Ensure-OwnershipMarker
 Recover-InterruptedTransaction
 Stop-InstalledMcpProcesses
 
@@ -329,6 +634,9 @@ try {
         Move-PathWithRetry -Source $staged -Destination $target
 
         $activationCount++
+        if ($TestCrashActivationAfterEntries -gt 0 -and $activationCount -eq $TestCrashActivationAfterEntries) {
+            [System.Environment]::FailFast("MCP_UPDATE_TEST_CRASH_AFTER_ENTRY:$activationCount")
+        }
         if ($TestFailActivationAfterEntries -gt 0 -and $activationCount -eq $TestFailActivationAfterEntries) {
             throw "MCP_UPDATE_TEST_ACTIVATION_FAILURE:$activationCount"
         }
@@ -347,12 +655,6 @@ catch {
     throw $activationError
 }
 
-if (Test-Path -LiteralPath $StageRoot) { Remove-PathWithRetry -Path $StageRoot }
-if (Test-Path -LiteralPath $RollbackRoot) { Remove-PathWithRetry -Path $RollbackRoot }
-
-# Legacy Inno releases copied install.ps1 into {app}; it is no longer part of the installed runtime.
-$legacyInstaller = Join-Path $InstallRoot 'install.ps1'
-if (Test-Path -LiteralPath $legacyInstaller -PathType Leaf) { Remove-PathWithRetry -Path $legacyInstaller }
-
-$installedManifest = Get-Content -LiteralPath (Join-Path $InstallRoot 'BUILD-MANIFEST.json') -Raw | ConvertFrom-Json
-Write-Host "MCP_UPDATE_COMMITTED version=$($installedManifest.version) root=$InstallRoot"
+$cleanupFailureCount = Invoke-PostCommitCleanup
+$cleanupState = if ($cleanupFailureCount -eq 0) { 'complete' } else { 'pending' }
+Write-Host "MCP_UPDATE_COMMITTED version=$($packageManifest.version) root=$InstallRoot cleanup=$cleanupState"

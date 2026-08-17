@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
@@ -10,6 +10,7 @@ if ($env:OS -ne 'Windows_NT') {
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Updater = Join-Path $RepoRoot 'packaging\windows\update-installation.ps1'
+$PowerShellExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $TestRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("mcp-search-net-packaged-upgrade-" + [guid]::NewGuid().ToString('N'))
 $InstallRoot = Join-Path $TestRoot 'installed with spaces'
 
@@ -62,6 +63,17 @@ function Assert-Contains {
     }
 }
 
+function Assert-NoTransactionResidue {
+    param([Parameter(Mandatory)] [string] $Root)
+
+    if (Test-Path -LiteralPath (Join-Path $Root '.install-staging')) {
+        throw 'Le staging transactionnel est resté présent.'
+    }
+    if (Test-Path -LiteralPath (Join-Path $Root '.install-rollback')) {
+        throw 'Le répertoire de rollback transactionnel est resté présent.'
+    }
+}
+
 try {
     $PackageV1 = Join-Path $TestRoot 'package-v1'
     $PackageV2 = Join-Path $TestRoot 'package-v2'
@@ -73,8 +85,34 @@ try {
     Set-Content -LiteralPath (Join-Path $PackageV2 'app\new.txt') -Value 'new-v2'
     Set-Content -LiteralPath (Join-Path $PackageV3 'app\new.txt') -Value 'new-v3'
 
+    # A non-empty unrelated root must fail before any managed surface is touched.
+    $UnsafeRoot = Join-Path $TestRoot 'unsafe shared root'
+    New-Item -ItemType Directory -Force -Path (Join-Path $UnsafeRoot 'app') | Out-Null
+    Set-Content -LiteralPath (Join-Path $UnsafeRoot 'app\foreign.marker') -Value 'foreign-data'
+    $unsafeRejected = $false
+    try {
+        & $Updater -PackageRoot $PackageV1 -InstallRoot $UnsafeRoot -SkipProcessStop
+    }
+    catch {
+        $unsafeRejected = $_.Exception.Message -match 'MCP_UPDATE_UNSAFE_INSTALL_ROOT'
+        if (-not $unsafeRejected) { throw }
+    }
+    if (-not $unsafeRejected) { throw 'La racine non détenue n a pas été refusée.' }
+    Assert-Contains (Join-Path $UnsafeRoot 'app\foreign.marker') 'foreign-data'
+    if (Test-Path -LiteralPath (Join-Path $UnsafeRoot '.mcp-search-net-installation.json')) {
+        throw 'La racine non détenue a reçu un marqueur d ownership.'
+    }
+
     & $Updater -PackageRoot $PackageV1 -InstallRoot $InstallRoot -SkipProcessStop
     Assert-Contains (Join-Path $InstallRoot 'app\version.txt') '1.0.0'
+    $OwnershipMarker = Join-Path $InstallRoot '.mcp-search-net-installation.json'
+    if (-not (Test-Path -LiteralPath $OwnershipMarker -PathType Leaf)) {
+        throw 'Le marqueur d ownership de l installation est absent.'
+    }
+    $ownership = Get-Content -LiteralPath $OwnershipMarker -Raw | ConvertFrom-Json
+    if ($ownership.name -ne 'mcp-search-net' -or $ownership.installationId -notmatch '^[0-9a-fA-F-]{36}$') {
+        throw 'Le marqueur d ownership est invalide.'
+    }
 
     Add-Content -LiteralPath (Join-Path $InstallRoot 'config\application.yml') -Value 'user-application-setting'
     Add-Content -LiteralPath (Join-Path $InstallRoot 'config\application.docker.yml') -Value 'user-docker-setting'
@@ -102,7 +140,9 @@ try {
     Assert-Contains (Join-Path $InstallRoot 'data\preserve.marker') 'user-data'
     Assert-Contains (Join-Path $InstallRoot '.env') 'preserve-me'
     Assert-Contains (Join-Path $InstallRoot 'mcp-client-integrations.json') 'preserve-me'
+    Assert-NoTransactionResidue -Root $InstallRoot
 
+    # Controlled failure still rolls back synchronously.
     $rollbackObserved = $false
     try {
         & $Updater `
@@ -123,18 +163,57 @@ try {
     Assert-Contains (Join-Path $InstallRoot 'app\new.txt') 'new-v2'
     Assert-Contains (Join-Path $InstallRoot 'config\application.yml') 'user-application-setting'
     Assert-Contains (Join-Path $InstallRoot 'data\preserve.marker') 'user-data'
-    if (Test-Path -LiteralPath (Join-Path $InstallRoot '.install-staging')) {
-        throw 'Le rollback a laissé le staging.'
+    Assert-NoTransactionResidue -Root $InstallRoot
+
+    # Hard process termination must leave a durable activating record and recover on the next run.
+    $crashArguments = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -PackageRoot "{1}" -InstallRoot "{2}" -SkipProcessStop -TestCrashActivationAfterEntries 4' -f `
+        $Updater, $PackageV3, $InstallRoot
+    $crash = Start-Process -FilePath $PowerShellExe -ArgumentList $crashArguments -Wait -PassThru -WindowStyle Hidden
+    if ($crash.ExitCode -eq 0) { throw 'Le processus de fault injection crash a terminé avec succès.' }
+
+    Assert-Contains (Join-Path $InstallRoot 'app\version.txt') '1.2.0'
+    $TransactionPath = Join-Path $InstallRoot '.install-rollback\transaction.json'
+    if (-not (Test-Path -LiteralPath $TransactionPath -PathType Leaf)) {
+        throw 'Le crash n a pas laissé le journal durable attendu.'
     }
-    if (Test-Path -LiteralPath (Join-Path $InstallRoot '.install-rollback')) {
-        throw 'Le rollback a laissé son répertoire de transaction.'
+    $crashTransaction = Get-Content -LiteralPath $TransactionPath -Raw | ConvertFrom-Json
+    if ($crashTransaction.phase -ne 'activating' -or
+        $crashTransaction.schemaVersion -ne '1.1' -or
+        $crashTransaction.checksumSha256 -notmatch '^[a-f0-9]{64}$') {
+        throw 'Le journal laissé par le crash est invalide.'
     }
 
+    & $Updater -PackageRoot $PackageV2 -InstallRoot $InstallRoot -SkipProcessStop
+    Assert-Contains (Join-Path $InstallRoot 'app\version.txt') '1.1.0'
+    Assert-Contains (Join-Path $InstallRoot 'app\new.txt') 'new-v2'
+    Assert-Contains (Join-Path $InstallRoot 'config\application.yml') 'user-application-setting'
+    Assert-Contains (Join-Path $InstallRoot 'data\preserve.marker') 'user-data'
+    Assert-NoTransactionResidue -Root $InstallRoot
+
+    # A failure after the durable commit must not report the activation as failed.
+    & $Updater `
+        -PackageRoot $PackageV3 `
+        -InstallRoot $InstallRoot `
+        -SkipProcessStop `
+        -TestFailPostCommitCleanup
+    Assert-Contains (Join-Path $InstallRoot 'app\version.txt') '1.2.0'
+    Assert-Contains (Join-Path $InstallRoot 'app\new.txt') 'new-v3'
+    $CommittedTransactionPath = Join-Path $InstallRoot '.install-rollback\transaction.json'
+    if (-not (Test-Path -LiteralPath $CommittedTransactionPath -PathType Leaf)) {
+        throw 'Le fault injection post-commit n a pas laissé le cleanup pending attendu.'
+    }
+    $committedTransaction = Get-Content -LiteralPath $CommittedTransactionPath -Raw | ConvertFrom-Json
+    if ($committedTransaction.phase -ne 'committed') {
+        throw 'Le journal post-commit ne marque pas le commit durable.'
+    }
+
+    # The next update first finishes committed cleanup and can proceed normally.
     & $Updater -PackageRoot $PackageV3 -InstallRoot $InstallRoot -SkipProcessStop
     Assert-Contains (Join-Path $InstallRoot 'app\version.txt') '1.2.0'
     Assert-Contains (Join-Path $InstallRoot 'app\new.txt') 'new-v3'
     Assert-Contains (Join-Path $InstallRoot 'config\application.yml') 'user-application-setting'
     Assert-Contains (Join-Path $InstallRoot 'data\preserve.marker') 'user-data'
+    Assert-NoTransactionResidue -Root $InstallRoot
 
     Write-Host 'PACKAGED_IN_PLACE_UPGRADE_VALID'
 }

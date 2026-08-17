@@ -33,17 +33,59 @@ describe('Windows in-place upgrade contract', () => {
     expect(installerBuilder).toContain('@@DISTRIBUTION_NAME@@');
   });
 
+  it('rejects destructive use of an unowned or dangerous installation root', () => {
+    expect(updater).toContain(
+      "$OwnershipMarkerPath = Join-Path $InstallRoot '.mcp-search-net-installation.json'",
+    );
+    expect(updater).toContain('MCP_UPDATE_UNSAFE_INSTALL_ROOT');
+    expect(updater).toContain('Test-LegacyOwnedInstallation');
+    expect(updater).toContain('Test-RecoverableTransactionOwnership');
+    expect(updater).toContain('Assert-SafeInstallRoot');
+    expect(updater).toContain('Ensure-OwnershipMarker');
+    expect(updater).toContain('[string]$manifest.name -ne $ManagedApplicationName');
+  });
+
+  it('publishes a crash-durable checksummed transaction record before activation', () => {
+    expect(updater).toContain('[System.IO.FileOptions]::WriteThrough');
+    expect(updater).toContain('$stream.Flush($true)');
+    expect(updater).toContain('MoveFileEx');
+    expect(updater).toContain('$MoveFileWriteThrough = 0x8');
+    expect(updater).toContain("schemaVersion = '1.1'");
+    expect(updater).toContain('checksumSha256');
+    expect(updater).toContain("Write-TransactionManifest -Phase 'activating'");
+    expect(updater.indexOf("Write-TransactionManifest -Phase 'activating'")).toBeLessThan(
+      updater.indexOf('$activationCount = 0'),
+    );
+  });
+
   it('stages and rolls back all installer-managed program surfaces', () => {
     expect(updater).toContain("$StageRoot = Join-Path $InstallRoot '.install-staging'");
     expect(updater).toContain("$RollbackRoot = Join-Path $InstallRoot '.install-rollback'");
     expect(updater).toContain("$TransactionPath = Join-Path $RollbackRoot 'transaction.json'");
-    expect(updater).toContain("Write-TransactionManifest -Phase 'activating'");
     expect(updater).toContain("Write-TransactionManifest -Phase 'committed'");
     expect(updater).toContain('Restore-Transaction');
     expect(updater).toContain('MCP_UPDATE_ROLLBACK_FAILED');
+    expect(updater).toContain('TestCrashActivationAfterEntries');
     for (const directory of ['app', 'bin', 'runtime', 'scripts', 'docker']) {
       expect(updater).toContain(`'${directory}'`);
     }
+  });
+
+  it('treats cleanup failure after the durable commit as cleanup-pending, not activation failure', () => {
+    expect(updater).toContain('Invoke-PostCommitCleanup');
+    expect(updater).toContain('MCP_UPDATE_CLEANUP_PENDING');
+    expect(updater).toContain(
+      "$cleanupState = if ($cleanupFailureCount -eq 0) { 'complete' } else { 'pending' }",
+    );
+    expect(updater.indexOf("Write-TransactionManifest -Phase 'committed'")).toBeLessThan(
+      updater.indexOf('$cleanupFailureCount = Invoke-PostCommitCleanup'),
+    );
+  });
+
+  it('passes uninstall cleanup targets as data instead of interpolating them into PowerShell source', () => {
+    expect(innoTemplate).toContain("Script := 'param([string]$TargetPath)");
+    expect(innoTemplate).toContain(`-TargetPath "' + Path + '"`);
+    expect(innoTemplate).not.toContain("Remove-Item -LiteralPath ''' + Path + '''");
   });
 
   it('preserves user state while refreshing versioned defaults', () => {
@@ -59,6 +101,9 @@ describe('Windows in-place upgrade contract', () => {
     expect(updater).toContain("($template.target + '.default')");
     expect(updater).not.toContain("Join-Path $InstallRoot 'data' | Remove-Item");
     expect(updater).not.toContain("Join-Path $InstallRoot '.env' | Remove-Item");
+    expect(innoTemplate).toContain(
+      "DeleteFile(ExpandConstant('{app}\\.mcp-search-net-installation.json'));",
+    );
   });
 
   it('keeps a stable application identity across versions', () => {
