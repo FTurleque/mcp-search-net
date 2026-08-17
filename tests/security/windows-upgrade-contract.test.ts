@@ -80,7 +80,7 @@ describe('Windows in-place upgrade contract', () => {
 
   it('passes uninstall cleanup targets as data instead of interpolating them into PowerShell source', () => {
     expect(innoTemplate).toContain("Script := 'param([string]$TargetPath)");
-    expect(innoTemplate).toContain("-TargetPath \\\"' + Path + '\\\"");
+    expect(innoTemplate).toContain('-TargetPath "' + "' + Path + '" + '"');
     expect(innoTemplate).not.toContain("Remove-Item -LiteralPath ''' + Path + '''");
   });
 
