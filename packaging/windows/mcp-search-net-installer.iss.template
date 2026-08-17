@@ -24,10 +24,15 @@ OutputDir={#OutputDir}
 OutputBaseFilename={#OutputBaseFilename}
 Compression=lzma2/ultra64
 SolidCompression=yes
+ArchiveExtraction=full
 WizardStyle=modern
 ChangesEnvironment=yes
 SetupLogging=yes
 UsePreviousAppDir=yes
+; Legacy releases tracked the whole payload in Inno's uninstall log. The new updater owns program
+; files itself, so overwrite the old log after a successful PrepareToInstall to avoid later deleting
+; preserved configuration files merely because an older installer once copied them.
+UninstallLogMode=overwrite
 UninstallDisplayName={#AppName} {#AppVersion}
 VersionInfoVersion={#AppNumericVersion}
 VersionInfoCompany=FTurleque
