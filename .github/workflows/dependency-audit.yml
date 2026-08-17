@@ -14,13 +14,20 @@ concurrency:
 
 jobs:
   audit:
-    name: Dependency vulnerability audit
+    name: Dependency vulnerability audit (${{ matrix.ref }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        ref:
+          - master
+          - develop
     steps:
-      - name: Check out default branch
+      - name: Check out ${{ matrix.ref }}
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          ref: ${{ matrix.ref }}
           persist-credentials: false
 
       - name: Set up Node.js 24.18.0
