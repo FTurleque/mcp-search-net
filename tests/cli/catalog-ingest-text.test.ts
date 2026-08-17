@@ -1,14 +1,20 @@
 import { mkdtempSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import { truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { ingestTextDocument, splitMarkdownSections } from '../../src/cli/catalog-ingest-text.js';
+import {
+  ingestTextDocument,
+  readBoundedTextFile,
+  splitMarkdownSections,
+} from '../../src/cli/catalog-ingest-text.js';
 import { SqliteCatalogRepository } from '../../src/infrastructure/catalog/sqlite-catalog-repository.js';
 
+const MAX_INGEST_TEXT_BYTES = 16 * 1024 * 1024;
 const catalogs: SqliteCatalogRepository[] = [];
 
 afterEach(() => {
@@ -133,6 +139,62 @@ describe('catalog text ingestion', () => {
         content,
       },
     ]);
+  });
+
+  it('enforces the byte budget while reading if the opened file grows after fstat', async () => {
+    let emittedBytes = 0;
+    let closed = false;
+    const fakeHandle = {
+      stat: async () => ({ isFile: () => true, size: 1 }),
+      read: async (buffer: Buffer, offset: number, length: number) => {
+        const remaining = MAX_INGEST_TEXT_BYTES + 1 - emittedBytes;
+        if (remaining <= 0) return { bytesRead: 0, buffer };
+        const bytesRead = Math.min(length, remaining);
+        buffer.fill(0x61, offset, offset + bytesRead);
+        emittedBytes += bytesRead;
+        return { bytesRead, buffer };
+      },
+      close: async () => {
+        closed = true;
+      },
+    } as unknown as FileHandle;
+
+    await expect(readBoundedTextFile('ignored', async () => fakeHandle)).rejects.toThrow(
+      `CATALOG_INGEST_FILE_TOO_LARGE:${MAX_INGEST_TEXT_BYTES + 1}:${MAX_INGEST_TEXT_BYTES}`,
+    );
+    expect(emittedBytes).toBe(MAX_INGEST_TEXT_BYTES + 1);
+    expect(closed).toBe(true);
+  });
+
+  it('rejects an oversized file without creating a catalog document', async () => {
+    const fixture = createCatalogRepository();
+    await fixture.catalog.addSource({
+      sourceKey: 'local-docs',
+      displayName: 'Local docs',
+      baseUrl: 'https://example.test/docs/',
+      sourceType: 'documentation',
+      language: 'fr',
+      freshnessPolicy: 'manual',
+      syncStrategy: 'manual',
+      enabled: true,
+    });
+    const filePath = join(fixture.root, 'oversized.md');
+    await writeFile(filePath, '', 'utf8');
+    await truncate(filePath, MAX_INGEST_TEXT_BYTES + 1);
+
+    await expect(
+      ingestTextDocument(fixture.catalog, {
+        sourceKey: 'local-docs',
+        filePath,
+        canonicalUrl: 'https://example.test/docs/oversized',
+        title: 'Oversized',
+        language: 'fr',
+        mimeType: 'text/markdown',
+      }),
+    ).rejects.toThrow(
+      `CATALOG_INGEST_FILE_TOO_LARGE:${MAX_INGEST_TEXT_BYTES + 1}:${MAX_INGEST_TEXT_BYTES}`,
+    );
+    await expect(fixture.catalog.listDocuments()).resolves.toEqual([]);
   });
 
   it('ingests a text document into document, version and sections tables', async () => {
