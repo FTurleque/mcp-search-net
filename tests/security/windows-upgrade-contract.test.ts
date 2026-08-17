@@ -5,8 +5,14 @@ import { describe, expect, it } from 'vitest';
 describe('Windows in-place upgrade contract', () => {
   const updater = readFileSync('packaging/windows/update-installation.ps1', 'utf8');
   const portableInstaller = readFileSync('packaging/windows/install.ps1', 'utf8');
-  const innoTemplate = readFileSync('packaging/windows/mcp-search-net-installer.iss.template', 'utf8');
-  const distributionBuilder = readFileSync('scripts/release/build-windows-distribution.ps1', 'utf8');
+  const innoTemplate = readFileSync(
+    'packaging/windows/mcp-search-net-installer.iss.template',
+    'utf8',
+  );
+  const distributionBuilder = readFileSync(
+    'scripts/release/build-windows-distribution.ps1',
+    'utf8',
+  );
   const installerBuilder = readFileSync('scripts/release/build-windows-installer.ps1', 'utf8');
 
   it('uses one packaged updater for ZIP and setup installations', () => {
@@ -19,8 +25,12 @@ describe('Windows in-place upgrade contract', () => {
   it('does not let Inno overwrite the installation tree directly', () => {
     expect(innoTemplate).not.toContain('Source: "{#SourceDir}\\*"; DestDir: "{app}"');
     expect(innoTemplate).toContain('mcp-search-net-payload.zip');
-    expect(innoTemplate).toContain('function PrepareToInstall(var NeedsRestart: Boolean): String;');
+    expect(innoTemplate).toContain(
+      'function PrepareToInstall(var NeedsRestart: Boolean): String;',
+    );
     expect(innoTemplate).toContain('RunPayloadUpdate()');
+    expect(innoTemplate).toContain('ArchiveExtraction=full');
+    expect(innoTemplate).toContain('UninstallLogMode=overwrite');
     expect(installerBuilder).toContain('@@PAYLOAD_ZIP@@');
     expect(installerBuilder).toContain('@@DISTRIBUTION_NAME@@');
   });
@@ -28,7 +38,9 @@ describe('Windows in-place upgrade contract', () => {
   it('stages and rolls back all installer-managed program surfaces', () => {
     expect(updater).toContain("$StageRoot = Join-Path $InstallRoot '.install-staging'");
     expect(updater).toContain("$RollbackRoot = Join-Path $InstallRoot '.install-rollback'");
-    expect(updater).toContain("$TransactionPath = Join-Path $RollbackRoot 'transaction.json'");
+    expect(updater).toContain(
+      "$TransactionPath = Join-Path $RollbackRoot 'transaction.json'",
+    );
     expect(updater).toContain("Write-TransactionManifest -Phase 'activating'");
     expect(updater).toContain("Write-TransactionManifest -Phase 'committed'");
     expect(updater).toContain('Restore-Transaction');
@@ -47,7 +59,9 @@ describe('Windows in-place upgrade contract', () => {
     ]) {
       expect(updater).toContain(persistentPath);
     }
-    expect(updater).toContain("if (-not (Test-Path -LiteralPath $targetPath -PathType Leaf))");
+    expect(updater).toContain(
+      'if (-not (Test-Path -LiteralPath $targetPath -PathType Leaf))',
+    );
     expect(updater).toContain("($template.target + '.default')");
     expect(updater).not.toContain("Join-Path $InstallRoot 'data' | Remove-Item");
     expect(updater).not.toContain("Join-Path $InstallRoot '.env' | Remove-Item");
