@@ -27,10 +27,11 @@ function Assert-PathInsideRoot {
     )
 
     $fullPath = [System.IO.Path]::GetFullPath($Path)
-    $fullRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd(
+    $trimChars = [char[]]@(
         [System.IO.Path]::DirectorySeparatorChar,
         [System.IO.Path]::AltDirectorySeparatorChar
     )
+    $fullRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd($trimChars)
     $prefix = $fullRoot + [System.IO.Path]::DirectorySeparatorChar
     if (-not $fullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Chemin hors de la racine autorisee : $fullPath"
@@ -95,7 +96,7 @@ function Get-CurrentProcessLineage {
         if ($null -eq $process -or $null -eq $process.ParentProcessId) { break }
         $processId = [int]$process.ParentProcessId
     }
-    return [int[]]$lineage.Keys
+    return @($lineage.Keys | ForEach-Object { [int]$_ })
 }
 
 function Get-InstalledMcpProcesses {
@@ -162,7 +163,8 @@ function Read-TransactionManifest {
 function Restore-Transaction {
     param([Parameter(Mandatory)] [object] $Transaction)
 
-    foreach ($entry in (@($Transaction.entries) | Sort-Object -Property order -Descending)) {
+    $rollbackEntries = @($Transaction.entries | Sort-Object -Property order -Descending)
+    foreach ($entry in $rollbackEntries) {
         $relativePath = [string]$entry.relativePath
         $target = Join-Path $InstallRoot $relativePath
         $staged = Join-Path $StageRoot $relativePath
@@ -237,7 +239,7 @@ function Assert-Package {
     }
 }
 
-$entries = New-Object System.Collections.Generic.List[object]
+$entries = @()
 $order = 0
 
 function Add-StagedDirectory {
@@ -252,11 +254,11 @@ function Add-StagedDirectory {
     New-Item -ItemType Directory -Force -Path (Split-Path $staged -Parent) | Out-Null
     Copy-Item -LiteralPath $source -Destination $staged -Recurse -Force
     $script:order++
-    $entries.Add([PSCustomObject]@{
+    $script:entries += [PSCustomObject]@{
         order = $script:order
         relativePath = $TargetRelativePath
         hadOriginal = [bool](Test-Path -LiteralPath $target)
-    })
+    }
 }
 
 function Add-StagedFile {
@@ -271,11 +273,11 @@ function Add-StagedFile {
     New-Item -ItemType Directory -Force -Path (Split-Path $staged -Parent) | Out-Null
     Copy-Item -LiteralPath $source -Destination $staged -Force
     $script:order++
-    $entries.Add([PSCustomObject]@{
+    $script:entries += [PSCustomObject]@{
         order = $script:order
         relativePath = $TargetRelativePath
         hadOriginal = [bool](Test-Path -LiteralPath $target)
-    })
+    }
 }
 
 Assert-Package
@@ -311,11 +313,11 @@ foreach ($template in $configTemplates) {
 }
 
 New-Item -ItemType Directory -Force -Path $RollbackOldRoot | Out-Null
-Write-TransactionManifest -Phase 'activating' -Entries @($entries)
+Write-TransactionManifest -Phase 'activating' -Entries $entries
 
 $activationCount = 0
 try {
-    foreach ($entry in @($entries)) {
+    foreach ($entry in $entries) {
         $relativePath = [string]$entry.relativePath
         $target = Join-Path $InstallRoot $relativePath
         $staged = Join-Path $StageRoot $relativePath
@@ -332,7 +334,7 @@ try {
         }
     }
 
-    Write-TransactionManifest -Phase 'committed' -Entries @($entries)
+    Write-TransactionManifest -Phase 'committed' -Entries $entries
 }
 catch {
     $activationError = $_
