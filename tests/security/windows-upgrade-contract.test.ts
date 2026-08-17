@@ -42,7 +42,7 @@ describe('Windows in-place upgrade contract', () => {
     expect(updater).toContain('Test-RecoverableTransactionOwnership');
     expect(updater).toContain('Assert-SafeInstallRoot');
     expect(updater).toContain('Ensure-OwnershipMarker');
-    expect(updater).toContain("[string]$manifest.name -ne $ManagedApplicationName");
+    expect(updater).toContain('[string]$manifest.name -ne $ManagedApplicationName');
   });
 
   it('publishes a crash-durable checksummed transaction record before activation', () => {
