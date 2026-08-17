@@ -34,7 +34,9 @@ describe('Windows in-place upgrade contract', () => {
   });
 
   it('rejects destructive use of an unowned or dangerous installation root', () => {
-    expect(updater).toContain("$OwnershipMarkerPath = Join-Path $InstallRoot '.mcp-search-net-installation.json'");
+    expect(updater).toContain(
+      "$OwnershipMarkerPath = Join-Path $InstallRoot '.mcp-search-net-installation.json'",
+    );
     expect(updater).toContain('MCP_UPDATE_UNSAFE_INSTALL_ROOT');
     expect(updater).toContain('Test-LegacyOwnedInstallation');
     expect(updater).toContain('Test-RecoverableTransactionOwnership');
@@ -72,7 +74,9 @@ describe('Windows in-place upgrade contract', () => {
   it('treats cleanup failure after the durable commit as cleanup-pending, not activation failure', () => {
     expect(updater).toContain('Invoke-PostCommitCleanup');
     expect(updater).toContain('MCP_UPDATE_CLEANUP_PENDING');
-    expect(updater).toContain("$cleanupState = if ($cleanupFailureCount -eq 0) { 'complete' } else { 'pending' }");
+    expect(updater).toContain(
+      "$cleanupState = if ($cleanupFailureCount -eq 0) { 'complete' } else { 'pending' }",
+    );
     expect(updater.indexOf("Write-TransactionManifest -Phase 'committed'")).toBeLessThan(
       updater.indexOf('$cleanupFailureCount = Invoke-PostCommitCleanup'),
     );
@@ -80,7 +84,7 @@ describe('Windows in-place upgrade contract', () => {
 
   it('passes uninstall cleanup targets as data instead of interpolating them into PowerShell source', () => {
     expect(innoTemplate).toContain("Script := 'param([string]$TargetPath)");
-    expect(innoTemplate).toContain('-TargetPath "' + "' + Path + '" + '"');
+    expect(innoTemplate).toContain(`-TargetPath "' + Path + '"`);
     expect(innoTemplate).not.toContain("Remove-Item -LiteralPath ''' + Path + '''");
   });
 
@@ -97,7 +101,9 @@ describe('Windows in-place upgrade contract', () => {
     expect(updater).toContain("($template.target + '.default')");
     expect(updater).not.toContain("Join-Path $InstallRoot 'data' | Remove-Item");
     expect(updater).not.toContain("Join-Path $InstallRoot '.env' | Remove-Item");
-    expect(innoTemplate).toContain("DeleteFile(ExpandConstant('{app}\\.mcp-search-net-installation.json'));");
+    expect(innoTemplate).toContain(
+      "DeleteFile(ExpandConstant('{app}\\.mcp-search-net-installation.json'));",
+    );
   });
 
   it('keeps a stable application identity across versions', () => {
