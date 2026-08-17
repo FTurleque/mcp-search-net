@@ -28,9 +28,13 @@ if ([string]::IsNullOrWhiteSpace($DistributionRoot)) {
     $DistributionRoot = Join-Path $OutputRoot $DistributionName
 }
 $DistributionRoot = [System.IO.Path]::GetFullPath($DistributionRoot)
+$PayloadZip = Join-Path $OutputRoot "$DistributionName.zip"
 
 if (-not (Test-Path -LiteralPath $DistributionRoot -PathType Container)) {
     throw "Dossier de distribution introuvable : $DistributionRoot"
+}
+if (-not (Test-Path -LiteralPath $PayloadZip -PathType Leaf)) {
+    throw "ZIP de distribution introuvable pour le setup : $PayloadZip"
 }
 
 foreach ($Required in @(
@@ -39,6 +43,7 @@ foreach ($Required in @(
     'bin\mcp-search-net.cmd',
     'config\application.yml',
     'scripts\configure-install.ps1',
+    'scripts\update-installation.ps1',
     'install.ps1',
     'BUILD-MANIFEST.json',
     'LICENSE',
@@ -73,7 +78,7 @@ if ([string]::IsNullOrWhiteSpace($Iscc)) {
 $IsccOutput = @((& $Iscc /? 2>&1))
 $global:LASTEXITCODE = 0
 $IsccBanner = ($IsccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
-$ExpectedInnoVersion = '6.7.3'  # version figée dans le workflow CI release-windows.yml
+$ExpectedInnoVersion = '6.7.3'
 if ($IsccBanner -notmatch 'Inno Setup 6' -and $IsccBanner -notmatch 'Inno Setup 7') {
     throw "Version Inno Setup non qualifiée : attendu=Inno Setup 6 ou 7 banner=$IsccBanner binaire=$Iscc"
 }
@@ -99,7 +104,7 @@ function Escape-InnoString([string] $Value) { return $Value.Replace('"', '""') }
 
 $BaseVersion = ($Version -split '[-+]')[0]
 $NumericVersion = "$BaseVersion.0"
-$AppId = if ($Smoke) { "mcp-search-net-Release-Smoke-$Version" } else { '{{A3F2C8D1-4B7E-4F9A-8C2D-1E6B0A3F7D5C}' }
+$AppId = if ($Smoke) { 'mcp-search-net-Release-Smoke' } else { '{{A3F2C8D1-4B7E-4F9A-8C2D-1E6B0A3F7D5C}' }
 $SmokeMode = if ($Smoke) { '1' } else { '0' }
 
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -109,6 +114,8 @@ $Iss = $Iss.Replace('@@APP_VERSION@@', (Escape-InnoString $NumericVersion))
 $Iss = $Iss.Replace('@@APP_ID@@', (Escape-InnoString $AppId))
 $Iss = $Iss.Replace('@@SMOKE_MODE@@', $SmokeMode)
 $Iss = $Iss.Replace('@@SOURCE_DIR@@', (Escape-InnoString $DistributionRoot))
+$Iss = $Iss.Replace('@@PAYLOAD_ZIP@@', (Escape-InnoString $PayloadZip))
+$Iss = $Iss.Replace('@@DISTRIBUTION_NAME@@', (Escape-InnoString $DistributionName))
 $Iss = $Iss.Replace('@@OUTPUT_DIR@@', (Escape-InnoString $InstallerOutput))
 $Iss = $Iss.Replace('@@OUTPUT_BASENAME@@', (Escape-InnoString $OutputBaseName))
 if (-not $Iss.Contains('LicenseFile=')) {
@@ -135,6 +142,7 @@ try {
     Write-Host ''
     Write-Host $SuccessLabel -ForegroundColor Green
     Write-Host "Setup    : $Setup"
+    Write-Host "Payload  : $PayloadZip"
     Write-Host "SHA-256  : $Hash"
     Write-Host "Mode     : $(if ($Smoke) { 'smoke' } else { 'production' })"
     Write-Host "Inno     : $Iscc"

@@ -1,0 +1,185 @@
+name: Windows in-place upgrade
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+      - develop
+    paths:
+      - packaging/windows/**
+      - scripts/release/build-windows-distribution.ps1
+      - scripts/release/build-windows-installer.ps1
+      - scripts/test-packaged-upgrade.ps1
+      - tests/security/windows-upgrade-contract.test.ts
+      - .github/workflows/windows-in-place-upgrade.yml
+  push:
+    branches:
+      - master
+      - develop
+    paths:
+      - packaging/windows/**
+      - scripts/release/build-windows-distribution.ps1
+      - scripts/release/build-windows-installer.ps1
+      - scripts/test-packaged-upgrade.ps1
+      - tests/security/windows-upgrade-contract.test.ts
+      - .github/workflows/windows-in-place-upgrade.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-in-place-upgrade-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  QUALIFIED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+jobs:
+  upgrade:
+    name: Windows setup upgrade lifecycle
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ env.QUALIFIED_SHA }}
+          persist-credentials: false
+
+      - name: Set up Node.js 24.18.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate upgrade contract
+        run: npx --no-install vitest run tests/security/windows-upgrade-contract.test.ts
+
+      - name: Parse PowerShell 5.1 upgrade scripts
+        shell: powershell
+        run: |
+          $files = @(
+            Get-ChildItem -LiteralPath 'packaging\windows' -Filter '*.ps1' -File
+            Get-Item 'scripts\test-packaged-upgrade.ps1'
+            Get-Item 'scripts\release\build-windows-distribution.ps1'
+            Get-Item 'scripts\release\build-windows-installer.ps1'
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $file.FullName,
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $details = ($parseErrors | ForEach-Object {
+                "line=$($_.Extent.StartLineNumber) column=$($_.Extent.StartColumnNumber) text=<$($_.Extent.Text)> message=$($_.Message)"
+              }) -join '; '
+              throw "PowerShell parse failed for $($file.FullName): $details"
+            }
+          }
+          Write-Host "WINDOWS_UPGRADE_POWERSHELL_PARSE_VALID files=$($files.Count)"
+
+      - name: Exercise synthetic v1 to v2 update and rollback
+        shell: powershell
+        run: .\scripts\test-packaged-upgrade.ps1
+
+      - name: Install verified Inno Setup 6.7.3
+        shell: pwsh
+        run: |
+          $innoUrl = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'
+          $innoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'
+          $innoInstaller = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          Invoke-WebRequest -Uri $innoUrl -OutFile $innoInstaller -UseBasicParsing
+          .\scripts\windows\verify-file-sha256.ps1 -FilePath $innoInstaller -ExpectedSha256 $innoSha256
+          $install = Start-Process -FilePath $innoInstaller `
+            -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/ALLUSERS') `
+            -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installation Inno Setup échouée (exit=$($install.ExitCode))" }
+
+      - name: Download verified Node.js Windows runtime
+        shell: pwsh
+        run: |
+          $uri = 'https://nodejs.org/dist/v24.18.0/node-v24.18.0-win-x64.zip'
+          $sha = '0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821'
+          $archive = Join-Path $env:RUNNER_TEMP 'node-runtime.zip'
+          Invoke-WebRequest -Uri $uri -OutFile $archive -UseBasicParsing
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $sha) { throw "SHA-256 Node.js incorrect : $actual" }
+          "NODE_RUNTIME_ZIP=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build exact distribution and smoke setup
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath package.json -Raw | ConvertFrom-Json).version
+          .\scripts\release\build-windows-distribution.ps1 `
+            -Version $version `
+            -NodeZipPath $env:NODE_RUNTIME_ZIP `
+            -CommitSha $env:QUALIFIED_SHA
+          .\scripts\release\build-windows-installer.ps1 -Version $version -Smoke
+          "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install and update the same setup in place
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Join-Path $PWD "target\dist\.smoke\mcp-search-net-$env:RELEASE_VERSION-windows-x64-smoke-setup.exe"
+          $root = Join-Path $env:RUNNER_TEMP 'mcp-search-net setup upgrade with spaces'
+          $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="{0}"' -f $root),'/TASKS="!addtopath"')
+
+          function Invoke-Setup([string] $Path, [string[]] $Arguments) {
+            $p = Start-Process -FilePath $Path -ArgumentList $Arguments -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "Setup échoué (exit=$($p.ExitCode))" }
+          }
+
+          Invoke-Setup $setup $args
+          $envBefore = Get-Content -LiteralPath (Join-Path $root '.env') -Raw
+          Add-Content -LiteralPath (Join-Path $root 'config\application.yml') -Value "`n# preserved-setup-user-config"
+          Add-Content -LiteralPath (Join-Path $root 'config\application.docker.yml') -Value "`n# preserved-setup-docker-config"
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'data') | Out-Null
+          Set-Content -LiteralPath (Join-Path $root 'data\upgrade.marker') -Value 'preserved-data'
+          Set-Content -LiteralPath (Join-Path $root 'app\obsolete-from-previous-version.marker') -Value 'must-disappear'
+
+          Invoke-Setup $setup $args
+
+          if (Test-Path -LiteralPath (Join-Path $root 'app\obsolete-from-previous-version.marker')) {
+            throw 'Le setup a conservé un fichier programme obsolète après mise à jour.'
+          }
+          if ((Get-Content -LiteralPath (Join-Path $root '.env') -Raw) -cne $envBefore) {
+            throw 'Le setup a remplacé .env pendant la mise à jour.'
+          }
+          if (-not (Select-String -LiteralPath (Join-Path $root 'config\application.yml') -SimpleMatch 'preserved-setup-user-config' -Quiet)) {
+            throw 'Le setup a remplacé application.yml.'
+          }
+          if (-not (Select-String -LiteralPath (Join-Path $root 'config\application.docker.yml') -SimpleMatch 'preserved-setup-docker-config' -Quiet)) {
+            throw 'Le setup a remplacé application.docker.yml.'
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $root 'data\upgrade.marker') -PathType Leaf)) {
+            throw 'Le setup a supprimé les données utilisateur.'
+          }
+          if (Test-Path -LiteralPath (Join-Path $root '.install-staging')) { throw 'Staging résiduel après commit.' }
+          if (Test-Path -LiteralPath (Join-Path $root '.install-rollback')) { throw 'Rollback résiduel après commit.' }
+
+          $node = Join-Path $root 'runtime\node-v24.18.0-win-x64\node.exe'
+          & $node (Join-Path $root 'app\probe-installed-mcp.mjs') (Join-Path $root 'bin\mcp-search-net.cmd') $root
+          if ($LASTEXITCODE -ne 0) { throw "Sonde MCP après mise à jour échouée (exit=$LASTEXITCODE)" }
+
+          $uninstaller = Get-ChildItem -LiteralPath $root -File -Filter 'unins*.exe' | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $uninstaller) { throw 'Désinstallateur smoke absent.' }
+          $u = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Wait -PassThru
+          if ($u.ExitCode -ne 0) { throw "Désinstallation smoke échouée (exit=$($u.ExitCode))" }
+          if (Test-Path -LiteralPath $root) { throw 'Le smoke setup a laissé son installation après désinstallation.' }
+          Write-Host 'WINDOWS_SETUP_IN_PLACE_UPGRADE_VALID'
+
+      - name: Record exact qualified head
+        shell: pwsh
+        run: |
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:QUALIFIED_SHA) { throw "Unexpected head: $actual" }
+          Write-Host "WINDOWS_IN_PLACE_UPGRADE_QUALIFIED_SHA=$actual"

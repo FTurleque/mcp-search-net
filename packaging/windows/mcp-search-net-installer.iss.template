@@ -4,6 +4,8 @@
 #define AppId "@@APP_ID@@"
 #define SmokeMode @@SMOKE_MODE@@
 #define SourceDir "@@SOURCE_DIR@@"
+#define PayloadZip "@@PAYLOAD_ZIP@@"
+#define DistributionName "@@DISTRIBUTION_NAME@@"
 #define OutputDir "@@OUTPUT_DIR@@"
 #define OutputBaseFilename "@@OUTPUT_BASENAME@@"
 
@@ -22,9 +24,15 @@ OutputDir={#OutputDir}
 OutputBaseFilename={#OutputBaseFilename}
 Compression=lzma2/ultra64
 SolidCompression=yes
+ArchiveExtraction=full
 WizardStyle=modern
 ChangesEnvironment=yes
 SetupLogging=yes
+UsePreviousAppDir=yes
+; Legacy releases tracked the whole payload in Inno's uninstall log. The new updater owns program
+; files itself, so overwrite the old log after a successful PrepareToInstall to avoid later deleting
+; preserved configuration files merely because an older installer once copied them.
+UninstallLogMode=overwrite
 UninstallDisplayName={#AppName} {#AppVersion}
 VersionInfoVersion={#AppNumericVersion}
 VersionInfoCompany=FTurleque
@@ -37,8 +45,10 @@ VersionInfoProductTextVersion={#AppVersion}
 Name: "addtopath"; Description: "Ajouter {#AppName}\bin au PATH utilisateur"; GroupDescription: "Intégration Windows :"; Flags: checkedonce
 
 [Files]
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#SourceDir}\scripts\detect-integrations.ps1"; Flags: dontcopy
+; The setup never overwrites {app} directly. The exact release ZIP is extracted to {tmp} and the
+; packaged updater performs a staged, rollback-capable activation before Inno writes setup metadata.
+Source: "{#SourceDir}\scripts\detect-integrations.ps1"; DestName: "detect-integrations.ps1"; Flags: dontcopy noencryption
+Source: "{#PayloadZip}"; DestName: "mcp-search-net-payload.zip"; Flags: dontcopy noencryption
 
 [Icons]
 Name: "{userprograms}\{#AppName}\Dossier d'installation {#AppName}"; Filename: "{app}"
@@ -63,8 +73,6 @@ var
   IntegPreflightIni:  String;
   IntegPreflightDone: Boolean;
 
-{ ── Smoke build guard ───────────────────────────────────────────────────────── }
-
 function IsSmokeBuild(): Boolean;
 begin
   Result := {#SmokeMode} = 1;
@@ -75,14 +83,10 @@ begin
   Result := not IsSmokeBuild();
 end;
 
-{ ── Registry helpers ────────────────────────────────────────────────────────── }
-
 function InstallerRegistryPath(): String;
 begin
   Result := 'Software\FTurleque\mcp-search-net';
 end;
-
-{ ── PATH helpers ────────────────────────────────────────────────────────────── }
 
 function TrimTrailingBackslash(Value: String): String;
 begin
@@ -122,7 +126,6 @@ end;
 procedure RemoveBinFromUserPath;
 var
   CurrentPath: String;
-  BinPath: String;
   PaddedPath: String;
   Needle: String;
   ManagedPath: String;
@@ -134,17 +137,14 @@ begin
     RegDeleteValue(HKCU, InstallerRegistryPath(), 'ManagedPath');
     exit;
   end;
-  BinPath := TrimTrailingBackslash(ManagedPath);
   PaddedPath := ';' + CurrentPath + ';';
-  Needle := ';' + BinPath + ';';
+  Needle := ';' + TrimTrailingBackslash(ManagedPath) + ';';
   StringChangeEx(PaddedPath, Needle, ';', True);
   while (Length(PaddedPath) > 0) and (PaddedPath[1] = ';') do Delete(PaddedPath, 1, 1);
   while (Length(PaddedPath) > 0) and (PaddedPath[Length(PaddedPath)] = ';') do Delete(PaddedPath, Length(PaddedPath), 1);
   RegWriteExpandStringValue(HKCU, 'Environment', 'Path', PaddedPath);
   RegDeleteValue(HKCU, InstallerRegistryPath(), 'ManagedPath');
 end;
-
-{ ── Intégration wizard page — layout (modèle MINOS) ────────────────────────── }
 
 procedure ConfigureIntegRow(
   CheckBox: TNewCheckBox; Status: TNewStaticText; Top: Integer; Caption: String);
@@ -186,8 +186,6 @@ begin
   ChkCodex.Enabled         := False; ChkCodex.Checked         := False; LblCodexStatus.Caption   := Reason;
 end;
 
-{ ── Preflight detection ─────────────────────────────────────────────────────── }
-
 procedure RunIntegPreflight;
 var
   PS: String;
@@ -223,14 +221,11 @@ begin
   SetIntegAvailability(ChkCodex,         LblCodexStatus,   'CodexDesktop');
 end;
 
-{ ── Wizard lifecycle ────────────────────────────────────────────────────────── }
-
 procedure InitializeWizard;
 begin
   if IsSmokeBuild() then Exit;
 
   IntegPreflightDone := False;
-
   IntegPage := CreateCustomPage(
     wpSelectDir,
     'Clients IA à configurer',
@@ -279,8 +274,6 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
-  { Fallback : si la détection n'a pas encore tourné (page wpSelectDir skippée
-    ou Back/Forward inhabituel), la lancer maintenant sur IntegPage elle-même. }
   if (IntegPage <> nil) and (CurPageID = IntegPage.ID) and (not IntegPreflightDone) then
   begin
     RunIntegPreflight;
@@ -288,7 +281,54 @@ begin
   end;
 end;
 
-{ ── Configure-install invocation ────────────────────────────────────────────── }
+function RunPayloadUpdate(): String;
+var
+  PayloadZipPath: String;
+  PayloadRoot: String;
+  PackageRoot: String;
+  UpdaterPath: String;
+  PowerShell: String;
+  Parameters: String;
+  ResultCode: Integer;
+begin
+  Result := '';
+  PayloadZipPath := ExpandConstant('{tmp}\mcp-search-net-payload.zip');
+  PayloadRoot := ExpandConstant('{tmp}\mcp-search-net-payload');
+
+  try
+    ExtractTemporaryFile('mcp-search-net-payload.zip');
+    if DirExists(PayloadRoot) then DelTree(PayloadRoot, True, True, True);
+    ForceDirectories(PayloadRoot);
+    ExtractArchive(PayloadZipPath, PayloadRoot, '', True, nil);
+  except
+    Result := 'Impossible de préparer le payload de mise à jour : ' + GetExceptionMessage;
+    exit;
+  end;
+
+  PackageRoot := PayloadRoot + '\{#DistributionName}';
+  UpdaterPath := PackageRoot + '\scripts\update-installation.ps1';
+  if not FileExists(UpdaterPath) then
+  begin
+    Result := 'Payload invalide : moteur de mise à jour absent : ' + UpdaterPath;
+    exit;
+  end;
+
+  PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + UpdaterPath +
+                '" -PackageRoot "' + PackageRoot +
+                '" -InstallRoot "' + ExpandConstant('{app}') + '"';
+  if (not Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)) or
+     (ResultCode <> 0) then
+  begin
+    Result := 'La mise à jour transactionnelle a échoué (code ' + IntToStr(ResultCode) + '). ' +
+              'La version précédente a été restaurée lorsque son activation avait commencé.';
+  end;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := RunPayloadUpdate();
+end;
 
 function RunConfigureScript(ExtraParams: String): Boolean;
 var
@@ -332,13 +372,11 @@ begin
     RunConfigureScript('-SmokeMode');
     Exit;
   end;
-  { Mode silencieux (/VERYSILENT) : pas de page wizard → auto-detect }
   if WizardSilent() then
   begin
     RunConfigureScript('');
     Exit;
   end;
-  { Docker toujours obligatoire — sans lui les outils MCP ne fonctionnent pas }
   Clients := 'docker';
   ExtraParams := BuildClientsParam;
   if ExtraParams <> '' then Clients := Clients + ',' + ExtraParams;
@@ -346,8 +384,8 @@ begin
   if not RunConfigureScript(ExtraParams) then
     MsgBox(
       'La configuration post-installation n''a pas pu être complétée.' + #13#10 +
-      'mcp-search-net est installé mais .env et mcp.json.example sont absents.' + #13#10 +
-      'Relancez scripts\configure-install.ps1 -InstallRoot "' + ExpandConstant('{app}') + '" manuellement.',
+      'Le programme a été mis à jour, mais certaines intégrations doivent être relancées.' + #13#10 +
+      'Exécutez scripts\configure-install.ps1 -InstallRoot "' + ExpandConstant('{app}') + '" manuellement.',
       mbError, MB_OK);
 end;
 
@@ -355,8 +393,6 @@ procedure RunConfigureUninstall;
 begin
   RunConfigureScript('-Uninstall');
 end;
-
-{ ── Install lifecycle ───────────────────────────────────────────────────────── }
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
@@ -369,18 +405,15 @@ begin
   end;
 end;
 
-{ ── Uninstall lifecycle ─────────────────────────────────────────────────────── }
-
 procedure PromptForUserDataRemoval;
 var
   DataRoot: String;
   MessageText: String;
 begin
-  { Interactive uninstall asks explicitly. Silent uninstall therefore preserves them. }
   DeleteUserDataOnUninstall := False;
+  { Silent uninstall therefore preserves them. }
   if IsSmokeBuild() or UninstallSilent() then exit;
   DataRoot := ExpandConstant('{app}\data');
-  { .env est toujours créé à l'installation ; montrer le prompt même si le serveur n'a jamais tourné }
   if not DirExists(DataRoot) and not FileExists(ExpandConstant('{app}\.env')) then exit;
   MessageText :=
     'Supprimer également les données locales (cache, catalogue, configuration) ?' + #13#10 + #13#10 +
@@ -390,8 +423,6 @@ begin
   DeleteUserDataOnUninstall := MsgBox(MessageText, mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES;
 end;
 
-{ PowerShell Remove-Item est plus fiable que DelTree pour les fichiers verrouillés
-  (SQLite WAL, node_modules imbriqués). Ecrit un script temp et l'exécute. }
 procedure PsRemoveTree(const Path: String);
 var
   PS: String;
@@ -409,10 +440,33 @@ begin
   DeleteFile(TmpPs1);
 end;
 
+procedure RemoveInstalledProgramPayload;
+begin
+  PsRemoveTree(ExpandConstant('{app}\app'));
+  PsRemoveTree(ExpandConstant('{app}\bin'));
+  PsRemoveTree(ExpandConstant('{app}\runtime'));
+  PsRemoveTree(ExpandConstant('{app}\scripts'));
+  PsRemoveTree(ExpandConstant('{app}\docker'));
+  PsRemoveTree(ExpandConstant('{app}\.install-staging'));
+  PsRemoveTree(ExpandConstant('{app}\.install-rollback'));
+  DeleteFile(ExpandConstant('{app}\compose.yaml'));
+  DeleteFile(ExpandConstant('{app}\compose.hybrid.yaml'));
+  DeleteFile(ExpandConstant('{app}\.dockerignore'));
+  DeleteFile(ExpandConstant('{app}\BUILD-MANIFEST.json'));
+  DeleteFile(ExpandConstant('{app}\LICENSE'));
+  DeleteFile(ExpandConstant('{app}\THIRD-PARTY-NOTICES.txt'));
+  DeleteFile(ExpandConstant('{app}\mcp.json.example'));
+  DeleteFile(ExpandConstant('{app}\mcp.container.json.example'));
+end;
+
 procedure DeleteUserData;
 begin
   if IsSmokeBuild() or (not DeleteUserDataOnUninstall) then exit;
   PsRemoveTree(ExpandConstant('{app}\data'));
+  PsRemoveTree(ExpandConstant('{app}\config'));
+  PsRemoveTree(ExpandConstant('{app}\.config-backups'));
+  DeleteFile(ExpandConstant('{app}\.env'));
+  DeleteFile(ExpandConstant('{app}\mcp-client-integrations.json'));
   RegDeleteKeyIncludingSubkeys(HKCU, InstallerRegistryPath());
 end;
 
@@ -429,22 +483,14 @@ begin
   end
   else if CurUninstallStep = usPostUninstall then
   begin
-    { Installation metadata is never user data and must not point at an uninstalled program. }
     RegDeleteValue(HKCU, InstallerRegistryPath(), 'InstallRoot');
+    RemoveInstalledProgramPayload;
     DeleteUserData;
 
-    { Inno already removes every file installed from [Files].
-      configure-install.ps1 -Uninstall removes installer-generated artifacts (.env, backups...).
-      Only data/ may remain (user opt-out). Delete the installation dir only when user said yes;
-      Inno cleans empty dirs automatically on user opt-out. }
     if DeleteUserDataOnUninstall and DirExists(ExpandConstant('{app}')) then
       PsRemoveTree(ExpandConstant('{app}'));
 
-    { Smoke build: remove any runtime-generated files Inno did not track. }
     if IsSmokeBuild() then
       PsRemoveTree(ExpandConstant('{app}'));
-
-    { Never delete the legacy ZIP installation path from this setup. It is a separate installation
-      root and ownership cannot be proven by the Inno uninstaller. }
   end;
 end;

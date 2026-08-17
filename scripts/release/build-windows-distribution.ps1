@@ -95,6 +95,7 @@ New-Item -ItemType Directory -Force -Path $ConfigDist, $SearxDist | Out-Null
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'config\application.user.yml') -Destination (Join-Path $ConfigDist 'application.yml') -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'config\application.user.yml') -Destination (Join-Path $ConfigDist 'application.yml.default') -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'config\application.docker.yml') -Destination $ConfigDist -Force
+Copy-Item -LiteralPath (Join-Path $RepoRoot 'config\application.docker.yml') -Destination (Join-Path $ConfigDist 'application.docker.yml.default') -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'config\official-sources.yml') -Destination $ConfigDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'config\official-sources.yml') -Destination (Join-Path $ConfigDist 'official-sources.yml.default') -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'config\searxng\settings.yml') -Destination $SearxDist -Force
@@ -117,6 +118,7 @@ $ScriptsDist = Join-Path $DistRoot 'scripts'
 New-Item -ItemType Directory -Force -Path $ScriptsDist | Out-Null
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\configure-install.ps1') -Destination $ScriptsDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\detect-integrations.ps1') -Destination $ScriptsDist -Force
+Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\update-installation.ps1') -Destination $ScriptsDist -Force
 
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\install.ps1') -Destination $DistRoot -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'LICENSE') -Destination $DistRoot -Force
