@@ -392,15 +392,15 @@ function Remove-JsonMcpClient {
         return
     }
 
-    $record = $IntegrationTable[$integKey]
-    if ($record.ownership -ne 'managed') {
+    $rec = $IntegrationTable[$integKey]
+    if ($rec.ownership -ne 'managed') {
         Write-Host "  $ClientKey : entrée préexistante/non gérée — préservée." -ForegroundColor Cyan
         $IntegrationTable.Remove($integKey)
         return
     }
 
     $resolvedPath = $ConfigPath
-    if (Get-PropertyExists $record 'configPath') { $resolvedPath = [string]$record.configPath }
+    if (Get-PropertyExists $rec 'configPath') { $resolvedPath = [string]$rec.configPath }
     if ($resolvedPath -and (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
         $data = Read-JsonFile $resolvedPath
         foreach ($rootKey in @('mcpServers', 'servers')) {
@@ -577,6 +577,9 @@ elseif ($DoCopilotJB) {
                         $jbData.PSObject.Properties.Remove('mcpServers')
                     }
                     Write-JsonFile $CopilotJBConfig $jbData
+                }
+                else {
+                    Write-Host '  Copilot JetBrains : ancienne entrée mcpServers non gérée — préservée.' -ForegroundColor Cyan
                 }
             }
         }
