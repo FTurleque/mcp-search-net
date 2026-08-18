@@ -6,6 +6,7 @@ param(
 
     [string] $DistributionRoot = '',
     [string] $OutputRoot = '',
+    [string] $IsccPath = '',
 
     [switch] $Smoke
 )
@@ -76,34 +77,48 @@ if (-not $Smoke) {
     Write-Host 'WINDOWS_PRODUCTION_INSTALLER_TRANSACTION_GATES_VALID' -ForegroundColor Green
 }
 
-$IsccCandidates = @()
-$IsccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-if ($IsccCommand) { $IsccCandidates += $IsccCommand.Source }
-if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-    $IsccCandidates += (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe')
-    $IsccCandidates += (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
-}
-foreach ($Pf in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
-    if (-not [string]::IsNullOrWhiteSpace($Pf)) {
-        $IsccCandidates += (Join-Path $Pf 'Inno Setup 7\ISCC.exe')
-        $IsccCandidates += (Join-Path $Pf 'Inno Setup 6\ISCC.exe')
+$ExpectedInnoVersion = '6.7.3'
+$Iscc = $null
+if (-not [string]::IsNullOrWhiteSpace($IsccPath)) {
+    $Iscc = [System.IO.Path]::GetFullPath($IsccPath)
+    if (-not (Test-Path -LiteralPath $Iscc -PathType Leaf)) {
+        throw "ISCC.exe qualifié introuvable : $Iscc"
     }
 }
-$IsccCandidates += 'C:\ProgramData\chocolatey\bin\ISCC.exe'
-
-$Iscc = $IsccCandidates |
-    Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
-    Select-Object -First 1
-if ([string]::IsNullOrWhiteSpace($Iscc)) {
-    throw 'Inno Setup 6 ou 7 est requis. Installez-le ou exposez son ISCC.exe dans le PATH.'
+elseif (-not $Smoke) {
+    throw "Un setup de production exige -IsccPath vers le binaire Inno Setup $ExpectedInnoVersion déjà vérifié."
 }
+else {
+    $IsccCandidates = @()
+    $IsccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    if ($IsccCommand) { $IsccCandidates += $IsccCommand.Source }
+    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $IsccCandidates += (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
+    }
+    foreach ($Pf in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+        if (-not [string]::IsNullOrWhiteSpace($Pf)) {
+            $IsccCandidates += (Join-Path $Pf 'Inno Setup 6\ISCC.exe')
+        }
+    }
+    $Iscc = $IsccCandidates |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
+        Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($Iscc)) {
+        throw "Inno Setup $ExpectedInnoVersion est requis pour le smoke setup local."
+    }
+}
+
 $IsccOutput = @((& $Iscc /? 2>&1))
 $global:LASTEXITCODE = 0
 $IsccBanner = ($IsccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
-$ExpectedInnoVersion = '6.7.3'
-if ($IsccBanner -notmatch 'Inno Setup 6' -and $IsccBanner -notmatch 'Inno Setup 7') {
-    throw "Version Inno Setup non qualifiée : attendu=Inno Setup 6 ou 7 banner=$IsccBanner binaire=$Iscc"
+$IsccProductVersion = ([System.Diagnostics.FileVersionInfo]::GetVersionInfo($Iscc)).ProductVersion
+$VersionMatch = [regex]::Match([string]$IsccProductVersion, '^(\d+\.\d+\.\d+)')
+if ($IsccBanner -notmatch 'Inno Setup 6' -or
+    -not $VersionMatch.Success -or
+    $VersionMatch.Groups[1].Value -ne $ExpectedInnoVersion) {
+    throw "Version Inno Setup non qualifiée : attendu=$ExpectedInnoVersion productVersion=$IsccProductVersion banner=$IsccBanner binaire=$Iscc"
 }
+Write-Host "INNO_SETUP_EXACT_VERSION_QUALIFIED version=$ExpectedInnoVersion path=$Iscc" -ForegroundColor Green
 
 $Template = Join-Path $RepoRoot 'packaging\windows\mcp-search-net-installer.iss.template'
 if (-not (Test-Path -LiteralPath $Template -PathType Leaf)) {
@@ -168,7 +183,7 @@ try {
     Write-Host "SHA-256  : $Hash"
     Write-Host "Mode     : $(if ($Smoke) { 'smoke' } else { 'production' })"
     Write-Host "Inno     : $Iscc"
-    Write-Host "Inno Ver : $IsccBanner"
+    Write-Host "Inno Ver : $IsccProductVersion | $IsccBanner"
 }
 finally {
     Remove-Item -LiteralPath $GeneratedIss -Force -ErrorAction SilentlyContinue
