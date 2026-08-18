@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 describe('Windows in-place upgrade contract', () => {
   const updater = readFileSync('packaging/windows/update-installation.ps1', 'utf8');
+  const configureInstaller = readFileSync('packaging/windows/configure-install.ps1', 'utf8');
   const portableInstaller = readFileSync('packaging/windows/install.ps1', 'utf8');
   const innoTemplate = readFileSync(
     'packaging/windows/mcp-search-net-installer.iss.template',
@@ -14,6 +15,7 @@ describe('Windows in-place upgrade contract', () => {
     'utf8',
   );
   const installerBuilder = readFileSync('scripts/release/build-windows-installer.ps1', 'utf8');
+  const upgradeExercise = readFileSync('scripts/test-packaged-upgrade.ps1', 'utf8');
 
   it('uses one packaged updater for ZIP and setup installations', () => {
     expect(portableInstaller).toContain("'scripts\\update-installation.ps1'");
@@ -43,6 +45,18 @@ describe('Windows in-place upgrade contract', () => {
     expect(updater).toContain('Assert-SafeInstallRoot');
     expect(updater).toContain('Ensure-OwnershipMarker');
     expect(updater).toContain('[string]$manifest.name -ne $ManagedApplicationName');
+  });
+
+  it('rejects managed reparse points before any upgrade mutation can escape InstallRoot', () => {
+    expect(updater).toContain('MCP_UPDATE_REPARSE_POINT');
+    expect(updater).toContain('Assert-NoReparsePointInExistingPathChain');
+    expect(updater).toContain('Assert-ManagedMutationPathsSafe');
+    expect(updater.indexOf('Assert-ManagedMutationPathsSafe')).toBeLessThan(
+      updater.indexOf('Ensure-OwnershipMarker'),
+    );
+    expect(upgradeExercise).toContain("New-Item -ItemType Junction");
+    expect(upgradeExercise).toContain('MCP_UPDATE_REPARSE_POINT');
+    expect(upgradeExercise).toContain('must-survive');
   });
 
   it('publishes a crash-durable checksummed transaction record before activation', () => {
@@ -82,6 +96,24 @@ describe('Windows in-place upgrade contract', () => {
     );
   });
 
+  it('publishes client configuration files atomically and crash-durably', () => {
+    expect(configureInstaller).toContain('[System.IO.FileOptions]::WriteThrough');
+    expect(configureInstaller).toContain('$stream.Flush($true)');
+    expect(configureInstaller).toContain('ConfigFileOps]::MoveFileEx');
+    expect(configureInstaller).toContain('Write-DurableUtf8File -Path $EnvFile');
+    expect(configureInstaller).toContain('Write-DurableUtf8File -Path $CodexConfigPath');
+    expect(configureInstaller).toContain('MCP_SEARCH_NET_TEST_CRASH_BEFORE_CONFIG_PUBLISH');
+    expect(upgradeExercise).toContain("-CrashBeforePublish 'mcp.json.example'");
+  });
+
+  it('returns a material partial-failure status instead of masking client configuration failures', () => {
+    expect(configureInstaller).toContain('Record-MaterialFailure');
+    expect(configureInstaller).toContain('MCP_CONFIG_PARTIAL_FAILURE');
+    expect(configureInstaller).toContain('exit 20');
+    expect(configureInstaller).toContain("Record-MaterialFailure 'Intégrations metadata'");
+    expect(upgradeExercise).toContain('Code de partial failure inattendu');
+  });
+
   it('passes uninstall cleanup targets as data instead of interpolating them into PowerShell source', () => {
     expect(innoTemplate).toContain("Script := 'param([string]$TargetPath)");
     expect(innoTemplate).toContain(`-TargetPath "' + Path + '"`);
@@ -104,6 +136,25 @@ describe('Windows in-place upgrade contract', () => {
     expect(innoTemplate).toContain(
       "DeleteFile(ExpandConstant('{app}\\.mcp-search-net-installation.json'));",
     );
+  });
+
+  it('keeps .env and configuration backups during conservative uninstall', () => {
+    expect(configureInstaller).not.toContain(
+      "foreach ($artifact in @('.env', 'mcp-client-integrations.json'",
+    );
+    expect(configureInstaller).not.toContain('Remove-Item -LiteralPath $BackupRoot -Recurse');
+    expect(configureInstaller).toContain(
+      'Les données utilisateur, .env et .config-backups sont conservés.',
+    );
+    expect(upgradeExercise).toContain("'.env n a pas été conservé byte-identical.'");
+    expect(innoTemplate).toContain('Silent uninstall therefore preserves them.');
+  });
+
+  it('gates every production Windows installer on the transactional upgrade qualification', () => {
+    expect(installerBuilder).toContain('if (-not $Smoke)');
+    expect(installerBuilder).toContain('tests/security/windows-upgrade-contract.test.ts');
+    expect(installerBuilder).toContain("'scripts\\test-packaged-upgrade.ps1'");
+    expect(installerBuilder).toContain('WINDOWS_PRODUCTION_INSTALLER_TRANSACTION_GATES_VALID');
   });
 
   it('keeps a stable application identity across versions', () => {
