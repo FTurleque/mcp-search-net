@@ -1,6 +1,52 @@
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+const configureScript = resolve('packaging/windows/configure-install.ps1');
+
+function runConfigure(
+  installRoot: string,
+  localAppData: string,
+  userProfile: string,
+  args: readonly string[],
+  extraEnvironment: NodeJS.ProcessEnv = {},
+) {
+  return spawnSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      configureScript,
+      '-InstallRoot',
+      installRoot,
+      '-FromInstaller',
+      ...args,
+    ],
+    {
+      encoding: 'utf8',
+      windowsHide: true,
+      env: {
+        ...process.env,
+        LOCALAPPDATA: localAppData,
+        APPDATA: join(localAppData, 'Roaming'),
+        USERPROFILE: userProfile,
+        ...extraEnvironment,
+      },
+    },
+  );
+}
 
 describe('Windows in-place upgrade contract', () => {
   const updater = readFileSync('packaging/windows/update-installation.ps1', 'utf8');
@@ -129,6 +175,28 @@ describe('Windows in-place upgrade contract', () => {
     expect(upgradeExercise).toContain('est devenue fantôme après uninstall');
   });
 
+  it('makes destructive cleanup depend on current ownership evidence, not prepared metadata alone', () => {
+    expect(configureInstaller).toContain('function Test-JsonEntryOwnedByRecord');
+    expect(configureInstaller).toContain('Get-ManagedRecordFingerprint');
+    expect(configureInstaller).toContain("(Get-ManagedRecordState $Record) -eq 'prepared'");
+    expect(configureInstaller).toContain('ne correspond plus au fingerprint géré — préservé');
+    expect(configureInstaller).toContain('Test-NativeManagedServerOutput $get $BinLauncher');
+    expect(configureInstaller).toContain('function Test-CodexBlockOwnedByRecord');
+    expect(configureInstaller).toContain('bloc MCP-SEARCH-NET modifié/non prouvé — préservé');
+  });
+
+  it('uses CAS reload-and-merge for every integration-ledger mutation', () => {
+    expect(configureInstaller).toContain('function Invoke-IntegrationMutation');
+    expect(configureInstaller).toContain('ConvertTo-IntegrationTable -Snapshot $snapshot');
+    expect(configureInstaller).toContain('Save-Integrations -Table $candidate -ExpectedSnapshot $snapshot');
+    expect(configureInstaller).toContain('Sync-IntegrationTable -Target $Table -Source $candidate');
+    expect(configureInstaller).toContain(
+      'MCP_CONFIG_INTEGRATIONS_CONCURRENT_MODIFICATION_RETRY_EXHAUSTED',
+    );
+    expect(configureInstaller).not.toContain('$Table[$Key] = $Record\n    Save-Integrations $Table');
+    expect(configureInstaller).not.toContain('$Table.Remove($Key)\n    Save-Integrations $Table');
+  });
+
   it('detects concurrent client file edits and retries from a fresh snapshot', () => {
     expect(configureInstaller).toContain('function Get-FileSnapshot');
     expect(configureInstaller).toContain('ExpectedSnapshot');
@@ -229,4 +297,196 @@ describe('Windows in-place upgrade contract', () => {
     expect(installerBuilder).toContain("'{{A3F2C8D1-4B7E-4F9A-8C2D-1E6B0A3F7D5C}'");
     expect(innoTemplate).toContain('UsePreviousAppDir=yes');
   });
+
+  it.runIf(process.platform === 'win32')(
+    'preserves a user entry when only prepared ownership survived a pre-publish crash',
+    () => {
+      const root = mkdtempSync(join(tmpdir(), 'mcp-ledger-prepared-uninstall-'));
+      const installRoot = join(root, 'install');
+      const localAppData = join(root, 'local');
+      const userProfile = join(root, 'user');
+      const clientPath = join(localAppData, 'github-copilot', 'intellij', 'mcp.json');
+      const sidecarPath = join(installRoot, 'mcp-client-integrations.json');
+      mkdirSync(dirname(clientPath), { recursive: true });
+      mkdirSync(userProfile, { recursive: true });
+
+      try {
+        const crashed = runConfigure(
+          installRoot,
+          localAppData,
+          userProfile,
+          ['-Clients', 'copilot-jetbrains'],
+          { MCP_SEARCH_NET_TEST_CRASH_BEFORE_CONFIG_PUBLISH: 'mcp.json' },
+        );
+        expect(crashed.status).not.toBe(0);
+
+        const prepared = JSON.parse(readFileSync(sidecarPath, 'utf8')) as Record<
+          string,
+          { readonly ownership: string; readonly state: string }
+        >;
+        expect(prepared['copilot-jetbrains:mcp-search-net']).toMatchObject({
+          ownership: 'managed',
+          state: 'prepared',
+        });
+
+        const userConfig = `${JSON.stringify(
+          {
+            servers: {
+              'mcp-search-net': {
+                command: 'user-owned-command.exe',
+                args: ['--user-owned'],
+                env: { OWNER: 'user' },
+              },
+            },
+            foreign: { preserve: true },
+          },
+          null,
+          2,
+        )}\r\n`;
+        writeFileSync(clientPath, userConfig, 'utf8');
+        const before = readFileSync(clientPath);
+
+        const uninstall = runConfigure(installRoot, localAppData, userProfile, ['-Uninstall']);
+        expect(uninstall.status).toBe(0);
+        expect(readFileSync(clientPath).equals(before)).toBe(true);
+        expect(existsSync(sidecarPath)).toBe(false);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'preserves an applied entry that the user changed after installation',
+    () => {
+      const root = mkdtempSync(join(tmpdir(), 'mcp-ledger-applied-drift-'));
+      const installRoot = join(root, 'install');
+      const localAppData = join(root, 'local');
+      const userProfile = join(root, 'user');
+      const clientPath = join(localAppData, 'github-copilot', 'intellij', 'mcp.json');
+      mkdirSync(dirname(clientPath), { recursive: true });
+      mkdirSync(userProfile, { recursive: true });
+
+      try {
+        const installed = runConfigure(installRoot, localAppData, userProfile, [
+          '-Clients',
+          'copilot-jetbrains',
+        ]);
+        expect(installed.status).toBe(0);
+
+        const userConfig = `${JSON.stringify(
+          {
+            servers: {
+              'mcp-search-net': {
+                command: 'replacement-owned-by-user.exe',
+                args: ['--keep-me'],
+              },
+            },
+          },
+          null,
+          2,
+        )}\r\n`;
+        writeFileSync(clientPath, userConfig, 'utf8');
+        const before = readFileSync(clientPath);
+
+        const uninstall = runConfigure(installRoot, localAppData, userProfile, ['-Uninstall']);
+        expect(uninstall.status).toBe(0);
+        expect(readFileSync(clientPath).equals(before)).toBe(true);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'retries a concurrent ownership-sidecar writer and merges its distinct record',
+    () => {
+      const root = mkdtempSync(join(tmpdir(), 'mcp-ledger-cas-'));
+      const installRoot = join(root, 'install');
+      const localAppData = join(root, 'local');
+      const userProfile = join(root, 'user');
+      mkdirSync(join(localAppData, 'github-copilot', 'intellij'), { recursive: true });
+      mkdirSync(userProfile, { recursive: true });
+
+      try {
+        const concurrentLedger = JSON.stringify({
+          'claude-desktop:mcp-search-net': {
+            ownership: 'preexisting',
+            state: 'observed',
+            configPath: 'foreign-writer',
+            configuredAt: '2026-08-18T00:00:00.000Z',
+          },
+        });
+        const result = runConfigure(
+          installRoot,
+          localAppData,
+          userProfile,
+          ['-Clients', 'copilot-jetbrains'],
+          {
+            MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_PUBLISH: 'mcp-client-integrations.json',
+            MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_CONTENT_BASE64: Buffer.from(
+              concurrentLedger,
+              'utf8',
+            ).toString('base64'),
+          },
+        );
+        expect(result.status).toBe(0);
+
+        const ledger = JSON.parse(
+          readFileSync(join(installRoot, 'mcp-client-integrations.json'), 'utf8'),
+        ) as Record<string, { readonly ownership: string; readonly state: string }>;
+        expect(ledger['claude-desktop:mcp-search-net']).toMatchObject({
+          ownership: 'preexisting',
+          state: 'observed',
+        });
+        expect(ledger['copilot-jetbrains:mcp-search-net']).toMatchObject({
+          ownership: 'managed',
+          state: 'applied',
+        });
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(process.platform === 'win32')(
+    'does not leak a failed in-memory ownership mutation into a later successful commit',
+    () => {
+      const root = mkdtempSync(join(tmpdir(), 'mcp-ledger-failed-candidate-'));
+      const installRoot = join(root, 'install');
+      const localAppData = join(root, 'local');
+      const userProfile = join(root, 'user');
+      const jetBrainsPath = join(localAppData, 'github-copilot', 'intellij', 'mcp.json');
+      const claudeLogs = join(localAppData, 'Roaming', 'Claude', 'logs');
+      mkdirSync(dirname(jetBrainsPath), { recursive: true });
+      mkdirSync(claudeLogs, { recursive: true });
+      mkdirSync(userProfile, { recursive: true });
+
+      try {
+        const result = runConfigure(
+          installRoot,
+          localAppData,
+          userProfile,
+          ['-Clients', 'copilot-jetbrains,claude-desktop'],
+          { MCP_SEARCH_NET_TEST_FAIL_INTEGRATIONS_SAVE_ON_ATTEMPT: '1' },
+        );
+        expect(result.status).toBe(20);
+
+        const ledger = JSON.parse(
+          readFileSync(join(installRoot, 'mcp-client-integrations.json'), 'utf8'),
+        ) as Record<string, { readonly ownership: string; readonly state: string }>;
+        expect(ledger['copilot-jetbrains:mcp-search-net']).toBeUndefined();
+        expect(ledger['claude-desktop:mcp-search-net']).toMatchObject({
+          ownership: 'managed',
+          state: 'applied',
+        });
+        expect(existsSync(jetBrainsPath)).toBe(false);
+        expect(
+          existsSync(join(localAppData, 'Roaming', 'Claude', 'claude_desktop_config.json')),
+        ).toBe(true);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
 });
