@@ -68,15 +68,8 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     context: ContentFetchContext = {},
   ): Promise<ContentFetchResult> {
     const deadline = request.deadline ?? performance.now() + request.timeoutMs;
-    const initialDownloadTimeoutMs =
-      request.deadline === undefined ? request.timeoutMs : remainingTimeoutMs(deadline);
     const securityContext = createSecurityContext(context);
-    const resource = await this.downloadResource(
-      request,
-      context,
-      securityContext,
-      initialDownloadTimeoutMs,
-    );
+    const resource = await this.downloadResource(request, context, securityContext, deadline);
     if (resource.status === 304) return toNotModifiedContent(resource);
 
     const contentType = detectContentType(resource);
@@ -106,7 +99,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     request: ContentFetchRequest,
     context: ContentFetchContext,
     securityContext: FetchSecurityContext,
-    timeoutMs: number,
+    deadline: number,
   ): Promise<DownloadedResource> {
     return this.gateway.download(
       request.url.value,
@@ -115,7 +108,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
         : {},
       securityContext,
       {
-        timeoutMs,
+        timeoutMs: remainingTimeoutMs(deadline),
         maxBytes: request.maxResponseBytes,
         maxRedirects: request.maxRedirects,
       },
@@ -148,8 +141,6 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       'content-type': 'application/json',
     };
     if (this.apiToken !== undefined) headers['authorization'] = `Bearer ${this.apiToken}`;
-    // Crawl4AI's raw:// transport renders caller-provided HTML without issuing a
-    // public target request. The renderer receives only resource-neutralized HTML.
     const rawUrl = `raw://${html}`;
     const json = await fetchJson(
       'crawl4ai',
