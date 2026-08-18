@@ -225,7 +225,7 @@ describe('Windows installer runtime integrity', () => {
       copyFileSync(process.execPath, nodePath);
       writeFileSync(
         serverPath,
-        'process.stdout.write(JSON.stringify({ token: process.env.MCP_CRAWL4AI_API_TOKEN ?? "missing", catalogPath: process.env.MCP_CATALOG_PATH, cwd: process.cwd() }));',
+        'process.stdout.write(JSON.stringify({ token: process.env.MCP_CRAWL4AI_TOKEN ?? "missing", catalogPath: process.env.MCP_CATALOG_PATH, cwd: process.cwd() }));',
       );
       writeFileSync(
         join(installRoot, '.env'),
