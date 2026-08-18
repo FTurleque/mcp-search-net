@@ -68,9 +68,7 @@ let checked = 0;
 
 function shouldCheck(path) {
   const name = path.split(/[\\/]/u).at(-1) ?? path;
-  return (
-    TEXT_FILE_NAMES.has(name) || TEXT_EXTENSIONS.has(extname(name).toLowerCase())
-  );
+  return TEXT_FILE_NAMES.has(name) || TEXT_EXTENSIONS.has(extname(name).toLowerCase());
 }
 
 function scan(path) {
@@ -98,13 +96,7 @@ for (const root of ROOTS) {
   try {
     scan(root);
   } catch (error) {
-    if (
-      error &&
-      typeof error === 'object' &&
-      'code' in error &&
-      error.code === 'ENOENT'
-    )
-      continue;
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') continue;
     throw error;
   }
 }
@@ -115,13 +107,7 @@ for (const entry of readdirSync('.')) {
     const stat = statSync(entry);
     if (stat.isFile() && shouldCheck(entry)) scan(entry);
   } catch (error) {
-    if (
-      error &&
-      typeof error === 'object' &&
-      'code' in error &&
-      error.code === 'ENOENT'
-    )
-      continue;
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') continue;
     throw error;
   }
 }
