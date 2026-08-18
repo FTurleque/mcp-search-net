@@ -37,23 +37,40 @@ jobs:
         shell: powershell
         run: |
           $output = Join-Path $env:RUNNER_TEMP 'native-client-certification-smoke'
-          .\scripts\certify-native-clients.ps1 -SmokeMode -OutputDirectory $output
-          $report = Get-Content -LiteralPath (Join-Path $output 'native-client-certification.json') -Raw | ConvertFrom-Json
+          $raw = @(.\scripts\certify-native-clients.ps1 -SmokeMode -OutputDirectory $output)
+          $report = (($raw | ForEach-Object { [string]$_ }) -join [Environment]::NewLine) | ConvertFrom-Json
           if ($report.schemaVersion -ne '1.0') { throw 'Unexpected certification schema version.' }
-          $clientCount = @($report.clients).Count
-          if ($clientCount -ne 3) { throw "Expected three certification clients, got $clientCount." }
+          if ($report.mode -ne 'smoke') { throw "Unexpected certification mode: $($report.mode)" }
+
           $expectedNames = @('Claude Code', 'Claude Desktop', 'Codex')
+          $scope = @($report.certificationScope)
+          if ($scope.Count -ne $expectedNames.Count) {
+            throw "Expected three certification clients, got $($scope.Count)."
+          }
           foreach ($name in $expectedNames) {
-            if (@($report.clients | Where-Object { $_.name -eq $name }).Count -ne 1) {
+            if (@($scope | Where-Object { $_ -eq $name }).Count -ne 1) {
               throw "Missing retained certification client: $name"
             }
           }
-          if (@($report.clients | Where-Object { $_.verdict -ne 'NON_OBSERVE' }).Count -ne 0) {
-            throw 'Smoke collector must never infer a native PASS.'
+
+          $expectedExcluded = @('IntelliJ IDEA + GitHub Copilot', 'GitHub Copilot CLI')
+          $excluded = @($report.excludedClients)
+          if ($excluded.Count -ne $expectedExcluded.Count) {
+            throw "Expected two excluded compatibility clients, got $($excluded.Count)."
           }
-          if (-not $report.host.osArchitecture) { throw 'OS architecture must be present.' }
-          if (-not $report.host.powershellVersion) { throw 'PowerShell version must be present.' }
-          Write-Host "NATIVE_CLIENT_CERTIFICATION_SMOKE_VALID arch=$($report.host.osArchitecture) powershell=$($report.host.powershellVersion)"
+          foreach ($name in $expectedExcluded) {
+            if (@($excluded | Where-Object { $_ -eq $name }).Count -ne 1) {
+              throw "Missing excluded compatibility client: $name"
+            }
+          }
+
+          if ($null -ne $report.reportPath) { throw 'Smoke collection must not persist a certification report.' }
+          if (-not (Test-Path -LiteralPath $output -PathType Container)) { throw 'Smoke output directory was not created.' }
+          if (@(Get-ChildItem -LiteralPath $output -File -ErrorAction Stop).Count -ne 0) {
+            throw 'Smoke collection must not persist certification evidence files.'
+          }
+
+          Write-Host "NATIVE_CLIENT_CERTIFICATION_SMOKE_VALID detected=$($report.detected) configured=$($report.configured)"
 
       - name: Record exact head
         shell: powershell
