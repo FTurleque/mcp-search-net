@@ -93,6 +93,7 @@ jobs:
       - name: Install verified Inno Setup 6.7.3
         shell: pwsh
         run: |
+          $innoVersion = '6.7.3'
           $innoUrl = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'
           $innoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'
           $innoInstaller = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
@@ -102,6 +103,17 @@ jobs:
             -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/ALLUSERS') `
             -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "Installation Inno Setup échouée (exit=$($install.ExitCode))" }
+          $iscc = @(
+            'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+            'C:\Program Files\Inno Setup 6\ISCC.exe'
+          ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          if (-not $iscc) { throw 'ISCC.exe introuvable après installation Inno Setup.' }
+          $productVersion = ([System.Diagnostics.FileVersionInfo]::GetVersionInfo($iscc)).ProductVersion
+          $versionMatch = [regex]::Match([string]$productVersion, '^(\d+\.\d+\.\d+)')
+          if (-not $versionMatch.Success -or $versionMatch.Groups[1].Value -ne $innoVersion) {
+            throw "Version ISCC non qualifiée : attendu=$innoVersion obtenu=$productVersion ($iscc)"
+          }
+          "QUALIFIED_ISCC_PATH=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Download verified Node.js Windows runtime
         shell: pwsh
@@ -122,7 +134,10 @@ jobs:
             -Version $version `
             -NodeZipPath $env:NODE_RUNTIME_ZIP `
             -CommitSha $env:QUALIFIED_SHA
-          .\scripts\release\build-windows-installer.ps1 -Version $version -Smoke
+          .\scripts\release\build-windows-installer.ps1 `
+            -Version $version `
+            -Smoke `
+            -IsccPath $env:QUALIFIED_ISCC_PATH
           "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install and update the same setup in place
