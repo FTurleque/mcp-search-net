@@ -291,23 +291,28 @@ try {
     )
 
     $Updater = Join-Path $RepositoryRoot 'packaging\windows\update-installation.ps1'
-    $UpdateArguments = @{
-        PackageRoot = $DistributionRoot
-        InstallRoot = $InstallRoot
-    }
-    if (-not $ForceStopExistingProcess) {
-        $UpdateArguments['SkipProcessStop'] = $true
+    $WindowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not (Test-Path -LiteralPath $WindowsPowerShell -PathType Leaf)) {
+        throw "Windows PowerShell 5.1 introuvable : $WindowsPowerShell"
     }
     $failureAfterEntries = if ($TestFailActivation) { 1 } else { $TestFailActivationAfterEntries }
+    $UpdateCliArguments = @(
+        '-NoLogo',
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', $Updater,
+        '-PackageRoot', $DistributionRoot,
+        '-InstallRoot', $InstallRoot
+    )
+    if (-not $ForceStopExistingProcess) {
+        $UpdateCliArguments += '-SkipProcessStop'
+    }
     if ($failureAfterEntries -gt 0) {
-        $UpdateArguments['TestFailActivationAfterEntries'] = $failureAfterEntries
+        $UpdateCliArguments += @('-TestFailActivationAfterEntries', [string]$failureAfterEntries)
     }
 
-    Write-Host "Activation transactionnelle de mcp-search-net dans $InstallRoot..."
-    & $Updater @UpdateArguments
-    if ($LASTEXITCODE -ne 0) {
-        throw "update-installation.ps1 a echoue (code $LASTEXITCODE)."
-    }
+    Write-Host "Activation transactionnelle de mcp-search-net dans $InstallRoot via Windows PowerShell 5.1..."
+    Invoke-NativeCommand $WindowsPowerShell @UpdateCliArguments
 
     $ConfigureInstall = Join-Path $InstallRoot 'scripts\configure-install.ps1'
     & $ConfigureInstall -InstallRoot $InstallRoot -FromInstaller -Clients ''
