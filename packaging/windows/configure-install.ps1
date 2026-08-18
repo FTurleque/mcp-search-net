@@ -66,10 +66,15 @@ function Get-FileSnapshot {
         return [PSCustomObject]@{ Exists = $false; Sha256 = ''; Content = '' }
     }
     $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $contentOffset = 0
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        $contentOffset = 3
+    }
+    $content = [System.Text.Encoding]::UTF8.GetString($bytes, $contentOffset, $bytes.Length - $contentOffset)
     return [PSCustomObject]@{
         Exists = $true
         Sha256 = Get-BytesSha256 $bytes
-        Content = [System.Text.Encoding]::UTF8.GetString($bytes)
+        Content = $content
     }
 }
 
