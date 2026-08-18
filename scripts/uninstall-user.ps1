@@ -3,22 +3,98 @@ param(
     [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'mcp-search-net'),
     [switch]$KeepData,
     [switch]$PurgeData,
-    [switch]$SkipServices
+    [switch]$SkipServices,
+    [switch]$AllowCustomInstallRoot
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
-$ExpectedRoot = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'mcp-search-net'))
+
+if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    throw 'LOCALAPPDATA est introuvable. Ce programme nécessite un profil utilisateur Windows.'
+}
 if ($KeepData -and $PurgeData) {
     throw 'KeepData et PurgeData sont mutuellement exclusifs.'
 }
+
+$ManagedApplicationName = 'mcp-search-net'
+$InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
+$DefaultInstallRoot = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'mcp-search-net'))
 $DeleteData = [bool]$PurgeData
 
-if (-not $InstallRoot.Equals($ExpectedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Désinstallation refusée hors de l'emplacement attendu : $ExpectedRoot"
+function Test-SamePath {
+    param(
+        [Parameter(Mandatory)] [string]$Left,
+        [Parameter(Mandatory)] [string]$Right
+    )
+    $trimChars = [char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $leftFull = [System.IO.Path]::GetFullPath($Left).TrimEnd($trimChars)
+    $rightFull = [System.IO.Path]::GetFullPath($Right).TrimEnd($trimChars)
+    return $leftFull.Equals($rightFull, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
+function Test-OwnershipMarker {
+    $markerPath = Join-Path $InstallRoot '.mcp-search-net-installation.json'
+    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { return $false }
+    try {
+        $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+        if ([string]$marker.schemaVersion -ne '1.0' -or [string]$marker.name -ne $ManagedApplicationName) {
+            return $false
+        }
+        $null = [guid]::Parse([string]$marker.installationId)
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-LegacyOwnedInstallation {
+    $manifestPath = Join-Path $InstallRoot 'BUILD-MANIFEST.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return $false }
+    try {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        if ([string]$manifest.name -ne $ManagedApplicationName) { return $false }
+    }
+    catch {
+        return $false
+    }
+    return (
+        (Test-Path -LiteralPath (Join-Path $InstallRoot 'app\build\bootstrap\main.js') -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $InstallRoot 'bin\mcp-search-net.cmd') -PathType Leaf)
+    )
+}
+
+function Assert-OwnedInstallRoot {
+    if (-not (Test-SamePath -Left $InstallRoot -Right $DefaultInstallRoot) -and -not $AllowCustomInstallRoot) {
+        throw "MCP_UNINSTALL_CUSTOM_ROOT_REQUIRES_OPT_IN: utilisez -AllowCustomInstallRoot pour '$InstallRoot'."
+    }
+    if (-not (Test-Path -LiteralPath $InstallRoot)) { return }
+    if (-not (Test-Path -LiteralPath $InstallRoot -PathType Container)) {
+        throw "MCP_UNINSTALL_UNSAFE_INSTALL_ROOT: le chemin existe mais n'est pas un dossier : $InstallRoot"
+    }
+    $rootItem = Get-Item -LiteralPath $InstallRoot -Force
+    if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "MCP_UNINSTALL_UNSAFE_INSTALL_ROOT: racine de type reparse point refusée : $InstallRoot"
+    }
+    if (-not (Test-OwnershipMarker) -and -not (Test-LegacyOwnedInstallation)) {
+        throw "MCP_UNINSTALL_UNSAFE_INSTALL_ROOT: aucune preuve d'ownership mcp-search-net dans $InstallRoot"
+    }
+}
+
+function Assert-ManagedTargetSafe {
+    param([Parameter(Mandatory)] [string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $item = Get-Item -LiteralPath $Path -Force
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "MCP_UNINSTALL_REPARSE_POINT: chemin géré de type reparse point refusé : $Path"
+    }
+}
+
+Assert-OwnedInstallRoot
 if (-not (Test-Path -LiteralPath $InstallRoot)) {
     Write-Host "mcp-search-net n'est pas installé pour cet utilisateur."
     exit 0
@@ -29,7 +105,7 @@ $ComposeFile = Join-Path $InstallRoot 'compose.yaml'
 $ComposeHybridFile = Join-Path $InstallRoot 'compose.hybrid.yaml'
 $EnvironmentFile = Join-Path $InstallRoot '.env'
 $EnvironmentExampleFile = Join-Path $InstallRoot '.env.example'
-if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $ComposeFile)) {
+if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $ComposeFile -PathType Leaf)) {
     $ComposeProject = if ([string]::IsNullOrWhiteSpace($env:MCP_SEARCH_COMPOSE_PROJECT)) {
         'mcp-search-net'
     }
@@ -49,10 +125,13 @@ if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $
             $DownArguments += @('-f', $ComposeHybridFile)
         }
         $DownArguments += 'down'
-        if ($DeleteData) {
-            $DownArguments += '--volumes'
+        if ($DeleteData) { $DownArguments += '--volumes' }
+        $ComposeAction = if ($DeleteData) {
+            'Arrêter les services Compose et supprimer leurs volumes'
         }
-        $ComposeAction = if (-not $DeleteData) { 'Arrêter les services Compose' } else { 'Arrêter les services Compose et supprimer leurs volumes' }
+        else {
+            'Arrêter les services Compose'
+        }
         if ($PSCmdlet.ShouldProcess("projet Compose $project", $ComposeAction)) {
             & $Docker.Source @DownArguments
             if ($LASTEXITCODE -ne 0) {
@@ -62,16 +141,51 @@ if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $
     }
 }
 
-if (-not $DeleteData) {
-    foreach ($name in @('app', 'bin', 'docs', 'runtime', 'src', 'migrations', 'catalog-migrations', 'compose.yaml', 'compose.hybrid.yaml', 'Dockerfile', '.dockerignore', 'package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json', '.env.example', 'mcp.json.example', 'mcp.container.json.example', 'VERSION', 'BUILD-MANIFEST.json')) {
-        $target = Join-Path $InstallRoot $name
-        if ((Test-Path -LiteralPath $target) -and $PSCmdlet.ShouldProcess($target, 'Supprimer')) {
-            Remove-Item -LiteralPath $target -Recurse -Force
-        }
+if ($DeleteData) {
+    if ($PSCmdlet.ShouldProcess($InstallRoot, 'Supprimer entièrement')) {
+        Remove-Item -LiteralPath $InstallRoot -Recurse -Force
+        Write-Host 'mcp-search-net et ses données ont été désinstallés pour cet utilisateur.'
     }
-    Write-Host "Programme supprimé. Configuration et données conservées dans $InstallRoot."
+    exit 0
 }
-elseif ($PSCmdlet.ShouldProcess($InstallRoot, 'Supprimer entièrement')) {
-    Remove-Item -LiteralPath $InstallRoot -Recurse -Force
-    Write-Host "mcp-search-net et ses données ont été désinstallés pour cet utilisateur."
+
+$ManagedProgramEntries = @(
+    'app',
+    'bin',
+    'runtime',
+    'scripts',
+    'docker',
+    'docs',
+    'src',
+    'migrations',
+    'catalog-migrations',
+    'history-migrations',
+    'compose.yaml',
+    'compose.hybrid.yaml',
+    'Dockerfile',
+    '.dockerignore',
+    '.npmrc',
+    'package.json',
+    'package-lock.json',
+    'tsconfig.json',
+    'tsconfig.build.json',
+    '.env.example',
+    'mcp.json.example',
+    'mcp.container.json.example',
+    'VERSION',
+    'BUILD-MANIFEST.json',
+    'LICENSE',
+    'THIRD-PARTY-NOTICES.txt'
+)
+
+foreach ($name in $ManagedProgramEntries) {
+    $target = Join-Path $InstallRoot $name
+    Assert-ManagedTargetSafe -Path $target
+    if ((Test-Path -LiteralPath $target) -and $PSCmdlet.ShouldProcess($target, 'Supprimer')) {
+        Remove-Item -LiteralPath $target -Recurse -Force
+    }
 }
+
+# The ownership marker is deliberately preserved while config/data are retained. This makes a
+# subsequent reinstall safe: the non-empty persistent root still carries explicit ownership proof.
+Write-Host "Programme supprimé. Configuration, données et preuve d'ownership conservées dans $InstallRoot."
