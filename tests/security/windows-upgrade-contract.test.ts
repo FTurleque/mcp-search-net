@@ -136,6 +136,9 @@ describe('Windows in-place upgrade contract', () => {
     expect(configureInstaller).toContain('MCP_CONFIG_CONCURRENT_MODIFICATION');
     expect(configureInstaller).toContain('MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_PUBLISH');
     expect(configureInstaller).toContain('$ClientConfigMaxRetries = 3');
+    expect(configureInstaller).toContain('$bytes[0] -eq 0xEF');
+    expect(configureInstaller).toContain('$bytes[1] -eq 0xBB');
+    expect(configureInstaller).toContain('$bytes[2] -eq 0xBF');
     expect(upgradeExercise).toContain("-ConcurrentPublishTarget 'mcp.json'");
     expect(upgradeExercise).toContain('Une modification concurrente étrangère a été perdue.');
     expect(upgradeExercise).toContain('foreignObject.preserve');
@@ -197,12 +200,16 @@ describe('Windows in-place upgrade contract', () => {
     expect(installerBuilder).toContain(
       'Un setup de production exige -IsccPath vers le binaire Inno Setup $ExpectedInnoVersion déjà vérifié.',
     );
-    expect(installerBuilder).toContain('FileVersionInfo]::GetVersionInfo($Iscc)');
+    expect(installerBuilder).toContain('Get-QualifiedInnoRegistration');
+    expect(installerBuilder).toContain('DisplayVersion -eq $ExpectedVersion');
     expect(installerBuilder).toContain("$ExpectedInnoVersion = '6.7.3'");
     expect(installerBuilder).toContain('INNO_SETUP_EXACT_VERSION_QUALIFIED');
+    expect(installerBuilder).not.toContain('FileVersionInfo]::GetVersionInfo($Iscc)');
     expect(releasePublisher).toContain('IsccPath=$IsccPath');
+    expect(releaseWorkflow).toContain('DisplayVersion -eq $innoVersion');
     expect(releaseWorkflow).toContain('QUALIFIED_ISCC_PATH=$iscc');
     expect(releaseWorkflow).toContain('-IsccPath $env:QUALIFIED_ISCC_PATH');
+    expect(upgradeWorkflow).toContain('DisplayVersion -eq $innoVersion');
     expect(upgradeWorkflow).toContain('QUALIFIED_ISCC_PATH=$iscc');
     expect(upgradeWorkflow).toContain('-IsccPath $env:QUALIFIED_ISCC_PATH');
     expect(installerBuilder).not.toContain("'Inno Setup 7\\ISCC.exe'");
