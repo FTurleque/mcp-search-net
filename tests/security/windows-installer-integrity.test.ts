@@ -93,8 +93,10 @@ describe('Windows installer runtime integrity', () => {
     expect(releasePublisher).toContain('$PackagedPackage.version -ne $Version');
     expect(releasePublisher).toContain('IsccPath=$IsccPath');
     expect(installerBuilder).toContain("$ExpectedInnoVersion = '6.7.3'");
-    expect(installerBuilder).toContain('FileVersionInfo]::GetVersionInfo($Iscc)');
+    expect(installerBuilder).toContain('Get-QualifiedInnoRegistration');
+    expect(installerBuilder).toContain('DisplayVersion -eq $ExpectedVersion');
     expect(installerBuilder).toContain('INNO_SETUP_EXACT_VERSION_QUALIFIED');
+    expect(installerBuilder).not.toContain('FileVersionInfo]::GetVersionInfo($Iscc)');
     expect(releaseWorkflow).toContain("$innoVersion = '6.7.3'");
     expect(releaseWorkflow).toContain(
       "$innoUrl = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'",
@@ -102,6 +104,7 @@ describe('Windows installer runtime integrity', () => {
     expect(releaseWorkflow).toContain(
       "$innoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'",
     );
+    expect(releaseWorkflow).toContain('DisplayVersion -eq $innoVersion');
     expect(releaseWorkflow).toContain('QUALIFIED_ISCC_PATH=$iscc');
     expect(releaseWorkflow).toContain('-IsccPath $env:QUALIFIED_ISCC_PATH');
     const innoVerification = releaseWorkflow.indexOf('.\\scripts\\windows\\verify-file-sha256.ps1');
