@@ -17,6 +17,11 @@ describe('Windows installer runtime integrity', () => {
   const installedProbe = readFileSync('scripts/probe-installed-mcp.mjs', 'utf8');
   const installationRecipe = readFileSync('scripts/test-installation.ps1', 'utf8');
   const configureInstall = readFileSync('packaging/windows/configure-install.ps1', 'utf8');
+  const transactionalUpdater = readFileSync('packaging/windows/update-installation.ps1', 'utf8');
+  const distributionBuilder = readFileSync(
+    'scripts/release/build-windows-distribution.ps1',
+    'utf8',
+  );
   const installerBuilder = readFileSync('scripts/release/build-windows-installer.ps1', 'utf8');
   const releasePublisher = readFileSync('scripts/release/publish-windows-release.ps1', 'utf8');
   const releaseWorkflow = readFileSync('.github/workflows/release-windows.yml', 'utf8');
@@ -24,18 +29,30 @@ describe('Windows installer runtime integrity', () => {
   const compose = readFileSync('compose.yaml', 'utf8');
 
   it('pins the official Node archive hash and verifies before extracting', () => {
-    expect(installer).toContain('0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821');
-    expect(installer.indexOf('verify-file-sha256.ps1')).toBeGreaterThan(0);
-    expect(installer.indexOf('verify-file-sha256.ps1')).toBeLessThan(
-      installer.indexOf('Expand-Archive'),
+    const expectedHash = '0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821';
+    expect(installer).toContain(expectedHash);
+    const sourceHashVerification = installer.indexOf(
+      'Get-FileHash -LiteralPath $archivePath -Algorithm SHA256',
     );
+    expect(sourceHashVerification).toBeGreaterThan(0);
+    expect(sourceHashVerification).toBeLessThan(installer.indexOf('Expand-Archive'));
+
+    expect(distributionBuilder).toContain(expectedHash);
+    const distributionHashVerification = distributionBuilder.indexOf(
+      'Get-FileHash -LiteralPath $NodeZipPath -Algorithm SHA256',
+    );
+    expect(distributionHashVerification).toBeGreaterThan(0);
+    expect(distributionHashVerification).toBeLessThan(distributionBuilder.indexOf('Expand-Archive'));
+
     expect(verifier).toContain('Get-FileHash -LiteralPath $resolvedPath -Algorithm SHA256');
     expect(verifier).toContain('RUNTIME_ARCHIVE_CHECKSUM_MISMATCH');
   });
 
   it('verifies Authenticode before executing Node and writes a proof manifest', () => {
-    const signatureCheck = installer.indexOf('Get-AuthenticodeSignature -LiteralPath $NodeExe');
-    const nodeExecution = installer.indexOf("& $NodeExe '--version'");
+    const signatureCheck = installer.indexOf(
+      'Get-AuthenticodeSignature -LiteralPath $BootstrapNodeExe',
+    );
+    const nodeExecution = installer.indexOf("& $BootstrapNodeExe '--version'");
     expect(signatureCheck).toBeGreaterThan(0);
     expect(nodeExecution).toBeGreaterThan(0);
     expect(signatureCheck).toBeLessThan(nodeExecution);
@@ -47,24 +64,27 @@ describe('Windows installer runtime integrity', () => {
     expect(installer).toContain('nodeExeSha256');
   });
 
-  it('preserves staged upgrades, restores the previous app on activation failure and reports locks', () => {
-    expect(installer).toContain("$StageRoot = Join-Path $InstallRoot '.install-staging'");
-    expect(installer).toContain('Move-Item -LiteralPath $AppRoot -Destination $PreviousAppRoot');
-    expect(installer).toContain('Move-Item -LiteralPath $PreviousAppRoot -Destination $AppRoot');
-    expect(installer).toContain('Rollback effectué');
-    expect(installer).toContain('$TestFailActivation');
-    expect(installer).toContain('MCP_INSTALL_TEST_ACTIVATION_FAILURE');
+  it('uses the shared transaction journal for upgrades, rollback and process-lock policy', () => {
+    expect(installer).toContain("packaging\\windows\\update-installation.ps1");
+    expect(installer).toContain('TestFailActivationAfterEntries');
     expect(installer).toContain('Get-CimInstance Win32_Process');
-    expect(installer).toContain('Get-CurrentProcessLineage');
-    expect(installer).toContain('Write-McpSearchNetProcessReport');
     expect(installer).toContain('$ForceStopExistingProcess');
+
+    expect(transactionalUpdater).toContain("$StageRoot = Join-Path $InstallRoot '.install-staging'");
+    expect(transactionalUpdater).toContain("Write-TransactionManifest -Phase 'activating'");
+    expect(transactionalUpdater).toContain("Write-TransactionManifest -Phase 'committed'");
+    expect(transactionalUpdater).toContain('Restore-Transaction');
+    expect(transactionalUpdater).toContain('TestFailActivationAfterEntries');
+    expect(transactionalUpdater).toContain('MCP_UPDATE_ROLLBACK_FAILED');
   });
 
   it('generates per-installation provider secrets and removes launcher defaults', () => {
-    expect(installer).toContain('RandomNumberGenerator]::Create()');
-    expect(installer).toContain("$EnvironmentPath = Join-Path $InstallRoot '.env'");
-    expect(installer).toContain('CRAWL4AI_API_TOKEN=$Crawl4aiLocalToken');
-    expect(installer).toContain('SEARXNG_SECRET=$SearxngLocalSecret');
+    expect(installer).toContain("$ConfigureInstall = Join-Path $InstallRoot 'scripts\\configure-install.ps1'");
+    expect(installer).toContain("& $ConfigureInstall -InstallRoot $InstallRoot -FromInstaller -Clients ''");
+    expect(configureInstall).toContain('RandomNumberGenerator]::Create()');
+    expect(configureInstall).toContain("$EnvFile = Join-Path $InstallRoot '.env'");
+    expect(configureInstall).toContain('CRAWL4AI_API_TOKEN=$crawl4aiToken');
+    expect(configureInstall).toContain('SEARXNG_SECRET=$searxngSecret');
     expect(launcher).toContain('findstr /b /l "CRAWL4AI_API_TOKEN="');
     expect(launcher).not.toContain('mcp-search-local-development-token');
   });
@@ -117,9 +137,13 @@ describe('Windows installer runtime integrity', () => {
   });
 
   it('keeps installed Docker builds away from local data and preserves operator configuration', () => {
-    expect(installer).toContain("Join-Path $RepositoryRoot '.dockerignore'");
-    expect(installer).toContain(
-      "Copy-UserConfig (Join-Path $RepositoryRoot 'config\\application.docker.yml')",
+    expect(distributionBuilder).toContain("Join-Path $RepoRoot '.dockerignore'");
+    expect(distributionBuilder).toContain("Join-Path $RepoRoot 'config\\application.docker.yml'");
+    expect(transactionalUpdater).toContain(
+      "@{ source = 'config\\application.docker.yml'; target = 'config\\application.docker.yml' }",
+    );
+    expect(transactionalUpdater).toContain(
+      'if (-not (Test-Path -LiteralPath $targetPath -PathType Leaf))',
     );
     expect(dockerIgnore).toMatch(/^data$/mu);
     expect(dockerIgnore).toMatch(/^runtime$/mu);
@@ -129,12 +153,13 @@ describe('Windows installer runtime integrity', () => {
   });
 
   it('records whether the source revision is clean instead of presenting dirty builds as exact', () => {
-    expect(installer).toContain('status --porcelain --untracked-files=normal');
-    expect(installer).toContain(
-      '$SourceState = if ([string]::IsNullOrWhiteSpace($WorkingTreeStatus))',
+    expect(installer).toContain('-CommitSha $SourceRevision');
+    expect(distributionBuilder).toContain('status --porcelain --untracked-files=normal');
+    expect(distributionBuilder).toContain(
+      "$SourceState = if ([string]::IsNullOrWhiteSpace($workingTreeStatus)) { 'CLEAN' } else { 'DIRTY' }",
     );
-    expect(installer).toContain('sourceState = $SourceState');
-    expect(installer).toContain("$env:GITHUB_SHA -match '^[a-fA-F0-9]{40}$'");
+    expect(distributionBuilder).toContain('sourceState    = $SourceState');
+    expect(distributionBuilder).toContain("$env:GITHUB_SHA -match '^[a-fA-F0-9]{40}$'");
   });
 
   it('anchors local launchers in the installed root and bounds the installed MCP probe', () => {
@@ -150,10 +175,11 @@ describe('Windows installer runtime integrity', () => {
   });
 
   it('generates Copilot-compatible local MCP examples', () => {
-    expect(installer).toContain('mcpServers = [ordered]@{');
-    expect(installer).not.toMatch(/^\s*servers = \[ordered\]@\{/mu);
-    expect(installer).toContain("type = 'local'");
-    expect(installer).toContain("tools = @('*')");
+    expect(installer).toContain("$ConfigureInstall = Join-Path $InstallRoot 'scripts\\configure-install.ps1'");
+    expect(configureInstall).toContain('mcpServers = [ordered]@{');
+    expect(configureInstall).not.toMatch(/^\s*servers = \[ordered\]@\{/mu);
+    expect(configureInstall).toContain("type = 'local'");
+    expect(configureInstall).toContain("tools = @('*')");
     expect(installationRecipe).toContain("$McpExample.mcpServers.'mcp-search-net'");
   });
 
