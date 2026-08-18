@@ -17,7 +17,10 @@ describe('Windows in-place upgrade contract', () => {
   const installerBuilder = readFileSync('scripts/release/build-windows-installer.ps1', 'utf8');
   const releasePublisher = readFileSync('scripts/release/publish-windows-release.ps1', 'utf8');
   const releaseWorkflow = readFileSync('.github/workflows/release-windows.yml', 'utf8');
-  const upgradeWorkflow = readFileSync('.github/workflows/windows-in-place-upgrade.yml', 'utf8');
+  const upgradeWorkflow = readFileSync(
+    '.github/workflows/windows-in-place-upgrade.yml',
+    'utf8',
+  );
   const upgradeExercise = readFileSync('scripts/test-packaged-upgrade.ps1', 'utf8');
 
   it('uses one packaged updater for ZIP and setup installations', () => {
@@ -121,7 +124,9 @@ describe('Windows in-place upgrade contract', () => {
       'MCP_SEARCH_NET_TEST_FAIL_INTEGRATIONS_SAVE_ON_ATTEMPT',
     );
     expect(configureInstaller.indexOf('Begin-ManagedIntegration')).toBeLessThan(
-      configureInstaller.indexOf('Write-JsonFile -Path $ConfigPath -Data $data -ExpectedSnapshot $snapshot'),
+      configureInstaller.indexOf(
+        'Write-JsonFile -Path $ConfigPath -Data $data -ExpectedSnapshot $snapshot',
+      ),
     );
     expect(upgradeExercise).toContain('-FailIntegrationsSaveOnAttempt 2');
     expect(upgradeExercise).toContain("$preparedRecord.state -ne 'prepared'");
@@ -134,7 +139,9 @@ describe('Windows in-place upgrade contract', () => {
     expect(configureInstaller).toContain('ExpectedSnapshot');
     expect(configureInstaller).toContain('Assert-FileSnapshotCurrent');
     expect(configureInstaller).toContain('MCP_CONFIG_CONCURRENT_MODIFICATION');
-    expect(configureInstaller).toContain('MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_PUBLISH');
+    expect(configureInstaller).toContain(
+      'MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_PUBLISH',
+    );
     expect(configureInstaller).toContain('$ClientConfigMaxRetries = 3');
     expect(upgradeExercise).toContain("-ConcurrentPublishTarget 'mcp.json'");
     expect(upgradeExercise).toContain('Une modification concurrente étrangère a été perdue.');
