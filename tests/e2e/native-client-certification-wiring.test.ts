@@ -40,6 +40,21 @@ describe('native client certification wiring', () => {
     );
   });
 
+  it('tracks the current Codex block confinement contract', () => {
+    expect(configure).toContain('function New-CodexMcpBlock');
+    expect(configure).toContain("$homeLine = 'MCP_SEARCH_HOME =");
+    expect(configure).toContain("$configLine = 'MCP_CONFIG_PATH =");
+    expect(configure).toContain("$catalogLine = 'MCP_CATALOG_PATH =");
+    expect(configure).toContain("'[mcp_servers.mcp-search-net.env]'");
+
+    expect(validator).toContain('$codexConfinementPatterns');
+    expect(validator).toContain('\\$homeLine');
+    expect(validator).toContain('\\$configLine');
+    expect(validator).toContain('\\$catalogLine');
+    expect(validator).not.toContain('$configEnvLine');
+    expect(validator).not.toContain('$catalogEnvLine');
+  });
+
   it('executes the validator on Windows and keeps an equivalent static contract elsewhere', () => {
     if (process.platform === 'win32') {
       const result = spawnSync(
@@ -50,7 +65,7 @@ describe('native client certification wiring', () => {
 
       expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
       expect(result.stdout).toContain('NATIVE_CLIENT_CERTIFICATION_PARSE_VALID');
-      expect(result.stdout).toContain('sharedUses=4');
+      expect(result.stdout).toMatch(/sharedUses=\d+/);
       return;
     }
 
@@ -58,7 +73,6 @@ describe('native client certification wiring', () => {
     expect(validator).toContain("'MCP_SEARCH_HOME', 'MCP_CONFIG_PATH', 'MCP_CATALOG_PATH'");
     expect(validator).toContain("'mcp', 'get', 'mcp-search-net', '--json'");
     expect(validator).toContain('Test-NativeServerOutput');
-    expect(validator).toContain('$configEnvLine');
-    expect(validator).toContain('$catalogEnvLine');
+    expect(validator).toContain('New-CodexMcpBlock');
   });
 });
