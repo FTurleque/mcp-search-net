@@ -11,7 +11,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-    throw 'LOCALAPPDATA est introuvable. Ce programme nécessite un profil utilisateur Windows.'
+    throw 'LOCALAPPDATA est introuvable. Ce programme necessite un profil utilisateur Windows.'
 }
 if ($KeepData -and $PurgeData) {
     throw 'KeepData et PurgeData sont mutuellement exclusifs.'
@@ -78,7 +78,7 @@ function Assert-OwnedInstallRoot {
     }
     $rootItem = Get-Item -LiteralPath $InstallRoot -Force
     if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw "MCP_UNINSTALL_UNSAFE_INSTALL_ROOT: racine de type reparse point refusée : $InstallRoot"
+        throw "MCP_UNINSTALL_UNSAFE_INSTALL_ROOT: racine de type reparse point refusee : $InstallRoot"
     }
     if (-not (Test-OwnershipMarker) -and -not (Test-LegacyOwnedInstallation)) {
         throw "MCP_UNINSTALL_UNSAFE_INSTALL_ROOT: aucune preuve d'ownership mcp-search-net dans $InstallRoot"
@@ -90,13 +90,13 @@ function Assert-ManagedTargetSafe {
     if (-not (Test-Path -LiteralPath $Path)) { return }
     $item = Get-Item -LiteralPath $Path -Force
     if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw "MCP_UNINSTALL_REPARSE_POINT: chemin géré de type reparse point refusé : $Path"
+        throw "MCP_UNINSTALL_REPARSE_POINT: chemin gere de type reparse point refuse : $Path"
     }
 }
 
 Assert-OwnedInstallRoot
 if (-not (Test-Path -LiteralPath $InstallRoot)) {
-    Write-Host "mcp-search-net n'est pas installé pour cet utilisateur."
+    Write-Host "mcp-search-net n'est pas installe pour cet utilisateur."
     exit 0
 }
 
@@ -127,24 +127,24 @@ if ((-not $SkipServices) -and ($null -ne $Docker) -and (Test-Path -LiteralPath $
         $DownArguments += 'down'
         if ($DeleteData) { $DownArguments += '--volumes' }
         $ComposeAction = if ($DeleteData) {
-            'Arrêter les services Compose et supprimer leurs volumes'
+            'Arreter les services Compose et supprimer leurs volumes'
         }
         else {
-            'Arrêter les services Compose'
+            'Arreter les services Compose'
         }
         if ($PSCmdlet.ShouldProcess("projet Compose $project", $ComposeAction)) {
             & $Docker.Source @DownArguments
             if ($LASTEXITCODE -ne 0) {
-                throw "La commande '$($Docker.Source)' a échoué avec le code $LASTEXITCODE."
+                throw "La commande '$($Docker.Source)' a echoue avec le code $LASTEXITCODE."
             }
         }
     }
 }
 
 if ($DeleteData) {
-    if ($PSCmdlet.ShouldProcess($InstallRoot, 'Supprimer entièrement')) {
+    if ($PSCmdlet.ShouldProcess($InstallRoot, 'Supprimer entierement')) {
         Remove-Item -LiteralPath $InstallRoot -Recurse -Force
-        Write-Host 'mcp-search-net et ses données ont été désinstallés pour cet utilisateur.'
+        Write-Host 'mcp-search-net et ses donnees ont ete desinstalles pour cet utilisateur.'
     }
     exit 0
 }
@@ -186,6 +186,6 @@ foreach ($name in $ManagedProgramEntries) {
     }
 }
 
-# The ownership marker is deliberately preserved while config/data are retained. This makes a
-# subsequent reinstall safe: the non-empty persistent root still carries explicit ownership proof.
-Write-Host "Programme supprimé. Configuration, données et preuve d'ownership conservées dans $InstallRoot."
+# Keep the ownership marker while config/data are retained. A later reinstall into this non-empty
+# persistent root can therefore prove that the directory belongs to mcp-search-net.
+Write-Host "Programme supprime. Configuration, donnees et preuve d'ownership conservees dans $InstallRoot."
