@@ -66,8 +66,21 @@ if ($managedEnvUses -lt 5) {
 if ($configure -match '\$listed\s+-and\s+\$alreadyManaged') {
     throw 'Managed CLI entries must be rewritten, not accepted only because mcp get succeeds.'
 }
-if ($configure -notmatch '\$configEnvLine' -or $configure -notmatch '\$catalogEnvLine') {
-    throw 'Codex config/catalog path confinement is missing.'
+
+if ($configure -notmatch 'function\s+New-CodexMcpBlock') {
+    throw 'Codex MCP block builder is missing.'
+}
+$codexConfinementPatterns = @(
+    '\$homeLine\s*=\s*''MCP_SEARCH_HOME\s*=',
+    '\$configLine\s*=\s*''MCP_CONFIG_PATH\s*=',
+    '\$catalogLine\s*=\s*''MCP_CATALOG_PATH\s*=',
+    '\[mcp_servers\.mcp-search-net\.env\]',
+    '\$homeLine,\s*\r?\n\s*\$configLine,\s*\r?\n\s*\$catalogLine,'
+)
+foreach ($pattern in $codexConfinementPatterns) {
+    if ($configure -notmatch $pattern) {
+        throw "Codex config/catalog path confinement is missing for pattern: $pattern"
+    }
 }
 
 Write-Host "NATIVE_CLIENT_CERTIFICATION_PARSE_VALID files=$($files.Count) confinedEnvUses=$managedEnvUses directUses=$managedEnvDirectUses sharedUses=$managedEnvSharedUses"
