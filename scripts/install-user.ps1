@@ -15,10 +15,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-    throw 'LOCALAPPDATA est introuvable. Ce programme nécessite un profil utilisateur Windows.'
+    throw 'LOCALAPPDATA est introuvable. Ce programme necessite un profil utilisateur Windows.'
 }
 if ($env:OS -ne 'Windows_NT') {
-    throw 'Ce programme nécessite Windows x64.'
+    throw 'Ce programme necessite Windows x64.'
 }
 if ($TestFailActivation -and $TestFailActivationAfterEntries -gt 0) {
     throw 'TestFailActivation et TestFailActivationAfterEntries sont mutuellement exclusifs.'
@@ -102,7 +102,7 @@ function Assert-InstallRootPreflight {
     ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
     foreach ($forbiddenRoot in $forbiddenRoots) {
         if (Test-SamePath -Left $InstallRoot -Right ([string]$forbiddenRoot)) {
-            throw "MCP_INSTALL_UNSAFE_INSTALL_ROOT: racine système ou utilisateur interdite : $InstallRoot"
+            throw "MCP_INSTALL_UNSAFE_INSTALL_ROOT: racine systeme ou utilisateur interdite : $InstallRoot"
         }
     }
 
@@ -112,7 +112,7 @@ function Assert-InstallRootPreflight {
     }
     $rootItem = Get-Item -LiteralPath $InstallRoot -Force
     if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        throw "MCP_INSTALL_UNSAFE_INSTALL_ROOT: une racine d'installation de type reparse point est refusée : $InstallRoot"
+        throw "MCP_INSTALL_UNSAFE_INSTALL_ROOT: une racine d'installation de type reparse point est refusee : $InstallRoot"
     }
     $children = @(Get-ChildItem -LiteralPath $InstallRoot -Force)
     if ($children.Count -eq 0) { return }
@@ -128,7 +128,7 @@ function Invoke-NativeCommand {
     )
     & $FilePath @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "La commande '$FilePath' a échoué avec le code $LASTEXITCODE."
+        throw "La commande '$FilePath' a echoue avec le code $LASTEXITCODE."
     }
 }
 
@@ -168,7 +168,7 @@ function Assert-ProcessPolicy {
     $processes = @(Get-InstalledMcpProcesses)
     if ($processes.Count -eq 0) { return }
     foreach ($process in $processes) {
-        Write-Host "PID: $($process.ProcessId) — $($process.Name)"
+        Write-Host "PID: $($process.ProcessId) - $($process.Name)"
         Write-Host "CommandLine: $($process.CommandLine)"
     }
     throw "MCP_INSTALL_PROCESS_LOCK: $($processes.Count) processus mcp-search-net actif(s). Fermez-les ou utilisez -ForceStopExistingProcess."
@@ -187,7 +187,7 @@ function Get-VerifiedNodeArchive {
     if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
         $temporaryArchive = Join-Path $cacheRoot ('.' + $NodeArchiveName + '.tmp-' + [guid]::NewGuid().ToString('N'))
         try {
-            Write-Host "Téléchargement de Node.js $NodeVersion LTS depuis nodejs.org..."
+            Write-Host "Telechargement de Node.js $NodeVersion LTS depuis nodejs.org..."
             Invoke-WebRequest -Uri $NodeDownloadUrl -OutFile $temporaryArchive -UseBasicParsing
             $hash = (Get-FileHash -LiteralPath $temporaryArchive -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($hash -ne $NodeArchiveSha256) {
@@ -242,7 +242,7 @@ try {
         if (-not $SkipChecks) {
             Push-Location $RepositoryRoot
             try {
-                Write-Host 'Validation complète du projet avant construction de la distribution...'
+                Write-Host 'Validation complete du projet avant construction de la distribution...'
                 Invoke-NativeCommand $BootstrapNpmCmd 'ci'
                 Invoke-NativeCommand $BootstrapNpmCmd 'run' 'check'
             }
@@ -258,7 +258,7 @@ try {
             -CommitSha $SourceRevision `
             -OutputRoot $DistributionOutputRoot
         if ($LASTEXITCODE -ne 0) {
-            throw "build-windows-distribution.ps1 a échoué (code $LASTEXITCODE)."
+            throw "build-windows-distribution.ps1 a echoue (code $LASTEXITCODE)."
         }
     }
     finally {
@@ -306,13 +306,13 @@ try {
     Write-Host "Activation transactionnelle de mcp-search-net dans $InstallRoot..."
     & $Updater @UpdateArguments
     if ($LASTEXITCODE -ne 0) {
-        throw "update-installation.ps1 a échoué (code $LASTEXITCODE)."
+        throw "update-installation.ps1 a echoue (code $LASTEXITCODE)."
     }
 
     $ConfigureInstall = Join-Path $InstallRoot 'scripts\configure-install.ps1'
     & $ConfigureInstall -InstallRoot $InstallRoot -FromInstaller -Clients ''
     if ($LASTEXITCODE -ne 0) {
-        throw "configure-install.ps1 a échoué (code $LASTEXITCODE)."
+        throw "configure-install.ps1 a echoue (code $LASTEXITCODE)."
     }
 
     $ComposeProject = if ([string]::IsNullOrWhiteSpace($env:MCP_SEARCH_COMPOSE_PROJECT)) {
@@ -325,7 +325,7 @@ try {
     if ($StartServices) {
         $Docker = Get-Command docker -ErrorAction SilentlyContinue
         if ($null -eq $Docker) {
-            throw 'Docker est absent du PATH. Installez ou démarrez Docker Desktop, puis relancez avec -StartServices.'
+            throw 'Docker est absent du PATH. Installez ou demarrez Docker Desktop, puis relancez avec -StartServices.'
         }
         Invoke-NativeCommand $Docker.Source `
             'compose' '--env-file' $EnvironmentPath '-p' $ComposeProject `
@@ -335,11 +335,11 @@ try {
     }
 
     $Launcher = Join-Path $InstallRoot 'bin\mcp-search-net.cmd'
-    Write-Host "Installation terminée. Lanceur MCP : $Launcher"
+    Write-Host "Installation terminee. Lanceur MCP : $Launcher"
     Write-Host "Exemple Copilot : $(Join-Path $InstallRoot 'mcp.json.example')"
 
     if ($RunAfterInstall) {
-        Write-Host 'Démarrage du serveur MCP STDIO (arrêter avec Ctrl+C)...'
+        Write-Host 'Demarrage du serveur MCP STDIO (arreter avec Ctrl+C)...'
         & $Launcher
         exit $LASTEXITCODE
     }
