@@ -24,28 +24,27 @@ describe('native client certification wiring', () => {
 
     expect(validator).toContain('$managedEnvDirectUses');
     expect(validator).toContain('$managedEnvSharedUses');
-    expect(validator).toContain('$managedEnvUses = $managedEnvDirectUses + $managedEnvSharedUses');
-    expect(validator).not.toContain("[regex]::Matches($configure, 'env\\s+=\\s+\\(New-ManagedClientEnv\\)').Count");
+    expect(validator).toContain(
+      '$managedEnvUses = $managedEnvDirectUses + $managedEnvSharedUses',
+    );
+    expect(validator).not.toContain(
+      "[regex]::Matches($configure, 'env\\s+=\\s+\\(New-ManagedClientEnv\\)').Count",
+    );
   });
 
   it('reuses the same PowerShell 5.1 validator in the master promotion smoke workflow', () => {
     expect(workflow).toContain('scripts/validate-native-client-certification-wiring.ps1');
     expect(workflow).toContain('run: .\\scripts\\validate-native-client-certification-wiring.ps1');
-    expect(workflow).not.toContain('Expected at least five confined stdio env uses for supported integrations, got $managedEnvUses.');
+    expect(workflow).not.toContain(
+      'Expected at least five confined stdio env uses for supported integrations, got $managedEnvUses.',
+    );
   });
 
   it('executes the validator on Windows and keeps an equivalent static contract elsewhere', () => {
     if (process.platform === 'win32') {
       const result = spawnSync(
         'powershell.exe',
-        [
-          '-NoLogo',
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          validatorPath,
-        ],
+        ['-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', validatorPath],
         { encoding: 'utf8', windowsHide: true },
       );
 
@@ -55,7 +54,7 @@ describe('native client certification wiring', () => {
       return;
     }
 
-    expect(validator).toContain("Set-StrictMode -Version Latest");
+    expect(validator).toContain('Set-StrictMode -Version Latest');
     expect(validator).toContain("'MCP_SEARCH_HOME', 'MCP_CONFIG_PATH', 'MCP_CATALOG_PATH'");
     expect(validator).toContain("'mcp', 'get', 'mcp-search-net', '--json'");
     expect(validator).toContain('Test-NativeServerOutput');
