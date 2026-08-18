@@ -15,6 +15,9 @@ describe('Windows in-place upgrade contract', () => {
     'utf8',
   );
   const installerBuilder = readFileSync('scripts/release/build-windows-installer.ps1', 'utf8');
+  const releasePublisher = readFileSync('scripts/release/publish-windows-release.ps1', 'utf8');
+  const releaseWorkflow = readFileSync('.github/workflows/release-windows.yml', 'utf8');
+  const upgradeWorkflow = readFileSync('.github/workflows/windows-in-place-upgrade.yml', 'utf8');
   const upgradeExercise = readFileSync('scripts/test-packaged-upgrade.ps1', 'utf8');
 
   it('uses one packaged updater for ZIP and setup installations', () => {
@@ -109,6 +112,38 @@ describe('Windows in-place upgrade contract', () => {
     expect(upgradeExercise).toContain('La reprise n a pas nettoyé le staging orphelin');
   });
 
+  it('precommits managed ownership and reconciles a failed applied commit on retry', () => {
+    expect(configureInstaller).toContain('function Begin-ManagedIntegration');
+    expect(configureInstaller).toContain("state = 'prepared'");
+    expect(configureInstaller).toContain('function Complete-ManagedIntegration');
+    expect(configureInstaller).toContain("state = 'applied'");
+    expect(configureInstaller).toContain('MCP_SEARCH_NET_TEST_FAIL_INTEGRATIONS_SAVE_ON_ATTEMPT');
+    expect(configureInstaller.indexOf('Begin-ManagedIntegration')).toBeLessThan(
+      configureInstaller.indexOf(
+        'Write-JsonFile -Path $ConfigPath -Data $data -ExpectedSnapshot $snapshot',
+      ),
+    );
+    expect(upgradeExercise).toContain('-FailIntegrationsSaveOnAttempt 2');
+    expect(upgradeExercise).toContain("$preparedRecord.state -ne 'prepared'");
+    expect(upgradeExercise).toContain("state -ne 'applied'");
+    expect(upgradeExercise).toContain('est devenue fantôme après uninstall');
+  });
+
+  it('detects concurrent client file edits and retries from a fresh snapshot', () => {
+    expect(configureInstaller).toContain('function Get-FileSnapshot');
+    expect(configureInstaller).toContain('ExpectedSnapshot');
+    expect(configureInstaller).toContain('Assert-FileSnapshotCurrent');
+    expect(configureInstaller).toContain('MCP_CONFIG_CONCURRENT_MODIFICATION');
+    expect(configureInstaller).toContain('MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_PUBLISH');
+    expect(configureInstaller).toContain('$ClientConfigMaxRetries = 3');
+    expect(configureInstaller).toContain('$bytes[0] -eq 0xEF');
+    expect(configureInstaller).toContain('$bytes[1] -eq 0xBB');
+    expect(configureInstaller).toContain('$bytes[2] -eq 0xBF');
+    expect(upgradeExercise).toContain("-ConcurrentPublishTarget 'mcp.json'");
+    expect(upgradeExercise).toContain('Une modification concurrente étrangère a été perdue.');
+    expect(upgradeExercise).toContain('foreignObject.preserve');
+  });
+
   it('returns a material partial-failure status instead of masking client configuration failures', () => {
     expect(configureInstaller).toContain('Record-MaterialFailure');
     expect(configureInstaller).toContain('MCP_CONFIG_PARTIAL_FAILURE');
@@ -158,6 +193,36 @@ describe('Windows in-place upgrade contract', () => {
     expect(installerBuilder).toContain('tests/security/windows-upgrade-contract.test.ts');
     expect(installerBuilder).toContain("'scripts\\test-packaged-upgrade.ps1'");
     expect(installerBuilder).toContain('WINDOWS_PRODUCTION_INSTALLER_TRANSACTION_GATES_VALID');
+  });
+
+  it('binds release compilation to the exact verified Inno Setup 6.7.3 binary', () => {
+    expect(installerBuilder).toContain('[string] $IsccPath');
+    expect(installerBuilder).toContain(
+      'Un setup de production exige -IsccPath vers le binaire Inno Setup $ExpectedInnoVersion déjà vérifié.',
+    );
+    expect(installerBuilder).toContain('Get-QualifiedInnoRegistration');
+    expect(installerBuilder).toContain("PSObject.Properties['DisplayVersion']");
+    expect(installerBuilder).toContain("$ExpectedInnoVersion = '6.7.3'");
+    expect(installerBuilder).toContain('INNO_SETUP_EXACT_VERSION_QUALIFIED');
+    expect(installerBuilder).not.toContain('FileVersionInfo]::GetVersionInfo($Iscc)');
+    expect(releasePublisher).toContain('IsccPath=$IsccPath');
+    expect(releaseWorkflow).toContain("PSObject.Properties['DisplayVersion']");
+    expect(releaseWorkflow).toContain('QUALIFIED_ISCC_PATH=$iscc');
+    expect(releaseWorkflow).toContain('-IsccPath $env:QUALIFIED_ISCC_PATH');
+    expect(upgradeWorkflow).toContain("PSObject.Properties['DisplayVersion']");
+    expect(upgradeWorkflow).toContain('QUALIFIED_ISCC_PATH=$iscc');
+    expect(upgradeWorkflow).toContain('-IsccPath $env:QUALIFIED_ISCC_PATH');
+    expect(installerBuilder).not.toContain("'Inno Setup 7\\ISCC.exe'");
+  });
+
+  it('filters sparse uninstall registry records safely under StrictMode', () => {
+    for (const source of [installerBuilder, releaseWorkflow, upgradeWorkflow]) {
+      expect(source).toContain("PSObject.Properties['DisplayName']");
+      expect(source).toContain("PSObject.Properties['DisplayVersion']");
+      expect(source).toContain("PSObject.Properties['InstallLocation']");
+      expect(source).not.toContain('$_.DisplayName -eq');
+      expect(source).not.toContain('$_.DisplayVersion -eq');
+    }
   });
 
   it('keeps a stable application identity across versions', () => {

@@ -69,18 +69,38 @@ jobs:
           }
           Remove-Item -LiteralPath $innoInstaller -Force
 
-          $iscc = @(
-            'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
-            'C:\Program Files\Inno Setup 6\ISCC.exe'
-          ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-          if (-not $iscc) { throw 'ISCC.exe introuvable après installation Inno Setup.' }
+          $registration = @(
+            Get-ItemProperty `
+              'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*', `
+              'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+              -ErrorAction SilentlyContinue |
+              Where-Object {
+                $displayNameProperty = $_.PSObject.Properties['DisplayName']
+                $displayVersionProperty = $_.PSObject.Properties['DisplayVersion']
+                $installLocationProperty = $_.PSObject.Properties['InstallLocation']
+                $null -ne $displayNameProperty -and
+                $null -ne $displayVersionProperty -and
+                $null -ne $installLocationProperty -and
+                [string]$displayNameProperty.Value -eq "Inno Setup version $innoVersion" -and
+                [string]$displayVersionProperty.Value -eq $innoVersion -and
+                -not [string]::IsNullOrWhiteSpace([string]$installLocationProperty.Value)
+              }
+          ) | Select-Object -First 1
+          if ($null -eq $registration) {
+            throw "Version Inno Setup non qualifiée : inscription $innoVersion introuvable après installation vérifiée."
+          }
+          $iscc = [System.IO.Path]::GetFullPath((Join-Path ([string]$registration.InstallLocation) 'ISCC.exe'))
+          if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
+            throw "Version Inno Setup non qualifiée : ISCC.exe introuvable dans l'installation $innoVersion enregistrée : $iscc"
+          }
           $isccOutput = @((& $iscc /? 2>&1))
           $global:LASTEXITCODE = 0
           $isccBanner = ($isccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
-          if ($isccBanner -notmatch 'Inno Setup 6') {
-            throw "Version ISCC non qualifiée : $isccBanner ($iscc)"
+          if ($isccBanner -notmatch 'Inno Setup 6' -or $isccBanner -ne 'Inno Setup 6 Command-Line Compiler') {
+            throw "Version Inno Setup non qualifiée : attendu=Inno Setup 6 Command-Line Compiler obtenu=$isccBanner ($iscc)"
           }
-          Write-Host "ISCC: $iscc | $isccBanner"
+          "QUALIFIED_ISCC_PATH=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "ISCC: $iscc | version=$($registration.DisplayVersion) | $isccBanner"
 
       - name: Télécharger le runtime Node.js win-x64 pour bundling
         shell: pwsh
@@ -101,6 +121,7 @@ jobs:
           git rev-parse HEAD
           Write-Host "Ref: $env:GITHUB_REF"
           Write-Host "SHA: $env:GITHUB_SHA"
+          Write-Host "ISCC qualifié: $env:QUALIFIED_ISCC_PATH"
 
       - name: Vérifier la CI exact-head avant publication
         if: github.ref == 'refs/heads/master'
@@ -140,6 +161,7 @@ jobs:
             -Version $env:RELEASE_VERSION `
             -NodeZipPath '.\node-runtime.zip' `
             -TargetCommit $env:TARGET_COMMIT `
+            -IsccPath $env:QUALIFIED_ISCC_PATH `
             -ValidateOnly
 
       - name: Conserver les artefacts qualifiés

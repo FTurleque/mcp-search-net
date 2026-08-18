@@ -79,24 +79,65 @@ function Invoke-ConfigureChild {
     param(
         [Parameter(Mandatory)] [string] $Root,
         [switch] $Uninstall,
-        [string] $CrashBeforePublish = ''
+        [string] $Clients = '',
+        [string] $CrashBeforePublish = '',
+        [string] $LocalAppData = '',
+        [string] $UserProfile = '',
+        [int] $FailIntegrationsSaveOnAttempt = 0,
+        [string] $ConcurrentPublishTarget = '',
+        [string] $ConcurrentContentBase64 = ''
     )
 
     $parameters = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -InstallRoot "{1}" -FromInstaller' -f $Configure, $Root
     if ($Uninstall) { $parameters += ' -Uninstall' }
+    if ($Clients) { $parameters += ' -Clients "{0}"' -f $Clients }
 
-    $previousCrash = $env:MCP_SEARCH_NET_TEST_CRASH_BEFORE_CONFIG_PUBLISH
+    $environmentNames = @(
+        'MCP_SEARCH_NET_TEST_CRASH_BEFORE_CONFIG_PUBLISH',
+        'MCP_SEARCH_NET_TEST_FAIL_INTEGRATIONS_SAVE_ON_ATTEMPT',
+        'MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_PUBLISH',
+        'MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_CONTENT_BASE64',
+        'LOCALAPPDATA',
+        'APPDATA',
+        'USERPROFILE'
+    )
+    $previous = @{}
+    foreach ($name in $environmentNames) { $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+
     try {
         if ($CrashBeforePublish) { $env:MCP_SEARCH_NET_TEST_CRASH_BEFORE_CONFIG_PUBLISH = $CrashBeforePublish }
         else { Remove-Item Env:MCP_SEARCH_NET_TEST_CRASH_BEFORE_CONFIG_PUBLISH -ErrorAction SilentlyContinue }
+
+        if ($FailIntegrationsSaveOnAttempt -gt 0) {
+            $env:MCP_SEARCH_NET_TEST_FAIL_INTEGRATIONS_SAVE_ON_ATTEMPT = [string]$FailIntegrationsSaveOnAttempt
+        }
+        else { Remove-Item Env:MCP_SEARCH_NET_TEST_FAIL_INTEGRATIONS_SAVE_ON_ATTEMPT -ErrorAction SilentlyContinue }
+
+        if ($ConcurrentPublishTarget) { $env:MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_PUBLISH = $ConcurrentPublishTarget }
+        else { Remove-Item Env:MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_PUBLISH -ErrorAction SilentlyContinue }
+        if ($ConcurrentContentBase64) { $env:MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_CONTENT_BASE64 = $ConcurrentContentBase64 }
+        else { Remove-Item Env:MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_CONTENT_BASE64 -ErrorAction SilentlyContinue }
+
+        if ($LocalAppData) {
+            $env:LOCALAPPDATA = $LocalAppData
+            $env:APPDATA = Join-Path $LocalAppData 'Roaming'
+            New-Item -ItemType Directory -Force -Path $env:APPDATA | Out-Null
+        }
+        if ($UserProfile) {
+            $env:USERPROFILE = $UserProfile
+            New-Item -ItemType Directory -Force -Path $UserProfile | Out-Null
+        }
+
         return Start-Process -FilePath $PowerShellExe -ArgumentList $parameters -Wait -PassThru -WindowStyle Hidden
     }
     finally {
-        if ($null -eq $previousCrash) {
-            Remove-Item Env:MCP_SEARCH_NET_TEST_CRASH_BEFORE_CONFIG_PUBLISH -ErrorAction SilentlyContinue
-        }
-        else {
-            $env:MCP_SEARCH_NET_TEST_CRASH_BEFORE_CONFIG_PUBLISH = $previousCrash
+        foreach ($name in $environmentNames) {
+            if ($null -eq $previous[$name]) {
+                Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [Environment]::SetEnvironmentVariable($name, [string]$previous[$name], 'Process')
+            }
         }
     }
 }
@@ -299,6 +340,87 @@ try {
     $materialFailure = Invoke-ConfigureChild -Root $ConfigFailureRoot
     if ($materialFailure.ExitCode -eq 0) { throw 'configure-install a masqué un échec matériel de metadata.' }
     if ($materialFailure.ExitCode -ne 20) { throw "Code de partial failure inattendu : $($materialFailure.ExitCode)" }
+
+    # Ownership is durably prepared before mutating a real external client. If completion
+    # metadata fails, retry must reconcile the existing managed entry rather than adopt it.
+    $OwnershipRecoveryRoot = Join-Path $TestRoot 'client ownership recovery'
+    $OwnershipLocalAppData = Join-Path $TestRoot 'ownership local app data'
+    $OwnershipUserProfile = Join-Path $TestRoot 'ownership user profile'
+    $OwnershipJetBrainsDir = Join-Path $OwnershipLocalAppData 'github-copilot\intellij'
+    New-Item -ItemType Directory -Force -Path $OwnershipRecoveryRoot, $OwnershipJetBrainsDir, $OwnershipUserProfile | Out-Null
+    $ownershipFailure = Invoke-ConfigureChild `
+        -Root $OwnershipRecoveryRoot `
+        -Clients 'copilot-jetbrains' `
+        -LocalAppData $OwnershipLocalAppData `
+        -UserProfile $OwnershipUserProfile `
+        -FailIntegrationsSaveOnAttempt 2
+    if ($ownershipFailure.ExitCode -ne 20) {
+        throw "Le second commit sidecar fault-injected devait retourner 20, obtenu=$($ownershipFailure.ExitCode)"
+    }
+    $OwnershipSidecar = Join-Path $OwnershipRecoveryRoot 'mcp-client-integrations.json'
+    $OwnershipClientConfig = Join-Path $OwnershipJetBrainsDir 'mcp.json'
+    $prepared = Get-Content -LiteralPath $OwnershipSidecar -Raw | ConvertFrom-Json
+    $preparedRecord = $prepared.'copilot-jetbrains:mcp-search-net'
+    if ($preparedRecord.ownership -ne 'managed' -or $preparedRecord.state -ne 'prepared') {
+        throw 'Le sidecar n a pas conservé le commit prepared après échec du commit applied.'
+    }
+    $preparedClient = Get-Content -LiteralPath $OwnershipClientConfig -Raw | ConvertFrom-Json
+    if ($null -eq $preparedClient.servers.'mcp-search-net') {
+        throw 'La mutation client attendue avant le second commit sidecar est absente.'
+    }
+
+    $ownershipRecovery = Invoke-ConfigureChild `
+        -Root $OwnershipRecoveryRoot `
+        -Clients 'copilot-jetbrains' `
+        -LocalAppData $OwnershipLocalAppData `
+        -UserProfile $OwnershipUserProfile
+    if ($ownershipRecovery.ExitCode -ne 0) { throw "Recovery ownership échoué : $($ownershipRecovery.ExitCode)" }
+    $applied = Get-Content -LiteralPath $OwnershipSidecar -Raw | ConvertFrom-Json
+    if ($applied.'copilot-jetbrains:mcp-search-net'.state -ne 'applied') {
+        throw 'Le retry n a pas finalisé le record prepared en applied.'
+    }
+
+    $ownershipUninstall = Invoke-ConfigureChild `
+        -Root $OwnershipRecoveryRoot `
+        -Uninstall `
+        -LocalAppData $OwnershipLocalAppData `
+        -UserProfile $OwnershipUserProfile
+    if ($ownershipUninstall.ExitCode -ne 0) { throw "Uninstall ownership recovery échoué : $($ownershipUninstall.ExitCode)" }
+    $afterUninstallClient = Get-Content -LiteralPath $OwnershipClientConfig -Raw | ConvertFrom-Json
+    $remainingManagedServer = $afterUninstallClient.servers.PSObject.Properties | Where-Object { $_.Name -eq 'mcp-search-net' }
+    if ($null -ne $remainingManagedServer) {
+        throw 'L entrée créée avant la panne sidecar est devenue fantôme après uninstall.'
+    }
+
+    # Concurrent foreign edits between read and publication are detected, re-read and merged.
+    $ConcurrentRoot = Join-Path $TestRoot 'client concurrent write'
+    $ConcurrentLocalAppData = Join-Path $TestRoot 'concurrent local app data'
+    $ConcurrentUserProfile = Join-Path $TestRoot 'concurrent user profile'
+    $ConcurrentJetBrainsDir = Join-Path $ConcurrentLocalAppData 'github-copilot\intellij'
+    New-Item -ItemType Directory -Force -Path $ConcurrentRoot, $ConcurrentJetBrainsDir, $ConcurrentUserProfile | Out-Null
+    $ConcurrentClientConfig = Join-Path $ConcurrentJetBrainsDir 'mcp.json'
+    '{"servers":{},"foreign":"before"}' | Set-Content -LiteralPath $ConcurrentClientConfig -Encoding UTF8
+    $concurrentReplacement = '{"servers":{},"foreign":"concurrent","foreignObject":{"preserve":true}}'
+    $concurrentBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($concurrentReplacement))
+    $concurrentResult = Invoke-ConfigureChild `
+        -Root $ConcurrentRoot `
+        -Clients 'copilot-jetbrains' `
+        -LocalAppData $ConcurrentLocalAppData `
+        -UserProfile $ConcurrentUserProfile `
+        -ConcurrentPublishTarget 'mcp.json' `
+        -ConcurrentContentBase64 $concurrentBase64
+    if ($concurrentResult.ExitCode -ne 0) { throw "Retry concurrent config échoué : $($concurrentResult.ExitCode)" }
+    $concurrentFinal = Get-Content -LiteralPath $ConcurrentClientConfig -Raw | ConvertFrom-Json
+    if ($concurrentFinal.foreign -ne 'concurrent' -or $concurrentFinal.foreignObject.preserve -ne $true) {
+        throw 'Une modification concurrente étrangère a été perdue.'
+    }
+    if ($null -eq $concurrentFinal.servers.'mcp-search-net') {
+        throw 'La configuration gérée n a pas été fusionnée après retry concurrent.'
+    }
+    $concurrentSidecar = Get-Content -LiteralPath (Join-Path $ConcurrentRoot 'mcp-client-integrations.json') -Raw | ConvertFrom-Json
+    if ($concurrentSidecar.'copilot-jetbrains:mcp-search-net'.state -ne 'applied') {
+        throw 'Le commit ownership concurrent n est pas applied.'
+    }
 
     # Conservative uninstall removes integrations but preserves generated secrets and backups.
     $PreserveRoot = Join-Path $TestRoot 'configure uninstall preserve'

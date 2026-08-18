@@ -17,6 +17,7 @@ describe('Windows installer runtime integrity', () => {
   const installedProbe = readFileSync('scripts/probe-installed-mcp.mjs', 'utf8');
   const installationRecipe = readFileSync('scripts/test-installation.ps1', 'utf8');
   const configureInstall = readFileSync('packaging/windows/configure-install.ps1', 'utf8');
+  const installerBuilder = readFileSync('scripts/release/build-windows-installer.ps1', 'utf8');
   const releasePublisher = readFileSync('scripts/release/publish-windows-release.ps1', 'utf8');
   const releaseWorkflow = readFileSync('.github/workflows/release-windows.yml', 'utf8');
   const dockerIgnore = readFileSync('.dockerignore', 'utf8');
@@ -73,22 +74,29 @@ describe('Windows installer runtime integrity', () => {
     expect(configureInstall).toContain(
       '$alreadyManaged = $IntegrationTable.ContainsKey($integKey)',
     );
-    expect(configureInstall).toContain(
-      'if ((Get-PropertyExists $root $ServerKey) -and -not $alreadyManaged)',
-    );
+    expect(configureInstall).toContain('$entryExists = Get-PropertyExists $root $ServerKey');
+    expect(configureInstall).toContain('if ($entryExists -and -not $alreadyManaged)');
     expect(configureInstall).toContain("ownership    = 'preexisting'");
     expect(configureInstall).toContain("if ($rec.ownership -ne 'managed')");
     expect(configureInstall).toContain('entrée non suivie par cet installateur — préservée');
+    expect(configureInstall).toContain("state = 'prepared'");
+    expect(configureInstall).toContain("state = 'applied'");
     expect(configureInstall).toContain('$legacyOwned = $false');
     expect(configureInstall).toContain('ancienne entrée mcpServers non gérée — préservée');
     expect(configureInstall).not.toContain('$existed = Get-PropertyExists $root $ServerKey');
   });
 
-  it('rejects release version drift and verifies the pinned Windows installer toolchain', () => {
+  it('rejects release version drift and binds the pinned Windows installer toolchain', () => {
     expect(releasePublisher).toContain('$Package.version -ne $Version');
     expect(releasePublisher).toContain('$PackageLock.version -ne $Version');
     expect(releasePublisher).toContain("$PackageLock.packages[''].version -ne $Version");
     expect(releasePublisher).toContain('$PackagedPackage.version -ne $Version');
+    expect(releasePublisher).toContain('IsccPath=$IsccPath');
+    expect(installerBuilder).toContain("$ExpectedInnoVersion = '6.7.3'");
+    expect(installerBuilder).toContain('Get-QualifiedInnoRegistration');
+    expect(installerBuilder).toContain("PSObject.Properties['DisplayVersion']");
+    expect(installerBuilder).toContain('INNO_SETUP_EXACT_VERSION_QUALIFIED');
+    expect(installerBuilder).not.toContain('FileVersionInfo]::GetVersionInfo($Iscc)');
     expect(releaseWorkflow).toContain("$innoVersion = '6.7.3'");
     expect(releaseWorkflow).toContain(
       "$innoUrl = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'",
@@ -96,6 +104,11 @@ describe('Windows installer runtime integrity', () => {
     expect(releaseWorkflow).toContain(
       "$innoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'",
     );
+    expect(releaseWorkflow).toContain("PSObject.Properties['DisplayVersion']");
+    expect(releaseWorkflow).not.toContain('$_.DisplayName -eq');
+    expect(releaseWorkflow).not.toContain('$_.DisplayVersion -eq');
+    expect(releaseWorkflow).toContain('QUALIFIED_ISCC_PATH=$iscc');
+    expect(releaseWorkflow).toContain('-IsccPath $env:QUALIFIED_ISCC_PATH');
     const innoVerification = releaseWorkflow.indexOf('.\\scripts\\windows\\verify-file-sha256.ps1');
     const innoExecution = releaseWorkflow.indexOf('Start-Process', innoVerification + 1);
     expect(innoVerification).toBeGreaterThan(0);

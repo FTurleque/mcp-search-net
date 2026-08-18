@@ -8,6 +8,7 @@ param(
     [string] $NodeZipPath,
 
     [string] $TargetCommit = '',
+    [string] $IsccPath = '',
 
     [switch] $SkipBuild,
     [switch] $ValidateOnly
@@ -19,6 +20,13 @@ Set-StrictMode -Version Latest
 $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 if ($env:OS -ne 'Windows_NT') {
     throw 'La publication Windows doit être exécutée sur Windows.'
+}
+if ([string]::IsNullOrWhiteSpace($IsccPath)) {
+    throw 'La publication Windows exige -IsccPath vers le binaire Inno Setup 6.7.3 déjà vérifié.'
+}
+$IsccPath = [System.IO.Path]::GetFullPath($IsccPath)
+if (-not (Test-Path -LiteralPath $IsccPath -PathType Leaf)) {
+    throw "ISCC.exe qualifié introuvable : $IsccPath"
 }
 
 function Invoke-NativeChecked {
@@ -94,11 +102,11 @@ if (-not $SkipBuild) {
         -Parameters @{ Version=$Version; NodeZipPath=$NodeZipPath; CommitSha=$TargetCommit } `
         -Failure 'Construction de la distribution Windows échouée'
     Invoke-PowerShellScriptChecked -Script $BuildInstaller `
-        -Parameters @{ Version=$Version } `
+        -Parameters @{ Version=$Version; IsccPath=$IsccPath } `
         -Failure 'Construction du setup Windows échouée'
 }
 Invoke-PowerShellScriptChecked -Script $BuildInstaller `
-    -Parameters @{ Version=$Version; Smoke=$true } `
+    -Parameters @{ Version=$Version; Smoke=$true; IsccPath=$IsccPath } `
     -Failure 'Construction du smoke setup Windows échouée'
 
 $DistName = "mcp-search-net-$Version-windows-x64"
