@@ -132,6 +132,35 @@ function Invoke-NativeCommand {
     }
 }
 
+function Invoke-ExpectedNativeFailure {
+    param(
+        [Parameter(Mandatory)] [string]$FilePath,
+        [Parameter(Mandatory)] [string[]]$Arguments,
+        [Parameter(Mandatory)] [string]$ExpectedMarker
+    )
+
+    $output = @(& $FilePath @Arguments 2>&1 | ForEach-Object { [string]$_ })
+    $exitCode = $LASTEXITCODE
+    foreach ($line in $output) {
+        Write-Host $line
+    }
+    if ($exitCode -eq 0) {
+        throw "MCP_INSTALL_TEST_FAILURE_NOT_TRIGGERED: attendu=$ExpectedMarker"
+    }
+
+    $markerObserved = $false
+    foreach ($line in $output) {
+        if ($line.IndexOf($ExpectedMarker, [System.StringComparison]::Ordinal) -ge 0) {
+            $markerObserved = $true
+            break
+        }
+    }
+    if (-not $markerObserved) {
+        throw "MCP_INSTALL_TEST_UNEXPECTED_FAILURE: attendu=$ExpectedMarker code=$exitCode"
+    }
+    throw $ExpectedMarker
+}
+
 function Get-SourceRevision {
     $git = Get-Command git -ErrorAction SilentlyContinue
     if ($null -ne $git -and (Test-Path -LiteralPath (Join-Path $RepositoryRoot '.git'))) {
@@ -139,6 +168,9 @@ function Get-SourceRevision {
         if ($LASTEXITCODE -eq 0 -and $candidate -match '^[a-fA-F0-9]{40}$') {
             return $candidate.ToLowerInvariant()
         }
+    }
+    if ($env:MCP_BUILD_REVISION -match '^[a-fA-F0-9]{40}$') {
+        return $env:MCP_BUILD_REVISION.ToLowerInvariant()
     }
     if ($env:GITHUB_SHA -match '^[a-fA-F0-9]{40}$') {
         return $env:GITHUB_SHA.ToLowerInvariant()
@@ -312,7 +344,15 @@ try {
     }
 
     Write-Host "Activation transactionnelle de mcp-search-net dans $InstallRoot via Windows PowerShell 5.1..."
-    Invoke-NativeCommand $WindowsPowerShell @UpdateCliArguments
+    if ($failureAfterEntries -gt 0) {
+        Invoke-ExpectedNativeFailure `
+            -FilePath $WindowsPowerShell `
+            -Arguments $UpdateCliArguments `
+            -ExpectedMarker "MCP_UPDATE_TEST_ACTIVATION_FAILURE:$failureAfterEntries"
+    }
+    else {
+        Invoke-NativeCommand $WindowsPowerShell @UpdateCliArguments
+    }
 
     $ConfigureInstall = Join-Path $InstallRoot 'scripts\configure-install.ps1'
     & $ConfigureInstall -InstallRoot $InstallRoot -FromInstaller -Clients ''
