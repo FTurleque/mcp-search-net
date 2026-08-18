@@ -77,10 +77,13 @@ jobs:
           $isccOutput = @((& $iscc /? 2>&1))
           $global:LASTEXITCODE = 0
           $isccBanner = ($isccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
-          if ($isccBanner -notmatch 'Inno Setup 6') {
-            throw "Version ISCC non qualifiée : $isccBanner ($iscc)"
+          $isccProductVersion = ([System.Diagnostics.FileVersionInfo]::GetVersionInfo($iscc)).ProductVersion
+          $versionMatch = [regex]::Match([string]$isccProductVersion, '^(\d+\.\d+\.\d+)')
+          if ($isccBanner -notmatch 'Inno Setup 6' -or -not $versionMatch.Success -or $versionMatch.Groups[1].Value -ne $innoVersion) {
+            throw "Version ISCC non qualifiée : attendu=$innoVersion productVersion=$isccProductVersion banner=$isccBanner ($iscc)"
           }
-          Write-Host "ISCC: $iscc | $isccBanner"
+          "QUALIFIED_ISCC_PATH=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "ISCC: $iscc | version=$isccProductVersion | $isccBanner"
 
       - name: Télécharger le runtime Node.js win-x64 pour bundling
         shell: pwsh
@@ -101,6 +104,7 @@ jobs:
           git rev-parse HEAD
           Write-Host "Ref: $env:GITHUB_REF"
           Write-Host "SHA: $env:GITHUB_SHA"
+          Write-Host "ISCC qualifié: $env:QUALIFIED_ISCC_PATH"
 
       - name: Vérifier la CI exact-head avant publication
         if: github.ref == 'refs/heads/master'
@@ -140,6 +144,7 @@ jobs:
             -Version $env:RELEASE_VERSION `
             -NodeZipPath '.\node-runtime.zip' `
             -TargetCommit $env:TARGET_COMMIT `
+            -IsccPath $env:QUALIFIED_ISCC_PATH `
             -ValidateOnly
 
       - name: Conserver les artefacts qualifiés
