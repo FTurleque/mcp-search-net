@@ -67,9 +67,17 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     request: ContentFetchRequest,
     context: ContentFetchContext = {},
   ): Promise<ContentFetchResult> {
-    const deadline = request.deadline ?? performance.now() + request.timeoutMs;
+    const startedAt = performance.now();
+    const deadline = request.deadline ?? startedAt + request.timeoutMs;
+    const initialDownloadTimeoutMs =
+      request.deadline === undefined ? request.timeoutMs : remainingTimeoutMs(deadline);
     const securityContext = createSecurityContext(context);
-    const resource = await this.downloadResource(request, context, securityContext, deadline);
+    const resource = await this.downloadResource(
+      request,
+      context,
+      securityContext,
+      initialDownloadTimeoutMs,
+    );
     if (resource.status === 304) return toNotModifiedContent(resource);
 
     const contentType = detectContentType(resource);
@@ -99,7 +107,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     request: ContentFetchRequest,
     context: ContentFetchContext,
     securityContext: FetchSecurityContext,
-    deadline: number,
+    timeoutMs: number,
   ): Promise<DownloadedResource> {
     return this.gateway.download(
       request.url.value,
@@ -108,7 +116,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
         : {},
       securityContext,
       {
-        timeoutMs: remainingTimeoutMs(deadline),
+        timeoutMs,
         maxBytes: request.maxResponseBytes,
         maxRedirects: request.maxRedirects,
       },
