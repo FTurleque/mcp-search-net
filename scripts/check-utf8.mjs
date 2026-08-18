@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
 import process from 'node:process';
+import { TextDecoder } from 'node:util';
 
 const ROOTS = [
   'src',
@@ -107,9 +108,9 @@ for (const entry of readdirSync('.')) {
 }
 
 if (failures.length > 0) {
-  console.error('UTF8_INVALID');
-  for (const failure of failures) console.error(`${failure.path}: ${failure.error}`);
+  process.stderr.write('UTF8_INVALID\n');
+  for (const failure of failures) process.stderr.write(`${failure.path}: ${failure.error}\n`);
   process.exitCode = 1;
 } else {
-  console.log(`UTF8_VALID files=${checked}`);
+  process.stdout.write(`UTF8_VALID files=${checked}\n`);
 }
