@@ -54,6 +54,28 @@ foreach ($Required in @(
     }
 }
 
+# A production installer is a release candidate: it must pass the same Windows
+# transactional qualification that protects in-place upgrades. Smoke builds are
+# exempt because the dedicated workflow already runs these gates before building
+# its smoke setup, and publish-windows-release.ps1 always builds production first.
+if (-not $Smoke) {
+    $Npx = Get-Command npx -ErrorAction SilentlyContinue
+    if (-not $Npx) {
+        throw 'npx est requis pour qualifier le contrat Windows avant de construire un setup de production.'
+    }
+    & $Npx.Source --no-install vitest run tests/security/windows-upgrade-contract.test.ts
+    if ($LASTEXITCODE -ne 0) {
+        throw "Qualification du contrat Windows échouée (exit=$LASTEXITCODE)."
+    }
+
+    $UpgradeExercise = Join-Path $RepoRoot 'scripts\test-packaged-upgrade.ps1'
+    & $UpgradeExercise
+    if ($LASTEXITCODE -ne 0) {
+        throw "Qualification transactionnelle Windows échouée (exit=$LASTEXITCODE)."
+    }
+    Write-Host 'WINDOWS_PRODUCTION_INSTALLER_TRANSACTION_GATES_VALID' -ForegroundColor Green
+}
+
 $IsccCandidates = @()
 $IsccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
 if ($IsccCommand) { $IsccCandidates += $IsccCommand.Source }
