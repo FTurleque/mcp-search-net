@@ -263,7 +263,7 @@ try {
     Assert-Contains (Join-Path $InstallRoot 'data\preserve.marker') 'user-data'
     Assert-NoTransactionResidue -Root $InstallRoot
 
-    # Client configuration files are crash-safe: a hard crash before publication leaves the old file intact.
+    # Client configuration files are crash-safe: final state stays intact, then restart cleans orphan staging.
     $ConfigCrashRoot = Join-Path $TestRoot 'config atomic crash'
     New-Item -ItemType Directory -Force -Path $ConfigCrashRoot | Out-Null
     $ExamplePath = Join-Path $ConfigCrashRoot 'mcp.json.example'
@@ -273,8 +273,24 @@ try {
     if ($configCrash.ExitCode -eq 0) { throw 'Le crash de publication de configuration a terminé avec succès.' }
     $AfterHash = (Get-FileHash -LiteralPath $ExamplePath -Algorithm SHA256).Hash
     if ($BeforeHash -ne $AfterHash) { throw 'Le fichier final a été modifié avant la publication atomique.' }
-    $configTemps = @(Get-ChildItem -LiteralPath $ConfigCrashRoot -Force -Filter '.mcp.json.example.tmp-*' -ErrorAction SilentlyContinue)
-    if ($configTemps.Count -ne 0) { throw 'Un fichier temporaire de configuration est resté après le crash.' }
+
+    $configTempsAfterCrash = @(Get-ChildItem -LiteralPath $ConfigCrashRoot -Force -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like '.mcp.json.example.tmp-*' })
+    if ($configTempsAfterCrash.Count -eq 0) {
+        throw 'Le crash n a pas laissé le staging durable attendu avant publication.'
+    }
+
+    $configRecovery = Invoke-ConfigureChild -Root $ConfigCrashRoot
+    if ($configRecovery.ExitCode -ne 0) { throw "La reprise de configuration a échoué : $($configRecovery.ExitCode)" }
+    $configTempsAfterRecovery = @(Get-ChildItem -LiteralPath $ConfigCrashRoot -Force -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like '.mcp.json.example.tmp-*' })
+    if ($configTempsAfterRecovery.Count -ne 0) {
+        throw 'La reprise n a pas nettoyé le staging orphelin de configuration.'
+    }
+    $recoveredExample = Get-Content -LiteralPath $ExamplePath -Raw | ConvertFrom-Json
+    if ($null -eq $recoveredExample.mcpServers.'mcp-search-net') {
+        throw 'La reprise n a pas publié un mcp.json.example valide.'
+    }
 
     # A durable metadata failure must be visible to the caller instead of returning success.
     $ConfigFailureRoot = Join-Path $TestRoot 'config material failure'
