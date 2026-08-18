@@ -387,7 +387,8 @@ try {
         -UserProfile $OwnershipUserProfile
     if ($ownershipUninstall.ExitCode -ne 0) { throw "Uninstall ownership recovery échoué : $($ownershipUninstall.ExitCode)" }
     $afterUninstallClient = Get-Content -LiteralPath $OwnershipClientConfig -Raw | ConvertFrom-Json
-    if ($null -ne $afterUninstallClient.servers.'mcp-search-net') {
+    $remainingManagedServer = $afterUninstallClient.servers.PSObject.Properties | Where-Object { $_.Name -eq 'mcp-search-net' }
+    if ($null -ne $remainingManagedServer) {
         throw 'L entrée créée avant la panne sidecar est devenue fantôme après uninstall.'
     }
 
