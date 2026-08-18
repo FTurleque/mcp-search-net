@@ -284,14 +284,32 @@ function Get-ObjectFingerprint([object] $Value) {
     return Get-BytesSha256 ($Utf8NoBom.GetBytes($json))
 }
 
-function Load-Integrations {
-    $data = Read-JsonFile $IntegrationsFile
+function ConvertTo-IntegrationTable {
+    param([Parameter(Mandatory)] [object] $Snapshot)
+    $data = ConvertFrom-JsonSnapshot -Snapshot $Snapshot -Path $IntegrationsFile
     $ht = @{}
     foreach ($p in $data.PSObject.Properties) { $ht[$p.Name] = $p.Value }
     return $ht
 }
 
-function Save-Integrations([hashtable] $Table) {
+function Sync-IntegrationTable {
+    param(
+        [Parameter(Mandatory)] [hashtable] $Target,
+        [Parameter(Mandatory)] [hashtable] $Source
+    )
+    $Target.Clear()
+    foreach ($key in $Source.Keys) { $Target[$key] = $Source[$key] }
+}
+
+function Load-Integrations {
+    return ConvertTo-IntegrationTable -Snapshot (Get-FileSnapshot $IntegrationsFile)
+}
+
+function Save-Integrations {
+    param(
+        [Parameter(Mandatory)] [hashtable] $Table,
+        [object] $ExpectedSnapshot = $null
+    )
     $script:IntegrationSaveAttempt++
     $failAttempt = 0
     if ([int]::TryParse([string]$env:MCP_SEARCH_NET_TEST_FAIL_INTEGRATIONS_SAVE_ON_ATTEMPT, [ref]$failAttempt) -and
@@ -302,7 +320,73 @@ function Save-Integrations([hashtable] $Table) {
     foreach ($key in ($Table.Keys | Sort-Object)) {
         $obj | Add-Member -NotePropertyName $key -NotePropertyValue $Table[$key] -Force
     }
-    Write-JsonFile $IntegrationsFile $obj
+    Write-JsonFile -Path $IntegrationsFile -Data $obj -ExpectedSnapshot $ExpectedSnapshot
+}
+
+function Invoke-IntegrationMutation {
+    param(
+        [Parameter(Mandatory)] [hashtable] $Table,
+        [Parameter(Mandatory)] [string] $Key,
+        [pscustomobject] $Record = $null,
+        [switch] $Remove
+    )
+
+    for ($attempt = 1; $attempt -le $ClientConfigMaxRetries; $attempt++) {
+        $snapshot = Get-FileSnapshot $IntegrationsFile
+        $candidate = ConvertTo-IntegrationTable -Snapshot $snapshot
+        if ($Remove) {
+            if (-not $candidate.ContainsKey($Key)) {
+                Sync-IntegrationTable -Target $Table -Source $candidate
+                return
+            }
+            $candidate.Remove($Key)
+        }
+        else {
+            if ($null -eq $Record) { throw 'MCP_CONFIG_INTEGRATION_RECORD_REQUIRED' }
+            $candidate[$Key] = $Record
+        }
+
+        try {
+            Save-Integrations -Table $candidate -ExpectedSnapshot $snapshot
+        }
+        catch {
+            if ($_.Exception.Message -like 'MCP_CONFIG_CONCURRENT_MODIFICATION:*' -and $attempt -lt $ClientConfigMaxRetries) {
+                continue
+            }
+            throw
+        }
+
+        Sync-IntegrationTable -Target $Table -Source $candidate
+        return
+    }
+
+    throw "MCP_CONFIG_INTEGRATIONS_CONCURRENT_MODIFICATION_RETRY_EXHAUSTED:$IntegrationsFile"
+}
+
+function Ensure-IntegrationsStoreDurable {
+    param([Parameter(Mandatory)] [hashtable] $Table)
+
+    for ($attempt = 1; $attempt -le $ClientConfigMaxRetries; $attempt++) {
+        $snapshot = Get-FileSnapshot $IntegrationsFile
+        if ($snapshot.Exists) {
+            Sync-IntegrationTable -Target $Table -Source (ConvertTo-IntegrationTable -Snapshot $snapshot)
+            return
+        }
+        $candidate = @{}
+        try {
+            Save-Integrations -Table $candidate -ExpectedSnapshot $snapshot
+        }
+        catch {
+            if ($_.Exception.Message -like 'MCP_CONFIG_CONCURRENT_MODIFICATION:*' -and $attempt -lt $ClientConfigMaxRetries) {
+                continue
+            }
+            throw
+        }
+        Sync-IntegrationTable -Target $Table -Source $candidate
+        return
+    }
+
+    throw "MCP_CONFIG_INTEGRATIONS_CONCURRENT_MODIFICATION_RETRY_EXHAUSTED:$IntegrationsFile"
 }
 
 function Set-IntegrationRecordDurably {
@@ -311,8 +395,7 @@ function Set-IntegrationRecordDurably {
         [Parameter(Mandatory)] [string] $Key,
         [Parameter(Mandatory)] [pscustomobject] $Record
     )
-    $Table[$Key] = $Record
-    Save-Integrations $Table
+    Invoke-IntegrationMutation -Table $Table -Key $Key -Record $Record
 }
 
 function Begin-ManagedIntegration {
@@ -377,15 +460,35 @@ function Remove-IntegrationRecordDurably {
         [Parameter(Mandatory)] [hashtable] $Table,
         [Parameter(Mandatory)] [string] $Key
     )
-    if (-not $Table.ContainsKey($Key)) { return }
-    $Table.Remove($Key)
-    Save-Integrations $Table
+    Invoke-IntegrationMutation -Table $Table -Key $Key -Remove
 }
 
 function Get-ManagedRecordState([object] $Record) {
     if ($null -eq $Record -or $Record.ownership -ne 'managed') { return '' }
     if (Get-PropertyExists $Record 'state') { return [string]$Record.state }
     return 'applied'
+}
+
+function Get-ManagedRecordFingerprint([object] $Record) {
+    if ($null -eq $Record -or -not (Get-PropertyExists $Record 'entryFingerprint')) { return '' }
+    return [string]$Record.entryFingerprint
+}
+
+function Test-JsonEntryOwnedByRecord {
+    param(
+        [Parameter(Mandatory)] [object] $Record,
+        [Parameter(Mandatory)] [object] $Entry
+    )
+    $expectedFingerprint = Get-ManagedRecordFingerprint $Record
+    if (-not [string]::IsNullOrWhiteSpace($expectedFingerprint)) {
+        return (Get-ObjectFingerprint $Entry) -eq $expectedFingerprint
+    }
+    if ((Get-ManagedRecordState $Record) -eq 'prepared') { return $false }
+    if ((Get-PropertyExists $Entry 'env') -and
+        (Get-PropertyExists $Entry.env 'MCP_SEARCH_HOME') -and
+        [string]$Entry.env.MCP_SEARCH_HOME -eq $InstallRoot) { return $true }
+    if ((Get-PropertyExists $Entry 'args') -and (($Entry.args -join ' ') -like "*$BinLauncher*")) { return $true }
+    return $false
 }
 
 function Invoke-ExternalProcess {
@@ -562,6 +665,11 @@ function Install-JsonMcpClient {
             throw "MCP_CONFIG_CONCURRENT_SERVER_CONFLICT:${ConfigPath}:$ServerKey"
         }
 
+        if ($entryExists -and (Get-ManagedRecordState $record) -eq 'applied' -and
+            -not (Test-JsonEntryOwnedByRecord -Record $record -Entry $root.$ServerKey)) {
+            throw "MCP_CONFIG_MANAGED_ENTRY_DRIFT:${ConfigPath}:$ServerKey"
+        }
+
         $root | Add-Member -NotePropertyName $ServerKey -NotePropertyValue $Entry -Force
         Backup-ConfigFile $ConfigPath | Out-Null
         try {
@@ -613,13 +721,23 @@ function Remove-JsonMcpClient {
         $snapshot = Get-FileSnapshot $resolvedPath
         $data = ConvertFrom-JsonSnapshot -Snapshot $snapshot -Path $resolvedPath
         $removed = $false
+        $preservedDrift = $false
         foreach ($rootKey in @('mcpServers', 'servers')) {
             if ((Get-PropertyExists $data $rootKey) -and (Get-PropertyExists $data.$rootKey $ServerKey)) {
-                $data.$rootKey.PSObject.Properties.Remove($ServerKey)
-                $removed = $true
+                $entry = $data.$rootKey.$ServerKey
+                if (Test-JsonEntryOwnedByRecord -Record $rec -Entry $entry) {
+                    $data.$rootKey.PSObject.Properties.Remove($ServerKey)
+                    $removed = $true
+                }
+                else {
+                    $preservedDrift = $true
+                }
             }
         }
         if (-not $removed) {
+            if ($preservedDrift) {
+                Write-Host "  $ClientKey : '$ServerKey' ne correspond plus au fingerprint géré — préservé." -ForegroundColor Cyan
+            }
             Remove-IntegrationRecordDurably -Table $IntegrationTable -Key $integKey
             return
         }
@@ -863,10 +981,18 @@ if ($Uninstall) {
         if ($integrations.ContainsKey($ClaudeKey)) {
             $record = $integrations[$ClaudeKey]
             if ($record.ownership -eq 'managed') {
-                if (-not $ClaudeExe) { throw 'CLI Claude Code introuvable pour retirer une entrée gérée.' }
-                $remove = Invoke-ExternalProcess $ClaudeExe @('mcp', 'remove', '--scope', 'user', 'mcp-search-net') 15
-                if (-not ($remove.Done -and $remove.ExitCode -eq 0)) {
-                    throw "Suppression CLI échouée : $(Get-SafeProcessSummary $remove)"
+                if (-not $ClaudeExe) { throw 'CLI Claude Code introuvable pour vérifier une entrée gérée avant retrait.' }
+                $get = Invoke-ExternalProcess $ClaudeExe @('mcp', 'get', 'mcp-search-net') 15
+                if (Test-NativeServerOutput $get) {
+                    if (Test-NativeManagedServerOutput $get $BinLauncher) {
+                        $remove = Invoke-ExternalProcess $ClaudeExe @('mcp', 'remove', '--scope', 'user', 'mcp-search-net') 15
+                        if (-not ($remove.Done -and $remove.ExitCode -eq 0)) {
+                            throw "Suppression CLI échouée : $(Get-SafeProcessSummary $remove)"
+                        }
+                    }
+                    else {
+                        Write-Host "  Claude Code : 'mcp-search-net' ne correspond plus au serveur géré — préservé." -ForegroundColor Cyan
+                    }
                 }
             }
             Remove-IntegrationRecordDurably -Table $integrations -Key $ClaudeKey
@@ -893,6 +1019,10 @@ elseif ($DoClaudeCode) {
                         throw 'MCP_CONFIG_CONCURRENT_SERVER_CONFLICT:claude-code:mcp-search-net'
                     }
                     Complete-ManagedIntegration -Table $integrations -Key $ClaudeKey -EntryFingerprint $ClaudeFingerprint
+                }
+                elseif ($listed -and (Get-ManagedRecordState $integrations[$ClaudeKey]) -eq 'applied' -and
+                    -not (Test-NativeManagedServerOutput $get $BinLauncher)) {
+                    throw 'MCP_CONFIG_MANAGED_ENTRY_DRIFT:claude-code:mcp-search-net'
                 }
                 elseif (-not $listed) {
                     $json = $ClaudePayload | ConvertTo-Json -Depth 6 -Compress
@@ -1005,6 +1135,19 @@ function Test-CodexMcpEntry([string] $Text) {
     return $Text -match '(?m)^\s*\[mcp_servers\.mcp-search-net\]\s*(?:#.*)?$'
 }
 
+function Test-CodexBlockOwnedByRecord {
+    param(
+        [Parameter(Mandatory)] [object] $Record,
+        [Parameter(Mandatory)] [string] $Block
+    )
+    $expectedFingerprint = Get-ManagedRecordFingerprint $Record
+    if (-not [string]::IsNullOrWhiteSpace($expectedFingerprint)) {
+        return (Get-BytesSha256 ($Utf8NoBom.GetBytes($Block))) -eq $expectedFingerprint
+    }
+    if ((Get-ManagedRecordState $Record) -eq 'prepared') { return $false }
+    return $Block.IndexOf($BinLauncher, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+}
+
 if ($Uninstall) {
     try {
         if ($integrations.ContainsKey($CodexKey)) {
@@ -1013,7 +1156,12 @@ if ($Uninstall) {
                 for ($attempt = 1; $attempt -le $ClientConfigMaxRetries; $attempt++) {
                     $snapshot = Get-FileSnapshot $CodexConfigPath
                     $text = if ($snapshot.Exists) { [string]$snapshot.Content } else { '' }
-                    if ($text -notmatch [regex]::Escape($CodexBeginMark)) { break }
+                    $managedBlock = Get-CodexManagedBlock $text
+                    if (-not $managedBlock) { break }
+                    if (-not (Test-CodexBlockOwnedByRecord -Record $record -Block $managedBlock)) {
+                        Write-Host '  Codex : bloc MCP-SEARCH-NET modifié/non prouvé — préservé.' -ForegroundColor Cyan
+                        break
+                    }
                     $cleaned = Remove-CodexBlock $text
                     $newText = if ($cleaned) { $cleaned + [Environment]::NewLine } else { '' }
                     Backup-ConfigFile $CodexConfigPath | Out-Null
@@ -1050,6 +1198,10 @@ elseif ($DoCodex) {
                     (Get-BytesSha256 ($Utf8NoBom.GetBytes($managedBlock))) -eq $blockFingerprint) {
                     Complete-ManagedIntegration -Table $integrations -Key $CodexKey -ConfigPath $CodexConfigPath -EntryFingerprint $blockFingerprint
                     break
+                }
+                if ((Get-ManagedRecordState $integrations[$CodexKey]) -eq 'applied' -and
+                    -not (Test-CodexBlockOwnedByRecord -Record $integrations[$CodexKey] -Block $managedBlock)) {
+                    throw 'MCP_CONFIG_MANAGED_ENTRY_DRIFT:codex:mcp-search-net'
                 }
                 $cleaned = Remove-CodexBlock $text
                 $newText = if ($cleaned) { $cleaned + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }
@@ -1098,7 +1250,7 @@ elseif ($DoCodex) {
 # Preserve the old explicit metadata failure contract for installer runs that did not
 # select any client. Per-client flows above already commit their own ownership records.
 if ($IntegrationSaveAttempt -eq 0) {
-    try { Save-Integrations $integrations }
+    try { Ensure-IntegrationsStoreDurable -Table $integrations }
     catch { Record-MaterialFailure 'Intégrations metadata' $_.Exception.Message }
 }
 
