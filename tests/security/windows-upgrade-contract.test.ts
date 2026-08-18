@@ -54,7 +54,7 @@ describe('Windows in-place upgrade contract', () => {
     expect(updater.indexOf('Assert-ManagedMutationPathsSafe')).toBeLessThan(
       updater.indexOf('Ensure-OwnershipMarker'),
     );
-    expect(upgradeExercise).toContain("New-Item -ItemType Junction");
+    expect(upgradeExercise).toContain('New-Item -ItemType Junction');
     expect(upgradeExercise).toContain('MCP_UPDATE_REPARSE_POINT');
     expect(upgradeExercise).toContain('must-survive');
   });
@@ -96,14 +96,17 @@ describe('Windows in-place upgrade contract', () => {
     );
   });
 
-  it('publishes client configuration files atomically and crash-durably', () => {
+  it('publishes client configuration files atomically and recovers abandoned crash staging', () => {
     expect(configureInstaller).toContain('[System.IO.FileOptions]::WriteThrough');
     expect(configureInstaller).toContain('$stream.Flush($true)');
     expect(configureInstaller).toContain('ConfigFileOps]::MoveFileEx');
     expect(configureInstaller).toContain('Write-DurableUtf8File -Path $EnvFile');
     expect(configureInstaller).toContain('Write-DurableUtf8File -Path $CodexConfigPath');
     expect(configureInstaller).toContain('MCP_SEARCH_NET_TEST_CRASH_BEFORE_CONFIG_PUBLISH');
+    expect(configureInstaller).toContain('Remove-AbandonedPublicationTemps');
+    expect(configureInstaller).toContain('MCP_CONFIG_STALE_TEMP_CLEANUP_FAILED');
     expect(upgradeExercise).toContain("-CrashBeforePublish 'mcp.json.example'");
+    expect(upgradeExercise).toContain('La reprise n a pas nettoyé le staging orphelin');
   });
 
   it('returns a material partial-failure status instead of masking client configuration failures', () => {
