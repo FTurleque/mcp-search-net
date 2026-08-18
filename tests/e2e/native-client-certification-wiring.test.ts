@@ -32,7 +32,10 @@ const powershellArgs = [
 ];
 
 const expectedCertificationClients = ['Claude Code', 'Claude Desktop', 'Codex'];
-const expectedExcludedClients = ['IntelliJ IDEA + GitHub Copilot', 'GitHub Copilot CLI'];
+const expectedExcludedClients = [
+  'IntelliJ IDEA + GitHub Copilot',
+  'GitHub Copilot CLI',
+];
 
 describe('native client certification wiring', () => {
   it('counts semantic managed-environment reuse instead of duplicated helper calls', () => {
@@ -84,57 +87,60 @@ describe('native client certification wiring', () => {
     expect(validator).toContain('New-CodexMcpBlock');
   });
 
-  it('executes the smoke summary contract on Windows and keeps the master workflow aligned', () => {
-    expect(workflow).toContain(
-      '$raw = @(.\\scripts\\certify-native-clients.ps1 -SmokeMode -OutputDirectory $output)',
-    );
-    expect(workflow).toContain("if ($report.mode -ne 'smoke')");
-    expect(workflow).toContain("if ($null -ne $report.reportPath)");
-    expect(workflow).not.toContain("Join-Path $output 'native-client-certification.json'");
-
-    if (process.platform !== 'win32') {
-      expect(collector).toContain("mode = 'smoke'");
-      expect(collector).toContain('certificationScope = $CertificationClients');
-      expect(collector).toContain('excludedClients = $ExcludedCertificationClients');
-      expect(collector).toContain('reportPath = $null');
-      return;
-    }
-
-    const outputDirectory = mkdtempSync(join(tmpdir(), 'mcp-native-smoke-'));
-    try {
-      const result = spawnSync(
-        'powershell.exe',
-        [
-          '-NoLogo',
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          collectorPath,
-          '-SmokeMode',
-          '-OutputDirectory',
-          outputDirectory,
-        ],
-        { encoding: 'utf8', windowsHide: true },
+  it(
+    'executes the smoke summary contract on Windows and keeps the master workflow aligned',
+    () => {
+      expect(workflow).toContain(
+        '$raw = @(.\\scripts\\certify-native-clients.ps1 -SmokeMode -OutputDirectory $output)',
       );
+      expect(workflow).toContain("if ($report.mode -ne 'smoke')");
+      expect(workflow).toContain("if ($null -ne $report.reportPath)");
+      expect(workflow).not.toContain("Join-Path $output 'native-client-certification.json'");
 
-      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
-      const report = JSON.parse(result.stdout) as {
-        schemaVersion: string;
-        mode: string;
-        certificationScope: string[];
-        excludedClients: string[];
-        reportPath: string | null;
-      };
+      if (process.platform !== 'win32') {
+        expect(collector).toContain("mode = 'smoke'");
+        expect(collector).toContain('certificationScope = $CertificationClients');
+        expect(collector).toContain('excludedClients = $ExcludedCertificationClients');
+        expect(collector).toContain('reportPath = $null');
+        return;
+      }
 
-      expect(report.schemaVersion).toBe('1.0');
-      expect(report.mode).toBe('smoke');
-      expect(report.certificationScope).toEqual(expectedCertificationClients);
-      expect(report.excludedClients).toEqual(expectedExcludedClients);
-      expect(report.reportPath).toBeNull();
-      expect(readdirSync(outputDirectory)).toEqual([]);
-    } finally {
-      rmSync(outputDirectory, { recursive: true, force: true });
-    }
-  });
+      const outputDirectory = mkdtempSync(join(tmpdir(), 'mcp-native-smoke-'));
+      try {
+        const result = spawnSync(
+          'powershell.exe',
+          [
+            '-NoLogo',
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            collectorPath,
+            '-SmokeMode',
+            '-OutputDirectory',
+            outputDirectory,
+          ],
+          { encoding: 'utf8', windowsHide: true },
+        );
+
+        expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+        const report = JSON.parse(result.stdout) as {
+          schemaVersion: string;
+          mode: string;
+          certificationScope: string[];
+          excludedClients: string[];
+          reportPath: string | null;
+        };
+
+        expect(report.schemaVersion).toBe('1.0');
+        expect(report.mode).toBe('smoke');
+        expect(report.certificationScope).toEqual(expectedCertificationClients);
+        expect(report.excludedClients).toEqual(expectedExcludedClients);
+        expect(report.reportPath).toBeNull();
+        expect(readdirSync(outputDirectory)).toEqual([]);
+      } finally {
+        rmSync(outputDirectory, { recursive: true, force: true });
+      }
+    },
+  );
 });
