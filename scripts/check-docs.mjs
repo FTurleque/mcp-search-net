@@ -348,7 +348,11 @@ function validatePostMergeTruth() {
 
 function validateReleaseAndInstallerHardening() {
   const configureInstall = readText('packaging/windows/configure-install.ps1');
+  const updateInstallation = readText('packaging/windows/update-installation.ps1');
   const installUser = readText('scripts/install-user.ps1');
+  const installationLifecycle = readText('scripts/test-installation.ps1');
+  const distributionBuilder = readText('scripts/release/build-windows-distribution.ps1');
+  const npmConfig = readText('.npmrc');
   const installedProbe = readText('scripts/probe-installed-mcp.mjs');
   const publisher = readText('scripts/release/publish-windows-release.ps1');
   const releaseWorkflow = readText('.github/workflows/release-windows.yml');
@@ -370,13 +374,65 @@ function validateReleaseAndInstallerHardening() {
   }
 
   for (const needle of [
-    "Join-Path $RepositoryRoot '.npmrc'",
-    "Join-Path $RepositoryRoot 'history-migrations'",
-    'strict-allow-scripts=true',
-    'H001__create_search_history.sql',
+    "scripts\\release\\build-windows-distribution.ps1",
+    "packaging\\windows\\update-installation.ps1",
+    'AllowCustomInstallRoot',
+    'MCP_INSTALL_UNSAFE_INSTALL_ROOT',
+    'TestFailActivationAfterEntries',
   ]) {
-    requireText(installUser, needle, `install-user.ps1: staging incomplet: ${needle}`);
+    requireText(
+      installUser,
+      needle,
+      `install-user.ps1: délégation transactionnelle ou garde racine absente: ${needle}`,
+    );
   }
+
+  for (const needle of [
+    "Join-Path $RepoRoot '.npmrc'",
+    "Join-Path $RepoRoot 'history-migrations'",
+    'npm ci --omit=dev --ignore-scripts=false',
+  ]) {
+    requireText(
+      distributionBuilder,
+      needle,
+      `build-windows-distribution.ps1: payload source incomplet: ${needle}`,
+    );
+  }
+  requireText(
+    npmConfig,
+    'strict-allow-scripts=true',
+    '.npmrc: strict-allow-scripts=true absent du payload de production',
+  );
+
+  for (const needle of [
+    "Write-TransactionManifest -Phase 'activating'",
+    "Write-TransactionManifest -Phase 'committed'",
+    'Restore-Transaction',
+    'Ensure-OwnershipMarker',
+    'TestFailActivationAfterEntries',
+  ]) {
+    requireText(
+      updateInstallation,
+      needle,
+      `update-installation.ps1: invariant transactionnel absent: ${needle}`,
+    );
+  }
+
+  for (const needle of [
+    'app\\history-migrations',
+    '-TestFailActivationAfterEntries 3',
+    'app\\rollback.marker',
+    'bin\\rollback.marker',
+    'runtime\\rollback.marker',
+    '.install-rollback',
+  ]) {
+    requireText(
+      installationLifecycle,
+      needle,
+      `test-installation.ps1: preuve de rollback/packaging absente: ${needle}`,
+    );
+  }
+
   for (const needle of [
     "name: 'list_search_history'",
     'history.structuredContent?.data?.enabled !== true',
