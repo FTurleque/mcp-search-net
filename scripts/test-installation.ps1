@@ -53,7 +53,7 @@ try {
     Assert-ThrowsLike `
         -Action { & $InstallScript -InstallRoot $CustomRoot -SkipChecks } `
         -Pattern 'MCP_INSTALL_CUSTOM_ROOT_REQUIRES_OPT_IN:*' `
-        -FailureMessage "Une racine personnalisée a été acceptée sans opt-in explicite."
+        -FailureMessage "Une racine personnalisee a ete acceptee sans opt-in explicite."
 
     $ForeignRoot = Join-Path $TestRoot 'foreign-root'
     New-Item -ItemType Directory -Force -Path $ForeignRoot | Out-Null
@@ -62,9 +62,9 @@ try {
     Assert-ThrowsLike `
         -Action { & $InstallScript -InstallRoot $ForeignRoot -SkipChecks -AllowCustomInstallRoot } `
         -Pattern 'MCP_INSTALL_UNSAFE_INSTALL_ROOT:*' `
-        -FailureMessage "Une racine non vide sans ownership a été acceptée."
+        -FailureMessage "Une racine non vide sans ownership a ete acceptee."
     if ((Get-Content -LiteralPath $ForeignSentinel -Raw).Trim() -ne 'must-survive') {
-        throw 'La validation de racine a modifié un dossier étranger.'
+        throw 'La validation de racine a modifie un dossier etranger.'
     }
 
     & $InstallScript -InstallRoot $InstallRoot -SkipChecks
@@ -87,13 +87,13 @@ try {
         'BUILD-MANIFEST.json'
     )) {
         if (-not (Test-Path -LiteralPath (Join-Path $InstallRoot $requiredPath))) {
-            throw "Artefact de packaging installé absent : $requiredPath"
+            throw "Artefact de packaging installe absent : $requiredPath"
         }
     }
 
     foreach ($legacyDuplicate in @('src', 'migrations', 'catalog-migrations', 'history-migrations', 'package.json')) {
         if (Test-Path -LiteralPath (Join-Path $InstallRoot $legacyDuplicate)) {
-            throw "Le layout source historique duplique encore un artefact programme à la racine : $legacyDuplicate"
+            throw "Le layout source historique duplique encore un artefact programme a la racine : $legacyDuplicate"
         }
     }
 
@@ -108,7 +108,7 @@ try {
         $McpServer.env.MCP_SEARCH_HOME -ne $InstallRoot -or
         $McpServer.env.MCP_CONFIG_PATH -ne (Join-Path $InstallRoot 'config\application.yml') -or
         $McpServer.env.MCP_CATALOG_PATH -ne (Join-Path $InstallRoot 'data\catalog.db')) {
-        throw 'mcp.json.example ne respecte pas le contrat MCP local installé.'
+        throw 'mcp.json.example ne respecte pas le contrat MCP local installe.'
     }
 
     $BuildManifest = Get-Content -LiteralPath (Join-Path $InstallRoot 'BUILD-MANIFEST.json') -Raw | ConvertFrom-Json
@@ -116,7 +116,7 @@ try {
     if ($BuildManifest.version -ne $ExpectedVersion -or
         $BuildManifest.nodeVersion -ne '24.18.0' -or
         $BuildManifest.sourceRevision -notmatch '^(?:[a-f0-9]{40}|UNAVAILABLE)$') {
-        throw 'BUILD-MANIFEST.json ne décrit pas la version et la révision source.'
+        throw 'BUILD-MANIFEST.json ne decrit pas la version et la revision source.'
     }
 
     $RuntimeProof = Get-Content -LiteralPath (Join-Path $InstallRoot 'runtime\node-runtime-proof.json') -Raw | ConvertFrom-Json
@@ -124,31 +124,31 @@ try {
         $RuntimeProof.archiveVerifiedAtInstall -ne $true -or
         $RuntimeProof.archiveSha256 -ne '0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821' -or
         $RuntimeProof.signatureStatus -ne 'Valid') {
-        throw 'La preuve du runtime Node.js installé est invalide.'
+        throw 'La preuve du runtime Node.js installe est invalide.'
     }
 
     & (Join-Path $InstallRoot 'bin\mcp-search-net-catalog.cmd') health
     if ($LASTEXITCODE -ne 0) {
-        throw "Le launcher catalogue installé a échoué avec le code $LASTEXITCODE."
+        throw "Le launcher catalogue installe a echoue avec le code $LASTEXITCODE."
     }
     $InstalledNodeExe = Join-Path $InstallRoot 'runtime\node-v24.18.0-win-x64\node.exe'
     & $InstalledNodeExe (Join-Path $SourceRoot 'scripts\probe-installed-mcp.mjs') (Join-Path $InstallRoot 'bin\mcp-search-net.cmd') $InstallRoot
     if ($LASTEXITCODE -ne 0) {
-        throw "La sonde MCP STDIO installée a échoué avec le code $LASTEXITCODE."
+        throw "La sonde MCP STDIO installee a echoue avec le code $LASTEXITCODE."
     }
 
     $Docker = Get-Command docker -ErrorAction SilentlyContinue
     if ($null -ne $Docker) {
         & $Docker.Source compose --env-file (Join-Path $InstallRoot '.env') -p mcp-search-net-install-test -f (Join-Path $InstallRoot 'compose.yaml') --profile stdio config --quiet
         if ($LASTEXITCODE -ne 0) {
-            throw "Le modèle Compose installé est invalide (code $LASTEXITCODE)."
+            throw "Le modele Compose installe est invalide (code $LASTEXITCODE)."
         }
     }
 
     $EnvironmentPath = Join-Path $InstallRoot '.env'
     $EnvironmentBeforeUpgrade = Get-Content -LiteralPath $EnvironmentPath -Raw
     if ($EnvironmentBeforeUpgrade -match 'replace-with|local-development-secret|mcp-search-local-development-token') {
-        throw "L'installation propre a conservé un secret de développement connu."
+        throw "L'installation propre a conserve un secret de developpement connu."
     }
 
     $AppRollbackMarker = Join-Path $InstallRoot 'app\rollback.marker'
@@ -162,19 +162,19 @@ try {
     Assert-ThrowsLike `
         -Action { & $InstallScript -InstallRoot $InstallRoot -SkipChecks -TestFailActivationAfterEntries 3 } `
         -Pattern 'MCP_UPDATE_TEST_ACTIVATION_FAILURE:3' `
-        -FailureMessage "La recette transactionnelle n'a pas provoqué l'échec attendu après trois entrées."
+        -FailureMessage "La recette transactionnelle n'a pas provoque l'echec attendu apres trois entrees."
 
     foreach ($marker in @($AppRollbackMarker, $BinRollbackMarker, $RuntimeRollbackMarker)) {
         if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) {
-            throw "Le rollback transactionnel n'a pas restauré : $marker"
+            throw "Le rollback transactionnel n'a pas restaure : $marker"
         }
     }
     if ((Get-Content -LiteralPath (Join-Path $InstallRoot 'BUILD-MANIFEST.json') -Raw) -cne $ManifestBeforeFailedUpgrade) {
-        throw 'Le rollback transactionnel a laissé un manifeste partiellement mis à jour.'
+        throw 'Le rollback transactionnel a laisse un manifeste partiellement mis a jour.'
     }
     foreach ($transactionPath in @('.install-staging', '.install-rollback')) {
         if (Test-Path -LiteralPath (Join-Path $InstallRoot $transactionPath)) {
-            throw "Le rollback transactionnel a laissé un état résiduel : $transactionPath"
+            throw "Le rollback transactionnel a laisse un etat residuel : $transactionPath"
         }
     }
 
@@ -189,38 +189,38 @@ try {
 
     & $InstallScript -InstallRoot $InstallRoot -SkipChecks
     if ((Get-Content -LiteralPath $EnvironmentPath -Raw) -cne $EnvironmentBeforeUpgrade) {
-        throw 'La réinstallation a remplacé les secrets locaux générés.'
+        throw 'La reinstallation a remplace les secrets locaux generes.'
     }
     if (-not (Select-String -LiteralPath $ConfigPath -SimpleMatch 'preserved-user-configuration')) {
-        throw 'La réinstallation a remplacé la configuration utilisateur.'
+        throw 'La reinstallation a remplace la configuration utilisateur.'
     }
     if (-not (Select-String -LiteralPath $DockerConfigPath -SimpleMatch 'preserved-docker-configuration')) {
-        throw 'La réinstallation a remplacé la configuration Docker utilisateur.'
+        throw 'La reinstallation a remplace la configuration Docker utilisateur.'
     }
     if (-not (Test-Path -LiteralPath $DataMarker)) {
-        throw 'La réinstallation a supprimé les données utilisateur.'
+        throw 'La reinstallation a supprime les donnees utilisateur.'
     }
 
     & $UninstallScript -InstallRoot $InstallRoot -SkipServices -Confirm:$false
     if (-not (Test-Path -LiteralPath (Join-Path $InstallRoot 'config')) -or
         -not (Test-Path -LiteralPath $DataMarker) -or
         -not (Test-Path -LiteralPath (Join-Path $InstallRoot '.mcp-search-net-installation.json'))) {
-        throw "La désinstallation par défaut n'a pas conservé configuration, données et ownership."
+        throw "La desinstallation par defaut n'a pas conserve configuration, donnees et ownership."
     }
     foreach ($removedProgramPath in @('app', 'bin', 'runtime', 'scripts', 'docker', 'BUILD-MANIFEST.json')) {
         if (Test-Path -LiteralPath (Join-Path $InstallRoot $removedProgramPath)) {
-            throw "La désinstallation par défaut n'a pas supprimé le programme : $removedProgramPath"
+            throw "La desinstallation par defaut n'a pas supprime le programme : $removedProgramPath"
         }
     }
 
     & $InstallScript -InstallRoot $InstallRoot -SkipChecks
     if (-not (Test-Path -LiteralPath (Join-Path $InstallRoot 'app\build\bootstrap\main.js') -PathType Leaf)) {
-        throw 'La réinstallation après conservation des données a échoué.'
+        throw 'La reinstallation apres conservation des donnees a echoue.'
     }
 
     & $UninstallScript -InstallRoot $InstallRoot -PurgeData -SkipServices -Confirm:$false
     if (Test-Path -LiteralPath $InstallRoot) {
-        throw 'La désinstallation -PurgeData a laissé le dossier utilisateur.'
+        throw 'La desinstallation -PurgeData a laisse le dossier utilisateur.'
     }
 
     Write-Host 'INSTALLATION_LIFECYCLE_VALID'
