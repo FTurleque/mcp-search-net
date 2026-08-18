@@ -43,13 +43,7 @@ const TEXT_EXTENSIONS = new Set([
   '.yml',
 ]);
 
-const TEXT_FILE_NAMES = new Set([
-  '.dockerignore',
-  '.npmrc',
-  'Dockerfile',
-  'LICENSE',
-  'NOTICE',
-]);
+const TEXT_FILE_NAMES = new Set(['.dockerignore', '.npmrc', 'Dockerfile', 'LICENSE', 'NOTICE']);
 
 const SKIPPED_DIRECTORIES = new Set([
   '.git',
