@@ -41,6 +41,13 @@ function runConfigure(
   );
 }
 
+function windowsRuntimeTest(name: string, body: () => void) {
+  it(name, () => {
+    if (process.platform !== 'win32') return;
+    body();
+  });
+}
+
 describe('Windows in-place upgrade contract', () => {
   const updater = readFileSync('packaging/windows/update-installation.ps1', 'utf8');
   const configureInstaller = readFileSync('packaging/windows/configure-install.ps1', 'utf8');
@@ -174,6 +181,7 @@ describe('Windows in-place upgrade contract', () => {
     expect(configureInstaller).toContain("(Get-ManagedRecordState $Record) -eq 'prepared'");
     expect(configureInstaller).toContain('ne correspond plus au fingerprint géré — préservé');
     expect(configureInstaller).toContain('Test-NativeManagedServerOutput $get $BinLauncher');
+    expect(configureInstaller).toContain('MCP_CONFIG_NATIVE_OWNERSHIP_CHECK_FAILED');
     expect(configureInstaller).toContain('function Test-CodexBlockOwnedByRecord');
     expect(configureInstaller).toContain('bloc MCP-SEARCH-NET modifié/non prouvé — préservé');
   });
@@ -295,7 +303,7 @@ describe('Windows in-place upgrade contract', () => {
     expect(innoTemplate).toContain('UsePreviousAppDir=yes');
   });
 
-  it.runIf(process.platform === 'win32')(
+  windowsRuntimeTest(
     'preserves a user entry when only prepared ownership survived a pre-publish crash',
     () => {
       const root = mkdtempSync(join(tmpdir(), 'mcp-ledger-prepared-uninstall-'));
@@ -353,49 +361,46 @@ describe('Windows in-place upgrade contract', () => {
     },
   );
 
-  it.runIf(process.platform === 'win32')(
-    'preserves an applied entry that the user changed after installation',
-    () => {
-      const root = mkdtempSync(join(tmpdir(), 'mcp-ledger-applied-drift-'));
-      const installRoot = join(root, 'install');
-      const localAppData = join(root, 'local');
-      const userProfile = join(root, 'user');
-      const clientPath = join(localAppData, 'github-copilot', 'intellij', 'mcp.json');
-      mkdirSync(dirname(clientPath), { recursive: true });
-      mkdirSync(userProfile, { recursive: true });
+  windowsRuntimeTest('preserves an applied entry that the user changed after installation', () => {
+    const root = mkdtempSync(join(tmpdir(), 'mcp-ledger-applied-drift-'));
+    const installRoot = join(root, 'install');
+    const localAppData = join(root, 'local');
+    const userProfile = join(root, 'user');
+    const clientPath = join(localAppData, 'github-copilot', 'intellij', 'mcp.json');
+    mkdirSync(dirname(clientPath), { recursive: true });
+    mkdirSync(userProfile, { recursive: true });
 
-      try {
-        const installed = runConfigure(installRoot, localAppData, userProfile, [
-          '-Clients',
-          'copilot-jetbrains',
-        ]);
-        expect(installed.status).toBe(0);
+    try {
+      const installed = runConfigure(installRoot, localAppData, userProfile, [
+        '-Clients',
+        'copilot-jetbrains',
+      ]);
+      expect(installed.status).toBe(0);
 
-        const userConfig = `${JSON.stringify(
-          {
-            servers: {
-              'mcp-search-net': {
-                command: 'replacement-owned-by-user.exe',
-                args: ['--keep-me'],
-              },
+      const userConfig = `${JSON.stringify(
+        {
+          servers: {
+            'mcp-search-net': {
+              command: 'replacement-owned-by-user.exe',
+              args: ['--keep-me'],
             },
           },
-          null,
-          2,
-        )}\r\n`;
-        writeFileSync(clientPath, userConfig, 'utf8');
-        const before = readFileSync(clientPath);
+        },
+        null,
+        2,
+      )}\r\n`;
+      writeFileSync(clientPath, userConfig, 'utf8');
+      const before = readFileSync(clientPath);
 
-        const uninstall = runConfigure(installRoot, localAppData, userProfile, ['-Uninstall']);
-        expect(uninstall.status).toBe(0);
-        expect(readFileSync(clientPath).equals(before)).toBe(true);
-      } finally {
-        rmSync(root, { recursive: true, force: true });
-      }
-    },
-  );
+      const uninstall = runConfigure(installRoot, localAppData, userProfile, ['-Uninstall']);
+      expect(uninstall.status).toBe(0);
+      expect(readFileSync(clientPath).equals(before)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
-  it.runIf(process.platform === 'win32')(
+  windowsRuntimeTest(
     'retries a concurrent ownership-sidecar writer and merges its distinct record',
     () => {
       const root = mkdtempSync(join(tmpdir(), 'mcp-ledger-cas-'));
@@ -446,7 +451,7 @@ describe('Windows in-place upgrade contract', () => {
     },
   );
 
-  it.runIf(process.platform === 'win32')(
+  windowsRuntimeTest(
     'does not leak a failed in-memory ownership mutation into a later successful commit',
     () => {
       const root = mkdtempSync(join(tmpdir(), 'mcp-ledger-failed-candidate-'));
