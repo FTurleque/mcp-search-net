@@ -49,6 +49,44 @@ function New-LocalSecret {
     return ([System.BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
 
+function Test-ProcessAlive {
+    param([Parameter(Mandatory)] [int] $ProcessId)
+    try {
+        Get-Process -Id $ProcessId -ErrorAction Stop | Out-Null
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Remove-AbandonedPublicationTemps {
+    param(
+        [Parameter(Mandatory)] [string] $Directory,
+        [Parameter(Mandatory)] [string] $Leaf
+    )
+
+    $prefix = ".$Leaf.tmp-"
+    foreach ($candidate in @(Get-ChildItem -LiteralPath $Directory -Force -File -ErrorAction SilentlyContinue)) {
+        if (-not $candidate.Name.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        $suffix = $candidate.Name.Substring($prefix.Length)
+        $separator = $suffix.IndexOf('-')
+        if ($separator -le 0) { continue }
+        $pidText = $suffix.Substring(0, $separator)
+        $nonce = $suffix.Substring($separator + 1)
+        $ownerPid = 0
+        if (-not [int]::TryParse($pidText, [ref]$ownerPid)) { continue }
+        if ($ownerPid -le 0 -or $nonce -notmatch '^[0-9a-fA-F]{32}$') { continue }
+        if (Test-ProcessAlive -ProcessId $ownerPid) { continue }
+        try {
+            Remove-Item -LiteralPath $candidate.FullName -Force -ErrorAction Stop
+        }
+        catch {
+            throw "MCP_CONFIG_STALE_TEMP_CLEANUP_FAILED: impossible de supprimer '$($candidate.FullName)' : $($_.Exception.Message)"
+        }
+    }
+}
+
 function Write-DurableUtf8File {
     param(
         [Parameter(Mandatory)] [string] $Path,
@@ -61,7 +99,8 @@ function Write-DurableUtf8File {
     }
 
     $leaf = [System.IO.Path]::GetFileName($Path)
-    $tmp = Join-Path $dir ('.' + $leaf + '.tmp-' + [guid]::NewGuid().ToString('N'))
+    Remove-AbandonedPublicationTemps -Directory $dir -Leaf $leaf
+    $tmp = Join-Path $dir ('.' + $leaf + '.tmp-' + $PID + '-' + [guid]::NewGuid().ToString('N'))
     $stream = $null
     try {
         $bytes = $Utf8NoBom.GetBytes($Content)
@@ -767,17 +806,30 @@ elseif ($DoCodex) {
                 Backup-ConfigFile $CodexConfigPath | Out-Null
                 Write-CodexConfig $newText
             }
-            $integrations[$CodexKey] = [PSCustomObject]@{ ownership = 'managed'; configPath = $CodexConfigPath; configuredAt = [datetime]::UtcNow.ToString('o') }
+            $integrations[$CodexKey] = [PSCustomObject]@{
+                ownership = 'managed'
+                configPath = $CodexConfigPath
+                configuredAt = [datetime]::UtcNow.ToString('o')
+            }
         }
         elseif (Test-CodexMcpEntry $text) {
-            $integrations[$CodexKey] = [PSCustomObject]@{ ownership = 'preexisting'; configPath = $CodexConfigPath; configuredAt = [datetime]::UtcNow.ToString('o') }
+            Write-Host "  Codex Desktop : table 'mcp_servers.mcp-search-net' existante non gérée — préservée." -ForegroundColor Cyan
+            $integrations[$CodexKey] = [PSCustomObject]@{
+                ownership    = 'preexisting'
+                configPath   = $CodexConfigPath
+                configuredAt = [datetime]::UtcNow.ToString('o')
+            }
         }
         else {
             $prefix = $text.TrimEnd()
             $newText = if ($prefix) { $prefix + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }
             Backup-ConfigFile $CodexConfigPath | Out-Null
             Write-CodexConfig $newText
-            $integrations[$CodexKey] = [PSCustomObject]@{ ownership = 'managed'; configPath = $CodexConfigPath; configuredAt = [datetime]::UtcNow.ToString('o') }
+            $integrations[$CodexKey] = [PSCustomObject]@{
+                ownership = 'managed'
+                configPath = $CodexConfigPath
+                configuredAt = [datetime]::UtcNow.ToString('o')
+            }
         }
     }
     catch { Record-MaterialFailure 'Codex configuration' $_.Exception.Message }
