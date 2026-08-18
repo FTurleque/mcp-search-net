@@ -1,0 +1,44 @@
+name: Inno version diagnostic
+
+on:
+  pull_request:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    name: Inspect verified Inno version surfaces
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install and inspect verified Inno Setup 6.7.3
+        shell: pwsh
+        run: |
+          $innoVersion = '6.7.3'
+          $innoUrl = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'
+          $innoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          Invoke-WebRequest -Uri $innoUrl -OutFile $installer -UseBasicParsing
+          .\scripts\windows\verify-file-sha256.ps1 -FilePath $installer -ExpectedSha256 $innoSha256
+          $install = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/ALLUSERS') -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "install failed $($install.ExitCode)" }
+          $iscc = @('C:\Program Files (x86)\Inno Setup 6\ISCC.exe','C:\Program Files\Inno Setup 6\ISCC.exe') | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+          $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($iscc)
+          Write-Host "ISCC_PATH=$iscc"
+          Write-Host "FILE_VERSION=$($info.FileVersion)"
+          Write-Host "PRODUCT_VERSION=$($info.ProductVersion)"
+          Write-Host '--- ISCC /? ---'
+          & $iscc /? 2>&1 | ForEach-Object { Write-Host $_ }
+          Write-Host '--- uninstall registry ---'
+          Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -like 'Inno Setup*' } |
+            Select-Object DisplayName,DisplayVersion,InstallLocation,UninstallString |
+            Format-List | Out-String | Write-Host
