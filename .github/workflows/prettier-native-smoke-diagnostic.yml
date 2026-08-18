@@ -1,0 +1,35 @@
+name: Temporary Prettier diagnostic
+
+on:
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - tests/e2e/native-client-certification-wiring.test.ts
+      - .github/workflows/prettier-native-smoke-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  prettier-diff:
+    name: Print exact Prettier diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Set up Node.js 24.18.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.0.0
+        with:
+          node-version: 24.18.0
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Print Prettier 3.6.2 diff
+        run: |
+          npx prettier --write tests/e2e/native-client-certification-wiring.test.ts
+          git diff -- tests/e2e/native-client-certification-wiring.test.ts
