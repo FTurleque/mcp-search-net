@@ -37,7 +37,7 @@ describe('linear HTML document extractor', () => {
       'https://example.com/docs',
     );
 
-    expect(result.markdown).toContain('Invalid: � � �.');
+    expect(result.markdown).toContain('Invalid: \uFFFD \uFFFD \uFFFD.');
   });
 
   it('discards the remainder conservatively when a noisy container is never closed', () => {
