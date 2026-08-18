@@ -54,7 +54,7 @@ function decodeNumericEntity(digits: string, radix: 10 | 16): string {
     codePoint > 0x10ffff ||
     (codePoint >= 0xd800 && codePoint <= 0xdfff)
   ) {
-    return '�';
+    return '\uFFFD';
   }
   return String.fromCodePoint(codePoint);
 }
