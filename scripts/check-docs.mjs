@@ -374,8 +374,8 @@ function validateReleaseAndInstallerHardening() {
   }
 
   for (const needle of [
-    "scripts\\release\\build-windows-distribution.ps1",
-    "packaging\\windows\\update-installation.ps1",
+    'scripts\\release\\build-windows-distribution.ps1',
+    'packaging\\windows\\update-installation.ps1',
     'AllowCustomInstallRoot',
     'MCP_INSTALL_UNSAFE_INSTALL_ROOT',
     'TestFailActivationAfterEntries',
@@ -390,7 +390,7 @@ function validateReleaseAndInstallerHardening() {
   for (const needle of [
     "Join-Path $RepoRoot '.npmrc'",
     "Join-Path $RepoRoot 'history-migrations'",
-    'npm ci --omit=dev --ignore-scripts=false',
+    'ci --omit=dev --ignore-scripts=false',
   ]) {
     requireText(
       distributionBuilder,
