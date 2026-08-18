@@ -77,46 +77,65 @@ if (-not $Smoke) {
     Write-Host 'WINDOWS_PRODUCTION_INSTALLER_TRANSACTION_GATES_VALID' -ForegroundColor Green
 }
 
+function Get-QualifiedInnoRegistration([string] $ExpectedVersion) {
+    $displayName = "Inno Setup version $ExpectedVersion"
+    $registrations = @(
+        Get-ItemProperty `
+            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*', `
+            'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', `
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+            -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.DisplayName -eq $displayName -and
+                $_.DisplayVersion -eq $ExpectedVersion -and
+                -not [string]::IsNullOrWhiteSpace([string]$_.InstallLocation)
+            }
+    )
+    if ($registrations.Count -eq 0) {
+        throw "Inscription registre Inno Setup $ExpectedVersion introuvable."
+    }
+    $locations = @(
+        $registrations |
+            ForEach-Object { [System.IO.Path]::GetFullPath([string]$_.InstallLocation) } |
+            Sort-Object -Unique
+    )
+    if ($locations.Count -ne 1) {
+        throw "Plusieurs installations Inno Setup $ExpectedVersion sont enregistrées : $($locations -join ', ')"
+    }
+    return [PSCustomObject]@{
+        DisplayVersion = $ExpectedVersion
+        InstallLocation = $locations[0]
+        IsccPath = [System.IO.Path]::GetFullPath((Join-Path $locations[0] 'ISCC.exe'))
+    }
+}
+
 $ExpectedInnoVersion = '6.7.3'
-$Iscc = $null
+$InnoRegistration = Get-QualifiedInnoRegistration $ExpectedInnoVersion
+if (-not (Test-Path -LiteralPath $InnoRegistration.IsccPath -PathType Leaf)) {
+    throw "ISCC.exe enregistré introuvable : $($InnoRegistration.IsccPath)"
+}
+
 if (-not [string]::IsNullOrWhiteSpace($IsccPath)) {
     $Iscc = [System.IO.Path]::GetFullPath($IsccPath)
     if (-not (Test-Path -LiteralPath $Iscc -PathType Leaf)) {
         throw "ISCC.exe qualifié introuvable : $Iscc"
+    }
+    if (-not $Iscc.Equals($InnoRegistration.IsccPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "ISCC.exe ne correspond pas à l'installation Inno Setup $ExpectedInnoVersion enregistrée : fourni=$Iscc enregistré=$($InnoRegistration.IsccPath)"
     }
 }
 elseif (-not $Smoke) {
     throw "Un setup de production exige -IsccPath vers le binaire Inno Setup $ExpectedInnoVersion déjà vérifié."
 }
 else {
-    $IsccCandidates = @()
-    $IsccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-    if ($IsccCommand) { $IsccCandidates += $IsccCommand.Source }
-    if (-not [string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-        $IsccCandidates += (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
-    }
-    foreach ($Pf in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
-        if (-not [string]::IsNullOrWhiteSpace($Pf)) {
-            $IsccCandidates += (Join-Path $Pf 'Inno Setup 6\ISCC.exe')
-        }
-    }
-    $Iscc = $IsccCandidates |
-        Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
-        Select-Object -First 1
-    if ([string]::IsNullOrWhiteSpace($Iscc)) {
-        throw "Inno Setup $ExpectedInnoVersion est requis pour le smoke setup local."
-    }
+    $Iscc = $InnoRegistration.IsccPath
 }
 
 $IsccOutput = @((& $Iscc /? 2>&1))
 $global:LASTEXITCODE = 0
 $IsccBanner = ($IsccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
-$IsccProductVersion = ([System.Diagnostics.FileVersionInfo]::GetVersionInfo($Iscc)).ProductVersion
-$VersionMatch = [regex]::Match([string]$IsccProductVersion, '^(\d+\.\d+\.\d+)')
-if ($IsccBanner -notmatch 'Inno Setup 6' -or
-    -not $VersionMatch.Success -or
-    $VersionMatch.Groups[1].Value -ne $ExpectedInnoVersion) {
-    throw "Version Inno Setup non qualifiée : attendu=$ExpectedInnoVersion productVersion=$IsccProductVersion banner=$IsccBanner binaire=$Iscc"
+if ($IsccBanner -notmatch '^Inno Setup 6 Command-Line Compiler$') {
+    throw "Bannière ISCC non qualifiée : attendu=Inno Setup 6 Command-Line Compiler obtenu=$IsccBanner binaire=$Iscc"
 }
 Write-Host "INNO_SETUP_EXACT_VERSION_QUALIFIED version=$ExpectedInnoVersion path=$Iscc" -ForegroundColor Green
 
@@ -183,7 +202,7 @@ try {
     Write-Host "SHA-256  : $Hash"
     Write-Host "Mode     : $(if ($Smoke) { 'smoke' } else { 'production' })"
     Write-Host "Inno     : $Iscc"
-    Write-Host "Inno Ver : $IsccProductVersion | $IsccBanner"
+    Write-Host "Inno Ver : $($InnoRegistration.DisplayVersion) | $IsccBanner"
 }
 finally {
     Remove-Item -LiteralPath $GeneratedIss -Force -ErrorAction SilentlyContinue
