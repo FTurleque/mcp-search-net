@@ -1,15 +1,18 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 const configurePath = resolve('packaging/windows/configure-install.ps1');
 const validatorPath = resolve('scripts/validate-native-client-certification-wiring.ps1');
+const collectorPath = resolve('scripts/certify-native-clients.ps1');
 const workflowPath = resolve('.github/workflows/native-client-certification-smoke.yml');
 
 const configure = readFileSync(configurePath, 'utf8');
 const validator = readFileSync(validatorPath, 'utf8');
+const collector = readFileSync(collectorPath, 'utf8');
 const workflow = readFileSync(workflowPath, 'utf8');
 
 const directEnvPattern = /env\s*=\s*\(New-ManagedClientEnv\)/g;
@@ -27,6 +30,9 @@ const powershellArgs = [
   '-File',
   validatorPath,
 ];
+
+const expectedCertificationClients = ['Claude Code', 'Claude Desktop', 'Codex'];
+const expectedExcludedClients = ['IntelliJ IDEA + GitHub Copilot', 'GitHub Copilot CLI'];
 
 describe('native client certification wiring', () => {
   it('counts semantic managed-environment reuse instead of duplicated helper calls', () => {
@@ -76,5 +82,59 @@ describe('native client certification wiring', () => {
     expect(validator).toContain('MCP_CATALOG_PATH');
     expect(validator).toContain('Test-NativeServerOutput');
     expect(validator).toContain('New-CodexMcpBlock');
+  });
+
+  it('executes the smoke summary contract on Windows and keeps the master workflow aligned', () => {
+    expect(workflow).toContain(
+      '$raw = @(.\\scripts\\certify-native-clients.ps1 -SmokeMode -OutputDirectory $output)',
+    );
+    expect(workflow).toContain("if ($report.mode -ne 'smoke')");
+    expect(workflow).toContain("if ($null -ne $report.reportPath)");
+    expect(workflow).not.toContain("Join-Path $output 'native-client-certification.json'");
+
+    if (process.platform !== 'win32') {
+      expect(collector).toContain("mode = 'smoke'");
+      expect(collector).toContain('certificationScope = $CertificationClients');
+      expect(collector).toContain('excludedClients = $ExcludedCertificationClients');
+      expect(collector).toContain('reportPath = $null');
+      return;
+    }
+
+    const outputDirectory = mkdtempSync(join(tmpdir(), 'mcp-native-smoke-'));
+    try {
+      const result = spawnSync(
+        'powershell.exe',
+        [
+          '-NoLogo',
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          collectorPath,
+          '-SmokeMode',
+          '-OutputDirectory',
+          outputDirectory,
+        ],
+        { encoding: 'utf8', windowsHide: true },
+      );
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      const report = JSON.parse(result.stdout) as {
+        schemaVersion: string;
+        mode: string;
+        certificationScope: string[];
+        excludedClients: string[];
+        reportPath: string | null;
+      };
+
+      expect(report.schemaVersion).toBe('1.0');
+      expect(report.mode).toBe('smoke');
+      expect(report.certificationScope).toEqual(expectedCertificationClients);
+      expect(report.excludedClients).toEqual(expectedExcludedClients);
+      expect(report.reportPath).toBeNull();
+      expect(readdirSync(outputDirectory)).toEqual([]);
+    } finally {
+      rmSync(outputDirectory, { recursive: true, force: true });
+    }
   });
 });
