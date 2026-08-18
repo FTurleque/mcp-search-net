@@ -558,6 +558,13 @@ function Test-NativeServerOutput([object] $Result, [string] $ServerKey = 'mcp-se
     return $text -match [regex]::Escape($ServerKey)
 }
 
+function Test-NativeServerAbsentOutput([object] $Result) {
+    if ($null -eq $Result) { return $false }
+    $text = [string]$Result.Out
+    if ([string]::IsNullOrWhiteSpace($text)) { return $false }
+    return $text -match '(?i)not\s+found|no\s+MCP\s+server\s+named'
+}
+
 function Test-NativeManagedServerOutput([object] $Result, [string] $Marker) {
     if (-not (Test-NativeServerOutput $Result)) { return $false }
     return ([string]$Result.Out).IndexOf($Marker, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
@@ -983,7 +990,12 @@ if ($Uninstall) {
             if ($record.ownership -eq 'managed') {
                 if (-not $ClaudeExe) { throw 'CLI Claude Code introuvable pour vérifier une entrée gérée avant retrait.' }
                 $get = Invoke-ExternalProcess $ClaudeExe @('mcp', 'get', 'mcp-search-net') 15
-                if (Test-NativeServerOutput $get) {
+                $serverPresent = Test-NativeServerOutput $get
+                $serverAbsent = Test-NativeServerAbsentOutput $get
+                if (-not $serverPresent -and -not $serverAbsent) {
+                    throw "MCP_CONFIG_NATIVE_OWNERSHIP_CHECK_FAILED:claude-code:$(Get-SafeProcessSummary $get)"
+                }
+                if ($serverPresent) {
                     if (Test-NativeManagedServerOutput $get $BinLauncher) {
                         $remove = Invoke-ExternalProcess $ClaudeExe @('mcp', 'remove', '--scope', 'user', 'mcp-search-net') 15
                         if (-not ($remove.Done -and $remove.ExitCode -eq 0)) {
@@ -1006,6 +1018,10 @@ elseif ($DoClaudeCode) {
             $alreadyManaged = $integrations.ContainsKey($ClaudeKey) -and $integrations[$ClaudeKey].ownership -eq 'managed'
             $get = Invoke-ExternalProcess $ClaudeExe @('mcp', 'get', 'mcp-search-net') 15
             $listed = Test-NativeServerOutput $get
+            $absent = Test-NativeServerAbsentOutput $get
+            if (-not $listed -and -not $absent) {
+                throw "MCP_CONFIG_NATIVE_OWNERSHIP_CHECK_FAILED:claude-code:$(Get-SafeProcessSummary $get)"
+            }
             if ($listed -and -not $alreadyManaged) {
                 Set-PreexistingIntegration -Table $integrations -Key $ClaudeKey
             }
@@ -1024,7 +1040,7 @@ elseif ($DoClaudeCode) {
                     -not (Test-NativeManagedServerOutput $get $BinLauncher)) {
                     throw 'MCP_CONFIG_MANAGED_ENTRY_DRIFT:claude-code:mcp-search-net'
                 }
-                elseif (-not $listed) {
+                elseif ($absent) {
                     $json = $ClaudePayload | ConvertTo-Json -Depth 6 -Compress
                     $add = Invoke-ExternalProcess $ClaudeExe @('mcp', 'add-json', '--scope', 'user', 'mcp-search-net', $json) 20
                     if (-not ($add.Done -and $add.ExitCode -eq 0)) {
