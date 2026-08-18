@@ -43,15 +43,49 @@ $DistributionName = "mcp-search-net-$Version-windows-x64"
 $DistRoot = Join-Path $OutputRoot $DistributionName
 New-Item -ItemType Directory -Force -Path $DistRoot | Out-Null
 
-if ([string]::IsNullOrWhiteSpace($CommitSha)) {
-    $Git = Get-Command git -ErrorAction SilentlyContinue
-    if ($null -ne $Git) {
-        $CommitSha = ((& $Git.Source -C $RepoRoot rev-parse HEAD 2>$null) | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0 -or $CommitSha -notmatch '^[a-f0-9]{40}$') { $CommitSha = 'UNAVAILABLE' }
-    } else { $CommitSha = 'UNAVAILABLE' }
+$Git = Get-Command git -ErrorAction SilentlyContinue
+$SourceState = 'UNAVAILABLE'
+$RepositoryRevision = $null
+if ($null -ne $Git -and (Test-Path -LiteralPath (Join-Path $RepoRoot '.git'))) {
+    $candidate = ((& $Git.Source -C $RepoRoot rev-parse --verify HEAD 2>$null) | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0 -and $candidate -match '^[a-fA-F0-9]{40}$') {
+        $RepositoryRevision = $candidate.ToLowerInvariant()
+    }
 }
 
-Write-Host "Construction de la distribution $DistributionName (commit $CommitSha)..."
+if ([string]::IsNullOrWhiteSpace($CommitSha)) {
+    if ($null -ne $RepositoryRevision) {
+        $CommitSha = $RepositoryRevision
+    }
+    elseif ($env:GITHUB_SHA -match '^[a-fA-F0-9]{40}$') {
+        $CommitSha = $env:GITHUB_SHA.ToLowerInvariant()
+        $SourceState = 'CI_UNVERIFIED'
+    }
+    else {
+        $CommitSha = 'UNAVAILABLE'
+    }
+}
+elseif ($CommitSha -match '^[a-fA-F0-9]{40}$') {
+    $CommitSha = $CommitSha.ToLowerInvariant()
+}
+
+if ($null -ne $RepositoryRevision -and $CommitSha -match '^[a-f0-9]{40}$') {
+    if ($RepositoryRevision -eq $CommitSha) {
+        $SourceState = 'REVISION_UNVERIFIED'
+        $workingTreeStatus = ((& $Git.Source -C $RepoRoot status --porcelain --untracked-files=normal 2>$null) | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0) {
+            $SourceState = if ([string]::IsNullOrWhiteSpace($workingTreeStatus)) { 'CLEAN' } else { 'DIRTY' }
+        }
+    }
+    else {
+        $SourceState = 'REVISION_UNVERIFIED'
+    }
+}
+elseif ($SourceState -eq 'UNAVAILABLE' -and $CommitSha -match '^[a-f0-9]{40}$') {
+    $SourceState = 'CI_UNVERIFIED'
+}
+
+Write-Host "Construction de la distribution $DistributionName (commit $CommitSha, state $SourceState)..."
 
 $NodeExe = Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
 $NpmCmd = Get-Command npm -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
@@ -136,6 +170,7 @@ $BuildManifest = [ordered]@{
     version        = $Version
     nodeVersion    = $NodeVersion
     sourceRevision = $CommitSha
+    sourceState    = $SourceState
     buildDate      = (Get-Date).ToUniversalTime().ToString('o')
 }
 [System.IO.File]::WriteAllText(
@@ -207,3 +242,4 @@ Write-Host "ZIP          : $Zip"
 Write-Host "SHA-256      : $ZipHash"
 Write-Host "Version      : $Version"
 Write-Host "Commit       : $CommitSha"
+Write-Host "Source state : $SourceState"

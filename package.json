@@ -18,6 +18,7 @@
   "scripts": {
     "clean": "rimraf build dist",
     "check:runtime": "node scripts/check-node-version.mjs",
+    "check:utf8": "node scripts/check-utf8.mjs",
     "check:copilot": "node scripts/validate-copilot-config.mjs",
     "check:license": "node scripts/check-license.mjs",
     "check:ci-hygiene": "node scripts/check-ci-hygiene.mjs",
@@ -59,7 +60,7 @@
     "benchmark:v1": "node scripts/benchmark-v1.mjs",
     "install:user": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1",
     "install:user:run": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1 -StartServices -RunAfterInstall",
-    "check": "npm run check:runtime && npm run check:copilot && npm run check:license && npm run check:supply-chain && npm run check:ci-hygiene && npm run check:audit-invariants && npm run docs:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run client:contract-report && npm run test:coverage"
+    "check": "npm run check:runtime && npm run check:utf8 && npm run check:copilot && npm run check:license && npm run check:supply-chain && npm run check:ci-hygiene && npm run check:audit-invariants && npm run docs:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run client:contract-report && npm run test:coverage"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

@@ -311,29 +311,34 @@ describe('Crawl4aiContentFetcher', () => {
     }));
     const gateway = { download } as unknown as SecureHttpGateway;
     const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
-    await expect(
-      fetcher.fetch(fetchRequest('https://example.com/docs', 'static'), {
-        cacheValidators: {
-          etag: '"v1"',
-          lastModified: 'Sun, 21 Jun 2026 00:00:00 GMT',
-          contentHash: 'abc',
-          validatorUrl: 'https://example.com/docs',
-        },
-      }),
-    ).resolves.toEqual({
-      notModified: true,
-      requestedUrl: 'https://example.com/docs',
-      finalUrl: 'https://example.com/docs',
-      redirectChain: [],
-      etag: '"v2"',
-      lastModified: 'Wed, 12 Aug 2026 08:00:00 GMT',
-    });
-    expect(download).toHaveBeenCalledWith(
-      'https://example.com/docs',
-      { 'if-none-match': '"v1"', 'if-modified-since': 'Sun, 21 Jun 2026 00:00:00 GMT' },
-      { tool: 'fetch_url' },
-      { timeoutMs: 1_000, maxBytes: 1_000_000, maxRedirects: 5 },
-    );
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      await expect(
+        fetcher.fetch(fetchRequest('https://example.com/docs', 'static'), {
+          cacheValidators: {
+            etag: '"v1"',
+            lastModified: 'Sun, 21 Jun 2026 00:00:00 GMT',
+            contentHash: 'abc',
+            validatorUrl: 'https://example.com/docs',
+          },
+        }),
+      ).resolves.toEqual({
+        notModified: true,
+        requestedUrl: 'https://example.com/docs',
+        finalUrl: 'https://example.com/docs',
+        redirectChain: [],
+        etag: '"v2"',
+        lastModified: 'Wed, 12 Aug 2026 08:00:00 GMT',
+      });
+      expect(download).toHaveBeenCalledWith(
+        'https://example.com/docs',
+        { 'if-none-match': '"v1"', 'if-modified-since': 'Sun, 21 Jun 2026 00:00:00 GMT' },
+        { tool: 'fetch_url' },
+        { timeoutMs: 1_000, maxBytes: 1_000_000, maxRedirects: 5 },
+      );
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('does not send validators when they belong to a different URI', async () => {
@@ -356,20 +361,24 @@ describe('Crawl4aiContentFetcher', () => {
     }));
     const gateway = { download } as unknown as SecureHttpGateway;
     const fetcher = new Crawl4aiContentFetcher('http://crawl4ai', undefined, gateway);
+    const now = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      await fetcher.fetch(fetchRequest('https://example.com/old-docs', 'static'), {
+        cacheValidators: {
+          etag: '"v1"',
+          validatorUrl: 'https://example.com/new-docs',
+        },
+      });
 
-    await fetcher.fetch(fetchRequest('https://example.com/old-docs', 'static'), {
-      cacheValidators: {
-        etag: '"v1"',
-        validatorUrl: 'https://example.com/new-docs',
-      },
-    });
-
-    expect(download).toHaveBeenCalledWith(
-      'https://example.com/old-docs',
-      {},
-      { tool: 'fetch_url' },
-      { timeoutMs: 1_000, maxBytes: 1_000_000, maxRedirects: 5 },
-    );
+      expect(download).toHaveBeenCalledWith(
+        'https://example.com/old-docs',
+        {},
+        { tool: 'fetch_url' },
+        { timeoutMs: 1_000, maxBytes: 1_000_000, maxRedirects: 5 },
+      );
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it('returns explicit errors for binary and invalid PDF content', async () => {

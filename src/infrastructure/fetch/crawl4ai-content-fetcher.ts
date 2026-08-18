@@ -141,8 +141,6 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       'content-type': 'application/json',
     };
     if (this.apiToken !== undefined) headers['authorization'] = `Bearer ${this.apiToken}`;
-    // Crawl4AI's raw:// transport renders caller-provided HTML without issuing a
-    // public target request. The renderer receives only resource-neutralized HTML.
     const rawUrl = `raw://${html}`;
     const json = await fetchJson(
       'crawl4ai',

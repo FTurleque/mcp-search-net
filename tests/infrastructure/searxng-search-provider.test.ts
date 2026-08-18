@@ -91,7 +91,7 @@ describe('SearxngSearchProvider', () => {
     ['Fran&#xE7;ais', 'Français'],
     ['A &amp; B', 'A & B'],
     ['&lt;b&gt;Official&lt;/b&gt;', 'Official'],
-    ['&#0; invalid', '� invalid'],
+    ['&#0; invalid', '\uFFFD invalid'],
   ])('decodes snippet %s → %s', async (raw, expected) => {
     const fetchMock = vi.fn(async () =>
       Promise.resolve(
