@@ -109,9 +109,15 @@ jobs:
               'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
               -ErrorAction SilentlyContinue |
               Where-Object {
-                $_.DisplayName -eq "Inno Setup version $innoVersion" -and
-                $_.DisplayVersion -eq $innoVersion -and
-                -not [string]::IsNullOrWhiteSpace([string]$_.InstallLocation)
+                $displayNameProperty = $_.PSObject.Properties['DisplayName']
+                $displayVersionProperty = $_.PSObject.Properties['DisplayVersion']
+                $installLocationProperty = $_.PSObject.Properties['InstallLocation']
+                $null -ne $displayNameProperty -and
+                $null -ne $displayVersionProperty -and
+                $null -ne $installLocationProperty -and
+                [string]$displayNameProperty.Value -eq "Inno Setup version $innoVersion" -and
+                [string]$displayVersionProperty.Value -eq $innoVersion -and
+                -not [string]::IsNullOrWhiteSpace([string]$installLocationProperty.Value)
               }
           ) | Select-Object -First 1
           if ($null -eq $registration) {
