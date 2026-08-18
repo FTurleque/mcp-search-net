@@ -1,0 +1,41 @@
+name: Client config diagnostic
+
+on:
+  pull_request:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    name: Concurrent client config diagnostic
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Reproduce concurrent JetBrains configuration
+        shell: powershell
+        continue-on-error: true
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'client-config-diagnostic'
+          $local = Join-Path $env:RUNNER_TEMP 'client-config-localappdata'
+          $profile = Join-Path $env:RUNNER_TEMP 'client-config-userprofile'
+          $jetbrains = Join-Path $local 'github-copilot\intellij'
+          New-Item -ItemType Directory -Force -Path $root, $jetbrains, $profile | Out-Null
+          $env:LOCALAPPDATA = $local
+          $env:APPDATA = Join-Path $local 'Roaming'
+          $env:USERPROFILE = $profile
+          New-Item -ItemType Directory -Force -Path $env:APPDATA | Out-Null
+          $config = Join-Path $jetbrains 'mcp.json'
+          '{"servers":{},"foreign":"before"}' | Set-Content -LiteralPath $config -Encoding UTF8
+          $replacement = '{"servers":{},"foreign":"concurrent","foreignObject":{"preserve":true}}'
+          $env:MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_PUBLISH = 'mcp.json'
+          $env:MCP_SEARCH_NET_TEST_CONCURRENT_CONFIG_CONTENT_BASE64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($replacement))
+          .\packaging\windows\configure-install.ps1 -InstallRoot $root -FromInstaller -Clients 'copilot-jetbrains'
