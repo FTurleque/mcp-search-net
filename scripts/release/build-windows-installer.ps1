@@ -86,9 +86,15 @@ function Get-QualifiedInnoRegistration([string] $ExpectedVersion) {
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' `
             -ErrorAction SilentlyContinue |
             Where-Object {
-                $_.DisplayName -eq $displayName -and
-                $_.DisplayVersion -eq $ExpectedVersion -and
-                -not [string]::IsNullOrWhiteSpace([string]$_.InstallLocation)
+                $displayNameProperty = $_.PSObject.Properties['DisplayName']
+                $displayVersionProperty = $_.PSObject.Properties['DisplayVersion']
+                $installLocationProperty = $_.PSObject.Properties['InstallLocation']
+                $null -ne $displayNameProperty -and
+                $null -ne $displayVersionProperty -and
+                $null -ne $installLocationProperty -and
+                [string]$displayNameProperty.Value -eq $displayName -and
+                [string]$displayVersionProperty.Value -eq $ExpectedVersion -and
+                -not [string]::IsNullOrWhiteSpace([string]$installLocationProperty.Value)
             }
     )
     if ($registrations.Count -eq 0) {
