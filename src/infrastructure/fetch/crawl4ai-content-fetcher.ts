@@ -67,8 +67,7 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
     request: ContentFetchRequest,
     context: ContentFetchContext = {},
   ): Promise<ContentFetchResult> {
-    const startedAt = performance.now();
-    const deadline = request.deadline ?? startedAt + request.timeoutMs;
+    const deadline = request.deadline ?? performance.now() + request.timeoutMs;
     const initialDownloadTimeoutMs =
       request.deadline === undefined ? request.timeoutMs : remainingTimeoutMs(deadline);
     const securityContext = createSecurityContext(context);
