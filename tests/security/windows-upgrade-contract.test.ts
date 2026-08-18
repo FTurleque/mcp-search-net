@@ -201,18 +201,28 @@ describe('Windows in-place upgrade contract', () => {
       'Un setup de production exige -IsccPath vers le binaire Inno Setup $ExpectedInnoVersion déjà vérifié.',
     );
     expect(installerBuilder).toContain('Get-QualifiedInnoRegistration');
-    expect(installerBuilder).toContain('DisplayVersion -eq $ExpectedVersion');
+    expect(installerBuilder).toContain("PSObject.Properties['DisplayVersion']");
     expect(installerBuilder).toContain("$ExpectedInnoVersion = '6.7.3'");
     expect(installerBuilder).toContain('INNO_SETUP_EXACT_VERSION_QUALIFIED');
     expect(installerBuilder).not.toContain('FileVersionInfo]::GetVersionInfo($Iscc)');
     expect(releasePublisher).toContain('IsccPath=$IsccPath');
-    expect(releaseWorkflow).toContain('DisplayVersion -eq $innoVersion');
+    expect(releaseWorkflow).toContain("PSObject.Properties['DisplayVersion']");
     expect(releaseWorkflow).toContain('QUALIFIED_ISCC_PATH=$iscc');
     expect(releaseWorkflow).toContain('-IsccPath $env:QUALIFIED_ISCC_PATH');
-    expect(upgradeWorkflow).toContain('DisplayVersion -eq $innoVersion');
+    expect(upgradeWorkflow).toContain("PSObject.Properties['DisplayVersion']");
     expect(upgradeWorkflow).toContain('QUALIFIED_ISCC_PATH=$iscc');
     expect(upgradeWorkflow).toContain('-IsccPath $env:QUALIFIED_ISCC_PATH');
     expect(installerBuilder).not.toContain("'Inno Setup 7\\ISCC.exe'");
+  });
+
+  it('filters sparse uninstall registry records safely under StrictMode', () => {
+    for (const source of [installerBuilder, releaseWorkflow, upgradeWorkflow]) {
+      expect(source).toContain("PSObject.Properties['DisplayName']");
+      expect(source).toContain("PSObject.Properties['DisplayVersion']");
+      expect(source).toContain("PSObject.Properties['InstallLocation']");
+      expect(source).not.toContain('$_.DisplayName -eq');
+      expect(source).not.toContain('$_.DisplayVersion -eq');
+    }
   });
 
   it('keeps a stable application identity across versions', () => {
