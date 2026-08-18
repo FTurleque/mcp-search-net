@@ -554,7 +554,7 @@ function Install-JsonMcpClient {
                 Write-Host "  $ClientKey : '$ServerKey' récupéré depuis un commit prepared -> $ConfigPath" -ForegroundColor Green
                 return
             }
-            throw "MCP_CONFIG_CONCURRENT_SERVER_CONFLICT:$ConfigPath:$ServerKey"
+            throw "MCP_CONFIG_CONCURRENT_SERVER_CONFLICT:${ConfigPath}:$ServerKey"
         }
 
         $root | Add-Member -NotePropertyName $ServerKey -NotePropertyValue $Entry -Force
