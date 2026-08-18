@@ -49,7 +49,20 @@ function Normalize-ComparablePath {
     return [System.IO.Path]::GetFullPath($Path).TrimEnd($trimChars)
 }
 
-function Assert-PathInsideRoot {
+function Test-PathInsideRoot {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Root
+    )
+
+    $fullPath = Normalize-ComparablePath -Path $Path
+    $fullRoot = Normalize-ComparablePath -Path $Root
+    if ($fullPath.Equals($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    $prefix = $fullRoot + [System.IO.Path]::DirectorySeparatorChar
+    return $fullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Assert-NoReparsePointInExistingPathChain {
     param(
         [Parameter(Mandatory)] [string] $Path,
         [Parameter(Mandatory)] [string] $Root
@@ -57,10 +70,45 @@ function Assert-PathInsideRoot {
 
     $fullPath = [System.IO.Path]::GetFullPath($Path)
     $fullRoot = Normalize-ComparablePath -Path $Root
-    $prefix = $fullRoot + [System.IO.Path]::DirectorySeparatorChar
-    if (-not $fullPath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    if (-not (Test-PathInsideRoot -Path $fullPath -Root $fullRoot)) {
         throw "Chemin hors de la racine autorisee : $fullPath"
     }
+
+    if (Test-Path -LiteralPath $fullRoot) {
+        $rootItem = Get-Item -LiteralPath $fullRoot -Force
+        if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "MCP_UPDATE_REPARSE_POINT: racine d'installation de type reparse point refusee : $fullRoot"
+        }
+    }
+
+    if ((Normalize-ComparablePath -Path $fullPath).Equals($fullRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return
+    }
+
+    $relative = $fullPath.Substring($fullRoot.Length).TrimStart([char[]]@('\', '/'))
+    $current = $fullRoot
+    foreach ($segment in @($relative -split '[\\/]')) {
+        if ([string]::IsNullOrWhiteSpace($segment)) { continue }
+        $current = Join-Path $current $segment
+        if (-not (Test-Path -LiteralPath $current)) { break }
+        $item = Get-Item -LiteralPath $current -Force
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "MCP_UPDATE_REPARSE_POINT: reparse point refuse dans un chemin gere : $current"
+        }
+    }
+}
+
+function Assert-PathInsideRoot {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Root
+    )
+
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    if (-not (Test-PathInsideRoot -Path $fullPath -Root $Root)) {
+        throw "Chemin hors de la racine autorisee : $fullPath"
+    }
+    Assert-NoReparsePointInExistingPathChain -Path $fullPath -Root $Root
 }
 
 function Test-SamePath {
@@ -91,9 +139,142 @@ function Get-ForbiddenInstallRoots {
     return @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
 }
 
+function Get-Sha256Hex {
+    param([Parameter(Mandatory)] [string] $Value)
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $Utf8NoBom.GetBytes($Value)
+        return ([System.BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        $sha.Dispose()
+    }
+}
+
+function Publish-DurableFile {
+    param(
+        [Parameter(Mandatory)] [string] $TemporaryPath,
+        [Parameter(Mandatory)] [string] $Path
+    )
+
+    Assert-NoReparsePointInExistingPathChain -Path $Path -Root $InstallRoot
+    $flags = $MoveFileWriteThrough
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        $flags = $flags -bor $MoveFileReplaceExisting
+    }
+    if (-not [McpSearchNet.NativeFileOps]::MoveFileEx($TemporaryPath, $Path, [uint32]$flags)) {
+        $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        throw (New-Object System.ComponentModel.Win32Exception($errorCode, "Publication atomique durable impossible vers '$Path'"))
+    }
+}
+
+function Write-DurableUtf8File {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Content
+    )
+
+    Assert-NoReparsePointInExistingPathChain -Path $Path -Root $InstallRoot
+    $directory = Split-Path $Path -Parent
+    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
+        Assert-NoReparsePointInExistingPathChain -Path $directory -Root $InstallRoot
+        New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    }
+
+    $temporaryPath = Join-Path $directory ('.' + [System.IO.Path]::GetFileName($Path) + '.tmp-' + [guid]::NewGuid().ToString('N'))
+    $stream = $null
+    try {
+        $bytes = $Utf8NoBom.GetBytes($Content)
+        $stream = [System.IO.FileStream]::new(
+            $temporaryPath,
+            [System.IO.FileMode]::CreateNew,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::None,
+            4096,
+            [System.IO.FileOptions]::WriteThrough
+        )
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+        $stream.Dispose()
+        $stream = $null
+        Publish-DurableFile -TemporaryPath $temporaryPath -Path $Path
+    }
+    finally {
+        if ($null -ne $stream) { $stream.Dispose() }
+        if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
+            Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function New-TransactionCore {
+    param(
+        [Parameter(Mandatory)] [string] $Phase,
+        [Parameter(Mandatory)] [object[]] $Entries,
+        [Parameter(Mandatory)] [string] $UpdatedAt
+    )
+
+    return [ordered]@{
+        schemaVersion = '1.1'
+        phase = $Phase
+        entries = $Entries
+        updatedAt = $UpdatedAt
+    }
+}
+
+function Write-TransactionManifest {
+    param(
+        [Parameter(Mandatory)] [string] $Phase,
+        [Parameter(Mandatory)] [object[]] $Entries
+    )
+
+    $updatedAt = (Get-Date).ToUniversalTime().ToString('o')
+    $core = New-TransactionCore -Phase $Phase -Entries $Entries -UpdatedAt $updatedAt
+    $checksum = Get-Sha256Hex -Value ($core | ConvertTo-Json -Depth 8 -Compress)
+    $manifest = [ordered]@{
+        schemaVersion = $core.schemaVersion
+        phase = $core.phase
+        entries = $core.entries
+        updatedAt = $core.updatedAt
+        checksumSha256 = $checksum
+    }
+    Write-DurableUtf8File -Path $TransactionPath -Content (($manifest | ConvertTo-Json -Depth 8) + "`r`n")
+}
+
+function Read-TransactionManifest {
+    if (-not (Test-Path -LiteralPath $TransactionPath -PathType Leaf)) {
+        throw "MCP_UPDATE_RECOVERY_REQUIRED: transaction absente dans $RollbackRoot"
+    }
+    Assert-NoReparsePointInExistingPathChain -Path $TransactionPath -Root $InstallRoot
+    try {
+        $transaction = Get-Content -LiteralPath $TransactionPath -Raw | ConvertFrom-Json
+    }
+    catch {
+        throw "MCP_UPDATE_RECOVERY_REQUIRED: journal de transaction illisible : $($_.Exception.Message)"
+    }
+
+    $schemaVersion = [string]$transaction.schemaVersion
+    if ($schemaVersion -eq '1.0') { return $transaction }
+    if ($schemaVersion -ne '1.1') {
+        throw "MCP_UPDATE_RECOVERY_REQUIRED: schema de transaction inconnu '$schemaVersion'."
+    }
+
+    $core = New-TransactionCore `
+        -Phase ([string]$transaction.phase) `
+        -Entries @($transaction.entries) `
+        -UpdatedAt ([string]$transaction.updatedAt)
+    $actualChecksum = Get-Sha256Hex -Value ($core | ConvertTo-Json -Depth 8 -Compress)
+    if ([string]$transaction.checksumSha256 -ne $actualChecksum) {
+        throw 'MCP_UPDATE_RECOVERY_REQUIRED: checksum du journal de transaction invalide.'
+    }
+    return $transaction
+}
+
 function Test-OwnershipMarker {
     if (-not (Test-Path -LiteralPath $OwnershipMarkerPath -PathType Leaf)) { return $false }
     try {
+        Assert-NoReparsePointInExistingPathChain -Path $OwnershipMarkerPath -Root $InstallRoot
         $marker = Get-Content -LiteralPath $OwnershipMarkerPath -Raw | ConvertFrom-Json
         if ([string]$marker.schemaVersion -ne '1.0' -or [string]$marker.name -ne $ManagedApplicationName) {
             return $false
@@ -110,8 +291,11 @@ function Test-LegacyOwnedInstallation {
     $manifestPath = Join-Path $InstallRoot 'BUILD-MANIFEST.json'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return $false }
     try {
+        Assert-NoReparsePointInExistingPathChain -Path $manifestPath -Root $InstallRoot
         $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
         if ([string]$manifest.name -ne $ManagedApplicationName) { return $false }
+        Assert-NoReparsePointInExistingPathChain -Path (Join-Path $InstallRoot 'app\build\bootstrap\main.js') -Root $InstallRoot
+        Assert-NoReparsePointInExistingPathChain -Path (Join-Path $InstallRoot 'bin\mcp-search-net.cmd') -Root $InstallRoot
     }
     catch {
         return $false
@@ -170,69 +354,35 @@ function Assert-SafeInstallRoot {
     throw "MCP_UPDATE_UNSAFE_INSTALL_ROOT: dossier non vide sans preuve d'ownership mcp-search-net : $InstallRoot"
 }
 
-function Get-Sha256Hex {
-    param([Parameter(Mandatory)] [string] $Value)
-
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $bytes = $Utf8NoBom.GetBytes($Value)
-        return ([System.BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
-    }
-    finally {
-        $sha.Dispose()
-    }
-}
-
-function Publish-DurableFile {
-    param(
-        [Parameter(Mandatory)] [string] $TemporaryPath,
-        [Parameter(Mandatory)] [string] $Path
+function Assert-ManagedMutationPathsSafe {
+    $managedRelativePaths = @(
+        '.install-staging',
+        '.install-rollback',
+        '.mcp-search-net-installation.json',
+        'app',
+        'bin',
+        'runtime',
+        'scripts',
+        'docker',
+        'BUILD-MANIFEST.json',
+        'LICENSE',
+        'THIRD-PARTY-NOTICES.txt',
+        'compose.yaml',
+        'compose.hybrid.yaml',
+        '.dockerignore',
+        'config',
+        'config\application.yml',
+        'config\application.yml.default',
+        'config\application.docker.yml',
+        'config\application.docker.yml.default',
+        'config\official-sources.yml',
+        'config\official-sources.yml.default',
+        'config\searxng',
+        'config\searxng\settings.yml',
+        'config\searxng\settings.yml.default'
     )
-
-    $flags = $MoveFileWriteThrough
-    if (Test-Path -LiteralPath $Path -PathType Leaf) {
-        $flags = $flags -bor $MoveFileReplaceExisting
-    }
-    if (-not [McpSearchNet.NativeFileOps]::MoveFileEx($TemporaryPath, $Path, [uint32]$flags)) {
-        $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-        throw (New-Object System.ComponentModel.Win32Exception($errorCode, "Publication atomique durable impossible vers '$Path'"))
-    }
-}
-
-function Write-DurableUtf8File {
-    param(
-        [Parameter(Mandatory)] [string] $Path,
-        [Parameter(Mandatory)] [string] $Content
-    )
-
-    $directory = Split-Path $Path -Parent
-    if (-not (Test-Path -LiteralPath $directory -PathType Container)) {
-        New-Item -ItemType Directory -Force -Path $directory | Out-Null
-    }
-
-    $temporaryPath = Join-Path $directory ('.' + [System.IO.Path]::GetFileName($Path) + '.tmp-' + [guid]::NewGuid().ToString('N'))
-    $stream = $null
-    try {
-        $bytes = $Utf8NoBom.GetBytes($Content)
-        $stream = [System.IO.FileStream]::new(
-            $temporaryPath,
-            [System.IO.FileMode]::CreateNew,
-            [System.IO.FileAccess]::Write,
-            [System.IO.FileShare]::None,
-            4096,
-            [System.IO.FileOptions]::WriteThrough
-        )
-        $stream.Write($bytes, 0, $bytes.Length)
-        $stream.Flush($true)
-        $stream.Dispose()
-        $stream = $null
-        Publish-DurableFile -TemporaryPath $temporaryPath -Path $Path
-    }
-    finally {
-        if ($null -ne $stream) { $stream.Dispose() }
-        if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
-            Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
-        }
+    foreach ($relativePath in $managedRelativePaths) {
+        Assert-NoReparsePointInExistingPathChain -Path (Join-Path $InstallRoot $relativePath) -Root $InstallRoot
     }
 }
 
@@ -245,26 +395,29 @@ function Ensure-OwnershipMarker {
         installationId = [guid]::NewGuid().ToString('D')
         createdAt = (Get-Date).ToUniversalTime().ToString('o')
     }
-    $content = ($marker | ConvertTo-Json -Depth 4) + "`r`n"
-    Write-DurableUtf8File -Path $OwnershipMarkerPath -Content $content
+    Write-DurableUtf8File -Path $OwnershipMarkerPath -Content (($marker | ConvertTo-Json -Depth 4) + "`r`n")
 }
 
 function Remove-PathWithRetry {
     param([Parameter(Mandatory)] [string] $Path)
 
     if (-not (Test-Path -LiteralPath $Path)) { return }
+    if (Test-PathInsideRoot -Path $Path -Root $InstallRoot) {
+        Assert-NoReparsePointInExistingPathChain -Path $Path -Root $InstallRoot
+    }
     $delays = @(250, 500, 1000, 2000, 3000)
     $lastError = $null
     for ($attempt = 0; $attempt -lt $delays.Count; $attempt++) {
         try {
+            if (Test-PathInsideRoot -Path $Path -Root $InstallRoot) {
+                Assert-NoReparsePointInExistingPathChain -Path $Path -Root $InstallRoot
+            }
             Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
             return
         }
         catch {
             $lastError = $_
-            if ($attempt -lt ($delays.Count - 1)) {
-                Start-Sleep -Milliseconds $delays[$attempt]
-            }
+            if ($attempt -lt ($delays.Count - 1)) { Start-Sleep -Milliseconds $delays[$attempt] }
         }
     }
     throw "Impossible de supprimer '$Path'. Derniere erreur : $($lastError.Exception.Message)"
@@ -276,8 +429,18 @@ function Move-PathWithRetry {
         [Parameter(Mandatory)] [string] $Destination
     )
 
+    if (Test-PathInsideRoot -Path $Source -Root $InstallRoot) {
+        Assert-NoReparsePointInExistingPathChain -Path $Source -Root $InstallRoot
+    }
+    if (Test-PathInsideRoot -Path $Destination -Root $InstallRoot) {
+        Assert-NoReparsePointInExistingPathChain -Path $Destination -Root $InstallRoot
+    }
+
     $parent = Split-Path $Destination -Parent
     if (-not (Test-Path -LiteralPath $parent -PathType Container)) {
+        if (Test-PathInsideRoot -Path $parent -Root $InstallRoot) {
+            Assert-NoReparsePointInExistingPathChain -Path $parent -Root $InstallRoot
+        }
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
     }
 
@@ -285,14 +448,18 @@ function Move-PathWithRetry {
     $lastError = $null
     for ($attempt = 0; $attempt -lt $delays.Count; $attempt++) {
         try {
+            if (Test-PathInsideRoot -Path $Source -Root $InstallRoot) {
+                Assert-NoReparsePointInExistingPathChain -Path $Source -Root $InstallRoot
+            }
+            if (Test-PathInsideRoot -Path $Destination -Root $InstallRoot) {
+                Assert-NoReparsePointInExistingPathChain -Path $Destination -Root $InstallRoot
+            }
             Move-Item -LiteralPath $Source -Destination $Destination -Force -ErrorAction Stop
             return
         }
         catch {
             $lastError = $_
-            if ($attempt -lt ($delays.Count - 1)) {
-                Start-Sleep -Milliseconds $delays[$attempt]
-            }
+            if ($attempt -lt ($delays.Count - 1)) { Start-Sleep -Milliseconds $delays[$attempt] }
         }
     }
     throw "Impossible de deplacer '$Source' vers '$Destination'. Derniere erreur : $($lastError.Exception.Message)"
@@ -321,9 +488,7 @@ function Get-InstalledMcpProcesses {
     return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         if ($null -eq $_.CommandLine -or $excluded.ContainsKey([int]$_.ProcessId)) { return $false }
         foreach ($needle in $needles) {
-            if ($_.CommandLine.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-                return $true
-            }
+            if ($_.CommandLine.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) { return $true }
         }
         return $false
     })
@@ -345,70 +510,6 @@ function Stop-InstalledMcpProcesses {
     }
 }
 
-function New-TransactionCore {
-    param(
-        [Parameter(Mandatory)] [string] $Phase,
-        [Parameter(Mandatory)] [object[]] $Entries,
-        [Parameter(Mandatory)] [string] $UpdatedAt
-    )
-
-    return [ordered]@{
-        schemaVersion = '1.1'
-        phase = $Phase
-        entries = $Entries
-        updatedAt = $UpdatedAt
-    }
-}
-
-function Write-TransactionManifest {
-    param(
-        [Parameter(Mandatory)] [string] $Phase,
-        [Parameter(Mandatory)] [object[]] $Entries
-    )
-
-    $updatedAt = (Get-Date).ToUniversalTime().ToString('o')
-    $core = New-TransactionCore -Phase $Phase -Entries $Entries -UpdatedAt $updatedAt
-    $checksum = Get-Sha256Hex -Value ($core | ConvertTo-Json -Depth 8 -Compress)
-    $manifest = [ordered]@{
-        schemaVersion = $core.schemaVersion
-        phase = $core.phase
-        entries = $core.entries
-        updatedAt = $core.updatedAt
-        checksumSha256 = $checksum
-    }
-    Write-DurableUtf8File -Path $TransactionPath -Content (($manifest | ConvertTo-Json -Depth 8) + "`r`n")
-}
-
-function Read-TransactionManifest {
-    if (-not (Test-Path -LiteralPath $TransactionPath -PathType Leaf)) {
-        throw "MCP_UPDATE_RECOVERY_REQUIRED: transaction absente dans $RollbackRoot"
-    }
-    try {
-        $transaction = Get-Content -LiteralPath $TransactionPath -Raw | ConvertFrom-Json
-    }
-    catch {
-        throw "MCP_UPDATE_RECOVERY_REQUIRED: journal de transaction illisible : $($_.Exception.Message)"
-    }
-
-    $schemaVersion = [string]$transaction.schemaVersion
-    if ($schemaVersion -eq '1.0') {
-        return $transaction
-    }
-    if ($schemaVersion -ne '1.1') {
-        throw "MCP_UPDATE_RECOVERY_REQUIRED: schema de transaction inconnu '$schemaVersion'."
-    }
-
-    $core = New-TransactionCore `
-        -Phase ([string]$transaction.phase) `
-        -Entries @($transaction.entries) `
-        -UpdatedAt ([string]$transaction.updatedAt)
-    $actualChecksum = Get-Sha256Hex -Value ($core | ConvertTo-Json -Depth 8 -Compress)
-    if ([string]$transaction.checksumSha256 -ne $actualChecksum) {
-        throw 'MCP_UPDATE_RECOVERY_REQUIRED: checksum du journal de transaction invalide.'
-    }
-    return $transaction
-}
-
 function Restore-Transaction {
     param([Parameter(Mandatory)] [object] $Transaction)
 
@@ -419,6 +520,7 @@ function Restore-Transaction {
         $staged = Join-Path $StageRoot $relativePath
         $backup = Join-Path $RollbackOldRoot $relativePath
         Assert-PathInsideRoot -Path $target -Root $InstallRoot
+        Assert-PathInsideRoot -Path $backup -Root $InstallRoot
 
         if ([bool]$entry.hadOriginal) {
             if (Test-Path -LiteralPath $backup) {
@@ -438,6 +540,7 @@ function Restore-Transaction {
 function Recover-UnpublishedTransaction {
     $backupItems = @()
     if (Test-Path -LiteralPath $RollbackOldRoot -PathType Container) {
+        Assert-NoReparsePointInExistingPathChain -Path $RollbackOldRoot -Root $InstallRoot
         $backupItems = @(Get-ChildItem -LiteralPath $RollbackOldRoot -Force)
     }
     if ($backupItems.Count -gt 0) {
@@ -455,6 +558,7 @@ function Recover-InterruptedTransaction {
         return
     }
 
+    Assert-NoReparsePointInExistingPathChain -Path $RollbackRoot -Root $InstallRoot
     if (-not (Test-Path -LiteralPath $TransactionPath -PathType Leaf)) {
         Recover-UnpublishedTransaction
         return
@@ -529,6 +633,7 @@ function Invoke-PostCommitCleanup {
     $legacyInstaller = Join-Path $InstallRoot 'install.ps1'
     try {
         if (Test-Path -LiteralPath $legacyInstaller -PathType Leaf) {
+            Assert-NoReparsePointInExistingPathChain -Path $legacyInstaller -Root $InstallRoot
             Remove-PathWithRetry -Path $legacyInstaller
         }
     }
@@ -554,6 +659,8 @@ function Add-StagedDirectory {
     $source = Join-Path $PackageRoot $SourceRelativePath
     $staged = Join-Path $StageRoot $TargetRelativePath
     $target = Join-Path $InstallRoot $TargetRelativePath
+    Assert-NoReparsePointInExistingPathChain -Path $staged -Root $InstallRoot
+    Assert-NoReparsePointInExistingPathChain -Path $target -Root $InstallRoot
     New-Item -ItemType Directory -Force -Path (Split-Path $staged -Parent) | Out-Null
     Copy-Item -LiteralPath $source -Destination $staged -Recurse -Force
     $script:order++
@@ -573,6 +680,8 @@ function Add-StagedFile {
     $source = Join-Path $PackageRoot $SourceRelativePath
     $staged = Join-Path $StageRoot $TargetRelativePath
     $target = Join-Path $InstallRoot $TargetRelativePath
+    Assert-NoReparsePointInExistingPathChain -Path $staged -Root $InstallRoot
+    Assert-NoReparsePointInExistingPathChain -Path $target -Root $InstallRoot
     New-Item -ItemType Directory -Force -Path (Split-Path $staged -Parent) | Out-Null
     Copy-Item -LiteralPath $source -Destination $staged -Force
     $script:order++
@@ -586,10 +695,10 @@ function Add-StagedFile {
 $packageManifest = Assert-Package
 Assert-SafeInstallRoot
 New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
-Assert-PathInsideRoot -Path $StageRoot -Root $InstallRoot
-Assert-PathInsideRoot -Path $RollbackRoot -Root $InstallRoot
+Assert-ManagedMutationPathsSafe
 Ensure-OwnershipMarker
 Recover-InterruptedTransaction
+Assert-ManagedMutationPathsSafe
 Stop-InstalledMcpProcesses
 
 New-Item -ItemType Directory -Force -Path $StageRoot | Out-Null
@@ -611,12 +720,14 @@ $configTemplates = @(
 )
 foreach ($template in $configTemplates) {
     $targetPath = Join-Path $InstallRoot $template.target
+    Assert-NoReparsePointInExistingPathChain -Path $targetPath -Root $InstallRoot
     if (-not (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
         Add-StagedFile -SourceRelativePath $template.source -TargetRelativePath $template.target
     }
     Add-StagedFile -SourceRelativePath $template.source -TargetRelativePath ($template.target + '.default')
 }
 
+Assert-ManagedMutationPathsSafe
 New-Item -ItemType Directory -Force -Path $RollbackOldRoot | Out-Null
 Write-TransactionManifest -Phase 'activating' -Entries $entries
 
@@ -627,6 +738,9 @@ try {
         $target = Join-Path $InstallRoot $relativePath
         $staged = Join-Path $StageRoot $relativePath
         $backup = Join-Path $RollbackOldRoot $relativePath
+        Assert-NoReparsePointInExistingPathChain -Path $target -Root $InstallRoot
+        Assert-NoReparsePointInExistingPathChain -Path $staged -Root $InstallRoot
+        Assert-NoReparsePointInExistingPathChain -Path $backup -Root $InstallRoot
 
         if ([bool]$entry.hadOriginal) {
             Move-PathWithRetry -Source $target -Destination $backup

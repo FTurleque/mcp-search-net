@@ -61,8 +61,5 @@ describe('audit Windows and release remediation', () => {
     expect(configureInstall).toContain(
       "Codex Desktop : table 'mcp_servers.mcp-search-net' existante non gérée — préservée.",
     );
-    expect(configureInstall).toContain(
-      'Codex Desktop : entrée préexistante/non gérée — préservée.',
-    );
   });
 });

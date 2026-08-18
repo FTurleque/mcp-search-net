@@ -70,7 +70,9 @@ describe('Windows installer runtime integrity', () => {
 
   it('preserves preexisting MCP JSON entries and removes only installer-owned entries', () => {
     expect(configureInstall).toContain("throw \"Configuration JSON invalide '$Path'");
-    expect(configureInstall).toContain('$alreadyManaged = $integrations.ContainsKey($integKey)');
+    expect(configureInstall).toContain(
+      '$alreadyManaged = $IntegrationTable.ContainsKey($integKey)',
+    );
     expect(configureInstall).toContain(
       'if ((Get-PropertyExists $root $ServerKey) -and -not $alreadyManaged)',
     );
