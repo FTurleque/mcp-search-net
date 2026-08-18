@@ -117,9 +117,7 @@ describe('Windows in-place upgrade contract', () => {
     expect(configureInstaller).toContain("state = 'prepared'");
     expect(configureInstaller).toContain('function Complete-ManagedIntegration');
     expect(configureInstaller).toContain("state = 'applied'");
-    expect(configureInstaller).toContain(
-      'MCP_SEARCH_NET_TEST_FAIL_INTEGRATIONS_SAVE_ON_ATTEMPT',
-    );
+    expect(configureInstaller).toContain('MCP_SEARCH_NET_TEST_FAIL_INTEGRATIONS_SAVE_ON_ATTEMPT');
     expect(configureInstaller.indexOf('Begin-ManagedIntegration')).toBeLessThan(
       configureInstaller.indexOf(
         'Write-JsonFile -Path $ConfigPath -Data $data -ExpectedSnapshot $snapshot',
