@@ -42,7 +42,9 @@ describe('Windows installer runtime integrity', () => {
       'Get-FileHash -LiteralPath $NodeZipPath -Algorithm SHA256',
     );
     expect(distributionHashVerification).toBeGreaterThan(0);
-    expect(distributionHashVerification).toBeLessThan(distributionBuilder.indexOf('Expand-Archive'));
+    expect(distributionHashVerification).toBeLessThan(
+      distributionBuilder.indexOf('Expand-Archive'),
+    );
 
     expect(verifier).toContain('Get-FileHash -LiteralPath $resolvedPath -Algorithm SHA256');
     expect(verifier).toContain('RUNTIME_ARCHIVE_CHECKSUM_MISMATCH');
@@ -70,7 +72,9 @@ describe('Windows installer runtime integrity', () => {
     expect(installer).toContain('Get-CimInstance Win32_Process');
     expect(installer).toContain('$ForceStopExistingProcess');
 
-    expect(transactionalUpdater).toContain("$StageRoot = Join-Path $InstallRoot '.install-staging'");
+    expect(transactionalUpdater).toContain(
+      "$StageRoot = Join-Path $InstallRoot '.install-staging'",
+    );
     expect(transactionalUpdater).toContain("Write-TransactionManifest -Phase 'activating'");
     expect(transactionalUpdater).toContain("Write-TransactionManifest -Phase 'committed'");
     expect(transactionalUpdater).toContain('Restore-Transaction');
@@ -79,8 +83,12 @@ describe('Windows installer runtime integrity', () => {
   });
 
   it('generates per-installation provider secrets and removes launcher defaults', () => {
-    expect(installer).toContain("$ConfigureInstall = Join-Path $InstallRoot 'scripts\\configure-install.ps1'");
-    expect(installer).toContain("& $ConfigureInstall -InstallRoot $InstallRoot -FromInstaller -Clients ''");
+    expect(installer).toContain(
+      "$ConfigureInstall = Join-Path $InstallRoot 'scripts\\configure-install.ps1'",
+    );
+    expect(installer).toContain(
+      "& $ConfigureInstall -InstallRoot $InstallRoot -FromInstaller -Clients ''",
+    );
     expect(configureInstall).toContain('RandomNumberGenerator]::Create()');
     expect(configureInstall).toContain("$EnvFile = Join-Path $InstallRoot '.env'");
     expect(configureInstall).toContain('CRAWL4AI_API_TOKEN=$crawl4aiToken');
@@ -175,7 +183,9 @@ describe('Windows installer runtime integrity', () => {
   });
 
   it('generates Copilot-compatible local MCP examples', () => {
-    expect(installer).toContain("$ConfigureInstall = Join-Path $InstallRoot 'scripts\\configure-install.ps1'");
+    expect(installer).toContain(
+      "$ConfigureInstall = Join-Path $InstallRoot 'scripts\\configure-install.ps1'",
+    );
     expect(configureInstall).toContain('mcpServers = [ordered]@{');
     expect(configureInstall).not.toMatch(/^\s*servers = \[ordered\]@\{/mu);
     expect(configureInstall).toContain("type = 'local'");
