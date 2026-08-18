@@ -1,12 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -188,12 +181,16 @@ describe('Windows in-place upgrade contract', () => {
   it('uses CAS reload-and-merge for every integration-ledger mutation', () => {
     expect(configureInstaller).toContain('function Invoke-IntegrationMutation');
     expect(configureInstaller).toContain('ConvertTo-IntegrationTable -Snapshot $snapshot');
-    expect(configureInstaller).toContain('Save-Integrations -Table $candidate -ExpectedSnapshot $snapshot');
+    expect(configureInstaller).toContain(
+      'Save-Integrations -Table $candidate -ExpectedSnapshot $snapshot',
+    );
     expect(configureInstaller).toContain('Sync-IntegrationTable -Target $Table -Source $candidate');
     expect(configureInstaller).toContain(
       'MCP_CONFIG_INTEGRATIONS_CONCURRENT_MODIFICATION_RETRY_EXHAUSTED',
     );
-    expect(configureInstaller).not.toContain('$Table[$Key] = $Record\n    Save-Integrations $Table');
+    expect(configureInstaller).not.toContain(
+      '$Table[$Key] = $Record\n    Save-Integrations $Table',
+    );
     expect(configureInstaller).not.toContain('$Table.Remove($Key)\n    Save-Integrations $Table');
   });
 
