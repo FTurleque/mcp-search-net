@@ -3,9 +3,9 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-type PackageManifest = {
+interface PackageManifest {
   scripts?: Record<string, string>;
-};
+}
 
 describe('deterministic E2E scheduling contract', () => {
   it('serializes the heavy Windows child-process E2E files without weakening their assertions', () => {
