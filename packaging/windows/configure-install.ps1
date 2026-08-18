@@ -3,21 +3,43 @@ param(
     [Parameter(Mandatory)] [string] $InstallRoot,
     [switch] $SmokeMode,
     [switch] $Uninstall,
-    # Set by the Inno Setup wizard; disables auto-detect in favour of the explicit list.
     [switch] $FromInstaller,
-    # Comma-separated list of targets to configure: docker,copilot-jetbrains,copilot-cli,claude-desktop,claude-code,codex
     [string] $Clients = ''
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$InstallRoot       = [System.IO.Path]::GetFullPath($InstallRoot)
-$Utf8NoBom         = New-Object System.Text.UTF8Encoding($false)
-$IntegrationsFile  = Join-Path $InstallRoot 'mcp-client-integrations.json'
-$BackupRoot        = Join-Path $InstallRoot '.config-backups'
+$InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$IntegrationsFile = Join-Path $InstallRoot 'mcp-client-integrations.json'
+$BackupRoot = Join-Path $InstallRoot '.config-backups'
+$EnvFile = Join-Path $InstallRoot '.env'
+$MoveFileReplaceExisting = 0x1
+$MoveFileWriteThrough = 0x8
+$MaterialFailures = New-Object System.Collections.Generic.List[string]
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+if (-not ([System.Management.Automation.PSTypeName]'McpSearchNet.ConfigFileOps').Type) {
+    Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+namespace McpSearchNet {
+    public static class ConfigFileOps {
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern bool MoveFileEx(string existingFileName, string newFileName, uint flags);
+    }
+}
+'@
+}
+
+function Record-MaterialFailure {
+    param(
+        [Parameter(Mandatory)] [string] $Scope,
+        [Parameter(Mandatory)] [string] $Message
+    )
+    $entry = "$Scope : $Message"
+    $script:MaterialFailures.Add($entry)
+    Write-Host "  $entry" -ForegroundColor Red
+}
 
 function New-LocalSecret {
     $bytes = New-Object byte[] 32
@@ -27,25 +49,75 @@ function New-LocalSecret {
     return ([System.BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
 }
 
+function Write-DurableUtf8File {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Content
+    )
+
+    $dir = Split-Path $Path -Parent
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+
+    $leaf = [System.IO.Path]::GetFileName($Path)
+    $tmp = Join-Path $dir ('.' + $leaf + '.tmp-' + [guid]::NewGuid().ToString('N'))
+    $stream = $null
+    try {
+        $bytes = $Utf8NoBom.GetBytes($Content)
+        $stream = [System.IO.FileStream]::new(
+            $tmp,
+            [System.IO.FileMode]::CreateNew,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::None,
+            4096,
+            [System.IO.FileOptions]::WriteThrough
+        )
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+        $stream.Dispose()
+        $stream = $null
+
+        $crashTarget = [string]$env:MCP_SEARCH_NET_TEST_CRASH_BEFORE_CONFIG_PUBLISH
+        if ($crashTarget -and (
+            $crashTarget -eq '*' -or
+            $crashTarget.Equals($leaf, [System.StringComparison]::OrdinalIgnoreCase)
+        )) {
+            [System.Environment]::FailFast("MCP_CONFIG_TEST_CRASH_BEFORE_PUBLISH:$leaf")
+        }
+
+        $flags = $MoveFileWriteThrough
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            $flags = $flags -bor $MoveFileReplaceExisting
+        }
+        if (-not [McpSearchNet.ConfigFileOps]::MoveFileEx($tmp, $Path, [uint32]$flags)) {
+            $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            throw (New-Object System.ComponentModel.Win32Exception($errorCode, "Publication atomique durable impossible vers '$Path'"))
+        }
+    }
+    finally {
+        if ($null -ne $stream) { $stream.Dispose() }
+        if (Test-Path -LiteralPath $tmp -PathType Leaf) {
+            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Read-JsonFile([string] $Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return [PSCustomObject]@{} }
     try {
         $raw = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8)
         if (-not $raw.Trim()) { throw 'le fichier est vide' }
         return ($raw | ConvertFrom-Json)
-    } catch {
+    }
+    catch {
         throw "Configuration JSON invalide '$Path' : $($_.Exception.Message)"
     }
 }
 
-function Write-JsonFile([string] $Path, [object] $Data) {
-    $dir = Split-Path $Path -Parent
-    if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
-        New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    }
+function ConvertTo-StableJson {
+    param([Parameter(Mandatory)] [object] $Data)
 
-    # Use bundled Node.js for standard 2-space JSON (avoids PS5.1 deep-alignment quirks)
-    # Invoke-ExternalProcess is defined later in this script but resolved at call time, not definition time
     $node = Join-Path $InstallRoot 'runtime\node-v24.18.0-win-x64\node.exe'
     if (Test-Path -LiteralPath $node -PathType Leaf) {
         $tmp = $null
@@ -53,30 +125,36 @@ function Write-JsonFile([string] $Path, [object] $Data) {
             $tmp = [System.IO.Path]::GetTempFileName()
             $compressed = $Data | ConvertTo-Json -Depth 10 -Compress
             [System.IO.File]::WriteAllText($tmp, $compressed, $Utf8NoBom)
-            $jsCode = "const d=require('fs').readFileSync(process.argv[1],'utf8');process.stdout.write(JSON.stringify(JSON.parse(d),null,2))"
+            $jsCode = "const fs=require('fs');const d=fs.readFileSync(process.argv[1],'utf8');process.stdout.write(JSON.stringify(JSON.parse(d),null,2))"
             $r = Invoke-ExternalProcess $node @('-e', $jsCode, $tmp) 10
             if ($r.Done -and $r.ExitCode -eq 0 -and $r.Stdout) {
-                [System.IO.File]::WriteAllText($Path, ($r.Stdout + "`r`n"), $Utf8NoBom)
-                return
+                return ($r.Stdout.TrimEnd() + "`r`n")
             }
-        } finally {
+        }
+        finally {
             if ($tmp -and (Test-Path -LiteralPath $tmp -PathType Leaf)) {
-                Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
             }
         }
     }
 
-    # Fallback: PS5.1 ConvertTo-Json with double-space normalization
-    $raw  = $Data | ConvertTo-Json -Depth 10
+    $raw = $Data | ConvertTo-Json -Depth 10
     $json = [regex]::Replace($raw, '":\s{2,}', '": ')
-    [System.IO.File]::WriteAllText($Path, ($json + "`r`n"), $Utf8NoBom)
+    return ($json.TrimEnd() + "`r`n")
+}
+
+function Write-JsonFile([string] $Path, [object] $Data) {
+    Write-DurableUtf8File -Path $Path -Content (ConvertTo-StableJson -Data $Data)
 }
 
 function Backup-ConfigFile([string] $Path) {
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
     New-Item -ItemType Directory -Force -Path $BackupRoot | Out-Null
-    $stamp = [datetime]::UtcNow.ToString('yyyyMMddHHmmss')
-    Copy-Item -LiteralPath $Path -Destination (Join-Path $BackupRoot "$stamp-$(Split-Path $Path -Leaf)") -Force
+    $stamp = [datetime]::UtcNow.ToString('yyyyMMddHHmmssfff')
+    $suffix = [guid]::NewGuid().ToString('N').Substring(0, 8)
+    $backup = Join-Path $BackupRoot "$stamp-$suffix-$(Split-Path $Path -Leaf)"
+    Copy-Item -LiteralPath $Path -Destination $backup -Force
+    return $backup
 }
 
 function Get-PropertyExists([pscustomobject] $Obj, [string] $Name) {
@@ -90,60 +168,70 @@ function Load-Integrations {
     return $ht
 }
 
-function Save-Integrations([hashtable] $ht) {
+function Save-Integrations([hashtable] $Table) {
     $obj = [PSCustomObject]@{}
-    foreach ($k in $ht.Keys) { $obj | Add-Member -NotePropertyName $k -NotePropertyValue $ht[$k] -Force }
+    foreach ($key in ($Table.Keys | Sort-Object)) {
+        $obj | Add-Member -NotePropertyName $key -NotePropertyValue $Table[$key] -Force
+    }
     Write-JsonFile $IntegrationsFile $obj
 }
 
-# Helper: run external process with timeout using System.Diagnostics.Process.
-# More reliable than Start-Job in restricted/hidden installer contexts.
 function Invoke-ExternalProcess {
     param(
-        [string]   $Exe,
+        [string] $Exe,
         [string[]] $ExeArgs = @(),
-        [int]      $Sec     = 15,
-        [switch]   $ViaPs5     # wrap in powershell.exe -File (for .ps1 scripts)
+        [int] $Sec = 15,
+        [switch] $ViaPs5
     )
-    $ps5      = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $realExe  = if ($ViaPs5) { $ps5 } else { $Exe }
+
+    $ps5 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $realExe = if ($ViaPs5) { $ps5 } else { $Exe }
     $realArgs = if ($ViaPs5) {
         @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $Exe) + $ExeArgs
-    } else { $ExeArgs }
+    }
+    else { $ExeArgs }
+
     $argStr = ($realArgs | ForEach-Object {
         if ($_ -match '[ "]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ }
     }) -join ' '
 
-    $psi                        = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName               = $realExe
-    $psi.Arguments              = $argStr
-    $psi.UseShellExecute        = $false
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $realExe
+    $psi.Arguments = $argStr
+    $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.CreateNoWindow         = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
 
     try {
-        $proc     = [System.Diagnostics.Process]::Start($psi)
-        $outTask  = $proc.StandardOutput.ReadToEndAsync()
-        $errTask  = $proc.StandardError.ReadToEndAsync()
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        $outTask = $proc.StandardOutput.ReadToEndAsync()
+        $errTask = $proc.StandardError.ReadToEndAsync()
         $finished = $proc.WaitForExit($Sec * 1000)
         if (-not $finished) {
-            try { $proc.Kill() } catch {
-                Write-Verbose "Impossible d'arrêter le processus expiré '$Exe' : $($_.Exception.Message)"
-            }
+            try { $proc.Kill() } catch { Write-Verbose "Impossible d'arrêter '$Exe' : $($_.Exception.Message)" }
         }
         [System.Threading.Tasks.Task]::WhenAll($outTask, $errTask).Wait(3000) | Out-Null
-        $stdout   = if ($outTask.IsCompleted) { $outTask.Result } else { '' }
-        $stderr   = if ($errTask.IsCompleted) { $errTask.Result } else { '' }
-        $exitCode = if ($finished) {
-            try { $proc.ExitCode } catch { -1 }
-        } else {
-            -1
-        }
+        $stdout = if ($outTask.IsCompleted) { $outTask.Result } else { '' }
+        $stderr = if ($errTask.IsCompleted) { $errTask.Result } else { '' }
+        $exitCode = if ($finished) { try { $proc.ExitCode } catch { -1 } } else { -1 }
         $proc.Dispose()
-        return [PSCustomObject]@{ Stdout = $stdout; Stderr = $stderr; Out = ($stdout + $stderr); Done = $finished; ExitCode = $exitCode }
-    } catch {
-        return [PSCustomObject]@{ Stdout = ''; Stderr = $_.Exception.Message; Out = $_.Exception.Message; Done = $false; ExitCode = -1 }
+        return [PSCustomObject]@{
+            Stdout = $stdout
+            Stderr = $stderr
+            Out = ($stdout + $stderr)
+            Done = $finished
+            ExitCode = $exitCode
+        }
+    }
+    catch {
+        return [PSCustomObject]@{
+            Stdout = ''
+            Stderr = $_.Exception.Message
+            Out = $_.Exception.Message
+            Done = $false
+            ExitCode = -1
+        }
     }
 }
 
@@ -162,208 +250,68 @@ function Get-SafeProcessSummary([object] $Result) {
     return ($text -replace '[\r\n]+', ' ')
 }
 
-# ── .env generation ────────────────────────────────────────────────────────────
-
-$EnvFile = Join-Path $InstallRoot '.env'
-if (-not $Uninstall -and -not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) {
-    $crawl4aiToken = New-LocalSecret
-    $searxngSecret = New-LocalSecret
-    $envContent    = @(
-        '# Secrets générés localement par l''installateur. Ne pas commiter ce fichier.'
-        "CRAWL4AI_API_TOKEN=$crawl4aiToken"
-        "MCP_CRAWL4AI_TOKEN=$crawl4aiToken"
-        "SEARXNG_SECRET=$searxngSecret"
-    ) -join "`r`n"
-    [System.IO.File]::WriteAllText($EnvFile, $envContent + "`r`n", $Utf8NoBom)
-    Write-Host "Secrets fournisseurs locaux générés : $EnvFile"
-}
-
-if ($SmokeMode) { exit 0 }
-
-# ── Client selection ───────────────────────────────────────────────────────────
-# -FromInstaller: honour explicit wizard selection; empty list = nothing to configure.
-# Otherwise (ZIP install.ps1): attempt all targets, skip if not detected.
-$AllClients = @('docker', 'copilot-jetbrains', 'copilot-cli', 'claude-desktop', 'claude-code', 'codex')
-if ($FromInstaller) {
-    $clientList = if ($Clients) { @($Clients -split ',' | ForEach-Object { $_.Trim() }) } else { @() }
-} else {
-    $clientList = $AllClients
-}
-$DoDocker        = -not $Uninstall -and ($clientList -contains 'docker')
-$DoCopilotJB     = $clientList -contains 'copilot-jetbrains'
-$DoCopilotCli    = $clientList -contains 'copilot-cli'
-$DoClaudeDesktop = $clientList -contains 'claude-desktop'
-$DoClaudeCode    = $clientList -contains 'claude-code'
-$DoCodex         = $clientList -contains 'codex'
-
-# ── Compose normalization (distribution layout: docker\ → root) ────────────────
-# CMD launchers reference %MCP_SEARCH_HOME%\compose.yaml; copy from docker\ if needed
-if (-not $Uninstall) {
-    foreach ($f in @('compose.yaml', 'compose.hybrid.yaml')) {
-        $src = Join-Path $InstallRoot "docker\$f"
-        $dst = Join-Path $InstallRoot $f
-        if ((Test-Path -LiteralPath $src -PathType Leaf) -and (-not (Test-Path -LiteralPath $dst -PathType Leaf))) {
-            Copy-Item -LiteralPath $src -Destination $dst -Force
-        }
-    }
-}
-
-# ── mcp.json.example generation ────────────────────────────────────────────────
-
-$BinLauncher       = Join-Path $InstallRoot 'bin\mcp-search-net.cmd'
-$ContainerLauncher = Join-Path $InstallRoot 'bin\mcp-search-net-container.cmd'
-$ClientConfigPath  = Join-Path $InstallRoot 'config\application.yml'
-$ClientCatalogPath = Join-Path $InstallRoot 'data\catalog.db'
-
 function New-ManagedClientEnv {
     return [ordered]@{
-        MCP_SEARCH_HOME  = $InstallRoot
-        MCP_CONFIG_PATH  = $ClientConfigPath
-        MCP_CATALOG_PATH = $ClientCatalogPath
+        MCP_SEARCH_HOME = $InstallRoot
+        MCP_CONFIG_PATH = (Join-Path $InstallRoot 'config\application.yml')
+        MCP_CATALOG_PATH = (Join-Path $InstallRoot 'data\catalog.db')
     }
 }
 
-if (-not $Uninstall) {
-    $McpExample = [ordered]@{
-        mcpServers = [ordered]@{
-            'mcp-search-net' = [ordered]@{
-                type    = 'local'
-                command = 'cmd.exe'
-                args    = @('/d', '/s', '/c', $BinLauncher)
-                env     = (New-ManagedClientEnv)
-                tools   = @('*')
-            }
-        }
-    }
-    Write-JsonFile (Join-Path $InstallRoot 'mcp.json.example') $McpExample
-
-    $ContainerExample = [ordered]@{
-        mcpServers = [ordered]@{
-            'mcp-search-net-container' = [ordered]@{
-                type    = 'local'
-                command = 'cmd.exe'
-                args    = @('/d', '/s', '/c', $ContainerLauncher)
-                env     = [ordered]@{ MCP_SEARCH_HOME = $InstallRoot }
-                tools   = @('*')
-            }
-        }
-    }
-    Write-JsonFile (Join-Path $InstallRoot 'mcp.container.json.example') $ContainerExample
-}
-
-# ── Docker service startup ──────────────────────────────────────────────────────
-
-if ($DoDocker) {
+function Resolve-ClaudeDesktopConfig {
     try {
-        $ComposePath = $null
-        foreach ($c in @((Join-Path $InstallRoot 'compose.yaml'), (Join-Path $InstallRoot 'docker\compose.yaml'))) {
-            if (Test-Path -LiteralPath $c -PathType Leaf) { $ComposePath = $c; break }
-        }
-
-        $DockerCmd = Get-Command docker -ErrorAction SilentlyContinue
-        if ($DockerCmd -and $ComposePath) {
-            Write-Host ''
-            Write-Host 'Vérification de Docker...'
-            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-            $null = & $DockerCmd.Source info 2>&1
-            $isRunning = $LASTEXITCODE -eq 0
-            $ErrorActionPreference = $prev
-
-            if ($isRunning) {
-                Write-Host 'Démarrage des services SearXNG et Crawl4AI...'
-                $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-                & $DockerCmd.Source compose --env-file $EnvFile -p mcp-search-net -f $ComposePath up -d searxng crawl4ai 2>&1 |
-                    ForEach-Object { Write-Host "  $_" }
-                $dockerExit = $LASTEXITCODE
-                $ErrorActionPreference = $prev
-
-                if ($dockerExit -eq 0) {
-                    Write-Host 'Services Docker démarrés (SearXNG + Crawl4AI) — restart: unless-stopped' -ForegroundColor Green
-                } else {
-                    Write-Host "Services Docker : démarrage incomplet (code $dockerExit)." -ForegroundColor Yellow
-                    Write-Host "  Lancez manuellement : docker compose -f '$ComposePath' up -d searxng crawl4ai" -ForegroundColor Yellow
-                }
-            } else {
-                Write-Host 'Docker Desktop non démarré — lancez Docker Desktop, puis :' -ForegroundColor Yellow
-                Write-Host "  docker compose -f '$ComposePath' up -d searxng crawl4ai" -ForegroundColor Yellow
+        $packagesDir = Join-Path $env:LOCALAPPDATA 'Packages'
+        if (Test-Path -LiteralPath $packagesDir -PathType Container) {
+            foreach ($pkg in (Get-ChildItem -LiteralPath $packagesDir -Directory -Filter 'Claude_*' -ErrorAction SilentlyContinue)) {
+                $candidate = Join-Path $pkg.FullName 'LocalCache\Roaming\Claude\claude_desktop_config.json'
+                if (Test-Path -LiteralPath (Split-Path $candidate -Parent) -PathType Container) { return $candidate }
             }
-        } elseif (-not $DockerCmd) {
-            Write-Host 'Docker absent du PATH — installez Docker Desktop pour démarrer SearXNG et Crawl4AI.' -ForegroundColor Yellow
         }
-    } catch {
-        Write-Host "  Docker : erreur lors du démarrage: $($_.Exception.Message)" -ForegroundColor Yellow
+        $appDataClaude = Join-Path $env:APPDATA 'Claude'
+        $configFile = Join-Path $appDataClaude 'claude_desktop_config.json'
+        $logsDir = Join-Path $appDataClaude 'logs'
+        if ((Test-Path -LiteralPath $configFile -PathType Leaf) -or (Test-Path -LiteralPath $logsDir -PathType Container)) {
+            return $configFile
+        }
     }
-}
-
-# ── Docker service shutdown (uninstall) ────────────────────────────────────────
-
-if ($Uninstall) {
-    try {
-        $ComposePath = $null
-        foreach ($c in @((Join-Path $InstallRoot 'compose.yaml'), (Join-Path $InstallRoot 'docker\compose.yaml'))) {
-            if (Test-Path -LiteralPath $c -PathType Leaf) { $ComposePath = $c; break }
-        }
-        $DockerCmd = Get-Command docker -ErrorAction SilentlyContinue
-        if ($DockerCmd -and $ComposePath) {
-            Write-Host ''
-            Write-Host 'Arrêt des services Docker (SearXNG + Crawl4AI)...'
-            $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-            $null = & $DockerCmd.Source info 2>&1
-            $isRunning = $LASTEXITCODE -eq 0
-            $ErrorActionPreference = $prev
-            if ($isRunning) {
-                $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-                & $DockerCmd.Source compose -p mcp-search-net down --remove-orphans 2>&1 |
-                    ForEach-Object { Write-Host "  $_" }
-                $dockerExit = $LASTEXITCODE
-                $ErrorActionPreference = $prev
-                if ($dockerExit -eq 0) {
-                    Write-Host 'Services Docker arrêtés et supprimés.' -ForegroundColor Green
-                } else {
-                    Write-Host "Docker down incomplet (code $dockerExit) — arrêtez manuellement si nécessaire." -ForegroundColor Yellow
-                }
-            } else {
-                Write-Host 'Docker non démarré — aucun service à arrêter.' -ForegroundColor Cyan
-            }
-        } elseif (-not $DockerCmd) {
-            Write-Host 'Docker absent du PATH — services déjà arrêtés ou jamais démarrés.' -ForegroundColor Cyan
-        }
-    } catch {
-        Write-Host "  Docker : erreur lors de l'arrêt: $($_.Exception.Message)" -ForegroundColor Yellow
+    catch {
+        throw "Détection Claude Desktop impossible : $($_.Exception.Message)"
     }
+    return $null
 }
 
-# ── MCP client wiring ──────────────────────────────────────────────────────────
-
-$integrations = Load-Integrations
-
-# Entry for Copilot JetBrains: root key "servers", type "stdio", no tools field
-$JetBrainsEntry = [PSCustomObject]@{
-    type    = 'stdio'
-    command = 'cmd.exe'
-    args    = @('/d', '/s', '/c', $BinLauncher)
-    env     = (New-ManagedClientEnv)
+function Resolve-ClaudeExe {
+    $cmd = Get-Command claude -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $native = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
+    if (Test-Path -LiteralPath $native -PathType Leaf) { return $native }
+    $embeddedRoot = Join-Path $env:APPDATA 'Claude\claude-code'
+    if (Test-Path -LiteralPath $embeddedRoot -PathType Container) {
+        $embedded = Get-ChildItem -LiteralPath $embeddedRoot -Recurse -Filter 'claude.exe' -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($embedded) { return $embedded.FullName }
+    }
+    return $null
 }
-# Claude Desktop uses mcpServers root, no type/tools fields
-$DesktopEntry = [PSCustomObject]@{
-    command = 'cmd.exe'
-    args    = @('/d', '/s', '/c', $BinLauncher)
-    env     = (New-ManagedClientEnv)
+
+function Resolve-CopilotExe {
+    $cmd = Get-Command copilot -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.CommandType -in @('Application', 'ExternalScript')) { return $cmd.Source }
+    return $null
 }
 
 function Install-JsonMcpClient {
     param(
-        [string] $ClientKey,
-        [string] $ConfigPath,
-        [pscustomobject] $Entry,
+        [Parameter(Mandatory)] [hashtable] $IntegrationTable,
+        [Parameter(Mandatory)] [string] $ClientKey,
+        [Parameter(Mandatory)] [string] $ConfigPath,
+        [Parameter(Mandatory)] [pscustomobject] $Entry,
         [string] $RootKey = 'mcpServers',
         [string] $ServerKey = 'mcp-search-net'
     )
 
     $integKey = "${ClientKey}:${ServerKey}"
-    $alreadyManaged = $integrations.ContainsKey($integKey) -and
-                      $integrations[$integKey].ownership -eq 'managed'
-
+    $alreadyManaged = $IntegrationTable.ContainsKey($integKey) -and $IntegrationTable[$integKey].ownership -eq 'managed'
     $data = Read-JsonFile $ConfigPath
     if (-not (Get-PropertyExists $data $RootKey)) {
         $data | Add-Member -NotePropertyName $RootKey -NotePropertyValue ([PSCustomObject]@{}) -Force
@@ -372,384 +320,403 @@ function Install-JsonMcpClient {
 
     if ((Get-PropertyExists $root $ServerKey) -and -not $alreadyManaged) {
         Write-Host "  $ClientKey : entrée '$ServerKey' existante non gérée — préservée." -ForegroundColor Cyan
-        $integrations[$integKey] = [PSCustomObject]@{
-            ownership    = 'preexisting'
-            configPath   = $ConfigPath
+        $IntegrationTable[$integKey] = [PSCustomObject]@{
+            ownership = 'preexisting'
+            configPath = $ConfigPath
             configuredAt = [datetime]::UtcNow.ToString('o')
         }
         return
     }
 
-    Backup-ConfigFile $ConfigPath
+    Backup-ConfigFile $ConfigPath | Out-Null
     $root | Add-Member -NotePropertyName $ServerKey -NotePropertyValue $Entry -Force
     Write-JsonFile $ConfigPath $data
-    Write-Host "  $ClientKey : '$ServerKey' configuré -> $ConfigPath" -ForegroundColor Green
-    $integrations[$integKey] = [PSCustomObject]@{
-        ownership    = 'managed'
-        configPath   = $ConfigPath
+    $IntegrationTable[$integKey] = [PSCustomObject]@{
+        ownership = 'managed'
+        configPath = $ConfigPath
         configuredAt = [datetime]::UtcNow.ToString('o')
     }
+    Write-Host "  $ClientKey : '$ServerKey' configuré -> $ConfigPath" -ForegroundColor Green
 }
 
 function Remove-JsonMcpClient {
     param(
-        [string] $ClientKey,
+        [Parameter(Mandatory)] [hashtable] $IntegrationTable,
+        [Parameter(Mandatory)] [string] $ClientKey,
         [string] $ConfigPath = '',
         [string] $ServerKey = 'mcp-search-net'
     )
+
     $integKey = "${ClientKey}:${ServerKey}"
-    if (-not $integrations.ContainsKey($integKey)) {
+    if (-not $IntegrationTable.ContainsKey($integKey)) {
         Write-Host "  $ClientKey : entrée non suivie par cet installateur — préservée." -ForegroundColor Cyan
         return
     }
 
-    $rec = $integrations[$integKey]
-    if ($rec.ownership -ne 'managed') {
+    $record = $IntegrationTable[$integKey]
+    if ($record.ownership -ne 'managed') {
         Write-Host "  $ClientKey : entrée préexistante/non gérée — préservée." -ForegroundColor Cyan
-        $integrations.Remove($integKey)
+        $IntegrationTable.Remove($integKey)
         return
     }
 
     $resolvedPath = $ConfigPath
-    if (Get-PropertyExists $rec 'configPath') { $resolvedPath = $rec.configPath }
+    if (Get-PropertyExists $record 'configPath') { $resolvedPath = [string]$record.configPath }
     if ($resolvedPath -and (Test-Path -LiteralPath $resolvedPath -PathType Leaf)) {
-        $data     = Read-JsonFile $resolvedPath
-        $rootKeys = @('mcpServers', 'servers')
-        foreach ($rk in $rootKeys) {
-            if ((Get-PropertyExists $data $rk) -and (Get-PropertyExists $data.$rk $ServerKey)) {
-                Backup-ConfigFile $resolvedPath
-                $data.$rk.PSObject.Properties.Remove($ServerKey)
+        $data = Read-JsonFile $resolvedPath
+        foreach ($rootKey in @('mcpServers', 'servers')) {
+            if ((Get-PropertyExists $data $rootKey) -and (Get-PropertyExists $data.$rootKey $ServerKey)) {
+                Backup-ConfigFile $resolvedPath | Out-Null
+                $data.$rootKey.PSObject.Properties.Remove($ServerKey)
                 Write-JsonFile $resolvedPath $data
                 Write-Host "  $ClientKey : '$ServerKey' retiré de $resolvedPath" -ForegroundColor Green
                 break
             }
         }
     }
-    $integrations.Remove($integKey)
+    $IntegrationTable.Remove($integKey)
 }
 
-# ── GitHub Copilot (JetBrains / IntelliJ) ─────────────────────────────────────
+if (-not $Uninstall -and -not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) {
+    $crawl4aiToken = New-LocalSecret
+    $searxngSecret = New-LocalSecret
+    $envContent = @(
+        '# Secrets générés localement par l''installateur. Ne pas commiter ce fichier.'
+        "CRAWL4AI_API_TOKEN=$crawl4aiToken"
+        "MCP_CRAWL4AI_TOKEN=$crawl4aiToken"
+        "SEARXNG_SECRET=$searxngSecret"
+    ) -join "`r`n"
+    Write-DurableUtf8File -Path $EnvFile -Content ($envContent + "`r`n")
+    Write-Host "Secrets fournisseurs locaux générés : $EnvFile"
+}
 
-$CopilotJBDir    = Join-Path $env:LOCALAPPDATA 'github-copilot\intellij'
+if ($SmokeMode) { exit 0 }
+
+$AllClients = @('docker', 'copilot-jetbrains', 'copilot-cli', 'claude-desktop', 'claude-code', 'codex')
+if ($FromInstaller) {
+    $clientList = if ($Clients) { @($Clients -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) } else { @() }
+}
+else { $clientList = $AllClients }
+
+$DoDocker = -not $Uninstall -and ($clientList -contains 'docker')
+$DoCopilotJB = $clientList -contains 'copilot-jetbrains'
+$DoCopilotCli = $clientList -contains 'copilot-cli'
+$DoClaudeDesktop = $clientList -contains 'claude-desktop'
+$DoClaudeCode = $clientList -contains 'claude-code'
+$DoCodex = $clientList -contains 'codex'
+
+if (-not $Uninstall) {
+    foreach ($file in @('compose.yaml', 'compose.hybrid.yaml')) {
+        $source = Join-Path $InstallRoot "docker\$file"
+        $destination = Join-Path $InstallRoot $file
+        if ((Test-Path -LiteralPath $source -PathType Leaf) -and (-not (Test-Path -LiteralPath $destination -PathType Leaf))) {
+            Copy-Item -LiteralPath $source -Destination $destination -Force
+        }
+    }
+}
+
+$BinLauncher = Join-Path $InstallRoot 'bin\mcp-search-net.cmd'
+$ContainerLauncher = Join-Path $InstallRoot 'bin\mcp-search-net-container.cmd'
+
+if (-not $Uninstall) {
+    $mcpExample = [ordered]@{
+        mcpServers = [ordered]@{
+            'mcp-search-net' = [ordered]@{
+                type = 'local'
+                command = 'cmd.exe'
+                args = @('/d', '/s', '/c', $BinLauncher)
+                env = (New-ManagedClientEnv)
+                tools = @('*')
+            }
+        }
+    }
+    Write-JsonFile (Join-Path $InstallRoot 'mcp.json.example') $mcpExample
+
+    $containerExample = [ordered]@{
+        mcpServers = [ordered]@{
+            'mcp-search-net-container' = [ordered]@{
+                type = 'local'
+                command = 'cmd.exe'
+                args = @('/d', '/s', '/c', $ContainerLauncher)
+                env = [ordered]@{ MCP_SEARCH_HOME = $InstallRoot }
+                tools = @('*')
+            }
+        }
+    }
+    Write-JsonFile (Join-Path $InstallRoot 'mcp.container.json.example') $containerExample
+}
+
+if ($DoDocker) {
+    try {
+        $composePath = @(
+            (Join-Path $InstallRoot 'compose.yaml'),
+            (Join-Path $InstallRoot 'docker\compose.yaml')
+        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        $docker = Get-Command docker -ErrorAction SilentlyContinue
+        if ($docker -and $composePath) {
+            $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            $null = & $docker.Source info 2>&1
+            $running = $LASTEXITCODE -eq 0
+            $ErrorActionPreference = $previous
+            if ($running) {
+                $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+                & $docker.Source compose --env-file $EnvFile -p mcp-search-net -f $composePath up -d searxng crawl4ai 2>&1 |
+                    ForEach-Object { Write-Host "  $_" }
+                $dockerExit = $LASTEXITCODE
+                $ErrorActionPreference = $previous
+                if ($dockerExit -ne 0) { Write-Host "Services Docker : démarrage incomplet (code $dockerExit)." -ForegroundColor Yellow }
+                else { Write-Host 'Services Docker démarrés (SearXNG + Crawl4AI).' -ForegroundColor Green }
+            }
+            else { Write-Host 'Docker Desktop non démarré — services non lancés.' -ForegroundColor Yellow }
+        }
+        elseif (-not $docker) { Write-Host 'Docker absent du PATH — services non lancés.' -ForegroundColor Yellow }
+    }
+    catch { Write-Host "Docker : erreur lors du démarrage: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+
+if ($Uninstall) {
+    try {
+        $composePath = @(
+            (Join-Path $InstallRoot 'compose.yaml'),
+            (Join-Path $InstallRoot 'docker\compose.yaml')
+        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        $docker = Get-Command docker -ErrorAction SilentlyContinue
+        if ($docker -and $composePath) {
+            $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+            $null = & $docker.Source info 2>&1
+            $running = $LASTEXITCODE -eq 0
+            $ErrorActionPreference = $previous
+            if ($running) {
+                $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+                & $docker.Source compose -p mcp-search-net -f $composePath down --remove-orphans 2>&1 |
+                    ForEach-Object { Write-Host "  $_" }
+                $dockerExit = $LASTEXITCODE
+                $ErrorActionPreference = $previous
+                if ($dockerExit -ne 0) { Write-Host "Docker down incomplet (code $dockerExit)." -ForegroundColor Yellow }
+            }
+        }
+    }
+    catch { Write-Host "Docker : erreur lors de l'arrêt: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+
+$integrations = Load-Integrations
+$managedEnv = New-ManagedClientEnv
+$JetBrainsEntry = [PSCustomObject]@{
+    type = 'stdio'
+    command = 'cmd.exe'
+    args = @('/d', '/s', '/c', $BinLauncher)
+    env = $managedEnv
+}
+$DesktopEntry = [PSCustomObject]@{
+    command = 'cmd.exe'
+    args = @('/d', '/s', '/c', $BinLauncher)
+    env = $managedEnv
+}
+
+$CopilotJBDir = Join-Path $env:LOCALAPPDATA 'github-copilot\intellij'
 $CopilotJBConfig = Join-Path $CopilotJBDir 'mcp.json'
 if ($Uninstall) {
-    try { Remove-JsonMcpClient 'copilot-jetbrains' $CopilotJBConfig } catch {
-        Write-Host "  Copilot JetBrains : erreur lors de la suppression: $($_.Exception.Message)" -ForegroundColor Yellow
-    }
-} elseif ($DoCopilotJB) {
+    try { Remove-JsonMcpClient -IntegrationTable $integrations -ClientKey 'copilot-jetbrains' -ConfigPath $CopilotJBConfig }
+    catch { Record-MaterialFailure 'Copilot JetBrains uninstall' $_.Exception.Message }
+}
+elseif ($DoCopilotJB) {
     try {
         if (Test-Path -LiteralPath $CopilotJBDir -PathType Container) {
-            Write-Host ''
-            Write-Host 'Copilot JetBrains détecté.'
-            Install-JsonMcpClient `
-                -ClientKey  'copilot-jetbrains' `
-                -ConfigPath $CopilotJBConfig `
-                -Entry      $JetBrainsEntry `
-                -RootKey    'servers'
-            # Nettoyer uniquement une ancienne entrée incorrecte qui pointe clairement vers cette installation.
+            Install-JsonMcpClient -IntegrationTable $integrations -ClientKey 'copilot-jetbrains' -ConfigPath $CopilotJBConfig -Entry $JetBrainsEntry -RootKey 'servers'
             $jbData = Read-JsonFile $CopilotJBConfig
             if ((Get-PropertyExists $jbData 'mcpServers') -and (Get-PropertyExists $jbData.mcpServers 'mcp-search-net')) {
                 $legacyEntry = $jbData.mcpServers.'mcp-search-net'
                 $legacyOwned = $false
                 if ((Get-PropertyExists $legacyEntry 'env') -and
                     (Get-PropertyExists $legacyEntry.env 'MCP_SEARCH_HOME') -and
-                    $legacyEntry.env.MCP_SEARCH_HOME -eq $InstallRoot) {
-                    $legacyOwned = $true
-                }
-                if ((Get-PropertyExists $legacyEntry 'args') -and (($legacyEntry.args -join ' ') -like "*$BinLauncher*")) {
-                    $legacyOwned = $true
-                }
+                    $legacyEntry.env.MCP_SEARCH_HOME -eq $InstallRoot) { $legacyOwned = $true }
+                if ((Get-PropertyExists $legacyEntry 'args') -and (($legacyEntry.args -join ' ') -like "*$BinLauncher*")) { $legacyOwned = $true }
                 if ($legacyOwned) {
-                    Backup-ConfigFile $CopilotJBConfig
+                    Backup-ConfigFile $CopilotJBConfig | Out-Null
                     $jbData.mcpServers.PSObject.Properties.Remove('mcp-search-net')
-                    $hasOtherKeys = [bool]($jbData.mcpServers.PSObject.Properties | Select-Object -First 1)
-                    if (-not $hasOtherKeys) {
+                    if (-not [bool]($jbData.mcpServers.PSObject.Properties | Select-Object -First 1)) {
                         $jbData.PSObject.Properties.Remove('mcpServers')
                     }
                     Write-JsonFile $CopilotJBConfig $jbData
-                    Write-Host '  Copilot JetBrains : ancienne entrée mcpServers gérée supprimée.' -ForegroundColor Cyan
-                } else {
-                    Write-Host '  Copilot JetBrains : ancienne entrée mcpServers non gérée — préservée.' -ForegroundColor Cyan
                 }
             }
-        } else {
-            Write-Host '  Copilot JetBrains : non détecté (github-copilot\intellij absent). Configuration ignorée.' -ForegroundColor Yellow
         }
-    } catch {
-        Write-Host "  Copilot JetBrains : erreur lors de la configuration: $($_.Exception.Message)" -ForegroundColor Yellow
+        else { Write-Host 'Copilot JetBrains non détecté — configuration ignorée.' -ForegroundColor Yellow }
     }
+    catch { Record-MaterialFailure 'Copilot JetBrains configuration' $_.Exception.Message }
 }
-
-# ── Claude Desktop ─────────────────────────────────────────────────────────────
 
 $ClaudeDesktopConfig = $null
-try {
-    $PackagesDir = Join-Path $env:LOCALAPPDATA 'Packages'
-    if (Test-Path -LiteralPath $PackagesDir -PathType Container) {
-        $pkgs = Get-ChildItem -LiteralPath $PackagesDir -Directory -Filter 'Claude_*' -ErrorAction SilentlyContinue
-        foreach ($pkg in $pkgs) {
-            $candidate = Join-Path $pkg.FullName 'LocalCache\Roaming\Claude\claude_desktop_config.json'
-            $dir = Split-Path $candidate -Parent
-            if (Test-Path -LiteralPath $dir -PathType Container) {
-                $ClaudeDesktopConfig = $candidate; break
-            }
-        }
-    }
-    if (-not $ClaudeDesktopConfig) {
-        $appDataClaude = Join-Path $env:APPDATA 'Claude'
-        $configFile    = Join-Path $appDataClaude 'claude_desktop_config.json'
-        $logsDir       = Join-Path $appDataClaude 'logs'
-        if ((Test-Path -LiteralPath $configFile -PathType Leaf) -or
-            (Test-Path -LiteralPath $logsDir -PathType Container)) {
-            $ClaudeDesktopConfig = $configFile
-        }
-    }
-} catch {
-    Write-Host "  Claude Desktop : erreur lors de la détection: $($_.Exception.Message)" -ForegroundColor Yellow
-}
+try { $ClaudeDesktopConfig = Resolve-ClaudeDesktopConfig }
+catch { if ($DoClaudeDesktop -or $Uninstall) { Record-MaterialFailure 'Claude Desktop detection' $_.Exception.Message } }
 
 if ($Uninstall) {
-    try { Remove-JsonMcpClient 'claude-desktop' $ClaudeDesktopConfig } catch {
-        Write-Host "  Claude Desktop : erreur lors de la suppression: $($_.Exception.Message)" -ForegroundColor Yellow
-    }
-} elseif ($DoClaudeDesktop) {
+    try { Remove-JsonMcpClient -IntegrationTable $integrations -ClientKey 'claude-desktop' -ConfigPath ([string]$ClaudeDesktopConfig) }
+    catch { Record-MaterialFailure 'Claude Desktop uninstall' $_.Exception.Message }
+}
+elseif ($DoClaudeDesktop) {
     try {
         if ($ClaudeDesktopConfig) {
-            Write-Host ''
-            Write-Host 'Claude Desktop détecté.'
-            # Avertir si Claude Desktop est en cours — il peut écraser la config avec son état mémoire
-            $cdProc = Get-Process -Name 'Claude' -ErrorAction SilentlyContinue
-            if ($cdProc) {
-                Write-Host '  Claude Desktop : application en cours — fermez-la maintenant et relancez-la après installation pour activer mcp-search-net.' -ForegroundColor Yellow
-            }
-            Install-JsonMcpClient `
-                -ClientKey  'claude-desktop' `
-                -ConfigPath $ClaudeDesktopConfig `
-                -Entry      $DesktopEntry `
-                -RootKey    'mcpServers'
-        } else {
-            Write-Host '  Claude Desktop : non détecté (claude_desktop_config.json et logs\ absents de %APPDATA%\Claude). Configuration ignorée.' -ForegroundColor Yellow
+            Install-JsonMcpClient -IntegrationTable $integrations -ClientKey 'claude-desktop' -ConfigPath $ClaudeDesktopConfig -Entry $DesktopEntry -RootKey 'mcpServers'
         }
-    } catch {
-        Write-Host "  Claude Desktop : erreur lors de la configuration: $($_.Exception.Message)" -ForegroundColor Yellow
+        else { Write-Host 'Claude Desktop non détecté — configuration ignorée.' -ForegroundColor Yellow }
     }
+    catch { Record-MaterialFailure 'Claude Desktop configuration' $_.Exception.Message }
 }
-
-# ── Claude Code (CLI) ──────────────────────────────────────────────────────────
 
 $ClaudeExe = $null
-try {
-    $claudeCmd = Get-Command claude -ErrorAction SilentlyContinue
-    if ($claudeCmd) { $ClaudeExe = $claudeCmd.Source }
-    if (-not $ClaudeExe) {
-        $nativeClaude = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
-        if (Test-Path -LiteralPath $nativeClaude -PathType Leaf) { $ClaudeExe = $nativeClaude }
-    }
-    if (-not $ClaudeExe) {
-        # Claude Code Desktop embeds its own CLI under %APPDATA%\Claude\claude-code
-        $claudeCodeDir = Join-Path $env:APPDATA 'Claude\claude-code'
-        if (Test-Path -LiteralPath $claudeCodeDir -PathType Container) {
-  $embedded = Get-ChildItem -LiteralPath $claudeCodeDir -Recurse -Filter 'claude.exe' -ErrorAction SilentlyContinue |
-      Sort-Object LastWriteTime -Descending | Select-Object -First 1
-  if ($embedded) { $ClaudeExe = $embedded.FullName }
-        }
-    }
-} catch {
-    Write-Host "  Claude Code : erreur lors de la détection: $($_.Exception.Message)" -ForegroundColor Yellow
-}
+try { $ClaudeExe = Resolve-ClaudeExe }
+catch { if ($DoClaudeCode -or $Uninstall) { Record-MaterialFailure 'Claude Code detection' $_.Exception.Message } }
+$ClaudeKey = 'claude-code:mcp-search-net'
 
-$integKeyCC = 'claude-code:mcp-search-net'
 if ($Uninstall) {
     try {
-        if ($integrations.ContainsKey($integKeyCC) -and $integrations[$integKeyCC].ownership -eq 'managed') {
-  if ($ClaudeExe) {
-      $rRm = Invoke-ExternalProcess $ClaudeExe @('mcp', 'remove', '--scope', 'user', 'mcp-search-net') 15
-      if ($rRm.Done -and $rRm.ExitCode -eq 0) {
-          Write-Host '  Claude Code : mcp-search-net retiré (scope=user).' -ForegroundColor Green
-      } else {
-          Write-Host '  Claude Code : suppression incomplète — retirez manuellement si nécessaire.' -ForegroundColor Yellow
-      }
-  }
-  $integrations.Remove($integKeyCC)
+        if ($integrations.ContainsKey($ClaudeKey)) {
+            $record = $integrations[$ClaudeKey]
+            if ($record.ownership -eq 'managed') {
+                if (-not $ClaudeExe) { throw 'CLI Claude Code introuvable pour retirer une entrée gérée.' }
+                $remove = Invoke-ExternalProcess $ClaudeExe @('mcp', 'remove', '--scope', 'user', 'mcp-search-net') 15
+                if (-not ($remove.Done -and $remove.ExitCode -eq 0)) {
+                    throw "Suppression CLI échouée : $(Get-SafeProcessSummary $remove)"
+                }
+            }
+            $integrations.Remove($ClaudeKey)
         }
-    } catch {
-        Write-Host "  Claude Code : erreur lors de la suppression: $($_.Exception.Message)" -ForegroundColor Yellow
     }
-} elseif ($DoClaudeCode) {
+    catch { Record-MaterialFailure 'Claude Code uninstall' $_.Exception.Message }
+}
+elseif ($DoClaudeCode) {
     try {
         if ($ClaudeExe) {
-  Write-Host ''
-  Write-Host 'Claude Code détecté.'
-  $alreadyManaged = $integrations.ContainsKey($integKeyCC) -and $integrations[$integKeyCC].ownership -eq 'managed'
-
-  $rGet   = Invoke-ExternalProcess $ClaudeExe @('mcp', 'get', 'mcp-search-net') 15
-  $listed = Test-NativeServerOutput $rGet
-
-  if ($listed -and -not $alreadyManaged) {
-      Write-Host "  Claude Code : entrée 'mcp-search-net' existante non gérée — préservée et vérifiée." -ForegroundColor Cyan
-      $integrations[$integKeyCC] = [PSCustomObject]@{
-          ownership    = 'preexisting'
-          configuredAt = [datetime]::UtcNow.ToString('o')
-      }
-  } else {
-      if ($alreadyManaged) {
-          $rRm = Invoke-ExternalProcess $ClaudeExe @('mcp', 'remove', '--scope', 'user', 'mcp-search-net') 15
-          if (-not ($rRm.Done -and $rRm.ExitCode -eq 0)) {
-              throw "Impossible de migrer l'entrée Claude Code gérée : $(Get-SafeProcessSummary $rRm)"
-          }
-          $integrations.Remove($integKeyCC)
-      }
-
-      # add-json avoids the version-dependent --env parser used by `mcp add`.
-      $claudePayload = [ordered]@{
-          type    = 'stdio'
-          command = 'cmd.exe'
-          args    = @('/d', '/s', '/c', $BinLauncher)
-          env     = (New-ManagedClientEnv)
-      }
-      $claudeJson = $claudePayload | ConvertTo-Json -Depth 6 -Compress
-      $rAdd = Invoke-ExternalProcess `
-          -Exe $ClaudeExe `
-          -ExeArgs @('mcp', 'add-json', '--scope', 'user', 'mcp-search-net', $claudeJson) `
-          -Sec 20
-
-      if ($rAdd.Done -and $rAdd.ExitCode -eq 0) {
-          $rGet = Invoke-ExternalProcess $ClaudeExe @('mcp', 'get', 'mcp-search-net') 15
-          if (Test-NativeServerOutput $rGet) {
-              Write-Host "  Claude Code : 'mcp-search-net' configuré et vérifié (scope=user)" -ForegroundColor Green
-              $integrations[$integKeyCC] = [PSCustomObject]@{
-                  ownership    = 'managed'
-                  configuredAt = [datetime]::UtcNow.ToString('o')
-              }
-          } else {
-              $integrations.Remove($integKeyCC)
-              Write-Host "  Claude Code : add-json terminé mais 'mcp get' ne confirme pas le serveur. $(Get-SafeProcessSummary $rGet)" -ForegroundColor Yellow
-          }
-      } else {
-          $integrations.Remove($integKeyCC)
-          Write-Host "  Claude Code : configuration add-json échouée (code $($rAdd.ExitCode)). $(Get-SafeProcessSummary $rAdd)" -ForegroundColor Yellow
-      }
-  }
-        } else {
-  Write-Host '  Claude Code : CLI non détecté (PATH, %USERPROFILE%\.local\bin et %APPDATA%\Claude\claude-code inspectés).' -ForegroundColor Yellow
+            $alreadyManaged = $integrations.ContainsKey($ClaudeKey) -and $integrations[$ClaudeKey].ownership -eq 'managed'
+            $get = Invoke-ExternalProcess $ClaudeExe @('mcp', 'get', 'mcp-search-net') 15
+            $listed = Test-NativeServerOutput $get
+            if ($listed -and -not $alreadyManaged) {
+                $integrations[$ClaudeKey] = [PSCustomObject]@{ ownership = 'preexisting'; configuredAt = [datetime]::UtcNow.ToString('o') }
+            }
+            else {
+                if ($alreadyManaged) {
+                    $remove = Invoke-ExternalProcess $ClaudeExe @('mcp', 'remove', '--scope', 'user', 'mcp-search-net') 15
+                    if (-not ($remove.Done -and $remove.ExitCode -eq 0)) {
+                        throw "Migration de l'entrée gérée impossible : $(Get-SafeProcessSummary $remove)"
+                    }
+                    $integrations.Remove($ClaudeKey)
+                }
+                $payload = [ordered]@{
+                    type = 'stdio'
+                    command = 'cmd.exe'
+                    args = @('/d', '/s', '/c', $BinLauncher)
+                    env = $managedEnv
+                }
+                $json = $payload | ConvertTo-Json -Depth 6 -Compress
+                $add = Invoke-ExternalProcess $ClaudeExe @('mcp', 'add-json', '--scope', 'user', 'mcp-search-net', $json) 20
+                if (-not ($add.Done -and $add.ExitCode -eq 0)) {
+                    throw "add-json échoué : $(Get-SafeProcessSummary $add)"
+                }
+                $verify = Invoke-ExternalProcess $ClaudeExe @('mcp', 'get', 'mcp-search-net') 15
+                if (-not (Test-NativeServerOutput $verify)) {
+                    $null = Invoke-ExternalProcess $ClaudeExe @('mcp', 'remove', '--scope', 'user', 'mcp-search-net') 15
+                    throw "mcp get ne confirme pas le serveur : $(Get-SafeProcessSummary $verify)"
+                }
+                $integrations[$ClaudeKey] = [PSCustomObject]@{ ownership = 'managed'; configuredAt = [datetime]::UtcNow.ToString('o') }
+            }
         }
-    } catch {
-        Write-Host "  Claude Code : erreur lors de la configuration: $($_.Exception.Message)" -ForegroundColor Yellow
+        else { Write-Host 'Claude Code non détecté — configuration ignorée.' -ForegroundColor Yellow }
     }
+    catch { Record-MaterialFailure 'Claude Code configuration' $_.Exception.Message }
 }
-
-# ── GitHub Copilot CLI ─────────────────────────────────────────────────────────
 
 $CopilotExe = $null
-try {
-    $copilotCmd = Get-Command copilot -ErrorAction SilentlyContinue
-    if ($copilotCmd -and $copilotCmd.CommandType -in @('Application', 'ExternalScript')) {
-        $CopilotExe = $copilotCmd.Source
-    }
-} catch {
-    Write-Host "  Copilot CLI : erreur lors de la détection: $($_.Exception.Message)" -ForegroundColor Yellow
-}
-
+try { $CopilotExe = Resolve-CopilotExe }
+catch { if ($DoCopilotCli) { Record-MaterialFailure 'Copilot CLI detection' $_.Exception.Message } }
 $CopilotCliConfig = Join-Path $env:USERPROFILE '.copilot\mcp-config.json'
-$CopilotCliEntry  = [PSCustomObject]@{
-    type    = 'stdio'
+$CopilotCliKey = 'copilot-cli:mcp-search-net'
+$CopilotCliEntry = [PSCustomObject]@{
+    type = 'stdio'
     command = 'cmd.exe'
-    args    = @('/d', '/s', '/c', $BinLauncher)
-    env     = (New-ManagedClientEnv)
-    tools   = @('*')
+    args = @('/d', '/s', '/c', $BinLauncher)
+    env = $managedEnv
+    tools = @('*')
 }
-$integKeyCopilotCli = 'copilot-cli:mcp-search-net'
 
 if ($Uninstall) {
-    try {
-        Remove-JsonMcpClient 'copilot-cli' $CopilotCliConfig
-    } catch {
-        Write-Host "  Copilot CLI : erreur lors de la suppression: $($_.Exception.Message)" -ForegroundColor Yellow
-    }
-} elseif ($DoCopilotCli) {
+    try { Remove-JsonMcpClient -IntegrationTable $integrations -ClientKey 'copilot-cli' -ConfigPath $CopilotCliConfig }
+    catch { Record-MaterialFailure 'Copilot CLI uninstall' $_.Exception.Message }
+}
+elseif ($DoCopilotCli) {
     try {
         if ($CopilotExe) {
-  Write-Host ''
-  Write-Host 'GitHub Copilot CLI détecté.'
-  $isPs1          = $CopilotExe.EndsWith('.ps1', [System.StringComparison]::OrdinalIgnoreCase)
-  $alreadyManaged = $integrations.ContainsKey($integKeyCopilotCli) -and $integrations[$integKeyCopilotCli].ownership -eq 'managed'
-
-  $rGet   = Invoke-ExternalProcess $CopilotExe @('mcp', 'get', 'mcp-search-net', '--json') 15 -ViaPs5:$isPs1
-  $listed = Test-NativeServerOutput $rGet
-
-  if ($listed -and -not $alreadyManaged) {
-      Write-Host "  Copilot CLI : entrée 'mcp-search-net' existante non gérée — préservée et vérifiée." -ForegroundColor Cyan
-      $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
-          ownership    = 'preexisting'
-          configPath   = $CopilotCliConfig
-          configuredAt = [datetime]::UtcNow.ToString('o')
-      }
-  } else {
-      $data = Read-JsonFile $CopilotCliConfig
-      if (-not (Get-PropertyExists $data 'mcpServers')) {
-          $data | Add-Member -NotePropertyName 'mcpServers' -NotePropertyValue ([PSCustomObject]@{}) -Force
-      }
-      $root = $data.mcpServers
-      $existingUnmanaged = (Get-PropertyExists $root 'mcp-search-net') -and -not $alreadyManaged
-
-      if ($existingUnmanaged) {
-          Write-Host "  Copilot CLI : entrée 'mcp-search-net' présente dans mcp-config.json mais non gérée — préservée; la CLI ne la confirme pas." -ForegroundColor Yellow
-          $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
-              ownership    = 'preexisting'
-              configPath   = $CopilotCliConfig
-              configuredAt = [datetime]::UtcNow.ToString('o')
-          }
-      } else {
-          if ($alreadyManaged) { $integrations.Remove($integKeyCopilotCli) }
-          Backup-ConfigFile $CopilotCliConfig
-          $root | Add-Member -NotePropertyName 'mcp-search-net' -NotePropertyValue $CopilotCliEntry -Force
-          Write-JsonFile $CopilotCliConfig $data
-
-          $rGet = Invoke-ExternalProcess $CopilotExe @('mcp', 'get', 'mcp-search-net', '--json') 15 -ViaPs5:$isPs1
-          if (Test-NativeServerOutput $rGet) {
-              Write-Host "  Copilot CLI : 'mcp-search-net' configuré dans mcp-config.json et vérifié" -ForegroundColor Green
-              $integrations[$integKeyCopilotCli] = [PSCustomObject]@{
-                  ownership    = 'managed'
-                  configPath   = $CopilotCliConfig
-                  configuredAt = [datetime]::UtcNow.ToString('o')
-              }
-          } else {
-              # Never leave an installer-owned entry that the native CLI cannot resolve.
-              $root.PSObject.Properties.Remove('mcp-search-net')
-              Write-JsonFile $CopilotCliConfig $data
-              $integrations.Remove($integKeyCopilotCli)
-              Write-Host "  Copilot CLI : mcp-config.json écrit mais 'mcp get' ne confirme pas le serveur; entrée gérée annulée. $(Get-SafeProcessSummary $rGet)" -ForegroundColor Yellow
-          }
-      }
-  }
-        } else {
-  Write-Host '  Copilot CLI : non détecté. Configuration ignorée.' -ForegroundColor Yellow
+            $isPs1 = $CopilotExe.EndsWith('.ps1', [System.StringComparison]::OrdinalIgnoreCase)
+            $alreadyManaged = $integrations.ContainsKey($CopilotCliKey) -and $integrations[$CopilotCliKey].ownership -eq 'managed'
+            $get = Invoke-ExternalProcess $CopilotExe @('mcp', 'get', 'mcp-search-net', '--json') 15 -ViaPs5:$isPs1
+            $listed = Test-NativeServerOutput $get
+            if ($listed -and -not $alreadyManaged) {
+                $integrations[$CopilotCliKey] = [PSCustomObject]@{
+                    ownership = 'preexisting'
+                    configPath = $CopilotCliConfig
+                    configuredAt = [datetime]::UtcNow.ToString('o')
+                }
+            }
+            else {
+                $hadOriginal = Test-Path -LiteralPath $CopilotCliConfig -PathType Leaf
+                $original = if ($hadOriginal) { [System.IO.File]::ReadAllText($CopilotCliConfig, [System.Text.Encoding]::UTF8) } else { $null }
+                $data = Read-JsonFile $CopilotCliConfig
+                if (-not (Get-PropertyExists $data 'mcpServers')) {
+                    $data | Add-Member -NotePropertyName 'mcpServers' -NotePropertyValue ([PSCustomObject]@{}) -Force
+                }
+                $root = $data.mcpServers
+                if ((Get-PropertyExists $root 'mcp-search-net') -and -not $alreadyManaged) {
+                    $integrations[$CopilotCliKey] = [PSCustomObject]@{
+                        ownership = 'preexisting'
+                        configPath = $CopilotCliConfig
+                        configuredAt = [datetime]::UtcNow.ToString('o')
+                    }
+                }
+                else {
+                    Backup-ConfigFile $CopilotCliConfig | Out-Null
+                    $root | Add-Member -NotePropertyName 'mcp-search-net' -NotePropertyValue $CopilotCliEntry -Force
+                    Write-JsonFile $CopilotCliConfig $data
+                    $verify = Invoke-ExternalProcess $CopilotExe @('mcp', 'get', 'mcp-search-net', '--json') 15 -ViaPs5:$isPs1
+                    if (-not (Test-NativeServerOutput $verify)) {
+                        if ($hadOriginal) { Write-DurableUtf8File -Path $CopilotCliConfig -Content $original }
+                        elseif (Test-Path -LiteralPath $CopilotCliConfig -PathType Leaf) { Remove-Item -LiteralPath $CopilotCliConfig -Force }
+                        $integrations.Remove($CopilotCliKey)
+                        throw "mcp get ne confirme pas le serveur : $(Get-SafeProcessSummary $verify)"
+                    }
+                    $integrations[$CopilotCliKey] = [PSCustomObject]@{
+                        ownership = 'managed'
+                        configPath = $CopilotCliConfig
+                        configuredAt = [datetime]::UtcNow.ToString('o')
+                    }
+                }
+            }
         }
-    } catch {
-        Write-Host "  Copilot CLI : erreur lors de la configuration: $($_.Exception.Message)" -ForegroundColor Yellow
+        else { Write-Host 'Copilot CLI non détecté — configuration ignorée.' -ForegroundColor Yellow }
     }
+    catch { Record-MaterialFailure 'Copilot CLI configuration' $_.Exception.Message }
 }
 
-# ── Codex Desktop ──────────────────────────────────────────────────────────────
-
 $CodexConfigPath = Join-Path $env:USERPROFILE '.codex\config.toml'
-$CodexBeginMark  = '# BEGIN MCP-SEARCH-NET'
-$CodexEndMark    = '# END MCP-SEARCH-NET'
-$integKeyCodex   = 'codex:mcp-search-net'
+$CodexBeginMark = '# BEGIN MCP-SEARCH-NET'
+$CodexEndMark = '# END MCP-SEARCH-NET'
+$CodexKey = 'codex:mcp-search-net'
 
 function New-CodexMcpBlock {
-    # Use distinct names to avoid shadowing PS automatic variables ($args, $home)
-    $cmdLine  = 'command = "cmd.exe"'
     $argsLine = 'args = ["/d", "/s", "/c", "' + $BinLauncher.Replace('\', '\\') + '"]'
-    $homeEnvLine    = 'MCP_SEARCH_HOME = "' + $InstallRoot.Replace('\', '\\') + '"'
-    $configEnvLine  = 'MCP_CONFIG_PATH = "' + $ClientConfigPath.Replace('\', '\\') + '"'
-    $catalogEnvLine = 'MCP_CATALOG_PATH = "' + $ClientCatalogPath.Replace('\', '\\') + '"'
+    $homeLine = 'MCP_SEARCH_HOME = "' + $InstallRoot.Replace('\', '\\') + '"'
+    $configLine = 'MCP_CONFIG_PATH = "' + (Join-Path $InstallRoot 'config\application.yml').Replace('\', '\\') + '"'
+    $catalogLine = 'MCP_CATALOG_PATH = "' + (Join-Path $InstallRoot 'data\catalog.db').Replace('\', '\\') + '"'
     return ($CodexBeginMark,
-            '[mcp_servers.mcp-search-net]',
-            $cmdLine, $argsLine, 'enabled = true', '',
-            '[mcp_servers.mcp-search-net.env]',
-            $homeEnvLine, $configEnvLine, $catalogEnvLine,
-            $CodexEndMark) -join [Environment]::NewLine
+        '[mcp_servers.mcp-search-net]',
+        'command = "cmd.exe"',
+        $argsLine,
+        'enabled = true',
+        '',
+        '[mcp_servers.mcp-search-net.env]',
+        $homeLine,
+        $configLine,
+        $catalogLine,
+        $CodexEndMark) -join [Environment]::NewLine
 }
 
 function Read-CodexConfig {
@@ -760,13 +727,12 @@ function Read-CodexConfig {
 }
 
 function Write-CodexConfig([string] $Content) {
-    New-Item -ItemType Directory -Force -Path (Split-Path $CodexConfigPath -Parent) | Out-Null
-    [System.IO.File]::WriteAllText($CodexConfigPath, $Content, $Utf8NoBom)
+    Write-DurableUtf8File -Path $CodexConfigPath -Content $Content
 }
 
 function Remove-CodexBlock([string] $Text) {
-    $pat = '(?s)' + [regex]::Escape($CodexBeginMark) + '.*?' + [regex]::Escape($CodexEndMark)
-    return [regex]::Replace($Text, $pat, '').Trim()
+    $pattern = '(?s)' + [regex]::Escape($CodexBeginMark) + '.*?' + [regex]::Escape($CodexEndMark)
+    return [regex]::Replace($Text, $pattern, '').Trim()
 }
 
 function Test-CodexMcpEntry([string] $Text) {
@@ -775,98 +741,78 @@ function Test-CodexMcpEntry([string] $Text) {
 
 if ($Uninstall) {
     try {
-        if ($integrations.ContainsKey($integKeyCodex)) {
-            $record = $integrations[$integKeyCodex]
+        if ($integrations.ContainsKey($CodexKey)) {
+            $record = $integrations[$CodexKey]
             if ($record.ownership -eq 'managed') {
                 $text = Read-CodexConfig
                 if ($text -match [regex]::Escape($CodexBeginMark)) {
-                    Backup-ConfigFile $CodexConfigPath
+                    Backup-ConfigFile $CodexConfigPath | Out-Null
                     $cleaned = Remove-CodexBlock $text
                     Write-CodexConfig (if ($cleaned) { $cleaned + [Environment]::NewLine } else { '' })
-                    Write-Host '  Codex Desktop : mcp-search-net retiré de config.toml' -ForegroundColor Green
                 }
-            } else {
-                Write-Host '  Codex Desktop : entrée préexistante/non gérée — préservée.' -ForegroundColor Cyan
             }
-            $integrations.Remove($integKeyCodex)
+            $integrations.Remove($CodexKey)
         }
-    } catch {
-        Write-Host "  Codex Desktop : erreur lors de la suppression: $($_.Exception.Message)" -ForegroundColor Yellow
     }
-} elseif ($DoCodex) {
+    catch { Record-MaterialFailure 'Codex uninstall' $_.Exception.Message }
+}
+elseif ($DoCodex) {
     try {
-        Write-Host ''
-        Write-Host 'Codex Desktop : configuration de mcp-search-net...'
-        $text  = Read-CodexConfig
+        $text = Read-CodexConfig
         $block = New-CodexMcpBlock
         if ($text -match [regex]::Escape($CodexBeginMark)) {
             $cleaned = Remove-CodexBlock $text
             $newText = if ($cleaned) { $cleaned + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }
             if ($newText -ne $text) {
-                Backup-ConfigFile $CodexConfigPath
+                Backup-ConfigFile $CodexConfigPath | Out-Null
                 Write-CodexConfig $newText
-                Write-Host '  Codex Desktop : mcp-search-net mis à jour dans config.toml' -ForegroundColor Green
-            } else {
-                Write-Host '  Codex Desktop : configuration déjà à jour.' -ForegroundColor Cyan
             }
-            $integrations[$integKeyCodex] = [PSCustomObject]@{
-                ownership    = 'managed'
-                configPath   = $CodexConfigPath
-                configuredAt = [datetime]::UtcNow.ToString('o')
-            }
-        } elseif (Test-CodexMcpEntry $text) {
-            Write-Host "  Codex Desktop : table 'mcp_servers.mcp-search-net' existante non gérée — préservée." -ForegroundColor Cyan
-            $integrations[$integKeyCodex] = [PSCustomObject]@{
-                ownership    = 'preexisting'
-                configPath   = $CodexConfigPath
-                configuredAt = [datetime]::UtcNow.ToString('o')
-            }
-        } else {
-            $prefix  = $text.TrimEnd()
-            $newText = if ($prefix) { $prefix + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }
-            Backup-ConfigFile $CodexConfigPath
-            Write-CodexConfig $newText
-            Write-Host '  Codex Desktop : mcp-search-net configuré dans config.toml' -ForegroundColor Green
-            $integrations[$integKeyCodex] = [PSCustomObject]@{
-                ownership    = 'managed'
-                configPath   = $CodexConfigPath
-                configuredAt = [datetime]::UtcNow.ToString('o')
-            }
+            $integrations[$CodexKey] = [PSCustomObject]@{ ownership = 'managed'; configPath = $CodexConfigPath; configuredAt = [datetime]::UtcNow.ToString('o') }
         }
-    } catch {
-        Write-Host "  Codex Desktop : erreur lors de la configuration: $($_.Exception.Message)" -ForegroundColor Yellow
+        elseif (Test-CodexMcpEntry $text) {
+            $integrations[$CodexKey] = [PSCustomObject]@{ ownership = 'preexisting'; configPath = $CodexConfigPath; configuredAt = [datetime]::UtcNow.ToString('o') }
+        }
+        else {
+            $prefix = $text.TrimEnd()
+            $newText = if ($prefix) { $prefix + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }
+            Backup-ConfigFile $CodexConfigPath | Out-Null
+            Write-CodexConfig $newText
+            $integrations[$CodexKey] = [PSCustomObject]@{ ownership = 'managed'; configPath = $CodexConfigPath; configuredAt = [datetime]::UtcNow.ToString('o') }
+        }
     }
+    catch { Record-MaterialFailure 'Codex configuration' $_.Exception.Message }
 }
 
-# ── Persist integrations ───────────────────────────────────────────────────────
-
-try {
-    Save-Integrations $integrations
-} catch {
-    Write-Host "  Intégrations : erreur lors de la sauvegarde: $($_.Exception.Message)" -ForegroundColor Yellow
-}
+try { Save-Integrations $integrations }
+catch { Record-MaterialFailure 'Intégrations metadata' $_.Exception.Message }
 
 if ($Uninstall) {
-    # Supprimer les artefacts générés par l'installateur (pas les données utilisateur)
-    # La suppression de data/ est sous contrôle de l'installateur Inno (choix utilisateur)
-    foreach ($artifact in @('.env', 'mcp-client-integrations.json', 'mcp.json.example', 'mcp.container.json.example')) {
-        $p = Join-Path $InstallRoot $artifact
-        if (Test-Path -LiteralPath $p -PathType Leaf) {
-            Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
+    foreach ($artifact in @('mcp.json.example', 'mcp.container.json.example')) {
+        $path = Join-Path $InstallRoot $artifact
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
         }
     }
-    if (Test-Path -LiteralPath $BackupRoot -PathType Container) {
-        Remove-Item -LiteralPath $BackupRoot -Recurse -Force -ErrorAction SilentlyContinue
+
+    if ($MaterialFailures.Count -eq 0 -and (Test-Path -LiteralPath $IntegrationsFile -PathType Leaf)) {
+        Remove-Item -LiteralPath $IntegrationsFile -Force -ErrorAction SilentlyContinue
     }
+
     Write-Host ''
-    Write-Host 'Nettoyage MCP clients terminé.' -ForegroundColor Green
-} else {
+    Write-Host 'Nettoyage MCP clients terminé. Les données utilisateur, .env et .config-backups sont conservés.' -ForegroundColor Green
+}
+else {
     Write-Host ''
     Write-Host "Configuration post-installation terminée : $InstallRoot" -ForegroundColor Green
     Write-Host "  Exemple MCP Copilot  : $(Join-Path $InstallRoot 'mcp.json.example')"
     Write-Host "  Intégrations clients : $IntegrationsFile"
 }
 
-# exit 0 explicite : sans ca, $LASTEXITCODE d'une commande native precedente (ex. docker info)
-# reste visible pour l'appelant (install.ps1) et ferait croire a un echec.
+if ($MaterialFailures.Count -gt 0) {
+    Write-Host ''
+    Write-Host "MCP_CONFIG_PARTIAL_FAILURE count=$($MaterialFailures.Count)" -ForegroundColor Red
+    foreach ($failure in $MaterialFailures) { Write-Host "  - $failure" -ForegroundColor Red }
+    exit 20
+}
+
 exit 0
