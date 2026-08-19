@@ -129,14 +129,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $runsResponse = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$env:GITHUB_SHA&status=completed&per_page=20" | ConvertFrom-Json
+          $runsResponse = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=master&event=push&head_sha=$env:GITHUB_SHA&status=completed&per_page=20" | ConvertFrom-Json
           $successfulRuns = @(
             $runsResponse.workflow_runs |
-              Where-Object { $_.head_sha -eq $env:GITHUB_SHA -and $_.conclusion -eq 'success' } |
+              Where-Object {
+                $_.head_sha -eq $env:GITHUB_SHA -and
+                $_.head_branch -eq 'master' -and
+                $_.event -eq 'push' -and
+                $_.conclusion -eq 'success'
+              } |
               Sort-Object created_at -Descending
           )
           if ($successfulRuns.Count -eq 0) {
-            throw "Aucune exécution CI terminée avec succès pour le SHA exact $env:GITHUB_SHA. Publication refusée."
+            throw "Aucune exécution CI push/master terminée avec succès pour le SHA exact $env:GITHUB_SHA. Publication refusée."
           }
 
           $qualifiedRun = $successfulRuns[0]
@@ -144,7 +149,8 @@ jobs:
           $requiredJobs = @(
             'Node.js 24 validation',
             'Docker integration and live E2E',
-            'Windows installation and STDIO packaging'
+            'Windows installation and STDIO packaging',
+            'SonarCloud Code Analysis'
           )
           foreach ($requiredJob in $requiredJobs) {
             $job = @($jobsResponse.jobs | Where-Object { $_.name -eq $requiredJob }) | Select-Object -First 1
@@ -152,7 +158,7 @@ jobs:
               throw "Gate CI exact-head absent ou non réussi : $requiredJob (run $($qualifiedRun.id), SHA $env:GITHUB_SHA)."
             }
           }
-          Write-Host "CI_EXACT_HEAD_QUALIFIED run=$($qualifiedRun.id) sha=$env:GITHUB_SHA"
+          Write-Host "CI_EXACT_HEAD_QUALIFIED run=$($qualifiedRun.id) sha=$env:GITHUB_SHA event=$($qualifiedRun.event) branch=$($qualifiedRun.head_branch)"
 
       - name: Construire et qualifier les artefacts Windows
         shell: pwsh
