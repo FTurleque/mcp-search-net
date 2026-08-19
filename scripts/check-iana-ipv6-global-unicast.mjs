@@ -29,12 +29,12 @@ if (process.argv.includes('--offline')) {
   process.exit(0);
 }
 
-const controller = new AbortController();
-const timeout = setTimeout(() => controller.abort(), 15_000);
+const controller = new globalThis.AbortController();
+const timeout = globalThis.setTimeout(() => controller.abort(), 15_000);
 timeout.unref();
 
 try {
-  const response = await fetch(REGISTRY_URL, {
+  const response = await globalThis.fetch(REGISTRY_URL, {
     headers: { accept: 'text/csv', 'user-agent': 'mcp-search-net-iana-registry-watch/1.0' },
     redirect: 'error',
     signal: controller.signal,
@@ -73,7 +73,7 @@ try {
 
   writeResult('IANA_IPV6_REGISTRY_CURRENT', expectedCidrs, snapshotLastUpdated);
 } finally {
-  clearTimeout(timeout);
+  globalThis.clearTimeout(timeout);
 }
 
 function parseCsv(text) {
