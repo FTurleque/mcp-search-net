@@ -4,7 +4,8 @@ const body = process.env.RELEASE_PR_BODY ?? '';
 const headSha = (process.env.RELEASE_PR_HEAD_SHA ?? '').trim().toLowerCase();
 const sourceBranch = process.env.RELEASE_PR_HEAD_REF ?? '';
 const targetBranch = process.env.RELEASE_PR_BASE_REF ?? '';
-const POLICY_MARKER = '<!-- release-qualification-source: github-checks-current-head -->';
+const POLICY_MARKER =
+  '<!-- release-qualification-source: github-checks-current-head -->';
 const COMMIT_SHA_PATTERN = /\b[a-f0-9]{40}\b/giu;
 
 if (sourceBranch !== 'develop' || targetBranch !== 'master') {
@@ -30,7 +31,10 @@ for (const forbidden of [
   /\brun\s+\d{5,}/iu,
   /HEAD\s+courant[^\n]*[a-f0-9]{40}/iu,
 ]) {
-  assert(!forbidden.test(qualificationSection), 'RELEASE_PR_MUTABLE_QUALIFICATION_CLAIM_FORBIDDEN');
+  assert(
+    !forbidden.test(qualificationSection),
+    'RELEASE_PR_MUTABLE_QUALIFICATION_CLAIM_FORBIDDEN',
+  );
 }
 
 for (const required of [
