@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest';
 
 import { UnsupportedContentTypeError } from '../../src/domain/errors/domain-errors.js';
 import { WebUrl } from '../../src/domain/value-objects/web-url.js';
-import { Crawl4aiContentFetcher } from '../../src/infrastructure/fetch/crawl4ai-content-fetcher.js';
+import {
+  Crawl4aiContentFetcher,
+} from '../../src/infrastructure/fetch/crawl4ai-content-fetcher.js';
 import type { SecureHttpGateway } from '../../src/infrastructure/fetch/secure-http-gateway.js';
 
 describe('2026-08-19 audit regressions', () => {
