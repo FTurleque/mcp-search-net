@@ -10,27 +10,26 @@ on:
       - synchronize
       - reopened
       - ready_for_review
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-pr-contract-${{ github.event.pull_request.number || github.ref }}
+  group: release-pr-contract-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   validate-develop-promotion:
     name: Validate develop to master qualification policy
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'develop'
+    if: github.event.pull_request.head.ref == 'develop'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      QUALIFIED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      QUALIFIED_SHA: ${{ github.event.pull_request.head.sha }}
       RELEASE_PR_BODY: ${{ github.event.pull_request.body || '' }}
-      RELEASE_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      RELEASE_PR_HEAD_REF: ${{ github.event.pull_request.head.ref || 'develop' }}
-      RELEASE_PR_BASE_REF: ${{ github.event.pull_request.base.ref || 'master' }}
+      RELEASE_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      RELEASE_PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      RELEASE_PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
     steps:
       - name: Check out exact candidate head
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
