@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import process from 'node:process';
 
 const root = resolve(import.meta.dirname, '..');
 const releaseWorkflow = readText('.github/workflows/release-windows.yml');
@@ -16,11 +17,7 @@ requireText(
   "$_.head_branch -eq 'master'",
   'release-windows: master branch filter missing',
 );
-requireText(
-  releaseWorkflow,
-  "$_.event -eq 'push'",
-  'release-windows: push event filter missing',
-);
+requireText(releaseWorkflow, "$_.event -eq 'push'", 'release-windows: push event filter missing');
 for (const job of [
   'Node.js 24 validation',
   'Docker integration and live E2E',
@@ -30,9 +27,7 @@ for (const job of [
   requireText(releaseWorkflow, `'${job}'`, `release-windows: required CI job missing: ${job}`);
 }
 assert(
-  !releaseWorkflow.includes(
-    'runs?head_sha=$env:GITHUB_SHA&status=completed&per_page=20',
-  ),
+  !releaseWorkflow.includes('runs?head_sha=$env:GITHUB_SHA&status=completed&per_page=20'),
   'release-windows: event-agnostic exact-head query is forbidden',
 );
 requireText(
