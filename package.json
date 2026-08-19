@@ -23,6 +23,7 @@
     "check:license": "node scripts/check-license.mjs",
     "check:ci-hygiene": "node scripts/check-ci-hygiene.mjs",
     "check:audit-invariants": "node scripts/check-audit-invariants.mjs",
+    "check:audit-release-boundary": "node scripts/check-audit-release-boundary.mjs",
     "check:release-pr-contract": "node scripts/check-release-pr-contract.mjs",
     "check:iana-ipv6": "node scripts/check-iana-ipv6-global-unicast.mjs --offline",
     "docs:check": "node scripts/check-docs.mjs && node scripts/check-current-state-durability.mjs",
@@ -62,7 +63,7 @@
     "benchmark:v1": "node scripts/benchmark-v1.mjs",
     "install:user": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1",
     "install:user:run": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1 -StartServices -RunAfterInstall",
-    "check": "npm run check:runtime && npm run check:utf8 && npm run check:copilot && npm run check:license && npm run check:supply-chain && npm run check:ci-hygiene && npm run check:audit-invariants && npm run check:release-pr-contract && npm run check:iana-ipv6 && npm run docs:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run client:contract-report && npm run test:coverage"
+    "check": "npm run check:runtime && npm run check:utf8 && npm run check:copilot && npm run check:license && npm run check:supply-chain && npm run check:ci-hygiene && npm run check:audit-invariants && npm run check:audit-release-boundary && npm run check:release-pr-contract && npm run check:iana-ipv6 && npm run docs:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run client:contract-report && npm run test:coverage"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
