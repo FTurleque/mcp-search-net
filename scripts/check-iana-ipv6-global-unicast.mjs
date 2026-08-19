@@ -5,24 +5,31 @@ import process from 'node:process';
 const REGISTRY_URL =
   'https://www.iana.org/assignments/ipv6-unicast-address-assignments/ipv6-unicast-address-assignments.csv';
 const SNAPSHOT_PATH = resolve(
-  'src/infrastructure/security/iana-ipv6-global-unicast-allocations.ts',
+  'src/infrastructure/security/iana-ipv6-global-unicast-allocations.json',
 );
 const RIR_DESIGNATIONS = new Set(['AFRINIC', 'APNIC', 'ARIN', 'LACNIC', 'RIPE NCC']);
 const CIDR_PATTERN = /^([0-9a-f:]+)\/(\d{1,3})$/iu;
-const SNAPSHOT_ENTRY_PATTERN = /\['([0-9a-f:]+)',\s*(\d{1,3})\]/giu;
-const LAST_UPDATED_PATTERN =
-  /IANA_IPV6_GLOBAL_UNICAST_REGISTRY_LAST_UPDATED\s*=\s*'(\d{4}-\d{2}-\d{2})'/u;
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 
-const snapshotSource = readFileSync(SNAPSHOT_PATH, 'utf8');
-const snapshotCidrs = [...snapshotSource.matchAll(SNAPSHOT_ENTRY_PATTERN)].map(
-  (match) => `${match[1]?.toLowerCase()}/${Number(match[2])}`,
+const snapshot = JSON.parse(readFileSync(SNAPSHOT_PATH, 'utf8'));
+assert(snapshot?.schemaVersion === '1.0', 'IANA_IPV6_SNAPSHOT_SCHEMA_INVALID');
+assert(Array.isArray(snapshot?.rirAllocatedCidrs), 'IANA_IPV6_SNAPSHOT_CIDRS_MISSING');
+assert(
+  typeof snapshot?.registryLastUpdated === 'string' &&
+    DATE_PATTERN.test(snapshot.registryLastUpdated),
+  'IANA_IPV6_SNAPSHOT_LAST_UPDATED_MISSING',
 );
-const snapshotLastUpdated = LAST_UPDATED_PATTERN.exec(snapshotSource)?.[1];
+const snapshotLastUpdated = snapshot.registryLastUpdated;
+const snapshotCidrs = snapshot.rirAllocatedCidrs.map((entry) => {
+  assert(Array.isArray(entry) && entry.length === 2, 'IANA_IPV6_SNAPSHOT_ENTRY_INVALID');
+  const [network, bits] = entry;
+  assert(typeof network === 'string', 'IANA_IPV6_SNAPSHOT_NETWORK_INVALID');
+  assert(Number.isInteger(bits), 'IANA_IPV6_SNAPSHOT_PREFIX_LENGTH_INVALID');
+  return validateCidr(`${network}/${bits}`, 'IANA_IPV6_SNAPSHOT_INVALID_CIDR');
+});
 
 assert(snapshotCidrs.length > 0, 'IANA_IPV6_SNAPSHOT_EMPTY');
 assert(new Set(snapshotCidrs).size === snapshotCidrs.length, 'IANA_IPV6_SNAPSHOT_DUPLICATE');
-assert(snapshotLastUpdated !== undefined, 'IANA_IPV6_SNAPSHOT_LAST_UPDATED_MISSING');
-for (const cidr of snapshotCidrs) validateCidr(cidr, 'IANA_IPV6_SNAPSHOT_INVALID_CIDR');
 
 if (process.argv.includes('--offline')) {
   writeResult('IANA_IPV6_SNAPSHOT_VALID', snapshotCidrs, snapshotLastUpdated);
