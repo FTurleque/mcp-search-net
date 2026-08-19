@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import process from 'node:process';
@@ -32,6 +32,8 @@ const EXPECTED_TEMPLATES = [
   'mcp-search-net://sources/{sourceId}',
 ];
 const PERSISTENT_SIDE_EFFECT_TOOLS = new Set(['fetch_url', 'search_docs', 'search_web']);
+const CERTIFICATION_BASELINE_PATH = resolve('config/native-client-certification-baseline.json');
+const COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/iu;
 
 const outputIndex = process.argv.indexOf('--output');
 const outputPath =
@@ -42,6 +44,11 @@ const outputPath =
 const temporaryRoot = mkdtempSync(join(tmpdir(), 'mcp-search-client-contract-'));
 const client = new Client({ name: 'mcp-search-net-contract-reporter', version: '1.0.0' });
 const crawl4aiEnvironmentName = 'MCP_CRAWL4AI_' + 'TO' + 'KEN';
+const certificationBaseline = readCertificationBaseline();
+const candidateRevision = normalizedCandidateRevision(process.env.MCP_BUILD_REVISION);
+const candidateMatchesCertifiedServerRevision =
+  candidateRevision !== 'UNAVAILABLE' &&
+  candidateRevision === certificationBaseline.certifiedServerRevision;
 
 try {
   const transport = new StdioClientTransport({
@@ -119,6 +126,7 @@ try {
       node: process.version,
       platform: process.platform,
       arch: process.arch,
+      candidateRevision,
     },
     contract: {
       tools: tools.tools.map((tool) => ({
@@ -131,12 +139,22 @@ try {
       structuredContentSchemaVersion: search.structuredContent.schemaVersion,
       contentTrust: catalogJson.contentTrust,
     },
+    nativeClientCertification: {
+      baseline: certificationBaseline,
+      candidateRevision,
+      candidateMatchesCertifiedServerRevision,
+      candidateVerdict: candidateMatchesCertifiedServerRevision
+        ? 'CERTIFIED_BASELINE_MATCH'
+        : 'REQUALIFICATION_REQUIRED',
+      evidenceScope:
+        'Native certification is bound to the recorded client versions, operating system and exact server revision.',
+    },
     automatedVerdict: 'PASS',
-    manualClientCertificationStillRequired: [
-      'Claude Desktop native integration',
-      'Claude Code native integration',
-      'Codex native integration',
-    ],
+    manualClientCertificationStillRequired: candidateMatchesCertifiedServerRevision
+      ? []
+      : certificationBaseline.clients.map(
+          (entry) => `${entry.name} native requalification for candidate revision`,
+        ),
   };
 
   mkdirSync(dirname(outputPath), { recursive: true });
@@ -145,6 +163,30 @@ try {
 } finally {
   await client.close().catch(() => undefined);
   rmSync(temporaryRoot, { recursive: true, force: true });
+}
+
+function readCertificationBaseline() {
+  const baseline = JSON.parse(readFileSync(CERTIFICATION_BASELINE_PATH, 'utf8'));
+  if (
+    baseline?.schemaVersion !== '1.0' ||
+    !COMMIT_SHA_PATTERN.test(baseline.certifiedServerRevision ?? '') ||
+    !Array.isArray(baseline.clients) ||
+    baseline.clients.length === 0 ||
+    baseline.clients.some(
+      (entry) =>
+        typeof entry?.name !== 'string' ||
+        typeof entry?.version !== 'string' ||
+        entry?.verdict !== 'PASS_NATIVE',
+    )
+  ) {
+    throw new Error('CLIENT_CERTIFICATION_BASELINE_INVALID');
+  }
+  return baseline;
+}
+
+function normalizedCandidateRevision(value) {
+  const candidate = value?.trim().toLowerCase() ?? '';
+  return COMMIT_SHA_PATTERN.test(candidate) ? candidate : 'UNAVAILABLE';
 }
 
 function assertEqual(actual, expected, code) {

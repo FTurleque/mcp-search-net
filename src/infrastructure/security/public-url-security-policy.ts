@@ -10,6 +10,7 @@ import {
   UrlSecurityError,
 } from '../../domain/errors/domain-errors.js';
 import type { Telemetry } from '../../application/ports/telemetry.js';
+import ianaIpv6Allocations from './iana-ipv6-allocations.json' with { type: 'json' };
 import { NodeDnsResolver } from './node-dns-resolver.js';
 
 export type AddressResolver = (hostname: string) => Promise<readonly string[]>;
@@ -154,44 +155,13 @@ function inIpv4Range(value: number, network: number, bits: number): boolean {
   return (value & mask) === (network & mask);
 }
 
-const ALLOCATED_IPV6_GLOBAL_UNICAST_CIDRS: readonly [string, number][] = [
-  ['2001:200::', 23], // NOSONAR
-  ['2001:400::', 23], // NOSONAR
-  ['2001:600::', 23], // NOSONAR
-  ['2001:800::', 22], // NOSONAR
-  ['2001:c00::', 23], // NOSONAR
-  ['2001:e00::', 23], // NOSONAR
-  ['2001:1200::', 23], // NOSONAR
-  ['2001:1400::', 22], // NOSONAR
-  ['2001:1800::', 23], // NOSONAR
-  ['2001:1a00::', 23], // NOSONAR
-  ['2001:1c00::', 22], // NOSONAR
-  ['2001:2000::', 19], // NOSONAR
-  ['2001:4000::', 23], // NOSONAR
-  ['2001:4200::', 23], // NOSONAR
-  ['2001:4400::', 23], // NOSONAR
-  ['2001:4600::', 23], // NOSONAR
-  ['2001:4800::', 23], // NOSONAR
-  ['2001:4a00::', 23], // NOSONAR
-  ['2001:4c00::', 23], // NOSONAR
-  ['2001:5000::', 20], // NOSONAR
-  ['2001:8000::', 19], // NOSONAR
-  ['2001:a000::', 20], // NOSONAR
-  ['2001:b000::', 20], // NOSONAR
-  ['2003::', 18], // NOSONAR
-  ['2400::', 12], // NOSONAR
-  ['2410::', 12], // NOSONAR
-  ['2600::', 12], // NOSONAR
-  ['2610::', 23], // NOSONAR
-  ['2620::', 23], // NOSONAR
-  ['2630::', 12], // NOSONAR
-  ['2800::', 12], // NOSONAR
-  ['2a00::', 12], // NOSONAR
-  ['2a10::', 12], // NOSONAR
-  ['2c00::', 12], // NOSONAR
-];
+type Ipv6Cidr = readonly [string, number];
 
-const BLOCKED_ALLOCATED_IPV6_CIDRS: readonly [string, number][] = [
+const IANA_IPV6_RIR_ALLOCATED_CIDRS = ianaIpv6Allocations.rirAllocatedCidrs.map(
+  ([network, bits]): Ipv6Cidr => [String(network), Number(bits)],
+);
+
+const BLOCKED_ALLOCATED_IPV6_CIDRS: readonly Ipv6Cidr[] = [
   ['2001:db8::', 32], // Documentation range inside 2001:c00::/23.
 ];
 
@@ -205,9 +175,10 @@ function isPublicIpv6(address: string): boolean {
     return isPublicIpv4([24, 16, 8, 0].map((shift) => String((ipv4 >>> shift) & 0xff)).join('.'));
   }
 
-  // Fail closed against IANA's IPv6 Global Unicast registry. Only ranges explicitly
-  // allocated there are accepted; unlisted space inside 2000::/3 remains reserved.
-  const allocated = ALLOCATED_IPV6_GLOBAL_UNICAST_CIDRS.some(([network, bits]) => {
+  // Fail closed against IANA's IPv6 Global Unicast registry. Only RIR ranges explicitly
+  // allocated there are accepted; unlisted space inside 2000::/3 and IANA-owned special-purpose
+  // allocations remain blocked. A scheduled registry-drift workflow keeps this snapshot current.
+  const allocated = IANA_IPV6_RIR_ALLOCATED_CIDRS.some(([network, bits]) => {
     const networkValue = ipv6ToBigInt(network);
     return networkValue !== undefined && inIpv6Range(value, networkValue, bits);
   });
