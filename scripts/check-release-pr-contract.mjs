@@ -3,17 +3,11 @@ import process from 'node:process';
 
 const githubEvent = readGithubEvent();
 const body = process.env.RELEASE_PR_BODY ?? githubEvent?.pull_request?.body ?? '';
-const headSha = (
-  process.env.RELEASE_PR_HEAD_SHA ??
-  githubEvent?.pull_request?.head?.sha ??
-  ''
-)
+const headSha = (process.env.RELEASE_PR_HEAD_SHA ?? githubEvent?.pull_request?.head?.sha ?? '')
   .trim()
   .toLowerCase();
-const sourceBranch =
-  process.env.RELEASE_PR_HEAD_REF ?? githubEvent?.pull_request?.head?.ref ?? '';
-const targetBranch =
-  process.env.RELEASE_PR_BASE_REF ?? githubEvent?.pull_request?.base?.ref ?? '';
+const sourceBranch = process.env.RELEASE_PR_HEAD_REF ?? githubEvent?.pull_request?.head?.ref ?? '';
+const targetBranch = process.env.RELEASE_PR_BASE_REF ?? githubEvent?.pull_request?.base?.ref ?? '';
 const POLICY_MARKER = '<!-- release-qualification-source: github-checks-current-head -->';
 const COMMIT_SHA_PATTERN = /\b[a-f0-9]{40}\b/giu;
 
