@@ -4,14 +4,11 @@ const body = process.env.RELEASE_PR_BODY ?? '';
 const headSha = (process.env.RELEASE_PR_HEAD_SHA ?? '').trim().toLowerCase();
 const sourceBranch = process.env.RELEASE_PR_HEAD_REF ?? '';
 const targetBranch = process.env.RELEASE_PR_BASE_REF ?? '';
-const POLICY_MARKER =
-  '<!-- release-qualification-source: github-checks-current-head -->';
+const POLICY_MARKER = '<!-- release-qualification-source: github-checks-current-head -->';
 const COMMIT_SHA_PATTERN = /\b[a-f0-9]{40}\b/giu;
 
 if (sourceBranch !== 'develop' || targetBranch !== 'master') {
-  process.stdout.write(
-    `${JSON.stringify({ status: 'RELEASE_PR_CONTRACT_NOT_APPLICABLE', sourceBranch, targetBranch })}\n`,
-  );
+  writeStatus('RELEASE_PR_CONTRACT_NOT_APPLICABLE', { sourceBranch, targetBranch });
   process.exit(0);
 }
 
@@ -20,10 +17,8 @@ assert(body.includes(POLICY_MARKER), 'RELEASE_PR_CURRENT_HEAD_POLICY_MARKER_MISS
 
 const qualificationSection = markdownSection(body, 'Qualification du candidat courant');
 assert(qualificationSection !== undefined, 'RELEASE_PR_QUALIFICATION_SECTION_MISSING');
-assert(
-  [...qualificationSection.matchAll(COMMIT_SHA_PATTERN)].length === 0,
-  'RELEASE_PR_QUALIFICATION_SECTION_MUST_NOT_PIN_SHA',
-);
+const pinnedShas = qualificationSection.match(COMMIT_SHA_PATTERN) ?? [];
+assert(pinnedShas.length === 0, 'RELEASE_PR_QUALIFICATION_SECTION_MUST_NOT_PIN_SHA');
 
 for (const forbidden of [
   /Tous les workflows[^\n]*SUCCESS/iu,
@@ -31,10 +26,7 @@ for (const forbidden of [
   /\brun\s+\d{5,}/iu,
   /HEAD\s+courant[^\n]*[a-f0-9]{40}/iu,
 ]) {
-  assert(
-    !forbidden.test(qualificationSection),
-    'RELEASE_PR_MUTABLE_QUALIFICATION_CLAIM_FORBIDDEN',
-  );
+  assert(!forbidden.test(qualificationSection), 'RELEASE_PR_MUTABLE_QUALIFICATION_FORBIDDEN');
 }
 
 for (const required of [
@@ -46,26 +38,24 @@ for (const required of [
   'Catalog backup durability',
   'Windows in-place upgrade',
 ]) {
-  assert(
-    qualificationSection.includes(required),
-    `RELEASE_PR_QUALIFICATION_REQUIREMENT_MISSING:${required}`,
-  );
+  const present = qualificationSection.includes(required);
+  assert(present, `RELEASE_PR_REQUIREMENT_MISSING:${required}`);
 }
 
 const mergeSection = markdownSection(body, 'Règle de merge');
 assert(mergeSection !== undefined, 'RELEASE_PR_MERGE_RULE_SECTION_MISSING');
-assert(
-  mergeSection.includes("aucune autorisation explicite de merge n'a été donnée"),
-  'RELEASE_PR_EXPLICIT_MERGE_AUTHORIZATION_RULE_MISSING',
+const explicitAuthorization = mergeSection.includes(
+  "aucune autorisation explicite de merge n'a été donnée",
 );
-assert(
-  mergeSection.includes('HEAD exact de la PR'),
-  'RELEASE_PR_EXACT_HEAD_MERGE_RULE_MISSING',
-);
+assert(explicitAuthorization, 'RELEASE_PR_MERGE_AUTHORIZATION_RULE_MISSING');
+const exactHeadRule = mergeSection.includes('HEAD exact de la PR');
+assert(exactHeadRule, 'RELEASE_PR_EXACT_HEAD_RULE_MISSING');
 
-process.stdout.write(
-  `${JSON.stringify({ status: 'RELEASE_PR_CONTRACT_VALID', headSha, sourceBranch, targetBranch })}\n`,
-);
+writeStatus('RELEASE_PR_CONTRACT_VALID', { headSha, sourceBranch, targetBranch });
+
+function writeStatus(status, details) {
+  process.stdout.write(`${JSON.stringify({ status, ...details })}\n`);
+}
 
 function markdownSection(markdown, heading) {
   const lines = markdown.split(/\r?\n/u);
