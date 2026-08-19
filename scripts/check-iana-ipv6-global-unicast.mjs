@@ -4,9 +4,7 @@ import process from 'node:process';
 
 const REGISTRY_URL =
   'https://www.iana.org/assignments/ipv6-unicast-address-assignments/ipv6-unicast-address-assignments.csv';
-const SNAPSHOT_PATH = resolve(
-  'src/infrastructure/security/iana-ipv6-global-unicast-allocations.json',
-);
+const SNAPSHOT_PATH = resolve('src/infrastructure/security/iana-ipv6-allocations.json');
 const RIR_DESIGNATIONS = new Set(['AFRINIC', 'APNIC', 'ARIN', 'LACNIC', 'RIPE NCC']);
 const CIDR_PATTERN = /^([0-9a-f:]+)\/(\d{1,3})$/iu;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
