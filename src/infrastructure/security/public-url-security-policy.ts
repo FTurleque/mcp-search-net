@@ -10,7 +10,9 @@ import {
   UrlSecurityError,
 } from '../../domain/errors/domain-errors.js';
 import type { Telemetry } from '../../application/ports/telemetry.js';
-import { IANA_IPV6_RIR_ALLOCATED_CIDRS } from './iana-ipv6-global-unicast-allocations.js';
+import ianaIpv6GlobalUnicastAllocations from './iana-ipv6-global-unicast-allocations.json' with {
+  type: 'json',
+};
 import { NodeDnsResolver } from './node-dns-resolver.js';
 
 export type AddressResolver = (hostname: string) => Promise<readonly string[]>;
@@ -155,7 +157,12 @@ function inIpv4Range(value: number, network: number, bits: number): boolean {
   return (value & mask) === (network & mask);
 }
 
-const BLOCKED_ALLOCATED_IPV6_CIDRS: readonly [string, number][] = [
+type Ipv6Cidr = readonly [string, number];
+
+const IANA_IPV6_RIR_ALLOCATED_CIDRS =
+  ianaIpv6GlobalUnicastAllocations.rirAllocatedCidrs as readonly Ipv6Cidr[];
+
+const BLOCKED_ALLOCATED_IPV6_CIDRS: readonly Ipv6Cidr[] = [
   ['2001:db8::', 32], // Documentation range inside 2001:c00::/23.
 ];
 
