@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0",
+  "certifiedServerVersion": "1.1.0",
+  "certifiedServerRevision": "a70b9a51527543c9417566326bb780121954cef5",
+  "certifiedAt": "2026-08-10",
+  "environment": {
+    "os": "Windows 10",
+    "nodeVersion": "24.18.0"
+  },
+  "sourceDocument": "docs/planning/client-certification-current.md",
+  "clients": [
+    {
+      "name": "Claude Code",
+      "version": "2.1.225",
+      "verdict": "PASS_NATIVE"
+    },
+    {
+      "name": "Claude Desktop",
+      "version": "1.26832.0",
+      "verdict": "PASS_NATIVE"
+    },
+    {
+      "name": "Codex",
+      "version": "26.803.5235.0",
+      "verdict": "PASS_NATIVE"
+    }
+  ]
+}
