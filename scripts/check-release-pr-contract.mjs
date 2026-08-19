@@ -1,9 +1,19 @@
+import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
-const body = process.env.RELEASE_PR_BODY ?? '';
-const headSha = (process.env.RELEASE_PR_HEAD_SHA ?? '').trim().toLowerCase();
-const sourceBranch = process.env.RELEASE_PR_HEAD_REF ?? '';
-const targetBranch = process.env.RELEASE_PR_BASE_REF ?? '';
+const githubEvent = readGithubEvent();
+const body = process.env.RELEASE_PR_BODY ?? githubEvent?.pull_request?.body ?? '';
+const headSha = (
+  process.env.RELEASE_PR_HEAD_SHA ??
+  githubEvent?.pull_request?.head?.sha ??
+  ''
+)
+  .trim()
+  .toLowerCase();
+const sourceBranch =
+  process.env.RELEASE_PR_HEAD_REF ?? githubEvent?.pull_request?.head?.ref ?? '';
+const targetBranch =
+  process.env.RELEASE_PR_BASE_REF ?? githubEvent?.pull_request?.base?.ref ?? '';
 const POLICY_MARKER = '<!-- release-qualification-source: github-checks-current-head -->';
 const COMMIT_SHA_PATTERN = /\b[a-f0-9]{40}\b/giu;
 
@@ -52,6 +62,17 @@ const exactHeadRule = mergeSection.includes('HEAD exact de la PR');
 assert(exactHeadRule, 'RELEASE_PR_EXACT_HEAD_RULE_MISSING');
 
 writeStatus('RELEASE_PR_CONTRACT_VALID', { headSha, sourceBranch, targetBranch });
+
+function readGithubEvent() {
+  if (process.env.GITHUB_EVENT_NAME !== 'pull_request') return undefined;
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (eventPath === undefined || eventPath === '') return undefined;
+  try {
+    return JSON.parse(readFileSync(eventPath, 'utf8'));
+  } catch (error) {
+    throw new Error('RELEASE_PR_GITHUB_EVENT_INVALID', { cause: error });
+  }
+}
 
 function writeStatus(status, details) {
   process.stdout.write(`${JSON.stringify({ status, ...details })}\n`);
