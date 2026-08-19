@@ -318,7 +318,7 @@ async function decodeResource(
   if (contentType.startsWith('text/') || contentType === 'application/markdown') {
     return { markdown: text.trim(), links: collectPlainLinks(text, resource.finalUrl) };
   }
-  throw new UnsupportedContentTypeError(`Unsupported content type: ${contentType}`);
+  throw new UnsupportedContentTypeError();
 }
 
 function collectPlainLinks(text: string, baseUrl: string): readonly string[] {
