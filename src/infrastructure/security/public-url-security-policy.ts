@@ -157,7 +157,8 @@ function inIpv4Range(value: number, network: number, bits: number): boolean {
 
 type Ipv6Cidr = readonly [string, number];
 
-const IANA_IPV6_RIR_ALLOCATED_CIDRS = ianaIpv6Allocations.rirAllocatedCidrs as readonly Ipv6Cidr[];
+const IANA_IPV6_RIR_ALLOCATED_CIDRS: readonly Ipv6Cidr[] =
+  ianaIpv6Allocations.rirAllocatedCidrs.map(([network, bits]) => [String(network), Number(bits)]);
 
 const BLOCKED_ALLOCATED_IPV6_CIDRS: readonly Ipv6Cidr[] = [
   ['2001:db8::', 32], // Documentation range inside 2001:c00::/23.
