@@ -121,6 +121,67 @@ describe('Windows in-place upgrade contract', () => {
     );
   });
 
+  windowsRuntimeTest(
+    'recomputes a stable transaction checksum after a JSON round-trip of the timestamp',
+    () => {
+      // Regression: some PowerShell engines' ConvertFrom-Json (observed on PowerShell
+      // 7, which release-windows.yml's build step runs under) silently coerce the
+      // ISO-8601 updatedAt string into a [DateTime]; re-stringifying it without the
+      // original 'o' round-trip format broke the checksum recomputed by
+      // Read-TransactionManifest, making a genuine crash during activation permanently
+      // unrecoverable (MCP_UPDATE_RECOVERY_REQUIRED) on that build path. Windows
+      // PowerShell 5.1 (the installed product's own runtime) is unaffected, but the
+      // fix must hold for both. This extracts the actual shipped function (not a
+      // copy) and drives it with both a real [DateTime] and a plain string.
+      function extractFunction(name: string) {
+        const marker = `function ${name} {`;
+        const start = updater.indexOf(marker);
+        if (start < 0) throw new Error(`Function ${name} not found in update-installation.ps1`);
+        let depth = 0;
+        for (let i = start; i < updater.length; i++) {
+          if (updater[i] === '{') depth++;
+          else if (updater[i] === '}') {
+            depth--;
+            if (depth === 0) return updater.slice(start, i + 1);
+          }
+        }
+        throw new Error(`Unbalanced braces extracting function ${name}`);
+      }
+
+      // Some PowerShell engines' ConvertFrom-Json (e.g. PowerShell 7, used by the
+      // release-windows.yml build step) coerce an ISO-8601 JSON string into a real
+      // [DateTime]; Windows PowerShell 5.1 (the actual installed product's runtime,
+      // via Inno Setup's explicit {sys}\WindowsPowerShell\v1.0\powershell.exe) does
+      // not. ConvertTo-TransactionTimestampString must round-trip both cases back to
+      // the exact original 'o'-format string so the checksum stays stable either way.
+      const script = [
+        extractFunction('ConvertTo-TransactionTimestampString'),
+        "$original = (Get-Date).ToUniversalTime().ToString('o')",
+        '$asDateTime = [DateTime]::Parse($original, $null, [System.Globalization.DateTimeStyles]::RoundtripKind)',
+        'if ($asDateTime.GetType().FullName -ne "System.DateTime") { throw "setup failed: not a DateTime" }',
+        'if ((ConvertTo-TransactionTimestampString -Value $asDateTime) -ne $original) {',
+        '  throw "DATETIME_BRANCH_MISMATCH: got $(ConvertTo-TransactionTimestampString -Value $asDateTime) expected $original"',
+        '}',
+        'if ((ConvertTo-TransactionTimestampString -Value $original) -ne $original) {',
+        '  throw "STRING_BRANCH_MISMATCH: got $(ConvertTo-TransactionTimestampString -Value $original) expected $original"',
+        '}',
+        'Write-Output "TIMESTAMP_ROUNDTRIP_STABLE"',
+      ].join('\n');
+
+      const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', script], {
+        encoding: 'utf8',
+        windowsHide: true,
+      });
+
+      if (result.status !== 0) {
+        throw new Error(
+          `timestamp round-trip probe failed (status=${result.status}): stdout=${result.stdout} stderr=${result.stderr}`,
+        );
+      }
+      expect(result.stdout).toContain('TIMESTAMP_ROUNDTRIP_STABLE');
+    },
+  );
+
   it('stages and rolls back all installer-managed program surfaces', () => {
     expect(updater).toContain("$StageRoot = Join-Path $InstallRoot '.install-staging'");
     expect(updater).toContain("$RollbackRoot = Join-Path $InstallRoot '.install-rollback'");

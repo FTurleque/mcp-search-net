@@ -208,6 +208,24 @@ function Write-DurableUtf8File {
     }
 }
 
+function ConvertTo-TransactionTimestampString {
+    # Some PowerShell engines' ConvertFrom-Json (observed on PowerShell 7, which the
+    # release-windows.yml build step runs under) silently coerce ISO-8601-looking JSON
+    # strings into [DateTime] values; Windows PowerShell 5.1 (the installed product's
+    # own runtime, invoked explicitly by Inno Setup) does not. A plain [string] cast on
+    # a coerced DateTime renders it using the current culture's default format instead
+    # of the original round-trip text, permanently breaking the checksum recomputed
+    # from the re-read transaction. Round-trip explicitly through the 'o' format, which
+    # reproduces the original (Get-Date).ToUniversalTime().ToString('o') text exactly
+    # regardless of which engine parsed the JSON.
+    param([Parameter(Mandatory)] $Value)
+
+    if ($Value -is [DateTime]) {
+        return $Value.ToString('o', [System.Globalization.CultureInfo]::InvariantCulture)
+    }
+    return [string]$Value
+}
+
 function New-TransactionCore {
     param(
         [Parameter(Mandatory)] [string] $Phase,
@@ -263,7 +281,7 @@ function Read-TransactionManifest {
     $core = New-TransactionCore `
         -Phase ([string]$transaction.phase) `
         -Entries @($transaction.entries) `
-        -UpdatedAt ([string]$transaction.updatedAt)
+        -UpdatedAt (ConvertTo-TransactionTimestampString -Value $transaction.updatedAt)
     $actualChecksum = Get-Sha256Hex -Value ($core | ConvertTo-Json -Depth 8 -Compress)
     if ([string]$transaction.checksumSha256 -ne $actualChecksum) {
         throw 'MCP_UPDATE_RECOVERY_REQUIRED: checksum du journal de transaction invalide.'
