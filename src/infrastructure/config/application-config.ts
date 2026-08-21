@@ -24,7 +24,7 @@ export const applicationConfigSchema = z
         profile: z.enum(['development', 'production', 'test']).default('development'),
       })
       .strict()
-      .default({ name: 'mcp-search-net', version: '1.1.3', profile: 'development' }),
+      .default({ name: 'mcp-search-net', version: '1.1.4', profile: 'development' }),
     searxng: z
       .object({
         baseUrl: httpUrlSchema.default('http://127.0.0.1:8888'),

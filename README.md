@@ -18,7 +18,7 @@ documentaire locale et une exposition MCP read-only via `search_docs`, `list_doc
 `history.sqlite` et l’outil read-only `list_search_history`. Le serveur n’embarque aucun LLM et ne
 requiert aucune API commerciale.
 
-La version de code courante est `1.1.3`. Une release n’est considérée qualifiée que si les checks
+La version de code courante est `1.1.4`. Une release n’est considérée qualifiée que si les checks
 sont attachés au SHA exact du candidat. L’état courant autoritatif est décrit dans
 [`docs/status/current-state.md`](docs/status/current-state.md).
 
