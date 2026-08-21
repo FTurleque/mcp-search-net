@@ -526,24 +526,29 @@ describe('Windows in-place upgrade contract', () => {
       // A smoke/validation run against an install root that was already
       // configured must not silently rewrite an unchanged client entry on
       // every run, and must say so clearly rather than staying silent.
+      // Use copilot-jetbrains rather than copilot-cli: JetBrains detection is
+      // directory-existence-based (fakeable here), while copilot-cli depends
+      // on a real `copilot` executable being on PATH, which CI runners don't
+      // have.
       const root = mkdtempSync(join(tmpdir(), 'mcp-already-integrated-json-'));
       const installRoot = join(root, 'install');
       const localAppData = join(root, 'local');
       const userProfile = join(root, 'user');
+      mkdirSync(join(localAppData, 'github-copilot', 'intellij'), { recursive: true });
       mkdirSync(userProfile, { recursive: true });
 
       try {
         const first = runConfigure(installRoot, localAppData, userProfile, [
           '-Clients',
-          'copilot-cli',
+          'copilot-jetbrains',
         ]);
         expect(first.status).toBe(0);
-        const configPath = join(userProfile, '.copilot', 'mcp-config.json');
+        const configPath = join(localAppData, 'github-copilot', 'intellij', 'mcp.json');
         const before = readFileSync(configPath, 'utf8');
 
         const second = runConfigure(installRoot, localAppData, userProfile, [
           '-Clients',
-          'copilot-cli',
+          'copilot-jetbrains',
         ]);
         expect(second.status).toBe(0);
         expect(second.stdout).toContain('aucune modification');
