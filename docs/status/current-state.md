@@ -8,7 +8,7 @@ ici : GitHub reste l’autorité pour savoir si un candidat est ouvert, mergé o
 
 ## Version, branches et qualification
 
-- Version SemVer : `1.1.3`.
+- Version SemVer : `1.1.4`.
 - Branche de release et source de vérité publiée : `master`.
 - Branche d’intégration courante : `develop`.
 - Intégration V2 : PR #8 mergée.
