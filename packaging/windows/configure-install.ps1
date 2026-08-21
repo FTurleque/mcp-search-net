@@ -1144,7 +1144,8 @@ function Remove-CodexBlock([string] $Text) {
 function Get-CodexManagedBlock([string] $Text) {
     $pattern = '(?s)' + [regex]::Escape($CodexBeginMark) + '.*?' + [regex]::Escape($CodexEndMark)
     $match = [regex]::Match($Text, $pattern)
-    return if ($match.Success) { $match.Value } else { '' }
+    if ($match.Success) { return $match.Value }
+    return ''
 }
 
 function Test-CodexMcpEntry([string] $Text) {

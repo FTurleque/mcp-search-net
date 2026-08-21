@@ -491,4 +491,32 @@ describe('Windows in-place upgrade contract', () => {
       }
     },
   );
+
+  windowsRuntimeTest(
+    'configures the Codex client without a syntax error on a fresh profile',
+    () => {
+      // Regression: Get-CodexManagedBlock used `return if (...) { } else { }`,
+      // which is not valid PowerShell syntax in any engine — it fails at runtime
+      // with "the term 'if' is not recognized". Codex is included by default
+      // ($AllClients), so every real installation hit this on first configure.
+      const root = mkdtempSync(join(tmpdir(), 'mcp-codex-config-'));
+      const installRoot = join(root, 'install');
+      const localAppData = join(root, 'local');
+      const userProfile = join(root, 'user');
+      mkdirSync(userProfile, { recursive: true });
+
+      try {
+        const result = runConfigure(installRoot, localAppData, userProfile, ['-Clients', 'codex']);
+        expect(result.stderr).not.toMatch(/is not recognized/);
+        expect(result.status).toBe(0);
+
+        const codexConfigPath = join(userProfile, '.codex', 'config.toml');
+        expect(existsSync(codexConfigPath)).toBe(true);
+        const codexConfig = readFileSync(codexConfigPath, 'utf8');
+        expect(codexConfig).toContain('[mcp_servers.mcp-search-net]');
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
 });
