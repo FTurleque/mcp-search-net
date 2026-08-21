@@ -672,9 +672,14 @@ function Install-JsonMcpClient {
             throw "MCP_CONFIG_CONCURRENT_SERVER_CONFLICT:${ConfigPath}:$ServerKey"
         }
 
-        if ($entryExists -and (Get-ManagedRecordState $record) -eq 'applied' -and
-            -not (Test-JsonEntryOwnedByRecord -Record $record -Entry $root.$ServerKey)) {
-            throw "MCP_CONFIG_MANAGED_ENTRY_DRIFT:${ConfigPath}:$ServerKey"
+        if ($entryExists -and (Get-ManagedRecordState $record) -eq 'applied') {
+            if ((Get-ObjectFingerprint $root.$ServerKey) -eq $entryFingerprint) {
+                Write-Host "  $ClientKey : '$ServerKey' déjà intégré, aucune modification nécessaire -> $ConfigPath" -ForegroundColor DarkGray
+                return
+            }
+            if (-not (Test-JsonEntryOwnedByRecord -Record $record -Entry $root.$ServerKey)) {
+                throw "MCP_CONFIG_MANAGED_ENTRY_DRIFT:${ConfigPath}:$ServerKey"
+            }
         }
 
         $root | Add-Member -NotePropertyName $ServerKey -NotePropertyValue $Entry -Force
@@ -1036,9 +1041,13 @@ elseif ($DoClaudeCode) {
                     }
                     Complete-ManagedIntegration -Table $integrations -Key $ClaudeKey -EntryFingerprint $ClaudeFingerprint
                 }
-                elseif ($listed -and (Get-ManagedRecordState $integrations[$ClaudeKey]) -eq 'applied' -and
-                    -not (Test-NativeManagedServerOutput $get $BinLauncher)) {
-                    throw 'MCP_CONFIG_MANAGED_ENTRY_DRIFT:claude-code:mcp-search-net'
+                elseif ($listed -and (Get-ManagedRecordState $integrations[$ClaudeKey]) -eq 'applied') {
+                    if (Test-NativeManagedServerOutput $get $BinLauncher) {
+                        Write-Host '  Claude Code : ''mcp-search-net'' déjà intégré, aucune modification nécessaire' -ForegroundColor DarkGray
+                    }
+                    else {
+                        throw 'MCP_CONFIG_MANAGED_ENTRY_DRIFT:claude-code:mcp-search-net'
+                    }
                 }
                 elseif ($absent) {
                     $json = $ClaudePayload | ConvertTo-Json -Depth 6 -Compress
@@ -1216,9 +1225,14 @@ elseif ($DoCodex) {
                     Complete-ManagedIntegration -Table $integrations -Key $CodexKey -ConfigPath $CodexConfigPath -EntryFingerprint $blockFingerprint
                     break
                 }
-                if ((Get-ManagedRecordState $integrations[$CodexKey]) -eq 'applied' -and
-                    -not (Test-CodexBlockOwnedByRecord -Record $integrations[$CodexKey] -Block $managedBlock)) {
-                    throw 'MCP_CONFIG_MANAGED_ENTRY_DRIFT:codex:mcp-search-net'
+                if ((Get-ManagedRecordState $integrations[$CodexKey]) -eq 'applied') {
+                    if ((Get-BytesSha256 ($Utf8NoBom.GetBytes($managedBlock))) -eq $blockFingerprint) {
+                        Write-Host "  Codex : 'mcp-search-net' déjà intégré, aucune modification nécessaire -> $CodexConfigPath" -ForegroundColor DarkGray
+                        break
+                    }
+                    if (-not (Test-CodexBlockOwnedByRecord -Record $integrations[$CodexKey] -Block $managedBlock)) {
+                        throw 'MCP_CONFIG_MANAGED_ENTRY_DRIFT:codex:mcp-search-net'
+                    }
                 }
                 $cleaned = Remove-CodexBlock $text
                 $newText = if ($cleaned) { $cleaned + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }

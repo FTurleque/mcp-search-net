@@ -135,7 +135,21 @@ $NodeExe = Join-Path $DistRoot "runtime\node-v24.18.0-win-x64\node.exe"
 $ZipSmokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("msn-release-zip-" + [Guid]::NewGuid())
 $ZipExtract = Join-Path $ZipSmokeRoot 'package'
 $ZipInstallRoot = Join-Path $ZipSmokeRoot 'installed'
+$ZipSandboxLocalAppData = Join-Path $ZipSmokeRoot 'sandbox-local'
+$ZipSandboxUserProfile = Join-Path $ZipSmokeRoot 'sandbox-user'
+$PreviousLocalAppData = $env:LOCALAPPDATA
+$PreviousAppData = $env:APPDATA
+$PreviousUserProfile = $env:USERPROFILE
 try {
+    # The packaged installer configures real per-user MCP client integrations
+    # (Codex, Claude Desktop, Copilot, IntelliJ). Never let a smoke test run
+    # against the operator's real profile - sandbox LOCALAPPDATA/APPDATA/
+    # USERPROFILE for the duration of this install so it can only ever touch
+    # disposable files under $ZipSmokeRoot.
+    $env:LOCALAPPDATA = $ZipSandboxLocalAppData
+    $env:APPDATA = Join-Path $ZipSandboxLocalAppData 'Roaming'
+    $env:USERPROFILE = $ZipSandboxUserProfile
+    New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA, $env:APPDATA, $env:USERPROFILE | Out-Null
     New-Item -ItemType Directory -Force -Path $ZipExtract | Out-Null
     Expand-Archive -LiteralPath $Zip -DestinationPath $ZipExtract -Force
     $PackagedRoot = Join-Path $ZipExtract $DistName
@@ -168,13 +182,30 @@ try {
         -Failure 'Sonde MCP STDIO (ZIP) échouée'
     Write-Host 'Sonde MCP STDIO ZIP : PASS'
 }
-finally { Remove-Item -LiteralPath $ZipSmokeRoot -Recurse -Force -ErrorAction SilentlyContinue }
+finally {
+    $env:LOCALAPPDATA = $PreviousLocalAppData
+    $env:APPDATA = $PreviousAppData
+    $env:USERPROFILE = $PreviousUserProfile
+    Remove-Item -LiteralPath $ZipSmokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 $SetupSmokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("msn-release-setup-" + [Guid]::NewGuid())
 $SetupInstallRoot = Join-Path $SetupSmokeRoot 'installed with spaces'
+$SetupSandboxLocalAppData = Join-Path $SetupSmokeRoot 'sandbox-local'
+$SetupSandboxUserProfile = Join-Path $SetupSmokeRoot 'sandbox-user'
 $SetupInstalled = $false
 $SetupUninstalled = $false
+$PreviousLocalAppData = $env:LOCALAPPDATA
+$PreviousAppData = $env:APPDATA
+$PreviousUserProfile = $env:USERPROFILE
 try {
+    # Same rationale as the ZIP smoke test above: the Inno Setup installer
+    # also runs configure-install.ps1, which must never touch the operator's
+    # real per-user MCP client configuration during a validation-only build.
+    $env:LOCALAPPDATA = $SetupSandboxLocalAppData
+    $env:APPDATA = Join-Path $SetupSandboxLocalAppData 'Roaming'
+    $env:USERPROFILE = $SetupSandboxUserProfile
+    New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA, $env:APPDATA, $env:USERPROFILE | Out-Null
     New-Item -ItemType Directory -Force -Path $SetupSmokeRoot | Out-Null
     Invoke-ProcessChecked -File $SmokeSetup `
         -Arguments @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="{0}"' -f $SetupInstallRoot),'/TASKS="!addtopath"') `
@@ -211,6 +242,9 @@ finally {
             if ($Rollback) { Invoke-ProcessChecked -File $Rollback -Arguments @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') -Failure 'Rollback smoke setup échoué' }
         } catch { Write-Warning "Rollback smoke setup : $($_.Exception.Message)" }
     }
+    $env:LOCALAPPDATA = $PreviousLocalAppData
+    $env:APPDATA = $PreviousAppData
+    $env:USERPROFILE = $PreviousUserProfile
     Remove-Item -LiteralPath $SetupSmokeRoot -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $OutputRoot '.smoke') -Recurse -Force -ErrorAction SilentlyContinue
 }
