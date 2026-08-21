@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version SemVer à qualifier/publier, par exemple 1.1.3 ou 1.1.3-rc1'
+        description: 'Version SemVer à qualifier/publier, par exemple 1.1.4 ou 1.1.4-rc1'
         required: true
-        default: '1.1.3'
+        default: '1.1.4'
         type: string
       validate_only:
         description: 'Qualifier sans publier (inspection EXE avant release)'
