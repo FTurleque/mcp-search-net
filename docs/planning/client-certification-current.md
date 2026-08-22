@@ -171,17 +171,63 @@ jusqu'à une vraie invocation cliente.
 Après promotion d'un candidat sur `master`, la requalification publiée suit désormais ce flux :
 
 1. installer/exécuter le runtime correspondant exactement au HEAD `master` candidat ;
-2. lancer le collecteur local et conserver le SHA-256 de son rapport JSON ;
-3. dans **Claude Code**, effectuer `search_docs`, relever le `sectionId` réel, puis appeler `read_doc_section` avec exactement cet identifiant et conserver les deux `requestId` ;
+2. lancer le collecteur local (`scripts/certify-native-clients.ps1`) et conserver l'intégralité du
+   JSON de son rapport (pas seulement un hash) ; le rapport porte désormais `serverVersion`,
+   `sourceRevision` et `sourceState` lus depuis le `BUILD-MANIFEST.json` de l'installation locale ;
+3. dans **Claude Code**, effectuer `search_docs`, relever le `sectionId` réel, puis appeler
+   `read_doc_section` avec exactement cet identifiant et conserver les deux `requestId` ;
 4. répéter la même observation dans **Claude Desktop** ;
 5. répéter la même observation dans **Codex** ;
-6. déclencher manuellement le workflow GitHub Actions `Native client certification record` sur `master` et fournir pour chacun des trois clients un JSON contenant `client`, `version`, `os`, `searchRequestId`, `readRequestId`, `searchSectionId`, `readSectionId`, `nativeToolInvocationObserved: true` et `verdict: PASS_NATIVE`, ainsi que `collector_report_sha256` ;
-7. le workflow valide l'égalité des deux `sectionId` pour chaque client et produit l'artefact `native-client-certification-<SHA>` avec le verdict global `PASS_NATIVE_3_OF_3`.
+6. déclencher manuellement le workflow GitHub Actions `Native client certification record` sur
+   `master` et fournir pour chacun des trois clients un JSON contenant `schemaVersion`, `client`,
+   `clientVersion`, `os`, `serverVersion`, `sourceRevision` (doit être strictement égal au SHA
+   `master` certifié), `sourceState: CLEAN`, `nodeVersion`, `searchRequestId`, `readRequestId`
+   (différent de `searchRequestId`), `searchSectionId`, `readSectionId` (identique à
+   `searchSectionId`), `sectionFound: true`, `truncated`, `characterCount`,
+   `nativeToolInvocationObserved: true`, `observedAt` et `verdict: PASS_NATIVE`, ainsi que
+   `collector_report_json` (le contenu JSON complet du rapport du collecteur, et non plus
+   seulement son empreinte déclarée) ;
+7. le workflow valide chaque champ ci-dessus pour les trois clients, vérifie que les trois
+   `sourceRevision` sont strictement égaux au SHA `master` certifié, recalcule lui-même le
+   SHA-256 du rapport du collecteur reçu (jamais une empreinte simplement déclarée par
+   l'appelant), et produit l'artefact `native-client-certification-<SHA>` avec le verdict global
+   `PASS_NATIVE_3_OF_3` uniquement si les trois clients (et exactement ces trois, sans doublon)
+   sont valides.
 
-Le workflow de publication Windows recherche ensuite un run `workflow_dispatch` réussi sur le
-**même SHA exact de `master`** et refuse la publication si l'artefact correspondant est absent ou
-expiré. `validate_only` reste utilisable sans cette preuve pour construire et inspecter un candidat,
-mais aucun `gh release create` n'est possible sans certification native exact-head.
+Le gate de publication Windows (`scripts/release/assert-native-client-certification.ps1`)
+recherche un run `workflow_dispatch` réussi sur le **même SHA exact de `master`**, **télécharge
+réellement l'artefact correspondant**, revalide indépendamment tout son contenu (schéma,
+`repository`, `sourceRevision`, `verdict`, les trois clients et chacun de leurs champs) et refuse
+la publication si l'artefact est absent, expiré, mal formé, ou incohérent avec le SHA certifié —
+l'existence d'un artefact du bon nom ne suffit plus jamais à elle seule. `validate_only` reste
+utilisable sans cette preuve pour construire et inspecter un candidat, mais aucun
+`gh release create` n'est possible sans certification native exact-head validée de bout en bout.
+
+### Flux de release complet (rappel)
+
+1. développement/corrections sur `develop` ;
+2. CI `develop` verte ;
+3. promotion vers `master` ;
+4. CI push/`master` verte sur le SHA exact `R` ;
+5. `Publish Windows Release` avec `validate_only=true` (build/inspection uniquement, aucune
+   certification native requise) ;
+6. téléchargement/installation du candidat construit à partir de `R` ;
+7. vérification locale : `BUILD-MANIFEST.sourceRevision == R` et `sourceState == CLEAN` ;
+8. seulement ensuite : observations natives Claude Code, Claude Desktop, Codex sur `R` ;
+9. chacun produit une preuve native pour **exactement** `R` ;
+10. `Native client certification record` sur `master`/`R` avec les trois preuves ;
+11. création de l'artefact `native-client-certification-R` ;
+12. le gate de release télécharge et revalide cet artefact ;
+13. `Publish Windows Release` avec `validate_only=false` ;
+14. publication uniquement si CI exact-head PASS, certification exact-head
+    `PASS_NATIVE_3_OF_3`, signature Authenticode PASS (identité de certificat épinglée) et
+    provenance PASS.
+
+**Ne jamais certifier `develop`. Ne jamais certifier un SHA intermédiaire. Ne jamais lancer les
+observations clientes avant que le SHA final de `master` soit figé.** Une certification produite
+pour un SHA qui n'est plus le HEAD final de `master` ne peut pas servir de preuve pour la
+publication suivante ; elle reste un historique valide de ce qui a été observé, mais une nouvelle
+certification exact-head est requise après tout nouveau commit sur `master`.
 
 Le workflow recommandé d'observation reste :
 

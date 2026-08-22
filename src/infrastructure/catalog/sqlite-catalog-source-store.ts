@@ -4,8 +4,12 @@ import type {
   CatalogPage,
   CatalogSourcePageQuery,
 } from '../../application/ports/catalog-repository.js';
-import { MAX_CATALOG_PAGE_SIZE } from '../../application/ports/catalog-repository.js';
+import {
+  MAX_CATALOG_PAGE_OFFSET,
+  MAX_CATALOG_PAGE_SIZE,
+} from '../../application/ports/catalog-repository.js';
 import type { Clock } from '../../application/ports/clock.js';
+import { InvalidArgumentError } from '../../domain/errors/domain-errors.js';
 import type {
   CatalogFreshnessPolicy,
   CatalogSource,
@@ -161,8 +165,10 @@ export class SqliteCatalogSourceStore {
 }
 
 function assertPageQuery(offset: number, limit: number): void {
-  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('CATALOG_PAGE_OFFSET_INVALID');
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > MAX_CATALOG_PAGE_OFFSET) {
+    throw new InvalidArgumentError('CATALOG_PAGE_OFFSET_INVALID');
+  }
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > MAX_CATALOG_PAGE_SIZE) {
-    throw new Error('CATALOG_PAGE_LIMIT_INVALID');
+    throw new InvalidArgumentError('CATALOG_PAGE_LIMIT_INVALID');
   }
 }

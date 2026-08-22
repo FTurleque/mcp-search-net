@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 
 import {
+  MAX_CATALOG_PAGE_OFFSET,
   MAX_CATALOG_PAGE_SIZE,
   type CatalogDocumentFilters,
   type CatalogDocumentPageQuery,
@@ -8,6 +9,7 @@ import {
   type CatalogPageQuery,
   type CatalogSectionPageQuery,
 } from '../../application/ports/catalog-repository.js';
+import { InvalidArgumentError } from '../../domain/errors/domain-errors.js';
 import type {
   CatalogCurrentDocumentSection,
   CatalogDocument,
@@ -41,7 +43,6 @@ import {
   toCatalogDocumentEntry,
 } from './sqlite-catalog-row-views.js';
 
-const MAX_CATALOG_PAGE_OFFSET = 1_000_000;
 const SELECT_CURRENT_DOCUMENT_VERSION_SQL = `
   SELECT document_versions.*
   FROM documents
@@ -188,13 +189,13 @@ function assertCatalogPageQuery(query: CatalogPageQuery): void {
     query.offset < 0 ||
     query.offset > MAX_CATALOG_PAGE_OFFSET
   ) {
-    throw new Error('CATALOG_PAGE_OFFSET_INVALID');
+    throw new InvalidArgumentError('CATALOG_PAGE_OFFSET_INVALID');
   }
   if (
     !Number.isSafeInteger(query.limit) ||
     query.limit < 1 ||
     query.limit > MAX_CATALOG_PAGE_SIZE
   ) {
-    throw new Error('CATALOG_PAGE_LIMIT_INVALID');
+    throw new InvalidArgumentError('CATALOG_PAGE_LIMIT_INVALID');
   }
 }

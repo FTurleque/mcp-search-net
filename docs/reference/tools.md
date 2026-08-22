@@ -74,7 +74,15 @@ seul le registre `official-sources.yml`, pour une URL résultat HTTPS, peut prod
 
 Politiques :
 
-- `strict` construit d'abord la liste des domaines vérifiés du registre, priorise ceux dont les mots-clés correspondent à la requête, applique `allowedDomains`/`excludedDomains`, puis contraint la requête SearXNG avec des opérateurs `site:` avant de conserver uniquement les résultats `VERIFIED_OFFICIAL` ; une liste vide reste un succès accompagné de `NO_VERIFIED_OFFICIAL_SOURCE` ;
+- `strict` découvre en deux passes hiérarchisées plutôt qu'en une seule requête mélangeant tout le
+  registre : une première passe ciblée interroge uniquement les sources dont les mots-clés
+  correspondent à la requête (`allowedDomains`/`excludedDomains` appliqués), en scopant les
+  sources GitHub avec organisation/chemin (`site:github.com/<org>/<repo>`) plutôt qu'un simple
+  `site:github.com` qui noierait le dépôt officiel parmi des résultats non officiels ; une seconde
+  passe de repli n'interroge le reste du registre officiel que si la première n'a produit aucun
+  résultat officiel vérifié ; les résultats des deux passes sont fusionnés et dédupliqués avant de
+  ne conserver que les résultats `VERIFIED_OFFICIAL` ; une liste vide reste un succès accompagné de
+  `NO_VERIFIED_OFFICIAL_SOURCE` ; le budget de délai global reste partagé entre toutes les passes ;
 - `prefer` utilise la recherche générale, classe les sources officielles en premier et signale l'inclusion de sources non vérifiées ;
 - `any` ne filtre aucun statut, tout en conservant les filtres de domaines et le classement local.
 
@@ -191,8 +199,13 @@ signale explicitement `found` et `truncated`.
 L'outil est **opt-in**. Il n'est enregistré que lorsque `history.exposeTool: true`. Les profils de
 production Windows et Docker utilisent par défaut `history.enabled: false` et
 `history.exposeTool: false`; aucune recherche n'y est donc persistée ni exposée tant que
-l'utilisateur ne l'active pas explicitement. Une configuration historique qui ne contient pas
-`exposeTool` hérite de `false`, sans supprimer un éventuel fichier `history.sqlite` existant.
+l'utilisateur ne l'active pas explicitement. Une configuration qui omet entièrement la section
+`history:` hérite de `enabled: false` et `exposeTool: false` (défaut du schéma), sans supprimer un
+éventuel fichier `history.sqlite` existant. Une mise à jour Windows d'une installation antérieure à
+ce changement de défaut migre `history.enabled: true` vers `false` lorsque ce champ n'a jamais été
+modifié explicitement par l'utilisateur (fichier identique au `.default` précédemment livré, ou
+absence de tout `.default` de référence) ; une valeur détectée comme explicitement choisie par
+l'utilisateur est préservée telle quelle.
 
 Lorsqu'il est activé, `list_search_history` liste l’historique local persistant des appels validés à
 `search_web` et `search_docs`. L’outil est read-only, idempotent, closed-world et n’effectue aucun
@@ -247,7 +260,11 @@ enabled=true available=true nextBeforeId=103
 
 Les resources V2 sont read-only. Les collections de sources, documents, versions et sections
 retournent 20 éléments au maximum et fournissent `nextOffset` et `nextUri`. Les offsets de page
-sont bornés à 1 000 000 au niveau du read model. Les templates paginés sont :
+sont bornés à 1 000 000 pour les quatre collections (sources incluse), via une constante unique
+partagée entre le parsing des URI de resources et les repositories SQLite ; un offset hors bornes
+est rejeté avant préparation SQL. Côté outil MCP (`list_docs`), le même plafond est en plus imposé
+au niveau du schéma Zod, ce qui garantit un code d'erreur public stable `INVALID_ARGUMENT` plutôt
+qu'une erreur interne générique. Les templates paginés sont :
 
 ```text
 mcp-search-net://sources/page/{offset}

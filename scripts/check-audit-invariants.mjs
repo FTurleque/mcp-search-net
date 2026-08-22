@@ -487,6 +487,142 @@ assert(
   'CI: workflow bootstrap better-sqlite3 temporaire encore présent',
 );
 
+// --- AUD-01..AUD-06 regression invariants (audit du 2026-08-22) ---------------------------
+
+const nativeCertRecordWorkflow = readText(
+  '.github/workflows/native-client-certification-record.yml',
+);
+const nativeCertGate = readText('scripts/release/assert-native-client-certification.ps1');
+const searchWebUseCase = readText('src/application/use-cases/search-web.ts');
+const searxngProvider = readText('src/infrastructure/search/searxng-search-provider.ts');
+const applicationConfig = readText('src/infrastructure/config/application-config.ts');
+const catalogRepositoryPort = readText('src/application/ports/catalog-repository.ts');
+const catalogSourceStore = readText('src/infrastructure/catalog/sqlite-catalog-source-store.ts');
+const signWindowsSetup = readText('scripts/release/sign-windows-setup.ps1');
+const providerEndpointPolicy = readText('src/infrastructure/config/provider-endpoint-policy.ts');
+const loadConfiguration = readText('src/infrastructure/config/load-configuration.ts');
+
+// AUD-01: release native certification cannot be accepted from artifact existence only.
+for (const invariant of [
+  'gh run download',
+  'Assert-ValidNativeCertificationArtifact',
+  'ConvertFrom-Json',
+]) {
+  requireText(
+    nativeCertGate,
+    invariant,
+    `AUD-01 regression: native certification gate no longer downloads/validates artifact content: ${invariant}`,
+  );
+}
+assert(
+  nativeCertGate.indexOf('Assert-ValidNativeCertificationArtifact -Record') <
+    nativeCertGate.lastIndexOf('exit 0'),
+  'AUD-01 regression: artifact content validation must run before the gate accepts (exit 0)',
+);
+assert(
+  !nativeCertRecordWorkflow.includes('collector_report_sha256:'),
+  'AUD-01 regression: a caller-declared collector_report_sha256 input must not be trusted again',
+);
+for (const invariant of [
+  'collector_report_json',
+  'ComputeHash',
+  'sourceRevision',
+  'sourceState',
+  'serverVersion',
+  'nodeVersion',
+  'sectionFound',
+  'characterCount',
+  'observedAt',
+]) {
+  requireText(
+    nativeCertRecordWorkflow,
+    invariant,
+    `AUD-01 regression: per-client/collector evidence field missing: ${invariant}`,
+  );
+}
+
+// AUD-02: strict official search cannot rely on one crowded global domain pass when targeted
+// official sources exist.
+for (const invariant of ['targetedOfficialSources', 'fallbackOfficialSources']) {
+  requireText(
+    searchWebUseCase,
+    invariant,
+    `AUD-02 regression: tiered strict discovery removed: ${invariant}`,
+  );
+}
+assert(
+  !searchWebUseCase.includes('[...registry.findForQuery(request.query), ...registry.list()]'),
+  'AUD-02 regression: strict discovery must not flatten the whole registry into one query again',
+);
+requireText(
+  searxngProvider,
+  'pathPrefix',
+  'AUD-02 regression: GitHub org/repository path-scoped site: queries removed',
+);
+
+// AUD-03: history production default cannot silently become enabled.
+const historySchemaBlock = sliceBetween(applicationConfig, 'history: z\n', '    limits: z\n');
+requireText(
+  historySchemaBlock,
+  'enabled: z.boolean().default(false)',
+  'AUD-03 regression: history.enabled schema default must be false',
+);
+assert(
+  !historySchemaBlock.includes('enabled: z.boolean().default(true)'),
+  'AUD-03 regression: history.enabled must never default to true again',
+);
+
+// AUD-04: catalog pagination cannot accept unbounded offsets.
+requireText(
+  catalogRepositoryPort,
+  'export const MAX_CATALOG_PAGE_OFFSET',
+  'AUD-04 regression: shared catalog page offset bound removed',
+);
+requireText(
+  catalogSourceStore,
+  'MAX_CATALOG_PAGE_OFFSET',
+  'AUD-04 regression: sources pagination no longer bounds its offset',
+);
+
+// AUD-05: published Windows installer cannot be accepted from any arbitrary valid signing
+// certificate.
+for (const invariant of [
+  'ExpectedCertificateThumbprint',
+  'Empreinte du certificat Authenticode inattendue',
+]) {
+  requireText(
+    signWindowsSetup,
+    invariant,
+    `AUD-05 regression: Authenticode signer thumbprint pinning removed: ${invariant}`,
+  );
+}
+requireText(
+  releaseWorkflow,
+  'WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT',
+  'AUD-05 regression: pinned signing thumbprint no longer threaded into the release workflow',
+);
+
+// AUD-06: remote plaintext provider endpoint cannot be accepted in production.
+assert(
+  existsSync(resolve(root, 'src/infrastructure/config/provider-endpoint-policy.ts')),
+  'AUD-06 regression: dedicated provider endpoint policy module removed',
+);
+requireText(
+  providerEndpointPolicy,
+  'export function isSafeProviderEndpoint',
+  'AUD-06 regression: provider endpoint safety predicate removed',
+);
+requireText(
+  applicationConfig,
+  'isSafeProviderEndpoint',
+  'AUD-06 regression: production schema no longer rejects remote plaintext provider endpoints',
+);
+requireText(
+  loadConfiguration,
+  'assertSafeProviderTransport',
+  'AUD-06 regression: startup no longer refuses a Crawl4AI token over a remote plaintext endpoint',
+);
+
 if (failures.length > 0) {
   process.stderr.write(`AUDIT_INVARIANTS_FAILED (${failures.length})\n`);
   for (const failure of failures) process.stderr.write(`- ${failure}\n`);
@@ -533,11 +669,24 @@ process.stdout.write(
       exactHeadReleaseGate: true,
       codexOwnershipProtection: true,
       clientContractReport: true,
+      nativeCertificationContentValidated: true,
+      tieredStrictOfficialDiscovery: true,
+      historyDisabledByDefault: true,
+      catalogSourcesPageOffsetBounded: true,
+      pinnedAuthenticodeSignerThumbprint: true,
+      providerEndpointTransportPolicy: true,
     },
     null,
     2,
   )}\n`,
 );
+
+function sliceBetween(source, startNeedle, endNeedle) {
+  const start = source.indexOf(startNeedle);
+  if (start < 0) return '';
+  const end = source.indexOf(endNeedle, start + startNeedle.length);
+  return end < 0 ? source.slice(start) : source.slice(start, end);
+}
 
 function serviceBlock(source, startService, nextService) {
   const start = source.indexOf(`  ${startService}:`);

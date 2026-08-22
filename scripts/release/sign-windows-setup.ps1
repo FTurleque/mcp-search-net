@@ -3,11 +3,17 @@ param(
     [Parameter(Mandatory)] [string] $SetupPath,
     [Parameter(Mandatory)] [string] $CertificateBase64,
     [Parameter(Mandatory)] [string] $CertificatePassword,
+    [string] $ExpectedCertificateThumbprint = '',
     [string] $TimestampUrl = 'https://timestamp.digicert.com'
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+function Get-NormalizedThumbprint {
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Value)
+    return ($Value -replace '\s', '').ToUpperInvariant()
+}
 
 if ($env:OS -ne 'Windows_NT') { throw 'La signature Authenticode doit être effectuée sur Windows.' }
 $SetupPath = [System.IO.Path]::GetFullPath($SetupPath)
@@ -20,6 +26,10 @@ if ([string]::IsNullOrWhiteSpace($CertificateBase64)) {
 if ([string]::IsNullOrWhiteSpace($CertificatePassword)) {
     throw 'WINDOWS_SIGNING_CERTIFICATE_PASSWORD est requis pour publier une release.'
 }
+if ([string]::IsNullOrWhiteSpace($ExpectedCertificateThumbprint)) {
+    throw 'WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT est requis pour publier une release.'
+}
+$expectedThumbprint = Get-NormalizedThumbprint -Value $ExpectedCertificateThumbprint
 
 function Resolve-SignTool {
     $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
@@ -53,6 +63,19 @@ try {
     $signature = Get-AuthenticodeSignature -FilePath $SetupPath
     if ([string]$signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
         throw "Signature Authenticode invalide : status=$($signature.Status)"
+    }
+
+    $actualThumbprint = Get-NormalizedThumbprint -Value $signature.SignerCertificate.Thumbprint
+    if ($actualThumbprint -ne $expectedThumbprint) {
+        throw "Empreinte du certificat Authenticode inattendue : attendu=$expectedThumbprint obtenu=$actualThumbprint"
+    }
+
+    $codeSigningEkuOid = '1.3.6.1.5.5.7.3.3'
+    $hasCodeSigningEku = @($signature.SignerCertificate.EnhancedKeyUsageList) |
+        Where-Object { $_.ObjectId -eq $codeSigningEkuOid } |
+        Select-Object -First 1
+    if ($null -eq $hasCodeSigningEku) {
+        throw "Le certificat de signature ne possede pas l'EKU Code Signing ($codeSigningEkuOid)."
     }
 
     $checksum = "$SetupPath.sha256"

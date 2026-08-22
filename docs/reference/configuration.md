@@ -56,7 +56,11 @@ bornés. Toutes les surcharges repassent par Zod ; elles ne peuvent pas augmente
   README 6 h, sitemap 24 h), nombre global maximal d’entrées (`maxEntries: 2000`) et volume
   global maximal des payloads JSON sérialisés (`maxBytes: 268435456`, soit 256 Mio) ;
 - `history.enabled` : active ou désactive l’historique persistant des appels `search_web` et
-  `search_docs` ; les profils de production Windows et Docker utilisent `false` par défaut ;
+  `search_docs` ; la valeur par défaut du schéma est `false`, y compris pour une configuration qui
+  omet entièrement la section `history:` ; les profils de production Windows et Docker le
+  fixent explicitement à `false`, et le profil de développement l'active explicitement pour les
+  tests de contrat ; une mise à jour Windows migre une ancienne valeur `true` héritée du défaut
+  précédent vers `false` sans toucher un opt-in explicite détectable ;
 - `history.exposeTool` : expose ou masque `list_search_history` dans l'inventaire MCP ; la valeur par
   défaut du schéma est `false`, y compris pour une ancienne configuration qui ne possède pas encore
   ce champ ; le profil de développement l'active explicitement pour les tests de contrat ;
@@ -145,8 +149,15 @@ Les fichiers du dépôt déclarent explicitement leur profil : développement po
 `application.yml`, production pour `application.user.yml` et
 `application.docker.yml`. Les profils production fixent `security.allowHttp: false`,
 `history.enabled: false` et `history.exposeTool: false`; une configuration production qui réactive
-HTTP public est rejetée. Les endpoints providers internes peuvent rester en HTTP sur loopback/réseau
-Docker et ne passent pas par la politique des URLs publiques. Un jeton d’exemple connu dans un
-profil non développement provoque un arrêt avant appel fournisseur. L’installateur Windows génère
+HTTP public est rejetée. Les endpoints providers internes (`searxng.baseUrl`, `crawl4ai.baseUrl`)
+peuvent rester en HTTP en profil production uniquement lorsque leur hôte est local/interne connu
+(`localhost`, `127.0.0.1`, `::1`, une plage privée RFC 1918/link-local/CGNAT, ou les noms de
+service Docker Compose `searxng`/`crawl4ai`) ; un hôte distant en HTTP est rejeté au chargement de
+la configuration, et le démarrage échoue immédiatement si un jeton Crawl4AI est configuré alors que
+`crawl4ai.baseUrl` pointe vers un hôte distant en HTTP, afin de ne jamais envoyer ce jeton en clair.
+Cette politique est distincte de celle des URLs publiques fournies par l'appelant (SSRF) : elle a le
+sens inverse (autoriser le local, refuser le distant en clair) et ne la remplace pas. Un jeton
+d’exemple connu dans un profil non développement provoque un arrêt avant appel fournisseur.
+L’installateur Windows génère
 un `.env` aléatoire s’il n’existe pas, le préserve lors des mises à jour et le charge dans les
 wrappers Node et Compose.
