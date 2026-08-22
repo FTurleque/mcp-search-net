@@ -53,14 +53,21 @@ try {
   if (names.includes('list_search_history')) {
     throw new Error('INSTALLED_HISTORY_TOOL_MUST_BE_OPT_IN');
   }
-  const listed = await client.callTool({ name: 'list_docs', arguments: { limit: 1 } }, undefined, {
-    timeout: requestTimeoutMs,
-  });
+  const listed = await client.callTool(
+    { name: 'list_docs', arguments: { limit: 1 } },
+    undefined,
+    { timeout: requestTimeoutMs },
+  );
   if (listed.isError === true || listed.structuredContent?.schemaVersion !== '1.0') {
     throw new Error('INSTALLED_LIST_DOCS_CONTRACT_INVALID');
   }
   process.stdout.write(
-    `${JSON.stringify({ status: 'INSTALLED_STDIO_VALID', tools: names, historyExposed: false, schemaVersion: '1.0' })}\n`,
+    `${JSON.stringify({
+      status: 'INSTALLED_STDIO_VALID',
+      tools: names,
+      historyExposed: false,
+      schemaVersion: '1.0',
+    })}\n`,
   );
 } finally {
   await client.close();
