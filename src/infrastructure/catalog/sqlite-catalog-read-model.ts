@@ -41,6 +41,7 @@ import {
   toCatalogDocumentEntry,
 } from './sqlite-catalog-row-views.js';
 
+const MAX_CATALOG_PAGE_OFFSET = 1_000_000;
 const SELECT_CURRENT_DOCUMENT_VERSION_SQL = `
   SELECT document_versions.*
   FROM documents
@@ -182,7 +183,11 @@ export class SqliteCatalogReadModel {
 }
 
 function assertCatalogPageQuery(query: CatalogPageQuery): void {
-  if (!Number.isSafeInteger(query.offset) || query.offset < 0) {
+  if (
+    !Number.isSafeInteger(query.offset) ||
+    query.offset < 0 ||
+    query.offset > MAX_CATALOG_PAGE_OFFSET
+  ) {
     throw new Error('CATALOG_PAGE_OFFSET_INVALID');
   }
   if (
