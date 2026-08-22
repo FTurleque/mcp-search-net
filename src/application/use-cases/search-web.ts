@@ -94,83 +94,12 @@ export class SearchWeb {
     let shouldFallback: boolean;
     const deadline = Date.now() + (this.options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS);
     try {
-      if (normalizedRequest.sourcePolicy === 'strict') {
-        const collected: SearchProviderResponse[] = [];
-        const targetedSources = targetedOfficialSources(normalizedRequest, this.officialSources);
-        const targetedConstraints = toDomainConstraints(targetedSources);
-        const excludeIds = new Set(targetedSources.map((source) => source.id));
-        const fallbackSources = fallbackOfficialSources(
-          normalizedRequest,
-          this.officialSources,
-          excludeIds,
-        );
-        const fallbackConstraints = toDomainConstraints(fallbackSources);
-        const noOfficialSourcesAvailable =
-          targetedConstraints.length === 0 && fallbackConstraints.length === 0;
-
-        if (noOfficialSourcesAvailable) {
-          collected.push(EMPTY_PROVIDER_RESPONSE);
-          shouldFallback = false;
-        } else {
-          if (targetedConstraints.length > 0) {
-            collected.push(
-              await this.searchProvider(
-                normalizedRequest,
-                normalizedRequest.language,
-                context,
-                deadline,
-                targetedConstraints,
-              ),
-            );
-          }
-          const hasVerifiedOfficialResult = this.hasVerifiedOfficialResult(collected);
-          const hasRemainingBudget = deadline - Date.now() > 0;
-          if (!hasVerifiedOfficialResult && fallbackConstraints.length > 0 && hasRemainingBudget) {
-            collected.push(
-              await this.searchProvider(
-                normalizedRequest,
-                normalizedRequest.language,
-                context,
-                deadline,
-                fallbackConstraints,
-              ),
-            );
-          }
-
-          const totalResultsSoFar = collected.reduce((sum, r) => sum + r.results.length, 0);
-          shouldFallback =
-            totalResultsSoFar === 0 && !normalizedRequest.language.toLowerCase().startsWith('en');
-          if (shouldFallback) {
-            const languageConstraints = [...targetedConstraints, ...fallbackConstraints];
-            collected.push(
-              await this.searchProvider(
-                normalizedRequest,
-                'en',
-                context,
-                deadline,
-                languageConstraints,
-              ),
-            );
-          }
-        }
-        responses = collected;
-      } else {
-        const first = await this.searchProvider(
-          normalizedRequest,
-          normalizedRequest.language,
-          context,
-          deadline,
-          undefined,
-        );
-        shouldFallback =
-          first.results.length === 0 && !normalizedRequest.language.toLowerCase().startsWith('en');
-        responses = shouldFallback
-          ? [
-              first,
-              await this.searchProvider(normalizedRequest, 'en', context, deadline, undefined),
-            ]
-          : [first];
-      }
+      const outcome =
+        normalizedRequest.sourcePolicy === 'strict'
+          ? await this.collectStrictResponses(normalizedRequest, context, deadline)
+          : await this.collectNonStrictResponses(normalizedRequest, context, deadline);
+      responses = outcome.responses;
+      shouldFallback = outcome.shouldFallback;
     } catch (error) {
       if (cached !== undefined && isTransientProviderError(error)) {
         this.telemetry?.record('cache_hit', {
@@ -245,6 +174,75 @@ export class SearchWeb {
 
     const stored = await this.cache.setSearch(key, value, this.options.cacheTtlMs);
     return execution(value, stored ? 'MISS' : 'DISABLED');
+  }
+
+  private async collectStrictResponses(
+    request: NormalizedSearchRequest,
+    context: OperationContext,
+    deadline: number,
+  ): Promise<{ responses: SearchProviderResponse[]; shouldFallback: boolean }> {
+    const collected: SearchProviderResponse[] = [];
+    const targetedSources = targetedOfficialSources(request, this.officialSources);
+    const targetedConstraints = toDomainConstraints(targetedSources);
+    const excludeIds = new Set(targetedSources.map((source) => source.id));
+    const fallbackSources = fallbackOfficialSources(request, this.officialSources, excludeIds);
+    const fallbackConstraints = toDomainConstraints(fallbackSources);
+    const noOfficialSourcesAvailable =
+      targetedConstraints.length === 0 && fallbackConstraints.length === 0;
+
+    if (noOfficialSourcesAvailable) {
+      return { responses: [EMPTY_PROVIDER_RESPONSE], shouldFallback: false };
+    }
+
+    if (targetedConstraints.length > 0) {
+      collected.push(
+        await this.searchProvider(
+          request,
+          request.language,
+          context,
+          deadline,
+          targetedConstraints,
+        ),
+      );
+    }
+    const hasVerifiedOfficialResult = this.hasVerifiedOfficialResult(collected);
+    const hasRemainingBudget = deadline - Date.now() > 0;
+    if (!hasVerifiedOfficialResult && fallbackConstraints.length > 0 && hasRemainingBudget) {
+      collected.push(
+        await this.searchProvider(
+          request,
+          request.language,
+          context,
+          deadline,
+          fallbackConstraints,
+        ),
+      );
+    }
+
+    const totalResultsSoFar = collected.reduce((sum, response) => sum + response.results.length, 0);
+    const shouldFallback =
+      totalResultsSoFar === 0 && !request.language.toLowerCase().startsWith('en');
+    if (shouldFallback) {
+      const languageConstraints = [...targetedConstraints, ...fallbackConstraints];
+      collected.push(
+        await this.searchProvider(request, 'en', context, deadline, languageConstraints),
+      );
+    }
+    return { responses: collected, shouldFallback };
+  }
+
+  private async collectNonStrictResponses(
+    request: NormalizedSearchRequest,
+    context: OperationContext,
+    deadline: number,
+  ): Promise<{ responses: SearchProviderResponse[]; shouldFallback: boolean }> {
+    const first = await this.searchProvider(request, request.language, context, deadline);
+    const shouldFallback =
+      first.results.length === 0 && !request.language.toLowerCase().startsWith('en');
+    const responses = shouldFallback
+      ? [first, await this.searchProvider(request, 'en', context, deadline)]
+      : [first];
+    return { responses, shouldFallback };
   }
 
   private hasVerifiedOfficialResult(responses: readonly SearchProviderResponse[]): boolean {

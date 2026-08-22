@@ -154,8 +154,38 @@ function ensureTrailingSlash(value: string): string {
   return value.endsWith('/') ? value : `${value}/`;
 }
 
-const DOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u;
-const PATH_PREFIX_PATTERN = /^\/[a-z0-9](?:[a-z0-9._/-]*[a-z0-9])?$/iu;
+// A single, non-overlapping quantifier over each charset (no nested/alternating groups that
+// could each match the same characters) keeps these linear-time: there is only one way to
+// consume a run of allowed characters, so there is no ambiguous split for the engine to
+// backtrack over.
+const DOMAIN_CHARSET_PATTERN = /^[a-z0-9.-]+$/u;
+const PATH_PREFIX_CHARSET_PATTERN = /^\/[a-z0-9._/-]*$/iu;
+const ALPHANUMERIC_PATTERN = /^[a-z0-9]$/iu;
+
+function isValidDomain(domain: string): boolean {
+  const first = domain[0];
+  const last = domain[domain.length - 1];
+  return (
+    first !== undefined &&
+    last !== undefined &&
+    ALPHANUMERIC_PATTERN.test(first) &&
+    ALPHANUMERIC_PATTERN.test(last) &&
+    DOMAIN_CHARSET_PATTERN.test(domain)
+  );
+}
+
+function isValidPathPrefix(value: string): boolean {
+  if (value.length < 2 || !value.startsWith('/')) return false;
+  const firstSegmentChar = value[1];
+  const last = value[value.length - 1];
+  return (
+    firstSegmentChar !== undefined &&
+    last !== undefined &&
+    ALPHANUMERIC_PATTERN.test(firstSegmentChar) &&
+    ALPHANUMERIC_PATTERN.test(last) &&
+    PATH_PREFIX_CHARSET_PATTERN.test(value)
+  );
+}
 
 function withDomainConstraints(
   query: string,
@@ -165,7 +195,7 @@ function withDomainConstraints(
   const scopes: string[] = [];
   for (const constraint of constraints) {
     const domain = constraint.domain.trim().toLowerCase().replace(/\.$/u, '');
-    if (!DOMAIN_PATTERN.test(domain)) continue;
+    if (!isValidDomain(domain)) continue;
     const pathPrefix = sanitizePathPrefix(constraint.pathPrefix);
     const key = pathPrefix === undefined ? domain : `${domain}${pathPrefix}`;
     if (seen.has(key)) continue;
@@ -180,7 +210,7 @@ function withDomainConstraints(
 function sanitizePathPrefix(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   const trimmed = value.trim().replace(/\/+$/u, '');
-  if (trimmed === '' || !PATH_PREFIX_PATTERN.test(trimmed)) return undefined;
+  if (trimmed === '' || !isValidPathPrefix(trimmed)) return undefined;
   return trimmed;
 }
 

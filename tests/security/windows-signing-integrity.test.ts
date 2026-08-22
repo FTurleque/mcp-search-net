@@ -4,8 +4,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 function windowsRuntimeTest(name: string, body: () => void) {
-  it(name, () => {
-    if (process.platform !== 'win32') return;
+  it(name, (context) => {
+    if (process.platform !== 'win32') {
+      context.skip();
+      return;
+    }
     body();
   });
 }
