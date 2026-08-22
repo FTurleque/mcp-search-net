@@ -54,7 +54,12 @@ export function createFetchUrlSchemas(
       domain: z.string().min(1),
       title: unicodeBoundedString(MAX_EXTERNAL_TITLE_CHARACTERS).optional(),
       contentType: z.string().min(1),
-      sourceStatus: z.enum(['VERIFIED_OFFICIAL', 'LIKELY_OFFICIAL', 'THIRD_PARTY', 'UNKNOWN']),
+      sourceStatus: z.enum([
+        'VERIFIED_OFFICIAL',
+        'UNVERIFIED_DOCUMENTATION',
+        'THIRD_PARTY',
+        'UNKNOWN',
+      ]),
       fetchedAt: z.iso.datetime(),
       extractionMode: z.enum(['static', 'native-render']),
       truncated: z.boolean(),
