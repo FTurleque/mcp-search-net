@@ -70,6 +70,7 @@ export const applicationConfigSchema = z
     history: z
       .object({
         enabled: z.boolean().default(true),
+        exposeTool: z.boolean().default(false),
         path: z.string().min(1).default('../.data/history.sqlite'),
         retentionDays: z.number().int().min(1).max(3_650).default(90),
         maxEntries: z.number().int().min(100).max(1_000_000).default(20_000),
@@ -77,6 +78,7 @@ export const applicationConfigSchema = z
       .strict()
       .default({
         enabled: true,
+        exposeTool: false,
         path: '../.data/history.sqlite',
         retentionDays: 90,
         maxEntries: 20_000,
