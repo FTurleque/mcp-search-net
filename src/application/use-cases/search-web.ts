@@ -33,6 +33,11 @@ import {
 } from '../../domain/services/result-ranking.js';
 
 const DEFAULT_PROVIDER_TIMEOUT_MS = 20_000;
+const EMPTY_PROVIDER_RESPONSE: SearchProviderResponse = {
+  results: [],
+  total: 0,
+  unresponsiveEngines: [],
+};
 
 export interface SearchWebOptions {
   readonly cacheTtlMs: number;
@@ -83,19 +88,30 @@ export class SearchWeb {
     let providerResponse: SearchProviderResponse;
     let shouldFallback: boolean;
     const deadline = Date.now() + (this.options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS);
+    const domainConstraints =
+      normalizedRequest.sourcePolicy === 'strict'
+        ? strictOfficialDomains(normalizedRequest, this.officialSources)
+        : undefined;
     try {
-      firstResponse = await this.searchProvider(
-        normalizedRequest,
-        normalizedRequest.language,
-        context,
-        deadline,
-      );
-      shouldFallback =
-        firstResponse.results.length === 0 &&
-        !normalizedRequest.language.toLowerCase().startsWith('en');
-      providerResponse = shouldFallback
-        ? await this.searchProvider(normalizedRequest, 'en', context, deadline)
-        : firstResponse;
+      if (domainConstraints?.length === 0) {
+        firstResponse = EMPTY_PROVIDER_RESPONSE;
+        providerResponse = firstResponse;
+        shouldFallback = false;
+      } else {
+        firstResponse = await this.searchProvider(
+          normalizedRequest,
+          normalizedRequest.language,
+          context,
+          deadline,
+          domainConstraints,
+        );
+        shouldFallback =
+          firstResponse.results.length === 0 &&
+          !normalizedRequest.language.toLowerCase().startsWith('en');
+        providerResponse = shouldFallback
+          ? await this.searchProvider(normalizedRequest, 'en', context, deadline, domainConstraints)
+          : firstResponse;
+      }
     } catch (error) {
       if (cached !== undefined && isTransientProviderError(error)) {
         this.telemetry?.record('cache_hit', {
@@ -176,6 +192,7 @@ export class SearchWeb {
     language: string,
     context: OperationContext,
     deadline: number,
+    domainConstraints?: readonly string[],
   ): Promise<SearchProviderResponse> {
     const startedAt = performance.now();
     try {
@@ -185,6 +202,7 @@ export class SearchWeb {
           language,
           ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
           maxResults: request.maxResults * this.options.providerOversampling,
+          ...(domainConstraints === undefined ? {} : { domainConstraints }),
           deadlineMs: deadline,
         }),
         deadline,
@@ -197,6 +215,7 @@ export class SearchWeb {
         status: 'success',
         resultCount: response.results.length,
         unresponsiveEngineCount: response.unresponsiveEngines.length,
+        constrainedDomainCount: domainConstraints?.length ?? 0,
       });
       return response;
     } catch (error) {
@@ -207,10 +226,36 @@ export class SearchWeb {
         durationMs: Number((performance.now() - startedAt).toFixed(3)),
         status: 'failed',
         code: error instanceof ApplicationError ? error.code : 'INTERNAL_ERROR',
+        constrainedDomainCount: domainConstraints?.length ?? 0,
       });
       throw error;
     }
   }
+}
+
+function strictOfficialDomains(
+  request: NormalizedSearchRequest,
+  registry: OfficialSourceRegistry,
+): readonly string[] {
+  const prioritized = [...registry.findForQuery(request.query), ...registry.list()];
+  const domains: string[] = [];
+  const seen = new Set<string>();
+  for (const source of prioritized) {
+    if (!source.enabled) continue;
+    const domain = source.domain.toLowerCase().replace(/\.$/u, '');
+    if (seen.has(domain)) continue;
+    if (matchesDomain(domain, request.excludedDomains)) continue;
+    if (
+      request.allowedDomains.length > 0 &&
+      !matchesDomain(domain, request.allowedDomains) &&
+      !request.allowedDomains.some((allowed) => matchesDomain(allowed, [domain]))
+    ) {
+      continue;
+    }
+    seen.add(domain);
+    domains.push(domain);
+  }
+  return domains;
 }
 
 function applySourcePolicy(
@@ -238,7 +283,7 @@ function createWarnings(context: {
     });
   }
   if (context.results.length === 0) {
-    if (context.request.sourcePolicy === 'strict' && context.candidates.length > 0) {
+    if (context.request.sourcePolicy === 'strict') {
       warnings.push({
         code: 'NO_VERIFIED_OFFICIAL_SOURCE',
         message: 'No verified official source matched the strict policy',

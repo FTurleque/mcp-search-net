@@ -34,13 +34,16 @@ Le gate `npm run check` construit le serveur puis exécute `npm run client:contr
 sonde utilise `@modelcontextprotocol/sdk@1.30.0` avec `StdioClientTransport` et vérifie sur le binaire
 construit :
 
-- six tools : `search_web`, `fetch_url`, `search_docs`, `list_docs`, `read_doc_section`, `list_search_history` ;
+- six tools avec le profil de développement, qui active explicitement `history.exposeTool: true` : `search_web`, `fetch_url`, `search_docs`, `list_docs`, `read_doc_section`, `list_search_history` ;
 - quatre resources statiques ;
 - neuf resource templates ;
 - annotations read-only / idempotentes / non destructives ;
 - `schemaVersion = 1.0` sur la resource catalogue et `structuredContent` ;
 - un appel `search_docs` déterministe sans fournisseur Web ;
 - absence d'intégration cliente tierce implicite dans le verdict.
+
+Les profils de production Windows et Docker utilisent par défaut `history.enabled: false` et
+`history.exposeTool: false`; `list_search_history` n'y est donc pas enregistré sans opt-in explicite.
 
 Le rapport JSON est écrit sous `.data/test-reports/client-contract-report.json`. Il décrit le
 contrat serveur et le périmètre de certification native, mais ne transforme jamais une sonde SDK en
@@ -154,21 +157,37 @@ La matrice retenue est désormais :
 - [x] Claude Desktop 1.26832.0 ;
 - [x] Codex 26.803.5235.0.
 
-**Matrice finale : 3/3 CERTIFIÉS.**
+**Matrice finale : 3/3 CERTIFIÉS pour `a70b9a51527543c9417566326bb780121954cef5`.**
 
-L'issue #34 est fermée avec `state_reason=completed` depuis le 10 août 2026.
+L'issue #34 est fermée avec `state_reason=completed` depuis le 10 août 2026. Cette fermeture ne
+certifie pas automatiquement les SHA serveur ultérieurs.
 
-## Règle pour une future requalification
+## Requalification exacte avant publication
 
-Une preuve native reste liée à une version cliente, un OS et un SHA serveur précis. Pour une future
-requalification, le collecteur peut préremplir les preuves techniques locales, mais
-`nativeToolInvocationObserved` reste `false` jusqu'à une vraie invocation cliente.
+Une preuve native reste liée à une version cliente, un OS et un SHA serveur précis. Le collecteur
+peut préremplir les preuves techniques locales, mais `nativeToolInvocationObserved` reste `false`
+jusqu'à une vraie invocation cliente.
 
-Le workflow recommandé reste :
+Après promotion d'un candidat sur `master`, la requalification publiée suit désormais ce flux :
+
+1. installer/exécuter le runtime correspondant exactement au HEAD `master` candidat ;
+2. lancer le collecteur local et conserver le SHA-256 de son rapport JSON ;
+3. dans **Claude Code**, effectuer `search_docs`, relever le `sectionId` réel, puis appeler `read_doc_section` avec exactement cet identifiant et conserver les deux `requestId` ;
+4. répéter la même observation dans **Claude Desktop** ;
+5. répéter la même observation dans **Codex** ;
+6. déclencher manuellement le workflow GitHub Actions `Native client certification record` sur `master` et fournir pour chacun des trois clients un JSON contenant `client`, `version`, `os`, `searchRequestId`, `readRequestId`, `searchSectionId`, `readSectionId`, `nativeToolInvocationObserved: true` et `verdict: PASS_NATIVE`, ainsi que `collector_report_sha256` ;
+7. le workflow valide l'égalité des deux `sectionId` pour chaque client et produit l'artefact `native-client-certification-<SHA>` avec le verdict global `PASS_NATIVE_3_OF_3`.
+
+Le workflow de publication Windows recherche ensuite un run `workflow_dispatch` réussi sur le
+**même SHA exact de `master`** et refuse la publication si l'artefact correspondant est absent ou
+expiré. `validate_only` reste utilisable sans cette preuve pour construire et inspecter un candidat,
+mais aucun `gh release create` n'est possible sans certification native exact-head.
+
+Le workflow recommandé d'observation reste :
 
 ```text
 search_docs -> relever le sectionId réel -> read_doc_section(exactement ce sectionId)
 ```
 
-Une simple configuration, un `mcp list`, un `mcp get`, un état `connected` ou la sonde STDIO de
-référence ne suffisent jamais à établir un nouveau PASS natif.
+Une simple configuration, un `mcp list`, un `mcp get`, un état `connected`, la sonde STDIO de
+référence ou le workflow smoke ne suffisent jamais à établir un nouveau PASS natif.

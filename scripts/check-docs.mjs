@@ -43,6 +43,7 @@ process.stdout.write(
       status: 'DOCS_CHECK_PASSED',
       markdownFiles: markdownFiles.length,
       tools: 6,
+      productionDefaultTools: 5,
       resources: 4,
       resourceTemplates: 9,
       migrations: readdirSync(resolve(root, 'catalog-migrations')).filter((name) =>
@@ -146,6 +147,11 @@ function validatePublicContractInventory() {
     clientCertification,
     'six tools',
     `${clientCertificationPath}: inventaire automatisé doit annoncer six tools`,
+  );
+  requireText(
+    toolsReference,
+    'history.exposeTool: true',
+    'docs/reference/tools.md: caractère opt-in de list_search_history absent',
   );
   for (const [tool, implementation] of tools) {
     requireText(implementation, `'${tool}'`, `outil absent du serveur: ${tool}`);
@@ -356,6 +362,9 @@ function validateReleaseAndInstallerHardening() {
   const installedProbe = readText('scripts/probe-installed-mcp.mjs');
   const publisher = readText('scripts/release/publish-windows-release.ps1');
   const releaseWorkflow = readText('.github/workflows/release-windows.yml');
+  const nativeCertificationWorkflow = readText(
+    '.github/workflows/native-client-certification-record.yml',
+  );
   const ci = readText('.github/workflows/ci.yml');
   const dependencyAudit = readText('.github/workflows/dependency-audit.yml');
   const toolCall = readText('src/presentation/mcp/tool-call.ts');
@@ -434,14 +443,19 @@ function validateReleaseAndInstallerHardening() {
   }
 
   for (const needle of [
-    "name: 'list_search_history'",
-    'history.structuredContent?.data?.enabled !== true',
-    'history.structuredContent?.data?.available !== true',
+    "'fetch_url'",
+    "'list_docs'",
+    "'read_doc_section'",
+    "'search_docs'",
+    "'search_web'",
+    "names.includes('list_search_history')",
+    'INSTALLED_HISTORY_TOOL_MUST_BE_OPT_IN',
+    'historyExposed: false',
   ]) {
     requireText(
       installedProbe,
       needle,
-      `probe-installed-mcp.mjs: contrôle historique absent: ${needle}`,
+      `probe-installed-mcp.mjs: contrat privacy production absent: ${needle}`,
     );
   }
 
@@ -461,8 +475,24 @@ function validateReleaseAndInstallerHardening() {
     "$innoUrl = 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe'",
     "$innoSha256 = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'",
     '.\\scripts\\windows\\verify-file-sha256.ps1', // NOSONAR
+    'assert-native-client-certification.ps1',
+    'WINDOWS_SIGNING_CERTIFICATE_BASE64',
+    'Get-AuthenticodeSignature -FilePath $setup',
+    'actions/attest-build-provenance@9d57eef8c06cd9d6b433effeeb7a6a77b3ff94ad',
+    'gh attestation verify $artifact --repo $env:GITHUB_REPOSITORY',
   ]) {
-    requireText(releaseWorkflow, needle, `release-windows.yml: pinning Inno absent: ${needle}`);
+    requireText(releaseWorkflow, needle, `release-windows.yml: invariant absent: ${needle}`);
+  }
+  for (const needle of [
+    'nativeToolInvocationObserved',
+    'PASS_NATIVE_3_OF_3',
+    'native-client-certification-${{ github.sha }}',
+  ]) {
+    requireText(
+      nativeCertificationWorkflow,
+      needle,
+      `native-client-certification-record.yml: invariant absent: ${needle}`,
+    );
   }
   if (releaseWorkflow.includes('choco install innosetup')) {
     failures.push('release-windows.yml: installation Inno mutable via Chocolatey encore présente');

@@ -79,7 +79,7 @@ function classifySource(url: URL, officialSource: OfficialSource | undefined): S
   if (matchesDomain(url.hostname, THIRD_PARTY_DOMAINS) || looksThirdParty(url)) {
     return 'THIRD_PARTY';
   }
-  if (looksLikeDocumentation(url)) return 'LIKELY_OFFICIAL';
+  if (looksLikeDocumentation(url)) return 'UNVERIFIED_DOCUMENTATION';
   return 'UNKNOWN';
 }
 
@@ -94,7 +94,7 @@ function scoreResult(
   const providerSignal = providerScore / (providerScore + 10);
   const sourceSignal: Readonly<Record<SourceStatus, number>> = {
     VERIFIED_OFFICIAL: 0.5,
-    LIKELY_OFFICIAL: 0.28,
+    UNVERIFIED_DOCUMENTATION: 0,
     THIRD_PARTY: -0.08,
     UNKNOWN: 0,
   };
@@ -105,7 +105,8 @@ function scoreResult(
   const urlMatches = terms.filter((term) => urlText.includes(term)).length;
   const titleSignal = terms.length === 0 ? 0 : (titleMatches / terms.length) * 0.15;
   const urlSignal = terms.length === 0 ? 0 : (urlMatches / terms.length) * 0.05;
-  const documentationBonus = looksLikeDocumentation(url) ? 0.05 : 0;
+  // Documentation-shaped URLs are a weak relevance hint only; they never imply official trust.
+  const documentationBonus = looksLikeDocumentation(url) ? 0.04 : 0;
   const officialPriority = Math.min(context.officialSource?.priority ?? 0, 1_000) / 1_000;
   const raw =
     0.12 +

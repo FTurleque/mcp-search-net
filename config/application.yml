@@ -26,6 +26,7 @@ cache:
 
 history:
   enabled: true
+  exposeTool: true
   path: ../.data/history.sqlite
   retentionDays: 90
   maxEntries: 20000

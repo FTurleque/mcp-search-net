@@ -4,6 +4,9 @@ import process from 'node:process';
 
 const root = resolve(import.meta.dirname, '..');
 const releaseWorkflow = readText('.github/workflows/release-windows.yml');
+const certificationWorkflow = readText('.github/workflows/native-client-certification-record.yml');
+const certificationGate = readText('scripts/release/assert-native-client-certification.ps1');
+const signingScript = readText('scripts/release/sign-windows-setup.ps1');
 const contentFetcher = readText('src/infrastructure/fetch/crawl4ai-content-fetcher.ts');
 const failures = [];
 
@@ -30,6 +33,84 @@ assert(
   !releaseWorkflow.includes('runs?head_sha=$env:GITHUB_SHA&status=completed&per_page=20'),
   'release-windows: event-agnostic exact-head query is forbidden',
 );
+
+requireText(
+  releaseWorkflow,
+  'assert-native-client-certification.ps1',
+  'release-windows: exact-head native certification gate missing',
+);
+requireText(
+  releaseWorkflow,
+  'WINDOWS_SIGNING_CERTIFICATE_BASE64',
+  'release-windows: Authenticode certificate secret missing',
+);
+requireText(
+  releaseWorkflow,
+  'WINDOWS_SIGNING_CERTIFICATE_PASSWORD',
+  'release-windows: Authenticode password secret missing',
+);
+requireText(
+  releaseWorkflow,
+  'Get-AuthenticodeSignature -FilePath $setup',
+  'release-windows: publish-time Authenticode verification missing',
+);
+requireText(
+  releaseWorkflow,
+  'actions/attest-build-provenance@9d57eef8c06cd9d6b433effeeb7a6a77b3ff94ad',
+  'release-windows: pinned build provenance action missing',
+);
+requireText(
+  releaseWorkflow,
+  'gh attestation verify $artifact --repo $env:GITHUB_REPOSITORY',
+  'release-windows: publish-time provenance verification missing',
+);
+
+for (const client of ['Claude Code', 'Claude Desktop', 'Codex']) {
+  requireText(
+    certificationWorkflow,
+    `'${client}'`,
+    `native certification: required client missing: ${client}`,
+  );
+}
+for (const proof of [
+  'nativeToolInvocationObserved',
+  'PASS_NATIVE',
+  'PASS_NATIVE_3_OF_3',
+  'searchSectionId',
+  'readSectionId',
+]) {
+  requireText(
+    certificationWorkflow,
+    proof,
+    `native certification: proof invariant missing: ${proof}`,
+  );
+}
+requireText(
+  certificationWorkflow,
+  'native-client-certification-${{ github.sha }}',
+  'native certification: artifact must be bound to exact GitHub SHA',
+);
+requireText(
+  certificationGate,
+  'native-client-certification-$CommitSha',
+  'native certification gate: exact-head artifact name missing',
+);
+requireText(
+  certificationGate,
+  '[string]$_.head_sha -eq $CommitSha',
+  'native certification gate: exact SHA comparison missing',
+);
+requireText(
+  signingScript,
+  'signtool sign /fd SHA256 /td SHA256 /tr',
+  'Windows signing: SHA-256 timestamped signing command missing',
+);
+requireText(
+  signingScript,
+  "[string]$signature.Status -ne 'Valid'",
+  'Windows signing: Authenticode status verification missing',
+);
+
 requireText(
   contentFetcher,
   'throw new UnsupportedContentTypeError();',

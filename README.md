@@ -7,19 +7,23 @@ certification native retenu couvre Claude Code, Claude Desktop et Codex. La comp
 IntelliJ IDEA / GitHub Copilot reste disponible pour les utilisateurs qui en ont besoin, mais elle
 n'appartient plus au périmètre de certification du projet. La V1 expose deux outils Web stables :
 
-- `search_web` découvre des pages avec SearXNG et privilégie les domaines du registre officiel ;
+- `search_web` découvre des pages avec SearXNG et privilégie les domaines du registre officiel ; en
+  mode `strict`, la découverte est contrainte aux domaines vérifiés avant le filtrage final ;
 - `fetch_url` récupère une URL publique connue, applique la protection SSRF, extrait du Markdown et
   limite les sections retournées.
 
 La V2 documentaire est intégrée dans `master` depuis le 5 août 2026. Elle ajoute un catalogue local
 séparé dans `catalog.db`, l’ingestion texte/Markdown, la synchronisation contrôlée, la recherche
 documentaire locale et une exposition MCP read-only via `search_docs`, `list_docs`,
-`read_doc_section` et des resources catalogue. `develop` ajoute également l’historique local
-`history.sqlite` et l’outil read-only `list_search_history`. Le serveur n’embarque aucun LLM et ne
-requiert aucune API commerciale.
+`read_doc_section` et des resources catalogue. Un historique local `history.sqlite` et l'outil
+read-only `list_search_history` sont disponibles en **opt-in** ; les profils de production Windows
+et Docker les désactivent par défaut. Le serveur n’embarque aucun LLM et ne requiert aucune API
+commerciale.
 
 La version de code courante est `1.1.4`. Une release n’est considérée qualifiée que si les checks
-sont attachés au SHA exact du candidat. L’état courant autoritatif est décrit dans
+sont attachés au SHA exact du candidat. Une publication Windows exige en plus une certification
+native 3/3 liée au SHA exact de `master`, une signature Authenticode valide du setup et une
+attestation GitHub de provenance. L’état courant autoritatif est décrit dans
 [`docs/status/current-state.md`](docs/status/current-state.md).
 
 ## Architecture
@@ -35,8 +39,8 @@ src/bootstrap       assemblage et cycle de vie STDIO
 ```
 
 Le domaine ne dépend ni du SDK MCP, ni de Zod, YAML, SQLite, SearXNG ou Crawl4AI. `cache.sqlite`,
-`catalog.db` et `history.sqlite` sont des stockages séparés avec des responsabilités et politiques de
-rétention distinctes.
+`catalog.db` et, lorsqu'il est activé, `history.sqlite` sont des stockages séparés avec des
+responsabilités et politiques de rétention distinctes.
 
 ## Prérequis
 
@@ -73,6 +77,10 @@ L’overlay `compose.hybrid.yaml` publie SearXNG et Crawl4AI uniquement sur `127
 sur les ports 8888 et 11235. Le serveur MCP écrit exclusivement le protocole JSON-RPC sur `stdout`
 et ses diagnostics JSON sur `stderr`.
 
+Le profil de développement active explicitement l'historique et `history.exposeTool: true` afin de
+conserver le contrat de test complet à six outils. Les profils de production n'exposent que cinq
+outils par défaut et n'enregistrent pas l'historique.
+
 ## Build et exécution locale
 
 ```bash
@@ -106,9 +114,10 @@ npm run test:e2e
 
 `npm run check` inclut les contrôles de licence propriétaire (`check:license`), supply chain et
 documentation (`docs:check`), typecheck, lint, Prettier, build, tests déterministes et seuils de
-couverture V8. Les rapports JSON sont écrits dans `.data/test-reports`, et les rapports de couverture
-dans `coverage/`. Un workflow planifié exécute également chaque jour les audits npm complets et de
-production sur la branche par défaut.
+couverture V8. Les entrypoints exécutés exclusivement en processus enfant sont exclus du compteur
+V8 in-process mais restent verrouillés par des tests STDIO/subprocess dédiés. Les rapports JSON sont
+écrits dans `.data/test-reports`, et les rapports de couverture dans `coverage/`. Un workflow planifié
+exécute également chaque jour les audits npm complets et de production sur la branche par défaut.
 
 ## Docker
 
@@ -137,12 +146,17 @@ volume d’écriture limité aux données SQLite applicatives. Aucun socket Dock
 réseau hôte n’est utilisé. Les images fournisseurs sont figées par digest SHA-256. L’image du serveur
 porte le label OCI propriétaire `LicenseRef-mcp-search-net-Proprietary` et embarque `LICENSE`.
 
+Le profil Docker de production utilise `history.enabled: false` et `history.exposeTool: false` :
+`list_search_history` n'apparaît pas dans l'inventaire MCP tant que l'utilisateur ne choisit pas de
+modifier explicitement cette politique.
+
 ## Compatibilité IntelliJ IDEA / GitHub Copilot
 
 Le chemin exact de la configuration MCP dépend de la version d’IntelliJ et du plugin GitHub Copilot.
 Cette intégration reste supportée à titre de compatibilité, sans faire partie du périmètre de
-certification native courant. Le serveur expose six outils : `search_web`, `fetch_url`, `search_docs`,
-`list_docs`, `read_doc_section` et `list_search_history`.
+certification native courant. Avec `config/application.yml` de développement, le serveur expose six
+outils : `search_web`, `fetch_url`, `search_docs`, `list_docs`, `read_doc_section` et
+`list_search_history`. Avec les profils de production, `list_search_history` est absent par défaut.
 
 Exécution Node locale, après `npm run build` :
 
@@ -185,6 +199,11 @@ La priorité est : valeurs internes sûres, YAML, environnement, puis paramètre
 maxima absolus. Une configuration obligatoire invalide arrête le démarrage avec un diagnostic sur
 `stderr`.
 
+L'historique utilise deux options distinctes : `history.enabled` contrôle la persistance et
+`history.exposeTool` contrôle l'exposition de `list_search_history` aux clients MCP. Les deux valent
+`false` dans les profils de production fournis. Une ancienne configuration sans `exposeTool` hérite
+également de `false`.
+
 ## Catalogue documentaire V2
 
 La V2 intégrée fournit :
@@ -198,10 +217,10 @@ La V2 intégrée fournit :
 - synchronisation contrôlée avec ETag, Last-Modified, hash du payload HTTP brut, observations `304`,
   aliases, événements de staleness et redirections permanentes ;
 - outils MCP read-only `search_docs`, `list_docs` et `read_doc_section` ;
-- historique local persistant initialisé par `H001__create_search_history.sql` et exposé en lecture
-  seule via `list_search_history` ;
+- historique local persistant initialisé par `H001__create_search_history.sql`, activable séparément,
+  et exposition read-only optionnelle via `list_search_history` ;
 - resources MCP read-only paginées pour catalogue, sources, documents, versions et sections, avec
-  lectures ciblées par identifiant et budgets de réponse fixes.
+  lectures ciblées par identifiant, offsets bornés et budgets de réponse fixes.
 
 Le benchmark V2.13 montre que la baseline lexicale est efficace sur les identifiants et termes
 explicites mais reste faible sur les paraphrases et les questions multi-document. Le reranker lexical
@@ -227,6 +246,9 @@ hashé n’a pas montré de gain et n’est pas généralisé.
 - l’installateur Windows vérifie le SHA-256 officiel et la signature OpenJS du runtime Node avant de
   l’activer ;
 - la release Windows refuse toute divergence entre la version demandée et la version du dépôt ;
+- une publication Windows depuis `master` exige une certification native `PASS_NATIVE_3_OF_3`
+  correspondant au SHA exact, signe le setup avec Authenticode et horodatage RFC 3161, puis produit
+  et revérifie une attestation GitHub de provenance avant la création de la release ;
 - secrets, chemins internes et stacks ne sont pas renvoyés.
 
 ## Diagnostic rapide

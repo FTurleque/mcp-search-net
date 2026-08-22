@@ -24,6 +24,7 @@ import { fetchJson } from '../http/http-utils.js';
 
 const MAX_PROVIDER_SNIPPET_CHARACTERS = 4_096;
 const MAX_PROVIDER_ENGINES = 32;
+const MAX_DOMAIN_CONSTRAINTS = 32;
 
 const resultSchema = z
   .object({
@@ -66,7 +67,10 @@ export class SearxngSearchProvider implements SearchProvider {
         ? providerDeadline
         : Math.min(providerDeadline, request.deadlineMs);
     const endpoint = new URL('/search', ensureTrailingSlash(this.baseUrl));
-    endpoint.searchParams.set('q', request.query.value);
+    endpoint.searchParams.set(
+      'q',
+      withDomainConstraints(request.query.value, request.domainConstraints ?? []),
+    );
     endpoint.searchParams.set('format', 'json');
     endpoint.searchParams.set('categories', 'general');
     endpoint.searchParams.set('safesearch', '1');
@@ -147,6 +151,19 @@ export class SearxngSearchProvider implements SearchProvider {
 
 function ensureTrailingSlash(value: string): string {
   return value.endsWith('/') ? value : `${value}/`;
+}
+
+function withDomainConstraints(query: string, domains: readonly string[]): string {
+  const constrainedDomains = [
+    ...new Set(
+      domains
+        .map((domain) => domain.trim().toLowerCase().replace(/\.$/u, ''))
+        .filter((domain) => /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u.test(domain)),
+    ),
+  ].slice(0, MAX_DOMAIN_CONSTRAINTS);
+  if (constrainedDomains.length === 0) return query;
+  const scope = constrainedDomains.map((domain) => `site:${domain}`).join(' OR ');
+  return `${query} (${scope})`;
 }
 
 function decodeSnippet(value: string): string {
