@@ -24,7 +24,6 @@ export function registerSearchHistoryTool(
       description:
         'Liste de manière bornée et paginée les recherches search_web et search_docs enregistrées localement. Utiliser cet outil pour inspecter l’historique d’utilisation du MCP sans relancer de recherche Web.',
       inputSchema: listSearchHistoryInputSchema,
-      outputSchema: listSearchHistoryOutputSchema.shape,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

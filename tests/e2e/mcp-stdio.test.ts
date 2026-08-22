@@ -66,6 +66,17 @@ describe('MCP STDIO server', () => {
       'search_web',
     ]);
 
+    // Regression: @modelcontextprotocol/sdk (1.30.0) unconditionally generates
+    // outputSchema as JSON Schema draft-07 in tools/list, with no application-level
+    // way to request a different dialect. The current Claude Code client rejects
+    // any outputSchema whose $schema isn't 2020-12, breaking every native tool call
+    // ("Tool 'X' has an invalid outputSchema: ... unsupported dialect"). None of the
+    // tools declare outputSchema for this reason; structured content is still
+    // validated internally via each use case's own Zod schema in tool-call.ts.
+    for (const tool of response.tools) {
+      expect(tool).not.toHaveProperty('outputSchema');
+    }
+
     const searchWebTool = response.tools.find((tool) => tool.name === 'search_web');
     const fetchUrlTool = response.tools.find((tool) => tool.name === 'fetch_url');
     const searchDocsTool = response.tools.find((tool) => tool.name === 'search_docs');
