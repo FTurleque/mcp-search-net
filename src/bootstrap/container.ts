@@ -85,7 +85,7 @@ export function createContainer(loaded: LoadedConfiguration) {
     logger,
   );
   const searchCatalogDocuments = new TrackedSearchCatalogDocuments(catalog, history);
-  const listSearchHistory = new ListSearchHistory(history);
+  const listSearchHistory = new ListSearchHistory(history, config.history.exposeTool);
   const mcpServer = createMcpServer({
     searchWeb,
     fetchUrl,
