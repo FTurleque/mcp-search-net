@@ -4,7 +4,9 @@ import process from 'node:process';
 
 const root = resolve(import.meta.dirname, '..');
 const releaseWorkflow = readText('.github/workflows/release-windows.yml');
-const certificationWorkflow = readText('.github/workflows/native-client-certification-record.yml');
+const certificationWorkflow = readText(
+  '.github/workflows/native-client-certification-record.yml',
+);
 const certificationGate = readText('scripts/release/assert-native-client-certification.ps1');
 const signingScript = readText('scripts/release/sign-windows-setup.ps1');
 const contentFetcher = readText('src/infrastructure/fetch/crawl4ai-content-fetcher.ts');
