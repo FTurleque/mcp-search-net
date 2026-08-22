@@ -24,7 +24,7 @@ informations serveur MCP.
 - `MCP_SEARXNG_URL` et `MCP_CRAWL4AI_URL` remplacent les endpoints ;
 - `MCP_CACHE_PATH` contrôle le chemin du cache Web ;
 - `MCP_CATALOG_PATH` contrôle réellement le chemin du catalogue serveur et des CLI ;
-- `MCP_HISTORY_PATH` contrôle le chemin de l’historique local des recherches ;
+- `MCP_HISTORY_PATH` contrôle le chemin de l’historique local des recherches lorsqu'il est activé ;
 - `MCP_LOG_LEVEL` remplace le niveau de journalisation ;
 - `MCP_ALLOWED_PUBLIC_PORTS` remplace la liste des ports publics, au format `80,443`.
 
@@ -56,7 +56,10 @@ bornés. Toutes les surcharges repassent par Zod ; elles ne peuvent pas augmente
   README 6 h, sitemap 24 h), nombre global maximal d’entrées (`maxEntries: 2000`) et volume
   global maximal des payloads JSON sérialisés (`maxBytes: 268435456`, soit 256 Mio) ;
 - `history.enabled` : active ou désactive l’historique persistant des appels `search_web` et
-  `search_docs` ;
+  `search_docs` ; les profils de production Windows et Docker utilisent `false` par défaut ;
+- `history.exposeTool` : expose ou masque `list_search_history` dans l'inventaire MCP ; la valeur par
+  défaut du schéma est `false`, y compris pour une ancienne configuration qui ne possède pas encore
+  ce champ ; le profil de développement l'active explicitement pour les tests de contrat ;
 - `history.path` : chemin de `history.sqlite` ;
 - `history.retentionDays` : rétention maximale, 90 jours par défaut, bornée entre 1 et 3 650 jours ;
 - `history.maxEntries` : nombre maximal d’occurrences conservées, 20 000 par défaut, borné entre
@@ -77,13 +80,19 @@ validé constitue une nouvelle ligne, y compris lorsqu’une requête identique 
 par le cache. L’écriture d’historique est fail-open : une panne de `history.sqlite` est journalisée
 sur `stderr` mais ne transforme jamais une recherche réussie en erreur.
 
+`history.enabled` et `history.exposeTool` sont indépendants. Pour le mode d'inspection local complet,
+les deux doivent être `true`. Pour conserver un historique sans l'exposer aux modèles MCP, utiliser
+`history.enabled: true` et `history.exposeTool: false`. Pour la confidentialité maximale, conserver
+les deux à `false`.
+
 La configuration est validée par Zod au démarrage. Les maxima absolus sont 10 résultats,
 10 sections, 30 000 caractères, 50 liens, 10 Mio par téléchargement, 2 Gio de payloads cache,
 5 redirections et 20 secondes. Une valeur invalide arrête le processus avec un message structuré.
 
 ## Données enregistrées dans l’historique
 
-`history.sqlite` conserve uniquement des métadonnées nécessaires à l’inspection locale :
+Lorsque `history.enabled: true`, `history.sqlite` conserve uniquement des métadonnées nécessaires à
+l’inspection locale :
 
 - `requestId` et outil (`search_web` ou `search_docs`) ;
 - requête validée et paramètres de recherche techniques ;
@@ -96,12 +105,12 @@ credentials dans la requête et les paramètres : Bearer, JWT, PAT connus, API k
 et signature sont remplacés par `[REDACTED]`, et les clés de paramètres manifestement sensibles sont
 neutralisées. Cette protection ne peut toutefois pas garantir qu’un texte libre ne contienne jamais
 une donnée sensible sous une forme non reconnue. `history.sqlite` doit donc rester protégé comme une
-donnée locale utilisateur ; pour un besoin de confidentialité stricte, utiliser `history.enabled:
-false` ou réduire la rétention.
+donnée locale utilisateur ; les profils de production le désactivent désormais par défaut.
 
 Le serveur n’y duplique pas le contenu complet des pages ou des sections, ni les headers
 d’autorisation ni les variables d’environnement. La base reste locale et n’est pas exposée comme
-fichier arbitraire via MCP ; sa consultation passe par l’outil borné `list_search_history`.
+fichier arbitraire via MCP ; sa consultation passe exclusivement par `list_search_history`, lui-même
+absent de l'inventaire MCP tant que `history.exposeTool` n'est pas explicitement activé.
 
 ## Registre officiel
 
@@ -110,6 +119,16 @@ sous-domaines, des mots-clés et une priorité. Une URL résultat HTTP n’est j
 `VERIFIED_OFFICIAL`, même lorsque son hostname, son chemin ou son organisation GitHub correspond au
 registre. Utiliser `pathPrefix` lorsqu’un domaine partagé comme `github.com` ne doit être officiel
 que pour un dépôt précis.
+
+Le mode `sourcePolicy: strict` utilise ce registre **avant** la recherche : les sources dont les
+mots-clés correspondent à la requête sont prioritaires, puis les domaines officiels éligibles sont
+transmis à SearXNG sous forme de contraintes `site:`. Le filtrage `VERIFIED_OFFICIAL` reste ensuite
+appliqué aux résultats afin qu'une contrainte de recherche ne suffise jamais à conférer le statut
+officiel.
+
+Une URL dont le hostname ou le chemin ressemble à une documentation mais qui n'appartient pas au
+registre reçoit `UNVERIFIED_DOCUMENTATION`, jamais un statut d'officialité. Ce signal ne vaut que
+comme faible indice de pertinence documentaire.
 
 `githubOrganizations` permet aussi de reconnaître une ou plusieurs organisations GitHub contrôlées. La comparaison porte uniquement sur le domaine exact `github.com` et sur le premier segment complet du chemin ; une organisation au nom ressemblant ou un faux sous-domaine ne correspond pas.
 
@@ -124,9 +143,10 @@ l’environnement. Le jeton fourni au processus MCP doit avoir la même valeur q
 
 Les fichiers du dépôt déclarent explicitement leur profil : développement pour
 `application.yml`, production pour `application.user.yml` et
-`application.docker.yml`. Les profils production fixent `security.allowHttp: false`; une
-configuration production qui réactive HTTP public est rejetée. Les endpoints providers internes
-peuvent rester en HTTP sur loopback/réseau Docker et ne passent pas par la politique des URLs
-publiques. Un jeton d’exemple connu dans un profil non développement provoque un arrêt avant appel
-fournisseur. L’installateur Windows génère un `.env` aléatoire s’il n’existe pas, le préserve lors
-des mises à jour et le charge dans les wrappers Node et Compose.
+`application.docker.yml`. Les profils production fixent `security.allowHttp: false`,
+`history.enabled: false` et `history.exposeTool: false`; une configuration production qui réactive
+HTTP public est rejetée. Les endpoints providers internes peuvent rester en HTTP sur loopback/réseau
+Docker et ne passent pas par la politique des URLs publiques. Un jeton d’exemple connu dans un
+profil non développement provoque un arrêt avant appel fournisseur. L’installateur Windows génère
+un `.env` aléatoire s’il n’existe pas, le préserve lors des mises à jour et le charge dans les
+wrappers Node et Compose.
