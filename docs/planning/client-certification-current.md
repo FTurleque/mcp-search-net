@@ -122,32 +122,43 @@ characterCount             = 901
 
 **Verdict Claude Desktop : PASS NATIF.**
 
-### Codex 26.803.5235.0 — CERTIFIÉ
+### Codex 26.818.5229.0 — CERTIFIÉ
 
-Session native Codex 26.803.5235.0 sur Windows 10. La version a été récupérée depuis le package MSIX
-exact du processus Codex actif, `codex --version` ayant été refusé par Windows.
+Session native Codex 26.818.5229.0 sur Windows 10 Pro 22H2 (10.0.19045.6466, x64), runtime serveur
+`e6d4fec2cd89f69a5f625df0f0ebf3ef8144af1a` :
 
 ```text
-search_docs tool           = mcp__mcp_search_net__search_docs
-search_docs requestId      = 2260b551-e143-417e-94f5-886a28a3c9e1
-returned sectionId         = 9
-read_doc_section tool      = mcp__mcp_search_net__read_doc_section
-read_doc_section requestId = d6dbad89-b224-45f3-830f-fef26c23983b
-used sectionId             = 9
+serverVersion              = 1.1.4
+sourceRevision             = e6d4fec2cd89f69a5f625df0f0ebf3ef8144af1a
+sourceState                = CLEAN
+nodeVersion                = 24.18.0
+
+search_docs requestId      = 878841bf-016e-474b-848c-3f0c8291ec57
+returned sectionId         = 8
+
+read_doc_section requestId = dcb0133b-4333-4771-aecb-577505e43aa8
+used sectionId             = 8
 section found              = true
 truncated                  = false
-characterCount             = 901
+characterCount             = 725
+
+native invocation observed = YES
+observed at                = 2026-08-22T20:30:45.369Z
 ```
 
-La chaîne native a vérifié automatiquement l'égalité :
+La chaîne native a vérifié automatiquement :
 
 ```text
-search_docs.sectionId      = 9
-read_doc_section.sectionId = 9
+search_docs.sectionId      = 8
+read_doc_section.sectionId = 8
 exact match                = YES
 ```
 
-**Verdict Codex : PASS NATIF.**
+**Verdict Codex : PASS NATIF pour `e6d4fec2cd89f69a5f625df0f0ebf3ef8144af1a`.**
+
+Cette preuve certifie uniquement le runtime `sourceRevision` indiqué.
+Le commit documentaire créé pour enregistrer cette preuve ne devient pas automatiquement
+un nouveau runtime certifié.
 
 ## Statut de #34
 
