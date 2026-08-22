@@ -164,7 +164,7 @@ const ALPHANUMERIC_PATTERN = /^[a-z0-9]$/iu;
 
 function isValidDomain(domain: string): boolean {
   const first = domain[0];
-  const last = domain[domain.length - 1];
+  const last = domain.at(-1);
   return (
     first !== undefined &&
     last !== undefined &&
@@ -177,7 +177,7 @@ function isValidDomain(domain: string): boolean {
 function isValidPathPrefix(value: string): boolean {
   if (value.length < 2 || !value.startsWith('/')) return false;
   const firstSegmentChar = value[1];
-  const last = value[value.length - 1];
+  const last = value.at(-1);
   return (
     firstSegmentChar !== undefined &&
     last !== undefined &&
@@ -207,9 +207,15 @@ function withDomainConstraints(
   return `${query} (${scopes.join(' OR ')})`;
 }
 
+function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end -= 1;
+  return value.slice(0, end);
+}
+
 function sanitizePathPrefix(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  const trimmed = value.trim().replace(/\/+$/u, '');
+  const trimmed = stripTrailingSlashes(value.trim());
   if (trimmed === '' || !isValidPathPrefix(trimmed)) return undefined;
   return trimmed;
 }
