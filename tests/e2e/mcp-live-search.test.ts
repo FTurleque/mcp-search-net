@@ -82,7 +82,7 @@ describe.runIf(live)('live MCP search', () => {
     expect(structured.data.results.length).toBeGreaterThan(0);
     expect(structured.data.results[0]?.url).toMatch(/^https?:\/\//u);
     expect(structured.data.results[0]?.sourceStatus).toMatch(
-      /^(VERIFIED_OFFICIAL|LIKELY_OFFICIAL|THIRD_PARTY|UNKNOWN)$/u,
+      /^(VERIFIED_OFFICIAL|UNVERIFIED_DOCUMENTATION|THIRD_PARTY|UNKNOWN)$/u,
     );
     expect(structured.data.results[0]?.score).toBeGreaterThanOrEqual(0);
     expect(structured.data.results[0]?.score).toBeLessThanOrEqual(1);
