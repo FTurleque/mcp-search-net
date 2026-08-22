@@ -149,18 +149,28 @@ function run(options: {
   return result;
 }
 
-function collapseWhitespace(value: string): string {
-  return value.replace(/\s+/gu, ' ');
+const ESCAPE_CHARACTER = String.fromCharCode(27);
+const ANSI_SGR_PATTERN = new RegExp(ESCAPE_CHARACTER + String.raw`\[[0-9;]*m`, 'gu');
+const WRAPPED_CONTINUATION_LINE_PATTERN = /\r?\n\s*\|?\s*/gu;
+const WHITESPACE_RUN_PATTERN = /\s+/gu;
+
+function normalizePwshOutput(value: string): string {
+  return value
+    .replace(ANSI_SGR_PATTERN, '') // strip ANSI SGR color codes
+    .replace(WRAPPED_CONTINUATION_LINE_PATTERN, ' ') // join a wrapped continuation line (drops the "| " marker)
+    .replace(WHITESPACE_RUN_PATTERN, ' ')
+    .trim();
 }
 
 function assertContains(result: SpawnSyncReturns<string>, expected: string): void {
   // pwsh wraps long error messages across lines to fit the host's console width, and where that
   // wrap point falls depends on the runner's terminal width -- it can land inside the very
-  // phrase being asserted on (observed in CI: "does not match the certified\nhead" instead of
-  // "...certified head"). Collapse all whitespace runs (including newlines) before comparing so
-  // the check is robust to where PowerShell happened to wrap the line.
-  const combined = collapseWhitespace(`${result.stderr}${result.stdout}`);
-  if (!combined.includes(collapseWhitespace(expected))) {
+  // phrase being asserted on. Each wrapped continuation line is also rendered with ANSI color
+  // codes and a "     | " marker interposed (observed in CI: "...contient un JSON\n     |
+  // invalide : ..." instead of "...JSON invalide : ..."), so a bare whitespace collapse is not
+  // enough; strip the ANSI/marker noise first, then join wrapped lines with a single space.
+  const combined = normalizePwshOutput(`${result.stderr}${result.stdout}`);
+  if (!combined.includes(normalizePwshOutput(expected))) {
     throw new Error(
       `Expected output to contain ${JSON.stringify(expected)} but did not.\n` +
         `status=${String(result.status)}\n` +
