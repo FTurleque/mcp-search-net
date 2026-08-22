@@ -109,13 +109,7 @@ export class SearchWeb {
           firstResponse.results.length === 0 &&
           !normalizedRequest.language.toLowerCase().startsWith('en');
         providerResponse = shouldFallback
-          ? await this.searchProvider(
-              normalizedRequest,
-              'en',
-              context,
-              deadline,
-              domainConstraints,
-            )
+          ? await this.searchProvider(normalizedRequest, 'en', context, deadline, domainConstraints)
           : firstResponse;
       }
     } catch (error) {
