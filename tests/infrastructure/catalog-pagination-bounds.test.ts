@@ -11,7 +11,10 @@ describe('catalog pagination bounds', () => {
       readModel.listDocumentsPage({ offset: 1_000_001, limit: 20 }),
     ).toThrow('CATALOG_PAGE_OFFSET_INVALID');
     expect(() =>
-      readModel.listCurrentDocumentSectionsPage({ offset: 1_000_001, limit: 20 }),
+      readModel.listCurrentDocumentSectionsPage({
+        offset: 1_000_001,
+        limit: 20,
+      }),
     ).toThrow('CATALOG_PAGE_OFFSET_INVALID');
     expect(() =>
       readModel.listDocumentVersionsPage(1, { offset: 1_000_001, limit: 20 }),
