@@ -1,0 +1,130 @@
+name: Native client certification record
+
+on:
+  workflow_dispatch:
+    inputs:
+      claude_code_evidence:
+        description: 'JSON: client/version/os/searchRequestId/readRequestId/searchSectionId/readSectionId/nativeToolInvocationObserved/verdict'
+        required: true
+        type: string
+      claude_desktop_evidence:
+        description: 'JSON evidence for Claude Desktop with the same fields'
+        required: true
+        type: string
+      codex_evidence:
+        description: 'JSON evidence for Codex with the same fields'
+        required: true
+        type: string
+      collector_report_sha256:
+        description: 'SHA-256 of the local certify-native-clients.ps1 collector report'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-client-certification-record-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: Record exact-head native certification
+    if: github.ref == 'refs/heads/master'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact certified head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate and materialize native evidence
+        shell: pwsh
+        env:
+          CLAUDE_CODE_EVIDENCE: ${{ inputs.claude_code_evidence }}
+          CLAUDE_DESKTOP_EVIDENCE: ${{ inputs.claude_desktop_evidence }}
+          CODEX_EVIDENCE: ${{ inputs.codex_evidence }}
+          COLLECTOR_REPORT_SHA256: ${{ inputs.collector_report_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) {
+            throw "Certification checkout mismatch: $(git rev-parse HEAD) != $env:GITHUB_SHA"
+          }
+          if ($env:COLLECTOR_REPORT_SHA256 -notmatch '^[a-fA-F0-9]{64}$') {
+            throw 'collector_report_sha256 must be a 64-character SHA-256 digest.'
+          }
+
+          function Read-NativeEvidence([string] $Raw, [string] $ExpectedClient) {
+            try { $evidence = $Raw | ConvertFrom-Json }
+            catch { throw "Invalid JSON evidence for $ExpectedClient : $($_.Exception.Message)" }
+            if ([string]$evidence.client -ne $ExpectedClient) {
+              throw "Unexpected client name for $ExpectedClient : $($evidence.client)"
+            }
+            foreach ($field in @('version', 'os', 'searchRequestId', 'readRequestId')) {
+              if ([string]::IsNullOrWhiteSpace([string]$evidence.$field)) {
+                throw "Missing $field for $ExpectedClient"
+              }
+            }
+            $searchSectionId = 0
+            $readSectionId = 0
+            if (-not [int]::TryParse([string]$evidence.searchSectionId, [ref]$searchSectionId) -or $searchSectionId -le 0) {
+              throw "Invalid searchSectionId for $ExpectedClient"
+            }
+            if (-not [int]::TryParse([string]$evidence.readSectionId, [ref]$readSectionId) -or $readSectionId -le 0) {
+              throw "Invalid readSectionId for $ExpectedClient"
+            }
+            if ($searchSectionId -ne $readSectionId) {
+              throw "sectionId mismatch for $ExpectedClient : search=$searchSectionId read=$readSectionId"
+            }
+            if ([bool]$evidence.nativeToolInvocationObserved -ne $true) {
+              throw "Native tool invocation was not observed for $ExpectedClient"
+            }
+            if ([string]$evidence.verdict -ne 'PASS_NATIVE') {
+              throw "Native verdict must be PASS_NATIVE for $ExpectedClient"
+            }
+            return [ordered]@{
+              client = $ExpectedClient
+              version = [string]$evidence.version
+              os = [string]$evidence.os
+              searchRequestId = [string]$evidence.searchRequestId
+              readRequestId = [string]$evidence.readRequestId
+              searchSectionId = $searchSectionId
+              readSectionId = $readSectionId
+              nativeToolInvocationObserved = $true
+              verdict = 'PASS_NATIVE'
+            }
+          }
+
+          $clients = @(
+            (Read-NativeEvidence $env:CLAUDE_CODE_EVIDENCE 'Claude Code'),
+            (Read-NativeEvidence $env:CLAUDE_DESKTOP_EVIDENCE 'Claude Desktop'),
+            (Read-NativeEvidence $env:CODEX_EVIDENCE 'Codex')
+          )
+          $report = [ordered]@{
+            schemaVersion = '1.0'
+            sourceRevision = $env:GITHUB_SHA
+            repository = $env:GITHUB_REPOSITORY
+            recordedBy = $env:GITHUB_ACTOR
+            recordedAt = [datetime]::UtcNow.ToString('o')
+            collectorReportSha256 = $env:COLLECTOR_REPORT_SHA256.ToLowerInvariant()
+            clients = $clients
+            verdict = 'PASS_NATIVE_3_OF_3'
+          }
+          $output = Join-Path $env:RUNNER_TEMP 'native-client-certification'
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          $path = Join-Path $output 'native-client-certification.json'
+          $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding utf8
+          "NATIVE_CERTIFICATION_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "NATIVE_CLIENT_CERTIFICATION_RECORDED sha=$env:GITHUB_SHA clients=3 verdict=PASS_NATIVE_3_OF_3"
+
+      - name: Upload exact-head certification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-client-certification-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 90
+          path: ${{ env.NATIVE_CERTIFICATION_PATH }}
