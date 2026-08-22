@@ -29,6 +29,8 @@ jobs:
     permissions:
       contents: read
       actions: read
+      id-token: write
+      attestations: write
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       TARGET_COMMIT: ${{ github.sha }}
@@ -160,6 +162,16 @@ jobs:
           }
           Write-Host "CI_EXACT_HEAD_QUALIFIED run=$($qualifiedRun.id) sha=$env:GITHUB_SHA event=$($qualifiedRun.event) branch=$($qualifiedRun.head_branch)"
 
+      - name: Vérifier la certification native 3/3 exact-head
+        if: github.ref == 'refs/heads/master' && !inputs.validate_only
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          .\scripts\release\assert-native-client-certification.ps1 `
+            -Repository $env:GITHUB_REPOSITORY `
+            -CommitSha $env:GITHUB_SHA
+
       - name: Construire et qualifier les artefacts Windows
         shell: pwsh
         run: |
@@ -169,6 +181,30 @@ jobs:
             -TargetCommit $env:TARGET_COMMIT `
             -IsccPath $env:QUALIFIED_ISCC_PATH `
             -ValidateOnly
+
+      - name: Signer le setup Windows avec Authenticode
+        if: github.ref == 'refs/heads/master' && !inputs.validate_only
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+          WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          .\scripts\release\sign-windows-setup.ps1 `
+            -SetupPath "target\dist\mcp-search-net-$env:RELEASE_VERSION-windows-x64-setup.exe" `
+            -CertificateBase64 $env:WINDOWS_SIGNING_CERTIFICATE_BASE64 `
+            -CertificatePassword $env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD
+
+      - name: Attester la provenance des artefacts publiables
+        if: github.ref == 'refs/heads/master' && !inputs.validate_only
+        uses: actions/attest-build-provenance@9d57eef8c06cd9d6b433effeeb7a6a77b3ff94ad
+        with:
+          subject-path: |
+            target/dist/mcp-search-net-${{ inputs.version }}-windows-x64-setup.exe
+            target/dist/mcp-search-net-${{ inputs.version }}-windows-x64-setup.exe.sha256
+            target/dist/mcp-search-net-${{ inputs.version }}-windows-x64.zip
+            target/dist/mcp-search-net-${{ inputs.version }}-windows-x64.zip.sha256
+            target/dist/THIRD-PARTY-NOTICES-${{ inputs.version }}.txt
+            target/dist/THIRD-PARTY-NOTICES-${{ inputs.version }}.txt.sha256
 
       - name: Conserver les artefacts qualifiés
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -193,6 +229,7 @@ jobs:
     permissions:
       contents: write
       actions: read
+      attestations: read
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       TARGET_COMMIT: ${{ github.sha }}
@@ -251,6 +288,18 @@ jobs:
           Verify-Sha256 $zip $zipChecksum
           Verify-Sha256 $notices $noticesChecksum
 
+          $signature = Get-AuthenticodeSignature -FilePath $setup
+          if ([string]$signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
+            throw "Setup Windows non signé ou signature Authenticode invalide : status=$($signature.Status)"
+          }
+
+          foreach ($artifact in @($setup, $zip, $notices)) {
+            & gh attestation verify $artifact --repo $env:GITHUB_REPOSITORY
+            if ($LASTEXITCODE -ne 0) {
+              throw "Attestation de provenance absente ou invalide pour $artifact (exit=$LASTEXITCODE)"
+            }
+          }
+
           $tag = "v$version"
           $previousPreference = $ErrorActionPreference
           $ErrorActionPreference = 'Continue'
@@ -290,4 +339,4 @@ jobs:
             throw "Publication GitHub Release $tag échouée (exit=$LASTEXITCODE)"
           }
 
-          Write-Host "GitHub Release $tag publiée depuis les artefacts qualifiés du run $env:GITHUB_RUN_ID."
+          Write-Host "GitHub Release $tag publiée depuis les artefacts qualifiés, signés et attestés du run $env:GITHUB_RUN_ID."
