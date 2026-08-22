@@ -32,7 +32,11 @@ const secondary: OfficialSource = {
 function registry(): OfficialSourceRegistry {
   return {
     findByUrl: (url) =>
-      url.includes(primary.domain) ? primary : url.includes(secondary.domain) ? secondary : undefined,
+      url.includes(primary.domain)
+        ? primary
+        : url.includes(secondary.domain)
+          ? secondary
+          : undefined,
     findForQuery: (query) => (query.includes('mcp') ? [primary] : []),
     list: () => [secondary, primary],
     version: () => 'strict-discovery-v1',
