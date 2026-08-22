@@ -87,23 +87,43 @@ certification et qu'aucun PASS natif ne peut être inféré automatiquement.
 
 ## Matrice native finalisée — 3/3
 
-### Claude Code 2.1.225 — CERTIFIÉ
+### Claude Code 2.1.240 — CERTIFIÉ
 
-Session native Claude Code 2.1.225 sur Windows 10, runtime serveur
-`a70b9a51527543c9417566326bb780121954cef5` :
+Session native Claude Code 2.1.240 sur Windows 10 Pro 10.0.19045, runtime serveur
+`e6d4fec2cd89f69a5f625df0f0ebf3ef8144af1a` :
 
 ```text
-search_docs        = OBSERVÉ
-returned sectionId = 9
-read_doc_section   = OBSERVÉ
-used sectionId     = 9
-section found      = true
+serverVersion              = 1.1.4
+sourceRevision             = e6d4fec2cd89f69a5f625df0f0ebf3ef8144af1a
+sourceState                = CLEAN
+nodeVersion                = 24.18.0
+
+search_docs requestId      = 0f28549f-b7aa-4c36-aac1-858b4b40671d
+returned sectionId         = 8
+
+read_doc_section requestId = 5377e776-befd-4356-ab54-efa7e352b169
+used sectionId             = 8
+section found              = true
+truncated                  = false
+characterCount             = 725
+
+native invocation observed = YES
+observed at                = 2026-08-22T20:54:31.371Z
 ```
 
-Le `sectionId=9` retourné par `search_docs` a été réutilisé exactement dans
-`read_doc_section(9)`.
+La chaîne native a vérifié automatiquement :
 
-**Verdict Claude Code : PASS NATIF.**
+```text
+search_docs.sectionId      = 8
+read_doc_section.sectionId = 8
+exact match                = YES
+```
+
+**Verdict Claude Code : PASS NATIF pour `e6d4fec2cd89f69a5f625df0f0ebf3ef8144af1a`.**
+
+Cette preuve certifie uniquement le runtime `sourceRevision` indiqué.
+Le commit documentaire créé pour enregistrer cette preuve ne devient pas automatiquement
+un nouveau runtime certifié.
 
 ### Claude Desktop 1.26832.0 — CERTIFIÉ
 
