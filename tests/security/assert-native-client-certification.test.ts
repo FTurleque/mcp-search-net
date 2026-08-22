@@ -194,9 +194,17 @@ function runAssert(fixture: Fixture, commitSha: string = COMMIT_SHA) {
   );
 }
 
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/gu, ' ');
+}
+
 function assertContains(result: SpawnSyncReturns<string>, expected: string): void {
-  const combined = `${result.stderr}${result.stdout}`;
-  if (!combined.includes(expected)) {
+  // pwsh wraps long error messages across lines to fit the host's console width, and where that
+  // wrap point falls depends on the runner's terminal width -- it can land inside the very
+  // phrase being asserted on (observed in CI). Collapse all whitespace runs (including newlines)
+  // before comparing so the check is robust to where PowerShell happened to wrap the line.
+  const combined = collapseWhitespace(`${result.stderr}${result.stdout}`);
+  if (!combined.includes(collapseWhitespace(expected))) {
     throw new Error(
       `Expected output to contain ${JSON.stringify(expected)} but did not.\n` +
         `status=${String(result.status)}\n` +
