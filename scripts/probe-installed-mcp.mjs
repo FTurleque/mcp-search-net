@@ -43,7 +43,6 @@ try {
   const expected = [
     'fetch_url',
     'list_docs',
-    'list_search_history',
     'read_doc_section',
     'search_docs',
     'search_web',
@@ -51,27 +50,17 @@ try {
   if (JSON.stringify(names) !== JSON.stringify(expected)) {
     throw new Error(`INSTALLED_TOOL_INVENTORY_MISMATCH:${names.join(',')}`);
   }
+  if (names.includes('list_search_history')) {
+    throw new Error('INSTALLED_HISTORY_TOOL_MUST_BE_OPT_IN');
+  }
   const listed = await client.callTool({ name: 'list_docs', arguments: { limit: 1 } }, undefined, {
     timeout: requestTimeoutMs,
   });
   if (listed.isError === true || listed.structuredContent?.schemaVersion !== '1.0') {
     throw new Error('INSTALLED_LIST_DOCS_CONTRACT_INVALID');
   }
-  const history = await client.callTool(
-    { name: 'list_search_history', arguments: { limit: 1 } },
-    undefined,
-    { timeout: requestTimeoutMs },
-  );
-  if (
-    history.isError === true ||
-    history.structuredContent?.schemaVersion !== '1.0' ||
-    history.structuredContent?.data?.enabled !== true ||
-    history.structuredContent?.data?.available !== true
-  ) {
-    throw new Error('INSTALLED_SEARCH_HISTORY_UNAVAILABLE');
-  }
   process.stdout.write(
-    `${JSON.stringify({ status: 'INSTALLED_STDIO_VALID', tools: names, historyAvailable: true, schemaVersion: '1.0' })}\n`,
+    `${JSON.stringify({ status: 'INSTALLED_STDIO_VALID', tools: names, historyExposed: false, schemaVersion: '1.0' })}\n`,
   );
 } finally {
   await client.close();
