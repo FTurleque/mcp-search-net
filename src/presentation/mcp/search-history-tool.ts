@@ -17,6 +17,8 @@ export function registerSearchHistoryTool(
   listSearchHistory: ListSearchHistory,
   logger: Logger,
 ): void {
+  if (!listSearchHistory.exposed) return;
+
   server.registerTool(
     'list_search_history',
     {
