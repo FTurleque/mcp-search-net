@@ -51,7 +51,12 @@ export function createSearchWebSchemas(defaultResults: number, maximumResults: n
       url: z.url(),
       domain: z.string().max(253),
       snippet: unicodeBoundedString(500),
-      sourceStatus: z.enum(['VERIFIED_OFFICIAL', 'LIKELY_OFFICIAL', 'THIRD_PARTY', 'UNKNOWN']),
+      sourceStatus: z.enum([
+        'VERIFIED_OFFICIAL',
+        'UNVERIFIED_DOCUMENTATION',
+        'THIRD_PARTY',
+        'UNKNOWN',
+      ]),
       engines: z.array(unicodeBoundedString(MAX_EXTERNAL_ENGINE_NAME_CHARACTERS)).max(32),
       publishedAt: z.iso.datetime().optional(),
       updatedAt: z.iso.datetime().optional(),
