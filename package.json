@@ -45,7 +45,7 @@
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --write . && git diff --exit-code",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:coverage": "node scripts/run-test-suite.mjs coverage vitest.config.ts --coverage",
     "test:watch": "vitest",

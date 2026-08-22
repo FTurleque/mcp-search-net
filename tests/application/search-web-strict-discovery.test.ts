@@ -78,10 +78,7 @@ describe('SearchWeb strict discovery', () => {
     });
 
     expect(requests).toHaveLength(1);
-    expect(requests[0]?.domainConstraints).toEqual([
-      'docs.primary.test',
-      'docs.secondary.test',
-    ]);
+    expect(requests[0]?.domainConstraints).toEqual(['docs.primary.test', 'docs.secondary.test']);
     expect(response.data.results.map((result) => result.sourceStatus)).toEqual([
       'VERIFIED_OFFICIAL',
     ]);

@@ -40,24 +40,16 @@ try {
   await client.connect(transport, { timeout: requestTimeoutMs });
   const tools = await client.listTools({}, { timeout: requestTimeoutMs });
   const names = tools.tools.map((tool) => tool.name).sort();
-  const expected = [
-    'fetch_url',
-    'list_docs',
-    'read_doc_section',
-    'search_docs',
-    'search_web',
-  ];
+  const expected = ['fetch_url', 'list_docs', 'read_doc_section', 'search_docs', 'search_web'];
   if (JSON.stringify(names) !== JSON.stringify(expected)) {
     throw new Error(`INSTALLED_TOOL_INVENTORY_MISMATCH:${names.join(',')}`);
   }
   if (names.includes('list_search_history')) {
     throw new Error('INSTALLED_HISTORY_TOOL_MUST_BE_OPT_IN');
   }
-  const listed = await client.callTool(
-    { name: 'list_docs', arguments: { limit: 1 } },
-    undefined,
-    { timeout: requestTimeoutMs },
-  );
+  const listed = await client.callTool({ name: 'list_docs', arguments: { limit: 1 } }, undefined, {
+    timeout: requestTimeoutMs,
+  });
   if (listed.isError === true || listed.structuredContent?.schemaVersion !== '1.0') {
     throw new Error('INSTALLED_LIST_DOCS_CONTRACT_INVALID');
   }
