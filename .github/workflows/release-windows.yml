@@ -188,11 +188,13 @@ jobs:
         env:
           WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
           WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+          WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT: ${{ vars.WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT }}
         run: |
           .\scripts\release\sign-windows-setup.ps1 `
             -SetupPath "target\dist\mcp-search-net-$env:RELEASE_VERSION-windows-x64-setup.exe" `
             -CertificateBase64 $env:WINDOWS_SIGNING_CERTIFICATE_BASE64 `
-            -CertificatePassword $env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD
+            -CertificatePassword $env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD `
+            -ExpectedCertificateThumbprint $env:WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT
 
       - name: Attester la provenance des artefacts publiables
         if: github.ref == 'refs/heads/master' && !inputs.validate_only

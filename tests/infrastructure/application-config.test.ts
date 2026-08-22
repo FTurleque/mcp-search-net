@@ -25,6 +25,7 @@ describe('application configuration precedence and limits', () => {
         maxEntries: 2_000,
         maxBytes: 268_435_456,
       },
+      history: { enabled: false, exposeTool: false },
       limits: {
         defaultSearchResults: 5,
         maxSearchResults: 10,
@@ -103,6 +104,43 @@ describe('application configuration precedence and limits', () => {
     );
   });
 
+  it('rejects a remote plaintext provider endpoint in the production profile', () => {
+    expect(
+      applicationConfigSchema.safeParse({
+        application: { name: 'x', version: '1', profile: 'production' },
+        security: { allowHttp: false },
+        crawl4ai: { baseUrl: 'http://remote-host.example:11235' },
+      }).success,
+    ).toBe(false);
+    expect(
+      applicationConfigSchema.safeParse({
+        application: { name: 'x', version: '1', profile: 'production' },
+        security: { allowHttp: false },
+        searxng: { baseUrl: 'http://remote-host.example:8888' },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts local and Docker-service provider endpoints in the production profile', () => {
+    expect(
+      applicationConfigSchema.safeParse({
+        application: { name: 'x', version: '1', profile: 'production' },
+        security: { allowHttp: false },
+        searxng: { baseUrl: 'http://searxng:8080' },
+        crawl4ai: { baseUrl: 'http://crawl4ai:11235' },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('refuses to start when a Crawl4AI token would be sent to a remote plaintext endpoint', async () => {
+    process.env['MCP_CRAWL4AI_TOKEN'] = 'unique-remote-token-value';
+    process.env['MCP_CRAWL4AI_URL'] = 'http://remote-host.example:11235';
+
+    await expect(loadConfiguration(resolve('config/application.yml'))).rejects.toThrow(
+      'this would send the token in plaintext to a remote host',
+    );
+  });
+
   it.each(['application.user.yml', 'application.docker.yml'])(
     'ships %s as a hardened production profile',
     async (configurationFile) => {
@@ -112,9 +150,18 @@ describe('application configuration precedence and limits', () => {
 
       expect(loaded.application.application.profile).toBe('production');
       expect(loaded.application.security.allowHttp).toBe(false);
+      expect(loaded.application.history.enabled).toBe(false);
       expect(loaded.crawl4aiApiToken).toBe('unique-production-token-value');
     },
   );
+
+  it('keeps the development template explicit history opt-in enabled', async () => {
+    const loaded = await loadConfiguration(resolve('config/application.yml'));
+
+    expect(loaded.application.application.profile).toBe('development');
+    expect(loaded.application.history.enabled).toBe(true);
+    expect(loaded.application.history.exposeTool).toBe(true);
+  });
 
   it('resolves cache and catalog overrides independently from the configuration directory', async () => {
     const configPath = resolve('config/application.yml');

@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 
 import type {
+  SearchDomainConstraint,
   SearchProvider,
   SearchProviderRequest,
   SearchProviderResponse,
@@ -153,17 +154,34 @@ function ensureTrailingSlash(value: string): string {
   return value.endsWith('/') ? value : `${value}/`;
 }
 
-function withDomainConstraints(query: string, domains: readonly string[]): string {
-  const constrainedDomains = [
-    ...new Set(
-      domains
-        .map((domain) => domain.trim().toLowerCase().replace(/\.$/u, ''))
-        .filter((domain) => /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u.test(domain)),
-    ),
-  ].slice(0, MAX_DOMAIN_CONSTRAINTS);
-  if (constrainedDomains.length === 0) return query;
-  const scope = constrainedDomains.map((domain) => `site:${domain}`).join(' OR ');
-  return `${query} (${scope})`;
+const DOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/u;
+const PATH_PREFIX_PATTERN = /^\/[a-z0-9](?:[a-z0-9._/-]*[a-z0-9])?$/iu;
+
+function withDomainConstraints(
+  query: string,
+  constraints: readonly SearchDomainConstraint[],
+): string {
+  const seen = new Set<string>();
+  const scopes: string[] = [];
+  for (const constraint of constraints) {
+    const domain = constraint.domain.trim().toLowerCase().replace(/\.$/u, '');
+    if (!DOMAIN_PATTERN.test(domain)) continue;
+    const pathPrefix = sanitizePathPrefix(constraint.pathPrefix);
+    const key = pathPrefix === undefined ? domain : `${domain}${pathPrefix}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    scopes.push(pathPrefix === undefined ? `site:${domain}` : `site:${domain}${pathPrefix}`);
+    if (scopes.length >= MAX_DOMAIN_CONSTRAINTS) break;
+  }
+  if (scopes.length === 0) return query;
+  return `${query} (${scopes.join(' OR ')})`;
+}
+
+function sanitizePathPrefix(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim().replace(/\/+$/u, '');
+  if (trimmed === '' || !PATH_PREFIX_PATTERN.test(trimmed)) return undefined;
+  return trimmed;
 }
 
 function decodeSnippet(value: string): string {

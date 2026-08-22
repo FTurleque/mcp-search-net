@@ -1,7 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 
-import type { CatalogRepository } from '../../application/ports/catalog-repository.js';
+import {
+  MAX_CATALOG_PAGE_OFFSET,
+  type CatalogRepository,
+} from '../../application/ports/catalog-repository.js';
 import type { Logger } from '../../application/ports/logger.js';
 import type { ListSearchHistory } from '../../application/use-cases/list-search-history.js';
 import type {
@@ -68,7 +71,7 @@ const listDocsInputSchema = z
     language: z.string().trim().min(1).max(MAX_EXTERNAL_LANGUAGE_CHARACTERS).optional(),
     status: z.enum(['ACTIVE', 'STALE', 'REDIRECTED', 'REMOVED', 'UNAVAILABLE']).optional(),
     limit: z.number().int().min(1).max(50).default(20),
-    offset: z.number().int().min(0).default(0),
+    offset: z.number().int().min(0).max(MAX_CATALOG_PAGE_OFFSET).default(0),
   })
   .strict();
 

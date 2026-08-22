@@ -730,6 +730,41 @@ Add-StagedFile -SourceRelativePath 'docker\compose.yaml' -TargetRelativePath 'co
 Add-StagedFile -SourceRelativePath 'docker\compose.hybrid.yaml' -TargetRelativePath 'compose.hybrid.yaml'
 Add-StagedFile -SourceRelativePath 'docker\.dockerignore' -TargetRelativePath '.dockerignore'
 
+function Repair-InheritedHistoryDefault {
+    # Flips a live config's `history.enabled` back to `false` on upgrade when its current
+    # value cannot be attributed to a deliberate user opt-in -- either because the file is
+    # byte-identical to the exact template this install previously shipped (an inherited
+    # schema default the user never touched), or because no prior `.default` snapshot exists
+    # to compare against at all (an installation predating that tracking mechanism, where
+    # provenance genuinely cannot be established). In the latter, ambiguous case the
+    # privacy-by-default policy resolves in favor of disabling history rather than assuming
+    # consent. A file that differs from its prior `.default` snapshot has demonstrably been
+    # edited by the user and is left untouched, preserving any explicit opt-in.
+    param(
+        [Parameter(Mandatory)] [string] $LiveConfigPath,
+        [Parameter(Mandatory)] [string] $PreviousDefaultConfigPath
+    )
+
+    if (-not (Test-Path -LiteralPath $LiveConfigPath -PathType Leaf)) { return }
+
+    $historyEnabledTruePattern = '(?m)^history:\s*\r?\n\s*enabled:\s*true\s*\r?$'
+    $liveContent = [System.IO.File]::ReadAllText($LiveConfigPath, $Utf8NoBom)
+    if ($liveContent -notmatch $historyEnabledTruePattern) { return }
+
+    if (Test-Path -LiteralPath $PreviousDefaultConfigPath -PathType Leaf) {
+        $previousDefaultContent = [System.IO.File]::ReadAllText($PreviousDefaultConfigPath, $Utf8NoBom)
+        if ($liveContent -ne $previousDefaultContent) {
+            # Demonstrably user-edited since install; preserve whatever they set explicitly.
+            return
+        }
+    }
+
+    $migrated = $liveContent -replace '(?m)(^history:\s*\r?\n\s*enabled:\s*)true(\s*\r?$)', '${1}false${2}'
+    if ($migrated -eq $liveContent) { return }
+    Write-DurableUtf8File -Path $LiveConfigPath -Content $migrated
+    Write-Host "Migration de confidentialite : 'history.enabled' repasse a false dans '$LiveConfigPath' (defaut herite, aucun opt-in explicite detecte)."
+}
+
 $configTemplates = @(
     @{ source = 'config\application.yml'; target = 'config\application.yml' },
     @{ source = 'config\application.docker.yml'; target = 'config\application.docker.yml' },
@@ -741,6 +776,11 @@ foreach ($template in $configTemplates) {
     Assert-NoReparsePointInExistingPathChain -Path $targetPath -Root $InstallRoot
     if (-not (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
         Add-StagedFile -SourceRelativePath $template.source -TargetRelativePath $template.target
+    }
+    elseif ($template.target -in @('config\application.yml', 'config\application.docker.yml')) {
+        Repair-InheritedHistoryDefault `
+            -LiveConfigPath $targetPath `
+            -PreviousDefaultConfigPath (Join-Path $InstallRoot ($template.target + '.default'))
     }
     Add-StagedFile -SourceRelativePath $template.source -TargetRelativePath ($template.target + '.default')
 }

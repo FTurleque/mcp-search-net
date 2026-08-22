@@ -1,5 +1,7 @@
 import { z } from 'zod/v4';
 
+import { isSafeProviderEndpoint } from './provider-endpoint-policy.js';
+
 const durationSchema = z.number().int().positive();
 const httpUrlSchema = z.url().refine((value) => {
   try {
@@ -69,7 +71,7 @@ export const applicationConfigSchema = z
       }),
     history: z
       .object({
-        enabled: z.boolean().default(true),
+        enabled: z.boolean().default(false),
         exposeTool: z.boolean().default(false),
         path: z.string().min(1).default('../.data/history.sqlite'),
         retentionDays: z.number().int().min(1).max(3_650).default(90),
@@ -77,7 +79,7 @@ export const applicationConfigSchema = z
       })
       .strict()
       .default({
-        enabled: true,
+        enabled: false,
         exposeTool: false,
         path: '../.data/history.sqlite',
         retentionDays: 90,
@@ -164,6 +166,24 @@ export const applicationConfigSchema = z
         path: ['security', 'allowHttp'],
         message: 'Public HTTP must be disabled in the production profile',
       });
+    }
+    if (config.application.profile === 'production') {
+      if (!isSafeProviderEndpoint(config.searxng.baseUrl)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['searxng', 'baseUrl'],
+          message:
+            'searxng.baseUrl must use HTTPS for a non-local endpoint in the production profile',
+        });
+      }
+      if (!isSafeProviderEndpoint(config.crawl4ai.baseUrl)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['crawl4ai', 'baseUrl'],
+          message:
+            'crawl4ai.baseUrl must use HTTPS for a non-local endpoint in the production profile',
+        });
+      }
     }
   });
 
