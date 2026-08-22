@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -149,6 +149,18 @@ function run(options: {
   return result;
 }
 
+function assertContains(result: SpawnSyncReturns<string>, expected: string): void {
+  const combined = `${result.stderr}${result.stdout}`;
+  if (!combined.includes(expected)) {
+    throw new Error(
+      `Expected output to contain ${JSON.stringify(expected)} but did not.\n` +
+        `status=${String(result.status)}\n` +
+        `stdout=${JSON.stringify(result.stdout)}\n` +
+        `stderr=${JSON.stringify(result.stderr)}`,
+    );
+  }
+}
+
 function readArtifact(): Record<string, unknown> {
   const envContent = readFileSync(join(workDir, 'github-env.txt'), 'utf8');
   const match = /NATIVE_CERTIFICATION_PATH=(.+)/.exec(envContent);
@@ -233,48 +245,48 @@ describe('native-client-certification-record.yml validation logic', () => {
   ] as const)('rejects %s', (_label, overrides, expectedMessage) => {
     const result = run(overrides);
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain(expectedMessage);
+    assertContains(result, expectedMessage);
   });
 
   it('rejects a missing client evidence input', () => {
     const result = run({ codex: 'MISSING' });
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('Invalid JSON evidence');
+    assertContains(result, 'Invalid JSON evidence');
   });
 
   it('rejects invalid collector report JSON', () => {
     const result = run({ collector: 'INVALID_JSON' });
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('Invalid collector report JSON');
+    assertContains(result, 'Invalid collector report JSON');
   });
 
   it('rejects a missing collector report', () => {
     const result = run({ collector: 'MISSING' });
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('collector_report_json is required');
+    assertContains(result, 'collector_report_json is required');
   });
 
   it('rejects a collector report whose sourceRevision does not match github.sha', () => {
     const result = run({ collector: { sourceRevision: OTHER_SHA } });
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('Collector report sourceRevision');
+    assertContains(result, 'Collector report sourceRevision');
   });
 
   it('rejects a collector report with the wrong serverName', () => {
     const result = run({ collector: { serverName: 'not-mcp-search-net' } });
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('unexpected serverName');
+    assertContains(result, 'unexpected serverName');
   });
 
   it('rejects a collector report missing a required field', () => {
     const result = run({ collector: { serverVersion: undefined } });
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('missing required field');
+    assertContains(result, 'missing required field');
   });
 
   it('does not accept the artifact when only Claude Code and Claude Desktop match github.sha but Codex does not', () => {
     const result = run({ codex: { sourceRevision: OTHER_SHA } });
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('does not match the certified head');
+    assertContains(result, 'does not match the certified head');
   });
 });

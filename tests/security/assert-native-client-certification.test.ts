@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
@@ -194,6 +194,18 @@ function runAssert(fixture: Fixture, commitSha: string = COMMIT_SHA) {
   );
 }
 
+function assertContains(result: SpawnSyncReturns<string>, expected: string): void {
+  const combined = `${result.stderr}${result.stdout}`;
+  if (!combined.includes(expected)) {
+    throw new Error(
+      `Expected output to contain ${JSON.stringify(expected)} but did not.\n` +
+        `status=${String(result.status)}\n` +
+        `stdout=${JSON.stringify(result.stdout)}\n` +
+        `stderr=${JSON.stringify(result.stderr)}`,
+    );
+  }
+}
+
 function fixtureWithArtifact(artifact: unknown, overrides: Partial<Fixture> = {}): Fixture {
   return {
     runs: [successfulRun()],
@@ -215,7 +227,7 @@ describe('assert-native-client-certification.ps1', () => {
   it('rejects when no workflow run matches the exact SHA at all', () => {
     const result = runAssert({ runs: [], artifactsByRunId: {}, artifactContentByRunId: {} });
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('Aucune certification native');
+    assertContains(result, 'Aucune certification native');
   });
 
   it('rejects when a run matches the SHA but carries no matching artifact', () => {
@@ -240,7 +252,7 @@ describe('assert-native-client-certification.ps1', () => {
     const fixture = fixtureWithArtifact('DOWNLOAD_FAILS');
     const result = runAssert(fixture);
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('Aucune certification native');
+    assertContains(result, 'Aucune certification native');
   });
 
   it('rejects when the downloaded artifact is missing the expected JSON file', () => {
@@ -251,7 +263,7 @@ describe('assert-native-client-certification.ps1', () => {
   it('rejects invalid JSON inside the artifact', () => {
     const result = runAssert(fixtureWithArtifact('{not valid json'));
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain('JSON invalide');
+    assertContains(result, 'JSON invalide');
   });
 
   it.each([
@@ -369,7 +381,7 @@ describe('assert-native-client-certification.ps1', () => {
   ] as const)('rejects %s', (_label, artifact, expectedMessage) => {
     const result = runAssert(fixtureWithArtifact(artifact));
     expect(result.status).not.toBe(0);
-    expect(result.stderr + result.stdout).toContain(expectedMessage);
+    assertContains(result, expectedMessage);
   });
 
   it('never accepts an artifact from existence alone: a syntactically perfect name with content mismatch is refused', () => {
