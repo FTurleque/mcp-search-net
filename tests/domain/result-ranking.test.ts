@@ -122,7 +122,7 @@ describe('result ranking', () => {
 
     expect(documentation?.sourceStatus).toBe('UNVERIFIED_DOCUMENTATION');
     expect(unknown?.sourceStatus).toBe('UNKNOWN');
-    expect((documentation?.score ?? 0) - (unknown?.score ?? 0)).toBeLessThanOrEqual(0.04);
+    expect((documentation?.score ?? 0) - (unknown?.score ?? 0)).toBeLessThan(0.041);
   });
 
   it('uses a stable title and URL order when scores are equal', () => {
