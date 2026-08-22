@@ -82,7 +82,7 @@ describe('result ranking', () => {
         ?.sourceStatus;
 
     expect(create('https://sub.example.com/page')).toBe('UNKNOWN');
-    expect(create('https://developer.vendor.test/reference')).toBe('LIKELY_OFFICIAL');
+    expect(create('https://developer.vendor.test/reference')).toBe('UNVERIFIED_DOCUMENTATION');
     expect(create('https://stackoverflow.com/questions/1')).toBe('THIRD_PARTY');
     expect(create('https://example.net/page')).toBe('UNKNOWN');
 
@@ -96,6 +96,33 @@ describe('result ranking', () => {
       { query: 'result', officialSource },
     );
     expect(insecureOfficial?.sourceStatus).not.toBe('VERIFIED_OFFICIAL');
+  });
+
+  it('treats documentation-shaped URLs only as a weak relevance hint', () => {
+    const documentation = toSearchResult(
+      {
+        title: 'Reference material',
+        url: 'https://attacker.test/docs/reference',
+        snippet: '',
+        score: 1,
+        engines: [],
+      },
+      { query: 'unrelated' },
+    );
+    const unknown = toSearchResult(
+      {
+        title: 'Reference material',
+        url: 'https://neutral.test/material',
+        snippet: '',
+        score: 1,
+        engines: [],
+      },
+      { query: 'unrelated' },
+    );
+
+    expect(documentation?.sourceStatus).toBe('UNVERIFIED_DOCUMENTATION');
+    expect(unknown?.sourceStatus).toBe('UNKNOWN');
+    expect((documentation?.score ?? 0) - (unknown?.score ?? 0)).toBeLessThanOrEqual(0.04);
   });
 
   it('uses a stable title and URL order when scores are equal', () => {
