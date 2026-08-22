@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "client": "Claude Code",
+  "clientVersion": "2.1.240",
+  "os": "Windows 10 Pro 10.0.19045",
+  "serverVersion": "1.1.4",
+  "sourceRevision": "e6d4fec2cd89f69a5f625df0f0ebf3ef8144af1a",
+  "sourceState": "CLEAN",
+  "nodeVersion": "24.18.0",
+  "searchRequestId": "0f28549f-b7aa-4c36-aac1-858b4b40671d",
+  "readRequestId": "5377e776-befd-4356-ab54-efa7e352b169",
+  "searchSectionId": 8,
+  "readSectionId": 8,
+  "sectionFound": true,
+  "truncated": false,
+  "characterCount": 725,
+  "nativeToolInvocationObserved": true,
+  "observedAt": "2026-08-22T20:54:31.371Z",
+  "verdict": "PASS_NATIVE"
+}
