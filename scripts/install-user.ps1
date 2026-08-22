@@ -5,24 +5,120 @@ param(
     [switch]$RunAfterInstall,
     [switch]$SkipChecks,
     [switch]$ForceStopExistingProcess,
-    [switch]$TestFailActivation
+    [switch]$AllowCustomInstallRoot,
+    [switch]$TestFailActivation,
+    [ValidateRange(0, 1000)]
+    [int]$TestFailActivationAfterEntries = 0
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    throw 'LOCALAPPDATA est introuvable. Ce programme necessite un profil utilisateur Windows.'
+}
+if ($env:OS -ne 'Windows_NT') {
+    throw 'Ce programme necessite Windows x64.'
+}
+if ($TestFailActivation -and $TestFailActivationAfterEntries -gt 0) {
+    throw 'TestFailActivation et TestFailActivationAfterEntries sont mutuellement exclusifs.'
+}
 
 $NodeVersion = '24.18.0'
 $NodeFolderName = "node-v$NodeVersion-win-x64"
 $NodeArchiveName = "$NodeFolderName.zip"
 $NodeDownloadUrl = "https://nodejs.org/dist/v$NodeVersion/$NodeArchiveName"
 $NodeArchiveSha256 = '0ae68406b42d7725661da979b1403ec9926da205c6770827f33aac9d8f26e821'
-$RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$RepositoryRoot = [System.IO.Path]::GetFullPath((Resolve-Path (Join-Path $PSScriptRoot '..')).Path)
+$DefaultInstallRoot = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'mcp-search-net'))
 $InstallRoot = [System.IO.Path]::GetFullPath($InstallRoot)
-$ComposeProject = if ([string]::IsNullOrWhiteSpace($env:MCP_SEARCH_COMPOSE_PROJECT)) {
-    'mcp-search-net'
+$ManagedApplicationName = 'mcp-search-net'
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+function Test-SamePath {
+    param(
+        [Parameter(Mandatory)] [string]$Left,
+        [Parameter(Mandatory)] [string]$Right
+    )
+    $trimChars = [char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar
+    )
+    $leftFull = [System.IO.Path]::GetFullPath($Left).TrimEnd($trimChars)
+    $rightFull = [System.IO.Path]::GetFullPath($Right).TrimEnd($trimChars)
+    return $leftFull.Equals($rightFull, [System.StringComparison]::OrdinalIgnoreCase)
 }
-else {
-    $env:MCP_SEARCH_COMPOSE_PROJECT
+
+function Test-OwnershipMarker {
+    if (-not (Test-Path -LiteralPath $InstallRoot -PathType Container)) { return $false }
+    $markerPath = Join-Path $InstallRoot '.mcp-search-net-installation.json'
+    if (-not (Test-Path -LiteralPath $markerPath -PathType Leaf)) { return $false }
+    try {
+        $marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+        if ([string]$marker.schemaVersion -ne '1.0' -or [string]$marker.name -ne $ManagedApplicationName) {
+            return $false
+        }
+        $null = [guid]::Parse([string]$marker.installationId)
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-LegacyOwnedInstallation {
+    if (-not (Test-Path -LiteralPath $InstallRoot -PathType Container)) { return $false }
+    $manifestPath = Join-Path $InstallRoot 'BUILD-MANIFEST.json'
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return $false }
+    try {
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        if ([string]$manifest.name -ne $ManagedApplicationName) { return $false }
+    }
+    catch {
+        return $false
+    }
+    return (
+        (Test-Path -LiteralPath (Join-Path $InstallRoot 'app\build\bootstrap\main.js') -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $InstallRoot 'bin\mcp-search-net.cmd') -PathType Leaf)
+    )
+}
+
+function Assert-InstallRootPreflight {
+    if (-not (Test-SamePath -Left $InstallRoot -Right $DefaultInstallRoot) -and -not $AllowCustomInstallRoot) {
+        throw "MCP_INSTALL_CUSTOM_ROOT_REQUIRES_OPT_IN: utilisez -AllowCustomInstallRoot pour '$InstallRoot'."
+    }
+
+    $forbiddenRoots = @(
+        [System.IO.Path]::GetPathRoot($InstallRoot),
+        $env:USERPROFILE,
+        $env:LOCALAPPDATA,
+        $env:APPDATA,
+        $env:ProgramData,
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        $env:SystemRoot,
+        $env:TEMP,
+        [System.IO.Path]::GetTempPath()
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    foreach ($forbiddenRoot in $forbiddenRoots) {
+        if (Test-SamePath -Left $InstallRoot -Right ([string]$forbiddenRoot)) {
+            throw "MCP_INSTALL_UNSAFE_INSTALL_ROOT: racine systeme ou utilisateur interdite : $InstallRoot"
+        }
+    }
+
+    if (-not (Test-Path -LiteralPath $InstallRoot)) { return }
+    if (-not (Test-Path -LiteralPath $InstallRoot -PathType Container)) {
+        throw "MCP_INSTALL_UNSAFE_INSTALL_ROOT: le chemin existe mais n'est pas un dossier : $InstallRoot"
+    }
+    $rootItem = Get-Item -LiteralPath $InstallRoot -Force
+    if (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw "MCP_INSTALL_UNSAFE_INSTALL_ROOT: une racine d'installation de type reparse point est refusee : $InstallRoot"
+    }
+    $children = @(Get-ChildItem -LiteralPath $InstallRoot -Force)
+    if ($children.Count -eq 0) { return }
+    if (Test-OwnershipMarker) { return }
+    if (Test-LegacyOwnedInstallation) { return }
+    throw "MCP_INSTALL_UNSAFE_INSTALL_ROOT: dossier non vide sans preuve d'ownership mcp-search-net : $InstallRoot"
 }
 
 function Invoke-NativeCommand {
@@ -30,558 +126,271 @@ function Invoke-NativeCommand {
         [Parameter(Mandatory)] [string]$FilePath,
         [Parameter(ValueFromRemainingArguments)] [string[]]$Arguments
     )
-
     & $FilePath @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "La commande '$FilePath' a échoué avec le code $LASTEXITCODE."
+        throw "La commande '$FilePath' a echoue avec le code $LASTEXITCODE."
     }
 }
 
-function Assert-PathInsideInstallRoot {
-    param([Parameter(Mandatory)] [string]$Path)
+function Invoke-ExpectedNativeFailure {
+    param(
+        [Parameter(Mandatory)] [string]$FilePath,
+        [Parameter(Mandatory)] [string[]]$Arguments,
+        [Parameter(Mandatory)] [string]$ExpectedMarker
+    )
 
-    $fullPath = [System.IO.Path]::GetFullPath($Path)
-    $rootPrefix = $InstallRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
-    if (-not $fullPath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Chemin hors de l'installation utilisateur refusé : $fullPath"
+    $output = @(& $FilePath @Arguments 2>&1 | ForEach-Object { [string]$_ })
+    $exitCode = $LASTEXITCODE
+    foreach ($line in $output) {
+        Write-Host $line
     }
-}
+    if ($exitCode -eq 0) {
+        throw "MCP_INSTALL_TEST_FAILURE_NOT_TRIGGERED: attendu=$ExpectedMarker"
+    }
 
-function Get-CurrentProcessLineage {
-    $lineage = @{}
-    $processId = [int]$PID
-
-    while ($processId -gt 0 -and -not $lineage.ContainsKey($processId)) {
-        $lineage[$processId] = $true
-        $process = Get-CimInstance Win32_Process -Filter "ProcessId = $processId"
-        if ($null -eq $process -or $null -eq $process.ParentProcessId) {
+    $markerObserved = $false
+    foreach ($line in $output) {
+        if ($line.IndexOf($ExpectedMarker, [System.StringComparison]::Ordinal) -ge 0) {
+            $markerObserved = $true
             break
         }
-        $processId = [int]$process.ParentProcessId
     }
-
-    return [int[]]$lineage.Keys
+    if (-not $markerObserved) {
+        throw "MCP_INSTALL_TEST_UNEXPECTED_FAILURE: attendu=$ExpectedMarker code=$exitCode"
+    }
+    throw $ExpectedMarker
 }
 
-function Get-McpSearchNetProcesses {
-    param(
-        [string]$InstallRootPath = $InstallRoot,
-        [int[]]$ExcludeProcessIds = (Get-CurrentProcessLineage)
-    )
+function Get-SourceRevision {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($null -ne $git -and (Test-Path -LiteralPath (Join-Path $RepositoryRoot '.git'))) {
+        $candidate = ((& $git.Source -C $RepositoryRoot rev-parse --verify HEAD 2>$null) | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0 -and $candidate -match '^[a-fA-F0-9]{40}$') {
+            return $candidate.ToLowerInvariant()
+        }
+    }
+    if ($env:MCP_BUILD_REVISION -match '^[a-fA-F0-9]{40}$') {
+        return $env:MCP_BUILD_REVISION.ToLowerInvariant()
+    }
+    if ($env:GITHUB_SHA -match '^[a-fA-F0-9]{40}$') {
+        return $env:GITHUB_SHA.ToLowerInvariant()
+    }
+    return 'UNAVAILABLE'
+}
 
-    $installRootFull = [System.IO.Path]::GetFullPath($InstallRootPath).TrimEnd(
-        [System.IO.Path]::DirectorySeparatorChar,
-        [System.IO.Path]::AltDirectorySeparatorChar
-    )
-    $installedLauncher = Join-Path $installRootFull 'bin\mcp-search-net.cmd'
-    $installedMain = Join-Path $installRootFull 'app\build\bootstrap\main.js'
+function Get-InstalledMcpProcesses {
+    if (-not (Test-Path -LiteralPath $InstallRoot -PathType Container)) { return @() }
     $needles = @(
-        $installedLauncher,
-        $installedLauncher.Replace('\', '/'),
-        $installedMain,
-        $installedMain.Replace('\', '/')
+        (Join-Path $InstallRoot 'bin\mcp-search-net.cmd'),
+        (Join-Path $InstallRoot 'app\build\bootstrap\main.js')
     )
-    $excluded = @{}
-    foreach ($excludedProcessId in $ExcludeProcessIds) {
-        $excluded[[int]$excludedProcessId] = $true
-    }
-
-    Get-CimInstance Win32_Process |
-        Where-Object {
-            $isMatch = $false
-            if ($null -eq $_.CommandLine) {
-                $isMatch = $false
+    return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        if ($null -eq $_.CommandLine -or [int]$_.ProcessId -eq [int]$PID) { return $false }
+        foreach ($needle in $needles) {
+            if ($_.CommandLine.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                return $true
             }
-            elseif ($excluded.ContainsKey([int]$_.ProcessId)) {
-                $isMatch = $false
-            }
-            else {
-                foreach ($needle in $needles) {
-                    if (-not [string]::IsNullOrWhiteSpace($needle) -and
-                        $_.CommandLine.IndexOf($needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-                        $isMatch = $true
-                        break
-                    }
-                }
-            }
-            $isMatch
-        } |
-        Select-Object `
-            @{ Name = 'PID'; Expression = { $_.ProcessId } },
-            @{ Name = 'Nom'; Expression = { $_.Name } },
-            CommandLine
+        }
+        return $false
+    })
 }
 
-function Write-McpSearchNetProcessReport {
-    param([Parameter(Mandatory)] [object[]]$Processes)
-
-    foreach ($process in $Processes) {
-        Write-Host "PID: $($process.PID)"
-        Write-Host "Nom: $($process.Nom)"
+function Assert-ProcessPolicy {
+    if ($ForceStopExistingProcess) { return }
+    $processes = @(Get-InstalledMcpProcesses)
+    if ($processes.Count -eq 0) { return }
+    foreach ($process in $processes) {
+        Write-Host "PID: $($process.ProcessId) - $($process.Name)"
         Write-Host "CommandLine: $($process.CommandLine)"
-        Write-Host ''
     }
+    throw "MCP_INSTALL_PROCESS_LOCK: $($processes.Count) processus mcp-search-net actif(s). Fermez-les ou utilisez -ForceStopExistingProcess."
 }
 
-function Assert-NoMcpSearchNetProcessLock {
-    param([Parameter(Mandatory)] [string]$TargetPath)
-
-    $processes = @(Get-McpSearchNetProcesses)
-    if ($processes.Count -eq 0) {
-        return
-    }
-
-    if ($ForceStopExistingProcess) {
-        Write-Warning "Arrêt forcé demandé pour $($processes.Count) processus mcp-search-net suspect(s)."
-        Write-McpSearchNetProcessReport -Processes $processes
-        foreach ($process in $processes) {
-            Stop-Process -Id ([int]$process.PID) -Force -ErrorAction Stop
-        }
-        Start-Sleep -Milliseconds 500
-
-        $remainingProcesses = @(Get-McpSearchNetProcesses)
-        if ($remainingProcesses.Count -gt 0) {
-            Write-Host 'Des processus suspects restent actifs après arrêt forcé :'
-            Write-McpSearchNetProcessReport -Processes $remainingProcesses
-            throw "Installation interrompue : impossible d'arrêter tous les processus pouvant verrouiller $TargetPath."
-        }
-        return
-    }
-
-    Write-Host 'Une ancienne instance de mcp-search-net semble encore active.'
-    Write-Host "Fermez IntelliJ/Copilot ou arrêtez le processus ci-dessous avant de relancer l'installation."
-    Write-Host ''
-    Write-McpSearchNetProcessReport -Processes $processes
-    throw "Installation interrompue : $($processes.Count) processus suspect(s) peuvent verrouiller $TargetPath."
-}
-
-function Remove-DirectoryWithRetry {
-    param([Parameter(Mandatory)] [string]$Path)
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return
-    }
-
-    $delays = @(500, 1000, 2000, 3000, 5000)
-    $attemptCount = $delays.Count
-    $lastError = $null
-
-    for ($attempt = 1; $attempt -le $attemptCount; $attempt++) {
-        try {
-            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction Stop
-            return
-        }
-        catch {
-            $lastError = $_
-            Write-Warning "Suppression impossible de '$Path' (tentative $attempt/$attemptCount) : $($_.Exception.Message)"
-            if ($attempt -lt $attemptCount) {
-                Start-Sleep -Milliseconds $delays[$attempt - 1]
-            }
-        }
-    }
-
-    throw "Impossible de supprimer '$Path' après $attemptCount tentatives. Dernière erreur : $($lastError.Exception.Message)"
-}
-
-function Assert-StagedApplication {
-    param([Parameter(Mandatory)] [string]$StageAppPath)
-
-    $mainScript = Join-Path $StageAppPath 'build\bootstrap\main.js'
-    $sqlitePackage = Join-Path $StageAppPath 'node_modules\better-sqlite3'
-    if (-not (Test-Path -LiteralPath $mainScript -PathType Leaf)) {
-        throw "Application staging invalide : $mainScript est absent."
-    }
-    if (-not (Test-Path -LiteralPath $sqlitePackage -PathType Container)) {
-        throw "Application staging invalide : better-sqlite3 n'est pas installé dans $sqlitePackage."
-    }
-}
-
-if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
-    throw 'LOCALAPPDATA est introuvable. Ce programme nécessite un profil utilisateur Windows.'
-}
-
-Write-Host "Installation de mcp-search-net dans $InstallRoot"
-New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
-
-$RuntimeRoot = Join-Path $InstallRoot 'runtime'
-$NodeRoot = Join-Path $RuntimeRoot $NodeFolderName
-$NodeExe = Join-Path $NodeRoot 'node.exe'
-$NpmCmd = Join-Path $NodeRoot 'npm.cmd'
-$RuntimeProofPath = Join-Path $RuntimeRoot 'node-runtime-proof.json'
-$ArchiveVerifiedAtInstall = $false
-
-if (Test-Path -LiteralPath $RuntimeProofPath -PathType Leaf) {
-    try {
-        $PreviousRuntimeProof = Get-Content -LiteralPath $RuntimeProofPath -Raw | ConvertFrom-Json
-        $ArchiveVerifiedAtInstall =
-            $PreviousRuntimeProof.nodeVersion -eq $NodeVersion -and
-            $PreviousRuntimeProof.archiveSha256 -eq $NodeArchiveSha256 -and
-            $PreviousRuntimeProof.archiveVerifiedAtInstall -eq $true
-    }
-    catch {
-        Write-Warning "Preuve runtime existante illisible ; la signature du binaire sera revérifiée : $RuntimeProofPath"
-    }
-}
-
-function New-LocalSecret {
-    $bytes = New-Object byte[] 32
-    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    try {
-        $generator.GetBytes($bytes)
-    }
-    finally {
-        $generator.Dispose()
-    }
-    return ([System.BitConverter]::ToString($bytes)).Replace('-', '').ToLowerInvariant()
-}
-
-if (-not (Test-Path -LiteralPath $NodeExe -PathType Leaf)) {
-    New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
-    $archivePath = Join-Path $RuntimeRoot $NodeArchiveName
-    Write-Host "Téléchargement de Node.js $NodeVersion LTS depuis nodejs.org..."
-    try {
-        Invoke-WebRequest -Uri $NodeDownloadUrl -OutFile $archivePath -UseBasicParsing
-        $Verifier = Join-Path $RepositoryRoot 'scripts\windows\verify-file-sha256.ps1'
-        & $Verifier -FilePath $archivePath -ExpectedSha256 $NodeArchiveSha256 | Out-Null
-        $ArchiveVerifiedAtInstall = $true
-        Expand-Archive -LiteralPath $archivePath -DestinationPath $RuntimeRoot -Force
-    }
-    finally {
-        if (Test-Path -LiteralPath $archivePath) {
+function Get-VerifiedNodeArchive {
+    $cacheRoot = Join-Path ([System.IO.Path]::GetTempPath()) 'mcp-search-net-download-cache'
+    New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+    $archivePath = Join-Path $cacheRoot $NodeArchiveName
+    if (Test-Path -LiteralPath $archivePath -PathType Leaf) {
+        $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($hash -ne $NodeArchiveSha256) {
             Remove-Item -LiteralPath $archivePath -Force
         }
     }
+    if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
+        $temporaryArchive = Join-Path $cacheRoot ('.' + $NodeArchiveName + '.tmp-' + [guid]::NewGuid().ToString('N'))
+        try {
+            Write-Host "Telechargement de Node.js $NodeVersion LTS depuis nodejs.org..."
+            Invoke-WebRequest -Uri $NodeDownloadUrl -OutFile $temporaryArchive -UseBasicParsing
+            $hash = (Get-FileHash -LiteralPath $temporaryArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($hash -ne $NodeArchiveSha256) {
+                throw "SHA-256 Node.js invalide : attendu=$NodeArchiveSha256 obtenu=$hash"
+            }
+            Move-Item -LiteralPath $temporaryArchive -Destination $archivePath -Force
+        }
+        finally {
+            if (Test-Path -LiteralPath $temporaryArchive -PathType Leaf) {
+                Remove-Item -LiteralPath $temporaryArchive -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    return $archivePath
 }
 
-if (-not (Test-Path -LiteralPath $NpmCmd -PathType Leaf)) {
-    throw "Runtime Node.js incomplet : $NpmCmd est absent."
-}
+Assert-InstallRootPreflight
+Assert-ProcessPolicy
 
-$NodeSignature = Get-AuthenticodeSignature -LiteralPath $NodeExe
-if ($NodeSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
-    $null -eq $NodeSignature.SignerCertificate -or
-    $NodeSignature.SignerCertificate.Subject -notmatch 'OpenJS Foundation') {
-    throw "Signature Authenticode Node.js invalide ou signataire inattendu : $($NodeSignature.Status)."
-}
-$NodeExeSha256 = (Get-FileHash -LiteralPath $NodeExe -Algorithm SHA256).Hash.ToLowerInvariant()
-$InstalledNodeVersion = (& $NodeExe '--version').TrimStart('v')
-if ($LASTEXITCODE -ne 0 -or $InstalledNodeVersion -ne $NodeVersion) {
-    throw "Version Node.js installée invalide : attendu $NodeVersion, obtenu $InstalledNodeVersion."
-}
-$RuntimeProof = [ordered]@{
-    schemaVersion = '1.0'
-    nodeVersion = $NodeVersion
-    archiveName = $NodeArchiveName
-    downloadUrl = $NodeDownloadUrl
-    archiveSha256 = $NodeArchiveSha256
-    archiveVerifiedAtInstall = $ArchiveVerifiedAtInstall
-    nodeExeSha256 = $NodeExeSha256
-    signatureStatus = [string]$NodeSignature.Status
-    signerSubject = $NodeSignature.SignerCertificate.Subject
-    verifiedAt = (Get-Date).ToUniversalTime().ToString('o')
-}
-$RuntimeProof | ConvertTo-Json | Set-Content -LiteralPath $RuntimeProofPath -Encoding UTF8
-Write-Host "Runtime Node.js vérifié ; preuve : $RuntimeProofPath"
+$Package = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Raw | ConvertFrom-Json
+$SourceRevision = Get-SourceRevision
+$NodeArchivePath = Get-VerifiedNodeArchive
+$TemporaryRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('mcp-search-net-source-install-' + [guid]::NewGuid().ToString('N'))
+$BootstrapRuntimeRoot = Join-Path $TemporaryRoot 'bootstrap-runtime'
+$DistributionOutputRoot = Join-Path $TemporaryRoot 'dist'
 
-$env:PATH = "$NodeRoot;$env:PATH"
-
-Push-Location $RepositoryRoot
 try {
-    Write-Host 'Installation reproductible des dépendances de développement...'
-    Invoke-NativeCommand $NpmCmd 'ci'
+    New-Item -ItemType Directory -Force -Path $BootstrapRuntimeRoot, $DistributionOutputRoot | Out-Null
+    Expand-Archive -LiteralPath $NodeArchivePath -DestinationPath $BootstrapRuntimeRoot -Force
+    $BootstrapNodeRoot = Join-Path $BootstrapRuntimeRoot $NodeFolderName
+    $BootstrapNodeExe = Join-Path $BootstrapNodeRoot 'node.exe'
+    $BootstrapNpmCmd = Join-Path $BootstrapNodeRoot 'npm.cmd'
+    if (-not (Test-Path -LiteralPath $BootstrapNodeExe -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $BootstrapNpmCmd -PathType Leaf)) {
+        throw 'Runtime Node.js bootstrap incomplet.'
+    }
 
-    if ($SkipChecks) {
-        Write-Host 'Compilation de production...'
-        Invoke-NativeCommand $NpmCmd 'run' 'build'
+    $NodeSignature = Get-AuthenticodeSignature -LiteralPath $BootstrapNodeExe
+    if ($NodeSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+        $null -eq $NodeSignature.SignerCertificate -or
+        $NodeSignature.SignerCertificate.Subject -notmatch 'OpenJS Foundation') {
+        throw "Signature Authenticode Node.js invalide ou signataire inattendu : $($NodeSignature.Status)."
+    }
+    $InstalledNodeVersion = (& $BootstrapNodeExe '--version').TrimStart('v')
+    if ($LASTEXITCODE -ne 0 -or $InstalledNodeVersion -ne $NodeVersion) {
+        throw "Version Node.js bootstrap invalide : attendu $NodeVersion, obtenu $InstalledNodeVersion."
+    }
+
+    $PreviousPath = $env:PATH
+    $env:PATH = "$BootstrapNodeRoot;$PreviousPath"
+    try {
+        if (-not $SkipChecks) {
+            Push-Location $RepositoryRoot
+            try {
+                Write-Host 'Validation complete du projet avant construction de la distribution...'
+                Invoke-NativeCommand $BootstrapNpmCmd 'ci'
+                Invoke-NativeCommand $BootstrapNpmCmd 'run' 'check'
+            }
+            finally {
+                Pop-Location
+            }
+        }
+
+        $DistributionBuilder = Join-Path $RepositoryRoot 'scripts\release\build-windows-distribution.ps1'
+        & $DistributionBuilder `
+            -Version ([string]$Package.version) `
+            -NodeZipPath $NodeArchivePath `
+            -CommitSha $SourceRevision `
+            -OutputRoot $DistributionOutputRoot
+        if ($LASTEXITCODE -ne 0) {
+            throw "build-windows-distribution.ps1 a echoue (code $LASTEXITCODE)."
+        }
+    }
+    finally {
+        $env:PATH = $PreviousPath
+    }
+
+    $DistributionRoot = Join-Path $DistributionOutputRoot ("mcp-search-net-$($Package.version)-windows-x64")
+    if (-not (Test-Path -LiteralPath $DistributionRoot -PathType Container)) {
+        throw "Distribution Windows absente : $DistributionRoot"
+    }
+
+    $PackagedNodeExe = Join-Path $DistributionRoot "runtime\$NodeFolderName\node.exe"
+    $NodeExeSha256 = (Get-FileHash -LiteralPath $PackagedNodeExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    $RuntimeProof = [ordered]@{
+        schemaVersion = '1.0'
+        nodeVersion = $NodeVersion
+        archiveName = $NodeArchiveName
+        downloadUrl = $NodeDownloadUrl
+        archiveSha256 = $NodeArchiveSha256
+        archiveVerifiedAtInstall = $true
+        nodeExeSha256 = $NodeExeSha256
+        signatureStatus = [string]$NodeSignature.Status
+        signerSubject = $NodeSignature.SignerCertificate.Subject
+        verifiedAt = (Get-Date).ToUniversalTime().ToString('o')
+    }
+    [System.IO.File]::WriteAllText(
+        (Join-Path $DistributionRoot 'runtime\node-runtime-proof.json'),
+        (($RuntimeProof | ConvertTo-Json -Depth 4) + "`r`n"),
+        $Utf8NoBom
+    )
+
+    $Updater = Join-Path $RepositoryRoot 'packaging\windows\update-installation.ps1'
+    $WindowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not (Test-Path -LiteralPath $WindowsPowerShell -PathType Leaf)) {
+        throw "Windows PowerShell 5.1 introuvable : $WindowsPowerShell"
+    }
+    $failureAfterEntries = if ($TestFailActivation) { 1 } else { $TestFailActivationAfterEntries }
+    $UpdateCliArguments = @(
+        '-NoLogo',
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', $Updater,
+        '-PackageRoot', $DistributionRoot,
+        '-InstallRoot', $InstallRoot
+    )
+    if (-not $ForceStopExistingProcess) {
+        $UpdateCliArguments += '-SkipProcessStop'
+    }
+    if ($failureAfterEntries -gt 0) {
+        $UpdateCliArguments += @('-TestFailActivationAfterEntries', [string]$failureAfterEntries)
+    }
+
+    Write-Host "Activation transactionnelle de mcp-search-net dans $InstallRoot via Windows PowerShell 5.1..."
+    if ($failureAfterEntries -gt 0) {
+        Invoke-ExpectedNativeFailure `
+            -FilePath $WindowsPowerShell `
+            -Arguments $UpdateCliArguments `
+            -ExpectedMarker "MCP_UPDATE_TEST_ACTIVATION_FAILURE:$failureAfterEntries"
     }
     else {
-        Write-Host 'Validation complète du projet...'
-        Invoke-NativeCommand $NpmCmd 'run' 'check'
+        Invoke-NativeCommand $WindowsPowerShell @UpdateCliArguments
+    }
+
+    $ConfigureInstall = Join-Path $InstallRoot 'scripts\configure-install.ps1'
+    & $ConfigureInstall -InstallRoot $InstallRoot -FromInstaller -Clients ''
+    if ($LASTEXITCODE -ne 0) {
+        throw "configure-install.ps1 a echoue (code $LASTEXITCODE)."
+    }
+
+    $ComposeProject = if ([string]::IsNullOrWhiteSpace($env:MCP_SEARCH_COMPOSE_PROJECT)) {
+        'mcp-search-net'
+    }
+    else {
+        $env:MCP_SEARCH_COMPOSE_PROJECT
+    }
+    $EnvironmentPath = Join-Path $InstallRoot '.env'
+    if ($StartServices) {
+        $Docker = Get-Command docker -ErrorAction SilentlyContinue
+        if ($null -eq $Docker) {
+            throw 'Docker est absent du PATH. Installez ou demarrez Docker Desktop, puis relancez avec -StartServices.'
+        }
+        Invoke-NativeCommand $Docker.Source `
+            'compose' '--env-file' $EnvironmentPath '-p' $ComposeProject `
+            '-f' (Join-Path $InstallRoot 'compose.yaml') `
+            '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') `
+            'up' '-d' '--wait' 'searxng' 'crawl4ai'
+    }
+
+    $Launcher = Join-Path $InstallRoot 'bin\mcp-search-net.cmd'
+    Write-Host "Installation terminee. Lanceur MCP : $Launcher"
+    Write-Host "Exemple Copilot : $(Join-Path $InstallRoot 'mcp.json.example')"
+
+    if ($RunAfterInstall) {
+        Write-Host 'Demarrage du serveur MCP STDIO (arreter avec Ctrl+C)...'
+        & $Launcher
+        exit $LASTEXITCODE
     }
 }
 finally {
-    Pop-Location
-}
-
-$StageRoot = Join-Path $InstallRoot '.install-staging'
-$StageApp = Join-Path $StageRoot 'app'
-Assert-PathInsideInstallRoot $StageRoot
-$AppRoot = Join-Path $InstallRoot 'app'
-Assert-PathInsideInstallRoot $AppRoot
-
-try {
-    if (Test-Path -LiteralPath $StageRoot) {
-        Write-Host "Nettoyage d'un staging précédent : $StageRoot"
-        Remove-DirectoryWithRetry -Path $StageRoot
+    if (Test-Path -LiteralPath $TemporaryRoot -PathType Container) {
+        Remove-Item -LiteralPath $TemporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
-    New-Item -ItemType Directory -Force -Path $StageApp | Out-Null
-
-    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'build') -Destination $StageApp -Recurse
-    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Destination $StageApp
-    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package-lock.json') -Destination $StageApp
-    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'migrations') -Destination $StageApp -Recurse
-    Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'catalog-migrations') -Destination $StageApp -Recurse
-
-    Push-Location $StageApp
-    try {
-        Write-Host 'Installation des seules dépendances de production...'
-        Invoke-NativeCommand $NpmCmd 'ci' '--omit=dev' '--ignore-scripts=false'
-    }
-    finally {
-        Pop-Location
-    }
-
-    Assert-StagedApplication -StageAppPath $StageApp
-
-    $PreviousAppRoot = $null
-    if (Test-Path -LiteralPath $AppRoot) {
-        Assert-NoMcpSearchNetProcessLock -TargetPath $AppRoot
-        $PreviousAppRoot = Join-Path $InstallRoot ("app.previous-{0:yyyyMMdd-HHmmss}" -f (Get-Date))
-        Assert-PathInsideInstallRoot $PreviousAppRoot
-        Write-Host "Renommage de l'ancienne installation : $PreviousAppRoot"
-        try {
-            Move-Item -LiteralPath $AppRoot -Destination $PreviousAppRoot -ErrorAction Stop
-        }
-        catch {
-            $processes = @(Get-McpSearchNetProcesses)
-            if ($processes.Count -gt 0) {
-                Write-Host 'Processus suspects détectés après échec du renommage :'
-                Write-McpSearchNetProcessReport -Processes $processes
-            }
-            throw "Impossible de renommer l'ancienne installation '$AppRoot'. Le staging est conservé dans '$StageRoot'. Dernière erreur : $($_.Exception.Message)"
-        }
-    }
-
-    try {
-        if ($TestFailActivation) {
-            throw 'MCP_INSTALL_TEST_ACTIVATION_FAILURE'
-        }
-        Move-Item -LiteralPath $StageApp -Destination $AppRoot -ErrorAction Stop
-    }
-    catch {
-        Write-Warning "Impossible de déplacer le staging vers '$AppRoot' : $($_.Exception.Message)"
-        if ($null -ne $PreviousAppRoot -and
-            (Test-Path -LiteralPath $PreviousAppRoot) -and
-            -not (Test-Path -LiteralPath $AppRoot)) {
-            try {
-                Move-Item -LiteralPath $PreviousAppRoot -Destination $AppRoot -ErrorAction Stop
-                Write-Warning "Rollback effectué : ancienne installation restaurée depuis $PreviousAppRoot."
-            }
-            catch {
-                Write-Warning "Rollback impossible depuis '$PreviousAppRoot' vers '$AppRoot' : $($_.Exception.Message)"
-            }
-        }
-        throw "Installation interrompue : la nouvelle application n'a pas pu être activée. Le staging reste dans '$StageRoot'."
-    }
-
-    if (Test-Path -LiteralPath $StageRoot) {
-        try {
-            Remove-DirectoryWithRetry -Path $StageRoot
-        }
-        catch {
-            Write-Warning "Le staging reste présent : $StageRoot"
-            Write-Warning "Après fermeture des processus suspects, supprimez-le avec : Remove-Item -LiteralPath '$StageRoot' -Recurse -Force"
-        }
-    }
-
-    if ($null -ne $PreviousAppRoot -and (Test-Path -LiteralPath $PreviousAppRoot)) {
-        try {
-            Remove-DirectoryWithRetry -Path $PreviousAppRoot
-        }
-        catch {
-            Write-Warning "Ancienne installation verrouillée conservée temporairement : $PreviousAppRoot"
-            Write-Warning "La nouvelle installation est active dans : $AppRoot"
-            Write-Warning "Après fermeture des processus suspects, supprimez l'ancienne installation avec : Remove-Item -LiteralPath '$PreviousAppRoot' -Recurse -Force"
-        }
-    }
-}
-catch {
-    if (Test-Path -LiteralPath $StageRoot) {
-        Write-Warning "Le dossier de staging reste présent : $StageRoot"
-        Write-Warning "Après fermeture des processus suspects, supprimez-le avec : Remove-Item -LiteralPath '$StageRoot' -Recurse -Force"
-    }
-    throw
-}
-
-$ConfigRoot = Join-Path $InstallRoot 'config'
-$SearxConfigRoot = Join-Path $ConfigRoot 'searxng'
-$DataRoot = Join-Path $InstallRoot 'data'
-$BinRoot = Join-Path $InstallRoot 'bin'
-New-Item -ItemType Directory -Force -Path $ConfigRoot, $SearxConfigRoot, $DataRoot, $BinRoot | Out-Null
-
-$EnvironmentPath = Join-Path $InstallRoot '.env'
-if (-not (Test-Path -LiteralPath $EnvironmentPath -PathType Leaf)) {
-    $Crawl4aiLocalToken = New-LocalSecret
-    $SearxngLocalSecret = New-LocalSecret
-    $EnvironmentContent = @(
-        '# Secrets générés localement par install-user.ps1. Ne pas commiter ce fichier.'
-        "CRAWL4AI_API_TOKEN=$Crawl4aiLocalToken"
-        "SEARXNG_SECRET=$SearxngLocalSecret"
-    ) -join "`r`n"
-    [System.IO.File]::WriteAllText(
-        $EnvironmentPath,
-        ($EnvironmentContent + "`r`n"),
-        (New-Object System.Text.UTF8Encoding($false))
-    )
-    Write-Host "Secrets fournisseurs locaux générés dans : $EnvironmentPath"
-}
-
-function Copy-UserConfig {
-    param(
-        [Parameter(Mandatory)] [string]$Source,
-        [Parameter(Mandatory)] [string]$Destination
-    )
-
-    Copy-Item -LiteralPath $Source -Destination "$Destination.default" -Force
-    if (-not (Test-Path -LiteralPath $Destination)) {
-        Copy-Item -LiteralPath $Source -Destination $Destination
-    }
-}
-
-Copy-UserConfig (Join-Path $RepositoryRoot 'config\application.user.yml') (Join-Path $ConfigRoot 'application.yml')
-Copy-UserConfig (Join-Path $RepositoryRoot 'config\official-sources.yml') (Join-Path $ConfigRoot 'official-sources.yml')
-Copy-UserConfig (Join-Path $RepositoryRoot 'config\searxng\settings.yml') (Join-Path $SearxConfigRoot 'settings.yml')
-Copy-UserConfig (Join-Path $RepositoryRoot 'config\application.docker.yml') (Join-Path $ConfigRoot 'application.docker.yml')
-
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'compose.yaml') -Destination (Join-Path $InstallRoot 'compose.yaml') -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'compose.hybrid.yaml') -Destination (Join-Path $InstallRoot 'compose.hybrid.yaml') -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'Dockerfile') -Destination (Join-Path $InstallRoot 'Dockerfile') -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot '.dockerignore') -Destination (Join-Path $InstallRoot '.dockerignore') -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Destination (Join-Path $InstallRoot 'package.json') -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'package-lock.json') -Destination (Join-Path $InstallRoot 'package-lock.json') -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'tsconfig.json') -Destination (Join-Path $InstallRoot 'tsconfig.json') -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'tsconfig.build.json') -Destination (Join-Path $InstallRoot 'tsconfig.build.json') -Force
-$InstalledMigrations = Join-Path $InstallRoot 'migrations'
-$InstalledCatalogMigrations = Join-Path $InstallRoot 'catalog-migrations'
-foreach ($installedMigrationRoot in @($InstalledMigrations, $InstalledCatalogMigrations)) {
-    Assert-PathInsideInstallRoot $installedMigrationRoot
-    if (Test-Path -LiteralPath $installedMigrationRoot) {
-        Remove-Item -LiteralPath $installedMigrationRoot -Recurse -Force
-    }
-}
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'migrations') -Destination $InstalledMigrations -Recurse
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'catalog-migrations') -Destination $InstalledCatalogMigrations -Recurse
-$InstalledSource = Join-Path $InstallRoot 'src'
-Assert-PathInsideInstallRoot $InstalledSource
-if (Test-Path -LiteralPath $InstalledSource) {
-    Remove-Item -LiteralPath $InstalledSource -Recurse -Force
-}
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'src') -Destination $InstalledSource -Recurse
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot '.env.example') -Destination (Join-Path $InstallRoot '.env.example') -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net.cmd') -Destination $BinRoot -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net-services.cmd') -Destination $BinRoot -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net-container.cmd') -Destination $BinRoot -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net-catalog.cmd') -Destination $BinRoot -Force
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'scripts\windows\mcp-search-net-maintain.cmd') -Destination $BinRoot -Force
-
-$InstalledDocs = Join-Path $InstallRoot 'docs'
-Assert-PathInsideInstallRoot $InstalledDocs
-if (Test-Path -LiteralPath $InstalledDocs) {
-    Remove-Item -LiteralPath $InstalledDocs -Recurse -Force
-}
-Copy-Item -LiteralPath (Join-Path $RepositoryRoot 'docs') -Destination $InstalledDocs -Recurse
-
-$Package = Get-Content -LiteralPath (Join-Path $RepositoryRoot 'package.json') -Raw | ConvertFrom-Json
-$Utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText((Join-Path $InstallRoot 'VERSION'), "$($Package.version)`r`n", $Utf8WithoutBom)
-$SourceRevision = $null
-$SourceState = 'UNAVAILABLE'
-$Git = Get-Command git -ErrorAction SilentlyContinue
-if ($null -ne $Git -and (Test-Path -LiteralPath (Join-Path $RepositoryRoot '.git'))) {
-    Push-Location $RepositoryRoot
-    try {
-        $CandidateRevision = ((& $Git.Source rev-parse --verify HEAD 2>$null) | Out-String).Trim()
-        if ($LASTEXITCODE -eq 0 -and $CandidateRevision -match '^[a-f0-9]{40}$') {
-            $SourceRevision = $CandidateRevision
-            $SourceState = 'REVISION_UNVERIFIED'
-            $WorkingTreeStatus = ((& $Git.Source status --porcelain --untracked-files=normal 2>$null) | Out-String).Trim()
-            if ($LASTEXITCODE -eq 0) {
-                $SourceState = if ([string]::IsNullOrWhiteSpace($WorkingTreeStatus)) { 'CLEAN' } else { 'DIRTY' }
-            }
-        }
-    }
-    finally {
-        Pop-Location
-    }
-}
-if ($null -eq $SourceRevision -and $env:GITHUB_SHA -match '^[a-fA-F0-9]{40}$') {
-    $SourceRevision = $env:GITHUB_SHA.ToLowerInvariant()
-    $SourceState = 'CI_UNVERIFIED'
-}
-$BuildManifest = [ordered]@{
-    schemaVersion = '1.0'
-    name = [string]$Package.name
-    version = [string]$Package.version
-    sourceRevision = if ($null -eq $SourceRevision) { 'UNAVAILABLE' } else { $SourceRevision }
-    sourceState = $SourceState
-    nodeVersion = $NodeVersion
-    installedAt = (Get-Date).ToUniversalTime().ToString('o')
-}
-[System.IO.File]::WriteAllText(
-    (Join-Path $InstallRoot 'BUILD-MANIFEST.json'),
-    (($BuildManifest | ConvertTo-Json -Depth 3) + "`r`n"),
-    $Utf8WithoutBom
-)
-
-$Launcher = Join-Path $BinRoot 'mcp-search-net.cmd'
-$McpExample = [ordered]@{
-    mcpServers = [ordered]@{
-        'mcp-search-net' = [ordered]@{
-            type = 'local'
-            command = 'cmd.exe'
-            args = @('/d', '/s', '/c', $Launcher)
-            env = [ordered]@{
-                MCP_SEARCH_HOME = $InstallRoot
-            }
-            tools = @('*')
-        }
-    }
-}
-[System.IO.File]::WriteAllText(
-    (Join-Path $InstallRoot 'mcp.json.example'),
-    (($McpExample | ConvertTo-Json -Depth 5) + "`r`n"),
-    $Utf8WithoutBom
-)
-
-$ContainerLauncher = Join-Path $BinRoot 'mcp-search-net-container.cmd'
-$ContainerExample = [ordered]@{
-    mcpServers = [ordered]@{
-        'mcp-search-net-container' = [ordered]@{
-            type = 'local'
-            command = 'cmd.exe'
-            args = @('/d', '/s', '/c', $ContainerLauncher)
-            env = [ordered]@{ MCP_SEARCH_HOME = $InstallRoot }
-            tools = @('*')
-        }
-    }
-}
-[System.IO.File]::WriteAllText(
-    (Join-Path $InstallRoot 'mcp.container.json.example'),
-    (($ContainerExample | ConvertTo-Json -Depth 5) + "`r`n"),
-    $Utf8WithoutBom
-)
-
-Write-Host "Installation terminée. Lanceur MCP : $Launcher"
-Write-Host "Exemple Copilot : $(Join-Path $InstallRoot 'mcp.json.example')"
-
-if ($StartServices) {
-    $Docker = Get-Command docker -ErrorAction SilentlyContinue
-    if ($null -eq $Docker) {
-        throw 'Docker est absent du PATH. Installez ou démarrez Docker Desktop, puis relancez avec -StartServices.'
-    }
-    if ($ComposeProject -ne 'mcp-search-net-user') {
-        Write-Host "Arrêt éventuel de l'ancien projet Compose mcp-search-net-user..."
-        & $Docker.Source 'compose' '--env-file' $EnvironmentPath '-p' 'mcp-search-net-user' '-f' (Join-Path $InstallRoot 'compose.yaml') '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') 'down'
-        if ($LASTEXITCODE -ne 0) {
-            throw "La commande '$($Docker.Source)' a échoué avec le code $LASTEXITCODE."
-        }
-    }
-    Write-Host 'Démarrage de SearXNG et Crawl4AI...'
-    Invoke-NativeCommand $Docker.Source 'compose' '--env-file' $EnvironmentPath '-p' $ComposeProject '-f' (Join-Path $InstallRoot 'compose.yaml') '-f' (Join-Path $InstallRoot 'compose.hybrid.yaml') 'up' '-d' '--wait' 'searxng' 'crawl4ai'
-}
-
-if ($RunAfterInstall) {
-    Write-Host "Démarrage du serveur MCP STDIO (arrêter avec Ctrl+C)..."
-    & $Launcher
-    exit $LASTEXITCODE
 }

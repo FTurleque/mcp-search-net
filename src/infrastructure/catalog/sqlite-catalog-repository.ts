@@ -49,13 +49,17 @@ import { SqliteCatalogRevisionWriter } from './sqlite-catalog-revision-writer.js
 import type { CountRow } from './sqlite-catalog-row-views.js';
 import { SqliteCatalogSearch } from './sqlite-catalog-search.js';
 import { SqliteCatalogSourceStore } from './sqlite-catalog-source-store.js';
-import { SqliteCatalogSyncStore } from './sqlite-catalog-sync-store.js';
+import {
+  SqliteCatalogSyncStore,
+  type CatalogSyncRunLeaseOptions,
+} from './sqlite-catalog-sync-store.js';
 
 const MAX_PERSISTED_SECTION_CHARACTERS = 12_000;
 const SECTION_CHUNK_OVERLAP_CHARACTERS = 400;
 
 export interface SqliteCatalogRepositoryOptions {
   readonly verifyIntegrityOnOpen?: boolean;
+  readonly syncRunLease?: CatalogSyncRunLeaseOptions;
 }
 
 /**
@@ -74,15 +78,18 @@ export class SqliteCatalogRepository implements CatalogRepository {
 
   public constructor(path: string, clock: Clock, options: SqliteCatalogRepositoryOptions = {}) {
     let database: Database.Database | undefined;
+    let syncStore: SqliteCatalogSyncStore | undefined;
     try {
       database = openCatalogDatabase(path);
       new CatalogMigrationRunner(database, clock).apply();
+      syncStore = new SqliteCatalogSyncStore(database, clock, options.syncRunLease);
       if (options.verifyIntegrityOnOpen === true) {
         const integrity = verifyCatalogIntegrity(database);
         if (integrity.issues.length > 0) {
           throw new ConfigurationError('Catalog integrity verification failed');
         }
       }
+      syncStore.recoverAbandonedRuns();
     } catch (error) {
       if (database?.open === true) database.close();
       if (error instanceof ConfigurationError) throw error;
@@ -91,7 +98,7 @@ export class SqliteCatalogRepository implements CatalogRepository {
     this.database = database;
     this.sources = new SqliteCatalogSourceStore(this.database, clock);
     this.readModel = new SqliteCatalogReadModel(this.database);
-    this.syncStore = new SqliteCatalogSyncStore(this.database);
+    this.syncStore = syncStore;
     this.revisions = new SqliteCatalogRevisionWriter(this.database, clock, this.syncStore);
     this.search = new SqliteCatalogSearch(this.database);
   }

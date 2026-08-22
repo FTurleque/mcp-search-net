@@ -29,6 +29,12 @@ interface SectionIssueRow extends DocumentIssueRow {
   readonly section_id: number;
 }
 
+const DROP_FTS_INTEGRITY_TEMP_TABLES_SQL = `
+  DROP TABLE IF EXISTS temp.catalog_integrity_actual_vocab;
+  DROP TABLE IF EXISTS temp.catalog_integrity_expected_vocab;
+  DROP TABLE IF EXISTS temp.catalog_integrity_expected_fts;
+`;
+
 export function verifyCatalogIntegrity(database: Database.Database): CatalogIntegrityReport {
   const integrityRows = database.prepare<[], IntegrityCheckRow>('PRAGMA integrity_check').all();
   const sqliteIntegrityCheck = integrityRows.map((row) => row.integrity_check).join('; ');
@@ -155,6 +161,8 @@ export function verifyCatalogIntegrity(database: Database.Database): CatalogInte
     (row) => `Current section ${row.section_id} for document ${row.public_id} is missing from FTS`,
   );
 
+  appendFtsPayloadMismatchIssues(database, issues);
+
   const orphanedFtsRows = database
     .prepare<[], { readonly section_id: number }>(
       `
@@ -215,6 +223,123 @@ export function verifyCatalogIntegrity(database: Database.Database): CatalogInte
     },
     issues,
   };
+}
+
+function appendFtsPayloadMismatchIssues(
+  database: Database.Database,
+  issues: CatalogIntegrityIssue[],
+): void {
+  try {
+    database.exec(DROP_FTS_INTEGRITY_TEMP_TABLES_SQL);
+    database.exec(`
+      CREATE VIRTUAL TABLE temp.catalog_integrity_expected_fts USING fts5(
+        section_id UNINDEXED,
+        document_id UNINDEXED,
+        source_key UNINDEXED,
+        language UNINDEXED,
+        title,
+        heading,
+        heading_path,
+        content,
+        tokenize = 'unicode61 remove_diacritics 2'
+      );
+
+      INSERT INTO temp.catalog_integrity_expected_fts(
+        rowid, section_id, document_id, source_key, language,
+        title, heading, heading_path, content
+      )
+      SELECT
+        document_sections.id,
+        document_sections.id,
+        documents.id,
+        catalog_sources.source_key,
+        documents.language,
+        documents.title,
+        coalesce(document_sections.heading, ''),
+        coalesce(document_sections.heading_path, ''),
+        document_sections.content
+      FROM document_sections
+      INNER JOIN document_versions
+        ON document_versions.id = document_sections.document_version_id
+       AND document_versions.is_current = 1
+      INNER JOIN documents
+        ON documents.id = document_versions.document_id
+       AND documents.current_version_id = document_versions.id
+      INNER JOIN catalog_sources ON catalog_sources.id = documents.source_id
+      WHERE catalog_sources.enabled = 1
+        AND documents.status = 'ACTIVE';
+
+      CREATE VIRTUAL TABLE temp.catalog_integrity_actual_vocab
+      USING fts5vocab(main, 'document_section_fts', 'instance');
+
+      CREATE VIRTUAL TABLE temp.catalog_integrity_expected_vocab
+      USING fts5vocab(temp, 'catalog_integrity_expected_fts', 'instance');
+    `);
+
+    const mismatchedSections = database
+      .prepare<[], SectionIssueRow>(
+        `
+        WITH actual_only AS (
+          SELECT term, doc, col, offset
+          FROM temp.catalog_integrity_actual_vocab
+          EXCEPT
+          SELECT term, doc, col, offset
+          FROM temp.catalog_integrity_expected_vocab
+        ),
+        expected_only AS (
+          SELECT term, doc, col, offset
+          FROM temp.catalog_integrity_expected_vocab
+          EXCEPT
+          SELECT term, doc, col, offset
+          FROM temp.catalog_integrity_actual_vocab
+        ),
+        mismatched AS (
+          SELECT doc AS section_id FROM actual_only
+          UNION
+          SELECT doc AS section_id FROM expected_only
+        )
+        SELECT
+          catalog_sources.source_key,
+          documents.public_id,
+          document_sections.id AS section_id
+        FROM mismatched
+        INNER JOIN document_sections ON document_sections.id = mismatched.section_id
+        INNER JOIN document_versions
+          ON document_versions.id = document_sections.document_version_id
+         AND document_versions.is_current = 1
+        INNER JOIN documents
+          ON documents.id = document_versions.document_id
+         AND documents.current_version_id = document_versions.id
+        INNER JOIN catalog_sources ON catalog_sources.id = documents.source_id
+        INNER JOIN document_section_fts ON document_section_fts.rowid = document_sections.id
+        WHERE catalog_sources.enabled = 1
+          AND documents.status = 'ACTIVE'
+        ORDER BY catalog_sources.source_key, documents.public_id, document_sections.id
+      `,
+      )
+      .all();
+
+    for (const row of mismatchedSections) {
+      issues.push({
+        code: 'FTS_ENTRY_CONTENT_MISMATCH',
+        message: `FTS row ${row.section_id} for document ${row.public_id} has stale indexed content`,
+        sourceKey: row.source_key,
+        documentPublicId: row.public_id,
+        sectionId: row.section_id,
+      });
+    }
+  } catch {
+    issues.push({
+      code: 'FTS_ENTRY_CONTENT_MISMATCH',
+      message: 'FTS semantic integrity verification could not complete',
+    });
+  } finally {
+    try {
+      database.exec(DROP_FTS_INTEGRITY_TEMP_TABLES_SQL);
+    } catch {
+      // Integrity verification is already fail-closed if the semantic check or its cleanup fails.
+    }
+  }
 }
 
 function count(database: Database.Database, sql: string): number {

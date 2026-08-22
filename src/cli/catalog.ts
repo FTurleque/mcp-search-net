@@ -26,7 +26,7 @@ import { SecureHttpGateway } from '../infrastructure/fetch/secure-http-gateway.j
 import { StructuredLogger } from '../infrastructure/logging/structured-logger.js';
 import { PublicUrlSecurityPolicy } from '../infrastructure/security/public-url-security-policy.js';
 import { SystemClock } from '../infrastructure/time/system-clock.js';
-import { loadCatalogSourceConfig } from './catalog-source-config.js';
+import { parseResumeFingerprint, preloadCatalogSourceConfig } from './catalog-sync-preflight.js';
 import { ingestTextDocument } from './catalog-ingest-text.js';
 import { assertStrictCliArguments, type StrictCliArgumentSpec } from './strict-cli-arguments.js';
 import { parseStrictInteger } from './strict-integer.js';
@@ -42,6 +42,7 @@ const DRY_RUN_UNSUPPORTED_SYNC_OPTIONS = [
   '--limit',
   '--rate-limit-ms',
   '--resume-after',
+  '--resume-fingerprint',
 ] as const;
 
 type CatalogCommand =
@@ -58,6 +59,8 @@ type CatalogCommand =
   | 'verify'
   | 'rebuild-index'
   | 'purge-versions';
+
+const UNVERIFIED_ADMIN_COMMANDS = new Set<CatalogCommand>(['verify', 'health', 'rebuild-index']);
 
 const CATALOG_ARGUMENT_SPECS: Readonly<Record<CatalogCommand, StrictCliArgumentSpec>> = {
   init: { valueOptions: ['--path'] },
@@ -76,6 +79,7 @@ const CATALOG_ARGUMENT_SPECS: Readonly<Record<CatalogCommand, StrictCliArgumentS
       '--limit',
       '--rate-limit-ms',
       '--resume-after',
+      '--resume-fingerprint',
     ],
     flags: ['--dry-run'],
     mutuallyExclusiveOptions: [['--source-key', '--source']],
@@ -139,6 +143,7 @@ interface CatalogCommandOptions {
     readonly limit?: number;
     readonly rateLimitMs?: number;
     readonly resumeAfter?: SyncCatalogResumeCursor;
+    readonly resumeConfigurationFingerprint?: string;
   };
   readonly text?: {
     readonly sourceKey: string;
@@ -196,26 +201,29 @@ async function main(argv: readonly string[]): Promise<void> {
     }
   }
 
-  const repository = new SqliteCatalogRepository(options.path, clock);
+  const catalogSourceConfig = await preloadCatalogSourceConfig(
+    options.command,
+    options.sourceConfig?.filePath,
+    options.sync?.filePath,
+  );
+
+  const repository = new SqliteCatalogRepository(options.path, clock, {
+    verifyIntegrityOnOpen: !UNVERIFIED_ADMIN_COMMANDS.has(options.command),
+  });
   try {
     if (options.command === 'load-sources') {
-      if (options.sourceConfig === undefined) throw new Error(usage());
-      const config = await loadCatalogSourceConfig(options.sourceConfig.filePath);
-      const result = await new LoadCatalogSources(repository).execute(config);
+      if (catalogSourceConfig === undefined) throw new Error(usage());
+      const result = await new LoadCatalogSources(repository).execute(catalogSourceConfig);
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return;
     }
 
     if (options.command === 'sync') {
-      if (options.sync === undefined) throw new Error(usage());
-      if (options.sync.filePath === undefined) {
-        throw new Error('catalog sync requires --file <catalog-sources.yml>');
-      }
-      const catalogConfig = await loadCatalogSourceConfig(options.sync.filePath);
+      if (options.sync === undefined || catalogSourceConfig === undefined) throw new Error(usage());
       if (options.sync.dryRun) {
         const result = await new PlanCatalogSync(repository, clock).execute({
           ...(options.sync.sourceKey === undefined ? {} : { sourceKey: options.sync.sourceKey }),
-          documents: catalogConfig.documents,
+          documents: catalogSourceConfig.documents,
         });
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
         return;
@@ -241,7 +249,7 @@ async function main(argv: readonly string[]): Promise<void> {
       );
       const result = await new SyncCatalogDocuments(repository, fetcher, clock).execute({
         ...(options.sync.sourceKey === undefined ? {} : { sourceKey: options.sync.sourceKey }),
-        documents: catalogConfig.documents,
+        documents: catalogSourceConfig.documents,
         ...(options.sync.limit === undefined ? {} : { limit: options.sync.limit }),
         timeoutMs: appConfig.crawl4ai.timeoutMs,
         maxResponseBytes: appConfig.security.maxDownloadBytes,
@@ -250,6 +258,9 @@ async function main(argv: readonly string[]): Promise<void> {
         ...(options.sync.resumeAfter === undefined
           ? {}
           : { resumeAfter: options.sync.resumeAfter }),
+        ...(options.sync.resumeConfigurationFingerprint === undefined
+          ? {}
+          : { resumeConfigurationFingerprint: options.sync.resumeConfigurationFingerprint }),
       });
       const verification = await new VerifyCatalog(repository).execute();
       if (verification.status === 'FAILED') {
@@ -411,6 +422,10 @@ function parseSync(argv: readonly string[], path: string): CatalogCommandOptions
     MAX_CATALOG_SYNC_RATE_LIMIT_MS,
   );
   const resumeAfter = parseResumeAfter(getOption(argv, '--resume-after'), sourceKey);
+  const resumeConfigurationFingerprint = parseResumeFingerprint(
+    getOption(argv, '--resume-fingerprint'),
+    resumeAfter,
+  );
   return {
     command: 'sync',
     path: resolve(path),
@@ -422,6 +437,7 @@ function parseSync(argv: readonly string[], path: string): CatalogCommandOptions
       ...(sourceKey === undefined ? {} : { sourceKey }),
       ...(filePath === undefined ? {} : { filePath: resolve(filePath) }),
       ...(resumeAfter === undefined ? {} : { resumeAfter }),
+      ...(resumeConfigurationFingerprint === undefined ? {} : { resumeConfigurationFingerprint }),
     },
   };
 }
@@ -583,7 +599,7 @@ function usage(): string {
     '  catalog list-sources [--path <catalog.db>]',
     '  catalog load-sources [--path <catalog.db>] [--file <catalog-sources.yml>]',
     '  catalog sync --dry-run [--path <catalog.db>] --file <catalog-sources.yml> [--source-key <key>]',
-    '  catalog sync [--path <catalog.db>] --file <catalog-sources.yml> [--config <application.yml>] [--source-key <key>] [--limit <n>] [--rate-limit-ms <0..10000>] [--resume-after <sourceKey:stableKey|stableKey>]',
+    '  catalog sync [--path <catalog.db>] --file <catalog-sources.yml> [--config <application.yml>] [--source-key <key>] [--limit <n>] [--rate-limit-ms <0..10000>] [--resume-after <sourceKey:stableKey|stableKey> --resume-fingerprint <sha256>]',
     '  catalog add-source --key <key> --name <name> --base-url <url> [--path <catalog.db>] [--type documentation|reference|api|guide] [--language <language>] [--freshness manual|daily|weekly|monthly] [--sync manual|polling] [--disabled]',
     '  catalog ingest-text --source-key <key> --file <file> --url <url> --title <title> [--path <catalog.db>] [--language <language>] [--mime-type <mime>] [--stable-key <key>] [--version-label <label>]',
     '  catalog search --query <text> [--path <catalog.db>] [--source-key <key>] [--language <language>] [--limit <n>]',

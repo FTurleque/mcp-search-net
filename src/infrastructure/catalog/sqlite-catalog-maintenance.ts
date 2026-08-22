@@ -10,10 +10,26 @@ import type {
 import { openCatalogDatabase } from './catalog-database.js';
 import { CatalogMigrationRunner } from './catalog-migration-runner.js';
 import { FileLeaseLock, FileLeaseLockError } from '../locking/file-lease-lock.js';
-import type { FileLease } from '../locking/file-lease-lock.js';
+import type { FileLease, FileLeaseLockOptions } from '../locking/file-lease-lock.js';
+
+const DEFAULT_LOCK_RELEASE_ATTEMPTS = 3;
 
 interface CountRow {
   readonly count: number;
+}
+
+interface CatalogMaintenanceLock {
+  acquire(): FileLease;
+}
+
+type CatalogMaintenanceLockFactory = (
+  lockPath: string,
+  options: FileLeaseLockOptions,
+) => CatalogMaintenanceLock;
+
+export interface SqliteCatalogMaintenanceOptions {
+  readonly lockFactory?: CatalogMaintenanceLockFactory;
+  readonly releaseAttempts?: number;
 }
 
 export class CatalogMaintenanceLockError extends Error {
@@ -31,11 +47,19 @@ export class CatalogMaintenanceCheckpointError extends Error {
 }
 
 export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
+  private readonly releaseAttempts: number;
+
   public constructor(
     private readonly catalogPath: string,
     private readonly clock: Clock,
     private readonly logger?: Logger,
-  ) {}
+    private readonly options: SqliteCatalogMaintenanceOptions = {},
+  ) {
+    this.releaseAttempts = options.releaseAttempts ?? DEFAULT_LOCK_RELEASE_ATTEMPTS;
+    if (!Number.isSafeInteger(this.releaseAttempts) || this.releaseAttempts <= 0) {
+      throw new RangeError('releaseAttempts must be a positive safe integer');
+    }
+  }
 
   public run(input: CatalogMaintenanceInput): Promise<CatalogMaintenanceOutput> {
     const startedAt = this.clock.now().getTime();
@@ -112,11 +136,13 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
     staleLockMs: number,
     action: (renewLock: () => void) => T,
   ): T {
-    const lock = new FileLeaseLock(lockPath, {
+    const lockOptions: FileLeaseLockOptions = {
       staleAfterMs: staleLockMs,
       clock: this.clock,
       ...(this.logger === undefined ? {} : { logger: this.logger }),
-    });
+    };
+    const lock =
+      this.options.lockFactory?.(lockPath, lockOptions) ?? new FileLeaseLock(lockPath, lockOptions);
     let lease: FileLease;
     try {
       lease = lock.acquire();
@@ -127,11 +153,44 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
       throw error;
     }
 
+    let actionFailed = false;
+    let actionError: unknown;
+    let result: T | undefined;
     try {
-      return action(() => lease.renew());
-    } finally {
-      lease.release();
+      result = action(() => lease.renew());
+    } catch (error) {
+      actionFailed = true;
+      actionError = error;
     }
+
+    try {
+      this.releaseLease(lease);
+    } catch (releaseError) {
+      if (!actionFailed) throw releaseError;
+      attachFinalizationFailure(actionError, releaseError);
+    }
+
+    if (actionFailed) throw actionError;
+    return result as T;
+  }
+
+  private releaseLease(lease: FileLease): void {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.releaseAttempts; attempt += 1) {
+      try {
+        lease.release();
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < this.releaseAttempts) {
+          this.logger?.warning('catalog_maintenance_lock_release_retry', {
+            attempt,
+            maxAttempts: this.releaseAttempts,
+          });
+        }
+      }
+    }
+    throw lastError;
   }
 
   private checkpointWal(database: Database.Database): void {
@@ -155,6 +214,7 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
   ): number {
     const maxAgeMs = input.maxSyncRunAgeDays * 24 * 60 * 60 * 1_000;
     const threshold = this.clock.now().getTime() - maxAgeMs;
+    const terminalRunFilter = `status <> 'RUNNING' AND completed_at IS NOT NULL`;
     const detachStalenessEvents = database.prepare<[number, number]>(
       `
         UPDATE staleness_events
@@ -162,10 +222,12 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
         WHERE sync_run_id IN (
           SELECT id
           FROM sync_runs
-          WHERE started_at < ?
+          WHERE ${terminalRunFilter}
+            AND started_at < ?
             AND id NOT IN (
               SELECT id
               FROM sync_runs
+              WHERE ${terminalRunFilter}
               ORDER BY started_at DESC, id DESC
               LIMIT ?
             )
@@ -175,10 +237,12 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
     const deleteSyncRuns = database.prepare<[number, number]>(
       `
         DELETE FROM sync_runs
-        WHERE started_at < ?
+        WHERE ${terminalRunFilter}
+          AND started_at < ?
           AND id NOT IN (
             SELECT id
             FROM sync_runs
+            WHERE ${terminalRunFilter}
             ORDER BY started_at DESC, id DESC
             LIMIT ?
           )
@@ -189,6 +253,21 @@ export class SqliteCatalogMaintenance implements CatalogMaintenanceRunner {
       return deleteSyncRuns.run(threshold, input.keepSyncRuns).changes;
     });
 
-    return retainEventsAndDeleteRuns();
+    return retainEventsAndDeleteRuns.immediate();
   }
+}
+
+function attachFinalizationFailure(primaryError: unknown, releaseError: unknown): void {
+  if (!(primaryError instanceof Error)) return;
+  const cause =
+    primaryError.cause === undefined
+      ? releaseError
+      : new AggregateError(
+          [primaryError.cause, releaseError],
+          'Catalog maintenance failure had an additional lock release failure',
+        );
+  Reflect.defineProperty(primaryError, 'cause', {
+    configurable: true,
+    value: cause,
+  });
 }

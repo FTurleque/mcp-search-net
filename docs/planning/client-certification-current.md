@@ -34,7 +34,7 @@ Le gate `npm run check` construit le serveur puis exécute `npm run client:contr
 sonde utilise `@modelcontextprotocol/sdk@1.30.0` avec `StdioClientTransport` et vérifie sur le binaire
 construit :
 
-- cinq tools : `search_web`, `fetch_url`, `search_docs`, `list_docs`, `read_doc_section` ;
+- six tools : `search_web`, `fetch_url`, `search_docs`, `list_docs`, `read_doc_section`, `list_search_history` ;
 - quatre resources statiques ;
 - neuf resource templates ;
 - annotations read-only / idempotentes / non destructives ;

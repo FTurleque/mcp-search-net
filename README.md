@@ -14,10 +14,11 @@ n'appartient plus au périmètre de certification du projet. La V1 expose deux o
 La V2 documentaire est intégrée dans `master` depuis le 5 août 2026. Elle ajoute un catalogue local
 séparé dans `catalog.db`, l’ingestion texte/Markdown, la synchronisation contrôlée, la recherche
 documentaire locale et une exposition MCP read-only via `search_docs`, `list_docs`,
-`read_doc_section` et des resources catalogue. Le serveur n’embarque aucun LLM et ne requiert
-aucune API commerciale.
+`read_doc_section` et des resources catalogue. `develop` ajoute également l’historique local
+`history.sqlite` et l’outil read-only `list_search_history`. Le serveur n’embarque aucun LLM et ne
+requiert aucune API commerciale.
 
-La version de code courante est `1.1.2`. Une release n’est considérée qualifiée que si les checks
+La version de code courante est `1.1.4`. Une release n’est considérée qualifiée que si les checks
 sont attachés au SHA exact du candidat. L’état courant autoritatif est décrit dans
 [`docs/status/current-state.md`](docs/status/current-state.md).
 
@@ -33,9 +34,9 @@ src/presentation    serveur, schémas et mapping MCP
 src/bootstrap       assemblage et cycle de vie STDIO
 ```
 
-Le domaine ne dépend ni du SDK MCP, ni de Zod, YAML, SQLite, SearXNG ou Crawl4AI. Le cache V1 et le
-catalogue V2 sont séparés : `.data/cache.sqlite` reste supprimable, `.data/catalog.db` porte le
-catalogue durable.
+Le domaine ne dépend ni du SDK MCP, ni de Zod, YAML, SQLite, SearXNG ou Crawl4AI. `cache.sqlite`,
+`catalog.db` et `history.sqlite` sont des stockages séparés avec des responsabilités et politiques de
+rétention distinctes.
 
 ## Prérequis
 
@@ -106,7 +107,8 @@ npm run test:e2e
 `npm run check` inclut les contrôles de licence propriétaire (`check:license`), supply chain et
 documentation (`docs:check`), typecheck, lint, Prettier, build, tests déterministes et seuils de
 couverture V8. Les rapports JSON sont écrits dans `.data/test-reports`, et les rapports de couverture
-dans `coverage/`.
+dans `coverage/`. Un workflow planifié exécute également chaque jour les audits npm complets et de
+production sur la branche par défaut.
 
 ## Docker
 
@@ -131,16 +133,16 @@ docker compose down
 ```
 
 Le conteneur MCP s’exécute sans root, avec filesystem en lecture seule, capabilities supprimées et
-volume d’écriture limité au cache et au catalogue. Aucun socket Docker, mode privilégié ou réseau
-hôte n’est utilisé. Les images fournisseurs sont figées par digest SHA-256. L’image du serveur porte
-le label OCI propriétaire `LicenseRef-mcp-search-net-Proprietary` et embarque `LICENSE`.
+volume d’écriture limité aux données SQLite applicatives. Aucun socket Docker, mode privilégié ou
+réseau hôte n’est utilisé. Les images fournisseurs sont figées par digest SHA-256. L’image du serveur
+porte le label OCI propriétaire `LicenseRef-mcp-search-net-Proprietary` et embarque `LICENSE`.
 
 ## Compatibilité IntelliJ IDEA / GitHub Copilot
 
 Le chemin exact de la configuration MCP dépend de la version d’IntelliJ et du plugin GitHub Copilot.
 Cette intégration reste supportée à titre de compatibilité, sans faire partie du périmètre de
-certification native courant. Le serveur expose cinq outils : `search_web`, `fetch_url`,
-`search_docs`, `list_docs` et `read_doc_section`.
+certification native courant. Le serveur expose six outils : `search_web`, `fetch_url`, `search_docs`,
+`list_docs`, `read_doc_section` et `list_search_history`.
 
 Exécution Node locale, après `npm run build` :
 
@@ -171,6 +173,7 @@ MCP_PROFILE
 MCP_LOG_LEVEL
 MCP_CACHE_PATH
 MCP_CATALOG_PATH
+MCP_HISTORY_PATH
 MCP_OFFICIAL_SOURCES_PATH
 MCP_SEARXNG_URL
 MCP_CRAWL4AI_URL
@@ -187,7 +190,7 @@ maxima absolus. Une configuration obligatoire invalide arrête le démarrage ave
 La V2 intégrée fournit :
 
 - catalogue durable séparé de `cache.sqlite` ;
-- migrations catalogue `C001` à `C008` avec checksums SHA-256 ;
+- migrations catalogue `C001` à `C014` avec checksums SHA-256 ;
 - CLI `catalog init`, `status`, `verify`, `add-source`, `list-sources`, `load-sources`,
   `ingest-text`, `sync`, `search`, `rebuild-index`, `purge-versions`, ainsi que `health` et `backup` ;
 - ingestion texte/Markdown avec versioning et sections ;
@@ -195,6 +198,8 @@ La V2 intégrée fournit :
 - synchronisation contrôlée avec ETag, Last-Modified, hash du payload HTTP brut, observations `304`,
   aliases, événements de staleness et redirections permanentes ;
 - outils MCP read-only `search_docs`, `list_docs` et `read_doc_section` ;
+- historique local persistant initialisé par `H001__create_search_history.sql` et exposé en lecture
+  seule via `list_search_history` ;
 - resources MCP read-only paginées pour catalogue, sources, documents, versions et sections, avec
   lectures ciblées par identifiant et budgets de réponse fixes.
 
@@ -216,6 +221,9 @@ hashé n’a pas montré de gain et n’est pas généralisé.
 - Crawl4AI reçoit le HTML contrôlé via `raw://`, jamais l’URL publique ;
 - le contenu Web et documentaire reste une donnée non fiable et n’est jamais exécuté ; les réponses
   structurées le marquent `EXTERNAL_UNTRUSTED_CONTENT` ;
+- les erreurs MCP utilisent des messages publics canoniques et ne reflètent pas les métadonnées
+  contrôlées par un serveur distant ;
+- les fichiers SQLite persistants et leurs sidecars sont durcis sur POSIX ;
 - l’installateur Windows vérifie le SHA-256 officiel et la signature OpenJS du runtime Node avant de
   l’activer ;
 - la release Windows refuse toute divergence entre la version demandée et la version du dépôt ;

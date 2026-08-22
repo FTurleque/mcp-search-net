@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { open, type FileHandle } from 'node:fs/promises';
 
 import type { CatalogRepository } from '../application/ports/catalog-repository.js';
 import type {
@@ -11,6 +11,9 @@ import { scanMarkdownHeadings } from '../domain/services/markdown-structure.js';
 import { WebUrl } from '../domain/value-objects/web-url.js';
 
 const MAX_INGEST_TEXT_BYTES = 16 * 1024 * 1024;
+const INGEST_TEXT_READ_CHUNK_BYTES = 64 * 1024;
+
+type OpenTextFile = (filePath: string) => Promise<FileHandle>;
 
 export interface IngestTextDocumentOptions {
   readonly sourceKey: string;
@@ -38,14 +41,8 @@ export async function ingestTextDocument(
   const source = await repository.getSourceByKey(options.sourceKey);
   if (source === undefined) throw new Error(`Unknown catalog source ${options.sourceKey}`);
 
-  const file = await stat(options.filePath);
-  if (!file.isFile()) throw new Error('CATALOG_INGEST_INPUT_NOT_FILE');
-  if (file.size > MAX_INGEST_TEXT_BYTES) {
-    throw new Error(`CATALOG_INGEST_FILE_TOO_LARGE:${file.size}:${MAX_INGEST_TEXT_BYTES}`);
-  }
-
+  const content = await readBoundedTextFile(options.filePath);
   const canonicalUrl = WebUrl.createTransport(options.canonicalUrl).value;
-  const content = await readFile(options.filePath, 'utf8');
   const contentHash = sha256(content);
   const stableKey = options.stableKey ?? stableKeyFromUrl(canonicalUrl);
   const revision = await repository.commitDocumentRevision({
@@ -76,6 +73,41 @@ export async function ingestTextDocument(
     sectionCount: revision.sections.length,
     contentHash,
   };
+}
+
+export async function readBoundedTextFile(
+  filePath: string,
+  openFile: OpenTextFile = openTextFile,
+): Promise<string> {
+  const handle = await openFile(filePath);
+  try {
+    // Keep metadata validation and reads on the same descriptor so replacing the pathname cannot
+    // swap in a different file between stat and read. The read loop is independently bounded so a
+    // file that grows after fstat still cannot exceed the ingestion memory budget.
+    const file = await handle.stat();
+    if (!file.isFile()) throw new Error('CATALOG_INGEST_INPUT_NOT_FILE');
+    if (file.size > MAX_INGEST_TEXT_BYTES) throw ingestFileTooLarge(file.size);
+
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    for (;;) {
+      const remainingBudget = MAX_INGEST_TEXT_BYTES + 1 - totalBytes;
+      if (remainingBudget <= 0) throw ingestFileTooLarge(totalBytes);
+      const chunk = Buffer.alloc(Math.min(INGEST_TEXT_READ_CHUNK_BYTES, remainingBudget));
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, null);
+      if (bytesRead === 0) break;
+
+      totalBytes += bytesRead;
+      if (totalBytes > MAX_INGEST_TEXT_BYTES) {
+        throw ingestFileTooLarge(Math.max(file.size, totalBytes));
+      }
+      chunks.push(chunk.subarray(0, bytesRead));
+    }
+
+    return Buffer.concat(chunks, totalBytes).toString('utf8');
+  } finally {
+    await handle.close();
+  }
 }
 
 export function splitMarkdownSections(
@@ -115,6 +147,14 @@ export function splitMarkdownSections(
     }),
   );
   return sections;
+}
+
+function openTextFile(filePath: string): Promise<FileHandle> {
+  return open(filePath, 'r');
+}
+
+function ingestFileTooLarge(size: number): Error {
+  return new Error(`CATALOG_INGEST_FILE_TOO_LARGE:${size}:${MAX_INGEST_TEXT_BYTES}`);
 }
 
 function createSection(

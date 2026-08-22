@@ -141,8 +141,6 @@ export class Crawl4aiContentFetcher implements ContentFetcher {
       'content-type': 'application/json',
     };
     if (this.apiToken !== undefined) headers['authorization'] = `Bearer ${this.apiToken}`;
-    // Crawl4AI's raw:// transport renders caller-provided HTML without issuing a
-    // public target request. The renderer receives only resource-neutralized HTML.
     const rawUrl = `raw://${html}`;
     const json = await fetchJson(
       'crawl4ai',
@@ -320,7 +318,7 @@ async function decodeResource(
   if (contentType.startsWith('text/') || contentType === 'application/markdown') {
     return { markdown: text.trim(), links: collectPlainLinks(text, resource.finalUrl) };
   }
-  throw new UnsupportedContentTypeError(`Unsupported content type: ${contentType}`);
+  throw new UnsupportedContentTypeError();
 }
 
 function collectPlainLinks(text: string, baseUrl: string): readonly string[] {

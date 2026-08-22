@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version SemVer à qualifier/publier, par exemple 1.1.3 ou 1.1.3-rc1'
+        description: 'Version SemVer à qualifier/publier, par exemple 1.1.4 ou 1.1.4-rc1'
         required: true
-        default: '1.1.3'
+        default: '1.1.4'
         type: string
       validate_only:
         description: 'Qualifier sans publier (inspection EXE avant release)'
@@ -69,18 +69,38 @@ jobs:
           }
           Remove-Item -LiteralPath $innoInstaller -Force
 
-          $iscc = @(
-            'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
-            'C:\Program Files\Inno Setup 6\ISCC.exe'
-          ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-          if (-not $iscc) { throw 'ISCC.exe introuvable après installation Inno Setup.' }
+          $registration = @(
+            Get-ItemProperty `
+              'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*', `
+              'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' `
+              -ErrorAction SilentlyContinue |
+              Where-Object {
+                $displayNameProperty = $_.PSObject.Properties['DisplayName']
+                $displayVersionProperty = $_.PSObject.Properties['DisplayVersion']
+                $installLocationProperty = $_.PSObject.Properties['InstallLocation']
+                $null -ne $displayNameProperty -and
+                $null -ne $displayVersionProperty -and
+                $null -ne $installLocationProperty -and
+                [string]$displayNameProperty.Value -eq "Inno Setup version $innoVersion" -and
+                [string]$displayVersionProperty.Value -eq $innoVersion -and
+                -not [string]::IsNullOrWhiteSpace([string]$installLocationProperty.Value)
+              }
+          ) | Select-Object -First 1
+          if ($null -eq $registration) {
+            throw "Version Inno Setup non qualifiée : inscription $innoVersion introuvable après installation vérifiée."
+          }
+          $iscc = [System.IO.Path]::GetFullPath((Join-Path ([string]$registration.InstallLocation) 'ISCC.exe'))
+          if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
+            throw "Version Inno Setup non qualifiée : ISCC.exe introuvable dans l'installation $innoVersion enregistrée : $iscc"
+          }
           $isccOutput = @((& $iscc /? 2>&1))
           $global:LASTEXITCODE = 0
           $isccBanner = ($isccOutput | Where-Object { $_ -match 'Inno Setup' } | Select-Object -First 1) -as [string]
-          if ($isccBanner -notmatch 'Inno Setup 6') {
-            throw "Version ISCC non qualifiée : $isccBanner ($iscc)"
+          if ($isccBanner -notmatch 'Inno Setup 6' -or $isccBanner -ne 'Inno Setup 6 Command-Line Compiler') {
+            throw "Version Inno Setup non qualifiée : attendu=Inno Setup 6 Command-Line Compiler obtenu=$isccBanner ($iscc)"
           }
-          Write-Host "ISCC: $iscc | $isccBanner"
+          "QUALIFIED_ISCC_PATH=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "ISCC: $iscc | version=$($registration.DisplayVersion) | $isccBanner"
 
       - name: Télécharger le runtime Node.js win-x64 pour bundling
         shell: pwsh
@@ -101,6 +121,7 @@ jobs:
           git rev-parse HEAD
           Write-Host "Ref: $env:GITHUB_REF"
           Write-Host "SHA: $env:GITHUB_SHA"
+          Write-Host "ISCC qualifié: $env:QUALIFIED_ISCC_PATH"
 
       - name: Vérifier la CI exact-head avant publication
         if: github.ref == 'refs/heads/master'
@@ -108,14 +129,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $runsResponse = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$env:GITHUB_SHA&status=completed&per_page=20" | ConvertFrom-Json
+          $runsResponse = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=master&event=push&head_sha=$env:GITHUB_SHA&status=completed&per_page=20" | ConvertFrom-Json
           $successfulRuns = @(
             $runsResponse.workflow_runs |
-              Where-Object { $_.head_sha -eq $env:GITHUB_SHA -and $_.conclusion -eq 'success' } |
+              Where-Object {
+                $_.head_sha -eq $env:GITHUB_SHA -and
+                $_.head_branch -eq 'master' -and
+                $_.event -eq 'push' -and
+                $_.conclusion -eq 'success'
+              } |
               Sort-Object created_at -Descending
           )
           if ($successfulRuns.Count -eq 0) {
-            throw "Aucune exécution CI terminée avec succès pour le SHA exact $env:GITHUB_SHA. Publication refusée."
+            throw "Aucune exécution CI push/master terminée avec succès pour le SHA exact $env:GITHUB_SHA. Publication refusée."
           }
 
           $qualifiedRun = $successfulRuns[0]
@@ -123,7 +149,8 @@ jobs:
           $requiredJobs = @(
             'Node.js 24 validation',
             'Docker integration and live E2E',
-            'Windows installation and STDIO packaging'
+            'Windows installation and STDIO packaging',
+            'SonarCloud Code Analysis'
           )
           foreach ($requiredJob in $requiredJobs) {
             $job = @($jobsResponse.jobs | Where-Object { $_.name -eq $requiredJob }) | Select-Object -First 1
@@ -131,7 +158,7 @@ jobs:
               throw "Gate CI exact-head absent ou non réussi : $requiredJob (run $($qualifiedRun.id), SHA $env:GITHUB_SHA)."
             }
           }
-          Write-Host "CI_EXACT_HEAD_QUALIFIED run=$($qualifiedRun.id) sha=$env:GITHUB_SHA"
+          Write-Host "CI_EXACT_HEAD_QUALIFIED run=$($qualifiedRun.id) sha=$env:GITHUB_SHA event=$($qualifiedRun.event) branch=$($qualifiedRun.head_branch)"
 
       - name: Construire et qualifier les artefacts Windows
         shell: pwsh
@@ -140,6 +167,7 @@ jobs:
             -Version $env:RELEASE_VERSION `
             -NodeZipPath '.\node-runtime.zip' `
             -TargetCommit $env:TARGET_COMMIT `
+            -IsccPath $env:QUALIFIED_ISCC_PATH `
             -ValidateOnly
 
       - name: Conserver les artefacts qualifiés

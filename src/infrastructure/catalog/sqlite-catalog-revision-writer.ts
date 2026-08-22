@@ -163,7 +163,7 @@ export class SqliteCatalogRevisionWriter {
       };
     });
 
-    return transaction();
+    return transaction.immediate();
   }
 
   public upsertDocument(
@@ -183,7 +183,7 @@ export class SqliteCatalogRevisionWriter {
       this.syncStore.persistObservation(documentRow.id, observation, this.now());
       return documentRow;
     });
-    return toCatalogDocument(transaction());
+    return toCatalogDocument(transaction.immediate());
   }
 
   public touchDocumentObservation(
@@ -203,7 +203,7 @@ export class SqliteCatalogRevisionWriter {
       if (row === undefined) throw new Error('CATALOG_DOCUMENT_TOUCH_FAILED');
       return row;
     });
-    return toCatalogDocument(transaction());
+    return toCatalogDocument(transaction.immediate());
   }
 
   public recordDocumentObservation(
@@ -217,7 +217,7 @@ export class SqliteCatalogRevisionWriter {
       if (document === undefined) throw new Error('CATALOG_DOCUMENT_NOT_FOUND');
       this.syncStore.persistObservation(documentId, observation, this.now());
     });
-    transaction();
+    transaction.immediate();
   }
 
   public addDocumentVersion(version: DocumentVersionInput): DocumentVersion {
@@ -235,7 +235,7 @@ export class SqliteCatalogRevisionWriter {
       );
     });
 
-    return toDocumentVersion(transaction());
+    return toDocumentVersion(transaction.immediate());
   }
 
   public replaceDocumentSections(
@@ -277,7 +277,7 @@ export class SqliteCatalogRevisionWriter {
       }
       return rows;
     });
-    return transaction().map(toDocumentSection);
+    return transaction.immediate().map(toDocumentSection);
   }
 
   private now(): number {

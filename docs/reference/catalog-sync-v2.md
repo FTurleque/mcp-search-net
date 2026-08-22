@@ -3,8 +3,8 @@
 ## Statut
 
 - **Couverture fonctionnelle** : V2.5 — synchronisation incrémentale et obsolescence.
-- **Statut courant** : comportement implémenté dans le candidat `1.1.0`, encore soumis aux gates de
-  livraison décrits dans [`docs/status/current-state.md`](../status/current-state.md).
+- **Statut courant** : comportement implémenté dans la série `1.1.x`, soumis aux gates de livraison
+  décrits dans [`docs/status/current-state.md`](../status/current-state.md).
 - **Décisions liées** : ADR-011, ADR-014, ADR-016.
 
 ## Objectif
@@ -60,6 +60,11 @@ SyncReport JSON
 - une source dont `displayName`, `baseUrl`, type, langue, politique de fraîcheur, stratégie de sync ou
   état `enabled` a changé est mise à jour en place (`updated`).
 
+Chaque `stable_key` doit être unique à l'intérieur de sa source. Un doublon est rejeté pendant le
+parsing de `catalog-sources.yml`, avant ouverture ou migration du fichier `catalog.db` sur les chemins
+`load-sources` et `sync`. Deux déclarations ne peuvent donc pas converger silencieusement vers la
+même identité documentaire durable.
+
 Quand au moins une source existante est réconciliée, l'index FTS dérivé est reconstruit une fois afin
 qu'un changement de `enabled` soit immédiatement reflété dans la recherche locale.
 
@@ -92,10 +97,11 @@ catalog sync --file config/catalog-sources.yml --config config/application.yml
 Options :
 
 ```text
---source-key <key>       limite la synchronisation à une source
---limit <n>              limite volontairement le nombre de documents traités
---rate-limit-ms <ms>     délai applicatif entre deux documents
---resume-after <cursor>  reprend après un document déjà traité
+--source-key <key>          limite la synchronisation à une source
+--limit <n>                 limite volontairement le nombre de documents traités
+--rate-limit-ms <ms>        délai applicatif entre deux documents
+--resume-after <cursor>     reprend après un document déjà traité
+--resume-fingerprint <sha>  lie le curseur à la configuration qui l'a produit
 ```
 
 `--limit` est optionnel. Sans `--limit`, la synchronisation traite tous les documents activés du
@@ -106,24 +112,29 @@ périmètre sélectionné.
 Format global :
 
 ```text
---resume-after <sourceKey>:<stableKey>
+--resume-after <sourceKey>:<stableKey> --resume-fingerprint <sha256>
 ```
 
 Format raccourci possible quand `--source-key` est fourni :
 
 ```text
---source-key nodejs-docs --resume-after fs
+--source-key nodejs-docs --resume-after fs --resume-fingerprint <sha256>
 ```
 
-La reprise saute tous les documents jusqu'au curseur inclus et reprend au document suivant dans
-l'ordre du fichier `catalog-sources.yml`.
+Le curseur n'est jamais accepté seul. Quand `limited = true`, le rapport émet ensemble :
 
-Quand `limited = true`, le champ `resumeAfter` du rapport est calculé à partir du **dernier document
-réellement sélectionné pour ce lot**. Il peut donc être réinjecté directement dans l'appel suivant ;
-il ne répète plus le curseur d'entrée d'un lot limité.
+- `resumeAfter`, calculé à partir du **dernier document réellement sélectionné pour ce lot** ;
+- `resumeConfigurationFingerprint`, SHA-256 de la séquence effective des documents activés dans le
+  périmètre de synchronisation.
 
-Si le curseur d'entrée n'existe pas dans le périmètre sélectionné, la commande échoue explicitement
-pour éviter une resynchronisation silencieuse depuis le début.
+L'appel suivant doit réinjecter les deux valeurs. Avant de créer un nouveau `sync_run`,
+`SyncCatalogDocuments` recalcule l'empreinte de la configuration courante. Une modification, un
+réordonnancement ou un changement de métadonnées documentaires fait échouer la reprise avec
+`CATALOG_RESUME_CONFIGURATION_CHANGED` au lieu de sauter ou retraiter silencieusement des documents.
+
+Si le curseur d'entrée n'existe pas dans le périmètre sélectionné, la commande échoue également
+explicitement. `--resume-fingerprint` sans `--resume-after`, ou l'inverse, est rejeté par le CLI avant
+ouverture du catalogue.
 
 ## Rate limiting et budgets réseau
 
@@ -221,26 +232,32 @@ documents
 rateLimitMs
 limited
 resumeAfter
+resumeConfigurationFingerprint
 index
 ```
 
 `limited` vaut `true` quand `--limit` a empêché de traiter tous les documents restants. Dans ce cas,
-`resumeAfter` contient le dernier document sélectionné pour le lot. Le champ `index.indexedSections`
-provient de la vérification post-sync ; le CLI ne masque plus une incohérence en reconstruisant
-automatiquement tout l'index.
+`resumeAfter` contient le dernier document sélectionné pour le lot et
+`resumeConfigurationFingerprint` l'empreinte à réinjecter avec ce curseur. Le champ
+`index.indexedSections` provient de la vérification post-sync ; le CLI ne masque plus une incohérence
+en reconstruisant automatiquement tout l'index.
 
 ## Reprise après interruption
 
-La reprise opérationnelle repose sur l'ordre déterministe de `catalog-sources.yml` et, pour un lot
-limité, sur le champ `resumeAfter` renvoyé par le rapport JSON.
+Pour un lot limité, conserver **les deux champs** `resumeAfter` et
+`resumeConfigurationFingerprint` renvoyés par le rapport JSON.
 
-Exemple : si le rapport renvoie `nodejs-docs:fs`, relancer :
+Exemple : si le rapport renvoie `resumeAfter = nodejs-docs:fs` et une empreinte `abc...`, relancer :
 
 ```bash
-catalog sync --file config/catalog-sources.yml --resume-after nodejs-docs:fs
+catalog sync --file config/catalog-sources.yml \
+  --resume-after nodejs-docs:fs \
+  --resume-fingerprint <resumeConfigurationFingerprint>
 ```
 
-La commande reprend au document suivant.
+La commande reprend au document suivant uniquement si la configuration effective est identique à
+celle qui a produit le curseur. Toute dérive de configuration est fail-closed et impose de relancer
+une synchronisation sans ancien curseur.
 
 ## Politique de non-suppression
 
@@ -272,7 +289,9 @@ type `PLAN`, et peut être distingué d'une exécution réelle via `runKind`.
 - conservation exacte de la query string de transport ;
 - sync exhaustive sans `--limit` ;
 - rate limiting applicatif ;
-- reprise via curseur et continuation calculée pour un lot limité ;
+- reprise via curseur + empreinte et continuation calculée pour un lot limité ;
+- rejet avant démarrage du run si l'ordre ou la configuration ayant produit le curseur a changé ;
+- rejet des `stable_key` dupliqués avant ouverture du catalogue ;
 - validateurs de version courante liés à leur URL de représentation ;
 - contenu inchangé ;
 - réponse `notModified` avec touch `last_seen_at` et absence de nouvelle version ;

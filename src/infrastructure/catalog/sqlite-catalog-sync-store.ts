@@ -1,5 +1,9 @@
+import { randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
+
 import type Database from 'better-sqlite3';
 
+import type { Clock } from '../../application/ports/clock.js';
 import type {
   CatalogDocumentObservationInput,
   CatalogSyncRun,
@@ -8,18 +12,23 @@ import type {
   CatalogSyncRunStartRequest,
   CatalogSyncRunStatus,
 } from '../../domain/models/catalog.js';
+import { compareProcessIdentity, readProcessIdentity } from '../process-identity.js';
 import type { CatalogSyncRunRow } from './catalog-row-mappers.js';
 import { toCatalogSyncRun } from './catalog-row-mappers.js';
+
+const DEFAULT_ABANDONED_RUN_AFTER_MS = 3_600_000;
+const OWNER_TOKEN_IDENTITY_PREFIX = 'v1.';
 
 const INSERT_CATALOG_SYNC_RUN_SQL = `
   INSERT INTO sync_runs (
     source_id, run_kind, started_at, completed_at, status,
     documents_checked, documents_added, documents_updated, documents_unchanged,
-    documents_failed, error_summary
-  ) VALUES (?, ?, ?, NULL, 'RUNNING', 0, 0, 0, 0, 0, NULL)
+    documents_failed, error_summary, owner_token, owner_pid, owner_hostname, heartbeat_at
+  ) VALUES (?, ?, ?, NULL, 'RUNNING', 0, 0, 0, 0, 0, NULL, ?, ?, ?, ?)
 `;
 
 const SELECT_CATALOG_SYNC_RUN_BY_ID_SQL = 'SELECT * FROM sync_runs WHERE id = ?';
+const SELECT_CATALOG_SYNC_RUN_ID_SQL = 'SELECT id FROM sync_runs WHERE id = ?';
 
 const COMPLETE_CATALOG_SYNC_RUN_SQL = `
   UPDATE sync_runs SET
@@ -30,8 +39,49 @@ const COMPLETE_CATALOG_SYNC_RUN_SQL = `
     documents_updated = ?,
     documents_unchanged = ?,
     documents_failed = ?,
-    error_summary = ?
-  WHERE id = ? AND status = 'RUNNING' AND completed_at IS NULL
+    error_summary = ?,
+    heartbeat_at = ?,
+    owner_token = NULL,
+    owner_pid = NULL,
+    owner_hostname = NULL
+  WHERE id = ?
+    AND status = 'RUNNING'
+    AND completed_at IS NULL
+    AND owner_token = ?
+`;
+
+const SELECT_RUNNING_SYNC_RUN_LEASES_SQL = `
+  SELECT id, started_at, heartbeat_at, owner_token, owner_pid, owner_hostname
+  FROM sync_runs
+  WHERE status = 'RUNNING' AND completed_at IS NULL
+`;
+
+const RECOVER_ABANDONED_SYNC_RUN_SQL = `
+  UPDATE sync_runs SET
+    completed_at = ?,
+    status = 'FAILED',
+    error_summary = ?,
+    heartbeat_at = ?,
+    owner_token = NULL,
+    owner_pid = NULL,
+    owner_hostname = NULL
+  WHERE id = ?
+    AND status = 'RUNNING'
+    AND completed_at IS NULL
+    AND started_at = ?
+    AND heartbeat_at IS ?
+    AND owner_token IS ?
+    AND owner_pid IS ?
+    AND owner_hostname IS ?
+`;
+
+const TOUCH_SYNC_RUN_HEARTBEAT_SQL = `
+  UPDATE sync_runs
+  SET heartbeat_at = ?
+  WHERE id = ?
+    AND status = 'RUNNING'
+    AND completed_at IS NULL
+    AND owner_token = ?
 `;
 
 const UPSERT_DOCUMENT_ALIAS_SQL = `
@@ -57,7 +107,15 @@ const REFRESH_CURRENT_VERSION_VALIDATORS_SQL = `
   WHERE id = (SELECT current_version_id FROM documents WHERE id = ?)
 `;
 
-type InsertCatalogSyncRunParams = [number | null, CatalogSyncRunKind, number];
+type InsertCatalogSyncRunParams = [
+  number | null,
+  CatalogSyncRunKind,
+  number,
+  string,
+  number,
+  string,
+  number,
+];
 type CompleteCatalogSyncRunParams = [
   number,
   CatalogSyncRunStatus,
@@ -68,30 +126,115 @@ type CompleteCatalogSyncRunParams = [
   number,
   string | null,
   number,
+  number,
+  string,
+];
+type RecoverAbandonedSyncRunParams = [
+  number,
+  string,
+  number,
+  number,
+  number,
+  number | null,
+  string | null,
+  number | null,
+  string | null,
 ];
 
+type OwnedCatalogSyncRunRow = CatalogSyncRunRow & {
+  readonly owner_token: string | null;
+};
+
+interface SyncRunIdentityRow {
+  readonly id: number;
+}
+
+interface RunningSyncRunLeaseRow {
+  readonly id: number;
+  readonly started_at: number;
+  readonly heartbeat_at: number | null;
+  readonly owner_token: string | null;
+  readonly owner_pid: number | null;
+  readonly owner_hostname: string | null;
+}
+
+export interface CatalogSyncRunLeaseOptions {
+  readonly pid?: number;
+  readonly hostname?: string;
+  readonly ownerTokenFactory?: () => string;
+  readonly processAlive?: (pid: number) => boolean;
+  readonly processIdentity?: (pid: number) => string | undefined;
+  readonly abandonedAfterMs?: number;
+}
+
 export class SqliteCatalogSyncStore {
-  public constructor(private readonly database: Database.Database) {}
+  private readonly pid: number;
+  private readonly hostname: string;
+  private readonly ownerTokenFactory: () => string;
+  private readonly processAlive: (pid: number) => boolean;
+  private readonly processIdentity: (pid: number) => string | undefined;
+  private readonly abandonedAfterMs: number;
+  private readonly ownedRuns = new Map<number, string>();
+
+  public constructor(
+    private readonly database: Database.Database,
+    private readonly clock: Clock,
+    options: CatalogSyncRunLeaseOptions = {},
+  ) {
+    this.pid = options.pid ?? process.pid;
+    this.hostname = options.hostname ?? hostname();
+    this.processAlive = options.processAlive ?? isProcessAlive;
+    this.processIdentity = options.processIdentity ?? readProcessIdentity;
+    const ownerProcessIdentity = this.processIdentity(this.pid);
+    this.ownerTokenFactory =
+      options.ownerTokenFactory ?? (() => createOwnerToken(randomUUID(), ownerProcessIdentity));
+    this.abandonedAfterMs = options.abandonedAfterMs ?? DEFAULT_ABANDONED_RUN_AFTER_MS;
+    if (!Number.isSafeInteger(this.abandonedAfterMs) || this.abandonedAfterMs <= 0) {
+      throw new RangeError('abandonedAfterMs must be a positive safe integer');
+    }
+  }
 
   public start(input: CatalogSyncRunStartRequest): CatalogSyncRun {
+    // Reconcile again immediately before starting. A repository can stay open while another
+    // process dies; constructor-time recovery alone would otherwise leave C014 blocking until
+    // this process is restarted.
+    this.recoverAbandonedRuns();
+
+    const ownerToken = this.ownerTokenFactory();
+    const startedAt = input.startedAt.getTime();
     const info = this.database
       .prepare<InsertCatalogSyncRunParams>(INSERT_CATALOG_SYNC_RUN_SQL)
-      .run(input.sourceId ?? null, input.runKind ?? 'EXECUTION', input.startedAt.getTime());
+      .run(
+        input.sourceId ?? null,
+        input.runKind ?? 'EXECUTION',
+        startedAt,
+        ownerToken,
+        this.pid,
+        this.hostname,
+        startedAt,
+      );
+    const id = Number(info.lastInsertRowid);
     const row = this.database
       .prepare<[number], CatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
-      .get(Number(info.lastInsertRowid));
+      .get(id);
     if (row === undefined) throw new Error('CATALOG_SYNC_RUN_INSERT_FAILED');
+    this.ownedRuns.set(id, ownerToken);
     return toCatalogSyncRun(row);
   }
 
   public complete(syncRunId: number, input: CatalogSyncRunCompletionInput): CatalogSyncRun {
+    const ownerToken = this.ownedRuns.get(syncRunId);
     const transaction = this.database.transaction((): CatalogSyncRunRow => {
       const running = this.database
-        .prepare<[number], CatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
+        .prepare<[number], OwnedCatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
         .get(syncRunId);
       if (running === undefined) throw new Error('CATALOG_SYNC_RUN_NOT_FOUND');
       if (running.status !== 'RUNNING' || running.completed_at !== null) {
+        if (ownerToken !== undefined) throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
         throw new Error('CATALOG_SYNC_RUN_ALREADY_COMPLETED');
+      }
+      if (ownerToken === undefined || running.owner_token !== ownerToken) {
+        throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
       }
       if (input.completedAt.getTime() < running.started_at) {
         throw new Error('CATALOG_SYNC_RUN_COMPLETION_PRECEDES_START');
@@ -107,7 +250,9 @@ export class SqliteCatalogSyncStore {
           input.documentsUnchanged,
           input.documentsFailed,
           input.errorSummary ?? null,
+          input.completedAt.getTime(),
           syncRunId,
+          ownerToken,
         );
       if (result.changes !== 1) throw new Error('CATALOG_SYNC_RUN_COMPLETION_FAILED');
       const row = this.database
@@ -116,7 +261,52 @@ export class SqliteCatalogSyncStore {
       if (row === undefined) throw new Error('CATALOG_SYNC_RUN_COMPLETION_FAILED');
       return row;
     });
-    return toCatalogSyncRun(transaction());
+    try {
+      const completed = toCatalogSyncRun(transaction.immediate());
+      this.ownedRuns.delete(syncRunId);
+      return completed;
+    } catch (error) {
+      this.reconcileCompletionOwnership(syncRunId, ownerToken);
+      throw error;
+    }
+  }
+
+  public recoverAbandonedRuns(): number {
+    const now = this.clock.now().getTime();
+    // OS-backed process probes can block for seconds (notably PowerShell on Windows).
+    // Perform all liveness/identity decisions before reserving the SQLite writer. The
+    // transaction below then revalidates the exact durable lease snapshot with CAS predicates.
+    const rows = this.database
+      .prepare<[], RunningSyncRunLeaseRow>(SELECT_RUNNING_SYNC_RUN_LEASES_SQL)
+      .all();
+    const candidates = rows.filter((row) => {
+      const locallyOwnedToken = this.ownedRuns.get(row.id);
+      if (locallyOwnedToken !== undefined && locallyOwnedToken === row.owner_token) return false;
+      return this.isAbandoned(row, now);
+    });
+    if (candidates.length === 0) return 0;
+
+    const recover = this.database.transaction(() => {
+      const statement = this.database.prepare<RecoverAbandonedSyncRunParams>(
+        RECOVER_ABANDONED_SYNC_RUN_SQL,
+      );
+      let recovered = 0;
+      for (const row of candidates) {
+        recovered += statement.run(
+          now,
+          'Synchronization interrupted: owner lease expired or process is no longer active',
+          now,
+          row.id,
+          row.started_at,
+          row.heartbeat_at,
+          row.owner_token,
+          row.owner_pid,
+          row.owner_hostname,
+        ).changes;
+      }
+      return recovered;
+    });
+    return recover.immediate();
   }
 
   public persistObservation(
@@ -126,6 +316,7 @@ export class SqliteCatalogSyncStore {
   ): void {
     if (observation === undefined) return;
 
+    this.renewOwnedRun(observation.syncRunId, observedAt);
     this.refreshCurrentVersionValidators(documentId, observation, observedAt);
 
     const aliasStatement =
@@ -149,6 +340,69 @@ export class SqliteCatalogSyncStore {
     }
   }
 
+  private reconcileCompletionOwnership(syncRunId: number, ownerToken: string | undefined): void {
+    if (ownerToken === undefined) return;
+    try {
+      const row = this.database
+        .prepare<[number], OwnedCatalogSyncRunRow>(SELECT_CATALOG_SYNC_RUN_BY_ID_SQL)
+        .get(syncRunId);
+      if (
+        row?.status !== 'RUNNING' ||
+        row.completed_at !== null ||
+        row.owner_token !== ownerToken
+      ) {
+        this.ownedRuns.delete(syncRunId);
+      }
+    } catch {
+      // Durable state is unknown. Preserve the local fencing token so the caller can retry.
+    }
+  }
+
+  private renewOwnedRun(syncRunId: number, observedAt: number): void {
+    const ownerToken = this.requireOwnedRunToken(syncRunId);
+    const result = this.database
+      .prepare<[number, number, string]>(TOUCH_SYNC_RUN_HEARTBEAT_SQL)
+      .run(observedAt, syncRunId, ownerToken);
+    if (result.changes !== 1) {
+      this.ownedRuns.delete(syncRunId);
+      throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
+    }
+  }
+
+  private requireOwnedRunToken(syncRunId: number): string {
+    const ownerToken = this.ownedRuns.get(syncRunId);
+    if (ownerToken !== undefined) return ownerToken;
+    const referencedRun = this.database
+      .prepare<[number], SyncRunIdentityRow>(SELECT_CATALOG_SYNC_RUN_ID_SQL)
+      .get(syncRunId);
+    if (referencedRun === undefined) {
+      throw new Error('FOREIGN KEY constraint failed: referenced catalog sync run does not exist');
+    }
+    throw new Error('CATALOG_SYNC_RUN_OWNERSHIP_LOST');
+  }
+
+  private isAbandoned(row: RunningSyncRunLeaseRow, now: number): boolean {
+    const lastHeartbeat = row.heartbeat_at ?? row.started_at;
+    const leaseExpired = now - lastHeartbeat > this.abandonedAfterMs;
+    if (row.owner_pid !== null && row.owner_hostname === this.hostname) {
+      if (!this.processAlive(row.owner_pid)) return true;
+
+      const identity = compareProcessIdentity(
+        readOwnerProcessIdentity(row.owner_token),
+        row.owner_pid,
+        this.processIdentity,
+      );
+      if (identity === 'same') return false;
+      if (identity === 'different') return true;
+
+      // A live PID is not proof of the original process lifetime when identity probing is
+      // unavailable. Once the durable heartbeat lease expires, recovery is safe because the
+      // owner token is atomically cleared and every later stale-owner mutation is fenced.
+      return leaseExpired;
+    }
+    return leaseExpired;
+  }
+
   private refreshCurrentVersionValidators(
     documentId: number,
     observation: CatalogDocumentObservationInput,
@@ -163,6 +417,40 @@ export class SqliteCatalogSyncStore {
       .run(validators.etag ?? null, validators.lastModified ?? null, observedAt, documentId);
     if (result.changes !== 1) throw new Error('CATALOG_CURRENT_VERSION_VALIDATOR_REFRESH_FAILED');
   }
+}
+
+function createOwnerToken(entropy: string, processIdentity: string | undefined): string {
+  if (processIdentity === undefined) return entropy;
+  const encodedIdentity = Buffer.from(processIdentity, 'utf8').toString('base64url');
+  return `${OWNER_TOKEN_IDENTITY_PREFIX}${encodedIdentity}.${entropy}`;
+}
+
+function readOwnerProcessIdentity(ownerToken: string | null): string | undefined {
+  if (!ownerToken?.startsWith(OWNER_TOKEN_IDENTITY_PREFIX)) return undefined;
+  const separatorIndex = ownerToken.indexOf('.', OWNER_TOKEN_IDENTITY_PREFIX.length);
+  if (separatorIndex === -1) return undefined;
+  const encodedIdentity = ownerToken.slice(OWNER_TOKEN_IDENTITY_PREFIX.length, separatorIndex);
+  if (!/^[A-Za-z0-9_-]+$/u.test(encodedIdentity)) return undefined;
+  const identity = Buffer.from(encodedIdentity, 'base64url').toString('utf8');
+  return identity === '' ? undefined : identity;
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !isSystemError(error, 'ESRCH');
+  }
+}
+
+function isSystemError(error: unknown, code: string): boolean {
+  return (
+    error !== null &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { readonly code?: unknown }).code === code
+  );
 }
 
 function assertJsonObject(value: string): void {

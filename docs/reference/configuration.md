@@ -12,8 +12,8 @@ Dans le dépôt :
 
 Dans l’installation, modifier `%LOCALAPPDATA%\mcp-search-net\config`. L’installateur préserve ces fichiers et écrit les modèles récents sous `*.default`.
 
-Les trois profils applicatifs du candidat portent la version `1.1.0`. Cette valeur alimente les
-informations serveur MCP ; elle ne signifie pas qu'une release V2 est déjà publiée.
+Les trois profils applicatifs du candidat portent la version `1.1.4`. Cette valeur alimente les
+informations serveur MCP.
 
 ## Variables d’environnement
 
@@ -22,34 +22,45 @@ informations serveur MCP ; elle ne signifie pas qu'une release V2 est déjà pub
 - `MCP_OFFICIAL_SOURCES_PATH` remplace le registre officiel ;
 - `MCP_CRAWL4AI_TOKEN` fournit le jeton de la façade ;
 - `MCP_SEARXNG_URL` et `MCP_CRAWL4AI_URL` remplacent les endpoints ;
-- `MCP_CACHE_PATH` contrôle le chemin du cache ;
+- `MCP_CACHE_PATH` contrôle le chemin du cache Web ;
 - `MCP_CATALOG_PATH` contrôle réellement le chemin du catalogue serveur et des CLI ;
+- `MCP_HISTORY_PATH` contrôle le chemin de l’historique local des recherches ;
 - `MCP_LOG_LEVEL` remplace le niveau de journalisation ;
 - `MCP_ALLOWED_PUBLIC_PORTS` remplace la liste des ports publics, au format `80,443`.
 
-Le serveur résout un `MCP_CATALOG_PATH` relatif depuis le dossier du fichier applicatif. Sans cette
-variable, il place `catalog.db` à côté du chemin de cache résolu et refuse que les deux bases ciblent
-le même fichier. Les CLI catalogue résolvent leur `--path` ou `MCP_CATALOG_PATH` depuis le répertoire
-courant ; utiliser un chemin absolu garantit donc une cible identique sur toutes les surfaces.
+Le serveur résout les chemins relatifs de cache et d’historique depuis le dossier du fichier
+applicatif. Sans `MCP_CATALOG_PATH`, il place `catalog.db` à côté du chemin de cache résolu. Les trois
+bases `cache.sqlite`, `catalog.db` et `history.sqlite` doivent cibler des fichiers distincts ; le
+serveur vérifie aussi les chemins canoniques et les alias de fichiers existants avant de démarrer.
+
+Les CLI catalogue résolvent leur `--path` ou `MCP_CATALOG_PATH` depuis le répertoire courant ;
+utiliser un chemin absolu garantit donc une cible identique sur toutes les surfaces.
 
 Les alias historiques réellement acceptés sont `MCP_SEARCH_CONFIG`,
 `MCP_SEARCH_OFFICIAL_SOURCES_PATH`, `MCP_SEARCH_SEARXNG_URL`, `MCP_SEARCH_CRAWL4AI_URL`,
 `MCP_SEARCH_CACHE_PATH`, `MCP_SEARCH_LOG_LEVEL`, `MCP_SEARCH_CACHE_ENABLED` et
-`MCP_SEARCH_CACHE_CONTINUE_ON_ERROR`. Ils restent des compatibilités transitoires ; il n'existe pas
-d'alias historique pour le catalogue, le profil, le token ou les ports publics. Les nouveaux
-déploiements utilisent les noms principaux ci-dessus. `.env.example` ne contient que des valeurs
-d’exemple destinées au profil `development`.
+`MCP_SEARCH_CACHE_CONTINUE_ON_ERROR`. Ils restent des compatibilités transitoires ; il n’existe pas
+d’alias historique pour le catalogue, l’historique, le profil, le token ou les ports publics. Les
+nouveaux déploiements utilisent les noms principaux ci-dessus. `.env.example` ne contient que des
+valeurs d’exemple destinées au profil `development`.
 
-La priorité est : valeurs internes sûres, YAML, variables d'environnement, puis paramètres d'outil bornés. Toutes les surcharges repassent par Zod ; elles ne peuvent pas augmenter les maxima absolus.
+La priorité est : valeurs internes sûres, YAML, variables d’environnement, puis paramètres d’outil
+bornés. Toutes les surcharges repassent par Zod ; elles ne peuvent pas augmenter les maxima absolus.
 
 ## Paramètres applicatifs
 
 - `searxng` et `crawl4ai` : URL et délai ;
-- `cache.enabled` : active ou désactive SQLite ;
+- `cache.enabled` : active ou désactive SQLite pour le cache Web ;
 - `cache.continueOnError` : poursuit avec `cacheStatus: DISABLED` si SQLite devient indisponible ;
 - `cache` : chemin SQLite, rétention stale, TTL (recherche 60 min, documentation 24 h,
   README 6 h, sitemap 24 h), nombre global maximal d’entrées (`maxEntries: 2000`) et volume
   global maximal des payloads JSON sérialisés (`maxBytes: 268435456`, soit 256 Mio) ;
+- `history.enabled` : active ou désactive l’historique persistant des appels `search_web` et
+  `search_docs` ;
+- `history.path` : chemin de `history.sqlite` ;
+- `history.retentionDays` : rétention maximale, 90 jours par défaut, bornée entre 1 et 3 650 jours ;
+- `history.maxEntries` : nombre maximal d’occurrences conservées, 20 000 par défaut, borné entre
+  100 et 1 000 000 ;
 - `limits` : budgets des résultats, extraits, Markdown et liens ;
 - `security.allowedPorts` : ports Web publics acceptés ;
 - `security.allowHttp` : autorisation de HTTP ;
@@ -60,9 +71,37 @@ La priorité est : valeurs internes sûres, YAML, variables d'environnement, pui
 - `officialSourcesPath` : registre YAML relatif à la configuration ;
 - `logging.level` : niveau de log structuré sur `stderr`.
 
+L’historique est volontairement distinct du cache. Une expiration ou une éviction de
+`search_cache` ne supprime donc pas l’occurrence correspondante de `history.sqlite`. Chaque appel
+validé constitue une nouvelle ligne, y compris lorsqu’une requête identique est répétée ou servie
+par le cache. L’écriture d’historique est fail-open : une panne de `history.sqlite` est journalisée
+sur `stderr` mais ne transforme jamais une recherche réussie en erreur.
+
 La configuration est validée par Zod au démarrage. Les maxima absolus sont 10 résultats,
 10 sections, 30 000 caractères, 50 liens, 10 Mio par téléchargement, 2 Gio de payloads cache,
 5 redirections et 20 secondes. Une valeur invalide arrête le processus avec un message structuré.
+
+## Données enregistrées dans l’historique
+
+`history.sqlite` conserve uniquement des métadonnées nécessaires à l’inspection locale :
+
+- `requestId` et outil (`search_web` ou `search_docs`) ;
+- requête validée et paramètres de recherche techniques ;
+- instant d’exécution, durée, statut et provider ;
+- statut de cache lorsqu’il existe, nombre de résultats et codes d’avertissement ;
+- code d’erreur public pour une recherche validée qui échoue.
+
+Avant l’écriture SQLite, le serveur applique une redaction best-effort des formes évidentes de
+credentials dans la requête et les paramètres : Bearer, JWT, PAT connus, API key, password, secret
+et signature sont remplacés par `[REDACTED]`, et les clés de paramètres manifestement sensibles sont
+neutralisées. Cette protection ne peut toutefois pas garantir qu’un texte libre ne contienne jamais
+une donnée sensible sous une forme non reconnue. `history.sqlite` doit donc rester protégé comme une
+donnée locale utilisateur ; pour un besoin de confidentialité stricte, utiliser `history.enabled:
+false` ou réduire la rétention.
+
+Le serveur n’y duplique pas le contenu complet des pages ou des sections, ni les headers
+d’autorisation ni les variables d’environnement. La base reste locale et n’est pas exposée comme
+fichier arbitraire via MCP ; sa consultation passe par l’outil borné `list_search_history`.
 
 ## Registre officiel
 
@@ -78,9 +117,9 @@ Le registre V1 contient notamment MCP, GitHub, Node.js, TypeScript, SearXNG, Cra
 
 ## Secrets locaux
 
-Compose n'a plus de secret par défaut : `SEARXNG_SECRET` et
+Compose n’a plus de secret par défaut : `SEARXNG_SECRET` et
 `CRAWL4AI_API_TOKEN` doivent exister dans un fichier `.env` local ou dans
-l'environnement. Le jeton fourni au processus MCP doit avoir la même valeur que
+l’environnement. Le jeton fourni au processus MCP doit avoir la même valeur que
 `CRAWL4AI_API_TOKEN`.
 
 Les fichiers du dépôt déclarent explicitement leur profil : développement pour
@@ -88,7 +127,6 @@ Les fichiers du dépôt déclarent explicitement leur profil : développement po
 `application.docker.yml`. Les profils production fixent `security.allowHttp: false`; une
 configuration production qui réactive HTTP public est rejetée. Les endpoints providers internes
 peuvent rester en HTTP sur loopback/réseau Docker et ne passent pas par la politique des URLs
-publiques. Un jeton d'exemple connu dans un profil non
-développement provoque un arrêt avant appel fournisseur. L'installateur Windows
-génère un `.env` aléatoire s'il n'existe pas, le préserve lors des mises à jour et
-le charge dans les wrappers Node et Compose.
+publiques. Un jeton d’exemple connu dans un profil non développement provoque un arrêt avant appel
+fournisseur. L’installateur Windows génère un `.env` aléatoire s’il n’existe pas, le préserve lors
+des mises à jour et le charge dans les wrappers Node et Compose.

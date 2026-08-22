@@ -35,11 +35,12 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
   );
   const configurationDirectory = dirname(absoluteConfigPath);
   const cachePath = resolve(configurationDirectory, application.cache.path);
+  const historyPath = resolve(configurationDirectory, application.history.path);
   const catalogPath =
     environment.MCP_CATALOG_PATH === undefined
       ? resolve(dirname(cachePath), 'catalog.db')
       : resolve(configurationDirectory, environment.MCP_CATALOG_PATH);
-  assertDistinctDatabasePaths(cachePath, catalogPath);
+  assertDistinctDatabasePaths(cachePath, catalogPath, historyPath);
   const officialPath = resolve(
     configurationDirectory,
     environment.MCP_OFFICIAL_SOURCES_PATH ??
@@ -65,6 +66,10 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
         ...application.cache,
         path: cachePath,
       },
+      history: {
+        ...application.history,
+        path: historyPath,
+      },
       officialSourcesPath: officialPath,
     },
     catalogPath,
@@ -79,31 +84,46 @@ interface ExistingFileIdentity {
   readonly inode: bigint;
 }
 
-export function assertDistinctDatabasePaths(cachePath: string, catalogPath: string): void {
+export function assertDistinctDatabasePaths(
+  cachePath: string,
+  catalogPath: string,
+  historyPath?: string,
+): void {
+  assertDistinctDatabasePair(cachePath, catalogPath, 'Cache and catalog paths must be different');
+  if (historyPath === undefined) return;
+  assertDistinctDatabasePair(cachePath, historyPath, 'Cache and history paths must be different');
+  assertDistinctDatabasePair(
+    catalogPath,
+    historyPath,
+    'Catalog and history paths must be different',
+  );
+}
+
+function assertDistinctDatabasePair(leftPath: string, rightPath: string, message: string): void {
   const normalizeForComparison = (path: string): string =>
     process.platform === 'win32' ? path.toLowerCase() : path;
-  const canonicalCachePath = canonicalizePotentialPath(cachePath);
-  const canonicalCatalogPath = canonicalizePotentialPath(catalogPath);
+  const canonicalLeftPath = canonicalizePotentialPath(leftPath);
+  const canonicalRightPath = canonicalizePotentialPath(rightPath);
   if (
-    normalizeForComparison(cachePath) === normalizeForComparison(catalogPath) ||
-    normalizeForComparison(canonicalCachePath) === normalizeForComparison(canonicalCatalogPath)
+    normalizeForComparison(leftPath) === normalizeForComparison(rightPath) ||
+    normalizeForComparison(canonicalLeftPath) === normalizeForComparison(canonicalRightPath)
   ) {
-    throw new ConfigurationError('Cache and catalog paths must be different');
+    throw new ConfigurationError(message);
   }
 
-  const cacheIdentity = existingFileIdentity(cachePath);
-  const catalogIdentity = existingFileIdentity(catalogPath);
-  if (cacheIdentity === undefined || catalogIdentity === undefined) return;
+  const leftIdentity = existingFileIdentity(leftPath);
+  const rightIdentity = existingFileIdentity(rightPath);
+  if (leftIdentity === undefined || rightIdentity === undefined) return;
 
   if (
-    normalizeForComparison(cacheIdentity.realPath) ===
-      normalizeForComparison(catalogIdentity.realPath) ||
-    (cacheIdentity.inode !== 0n &&
-      catalogIdentity.inode !== 0n &&
-      cacheIdentity.device === catalogIdentity.device &&
-      cacheIdentity.inode === catalogIdentity.inode)
+    normalizeForComparison(leftIdentity.realPath) ===
+      normalizeForComparison(rightIdentity.realPath) ||
+    (leftIdentity.inode !== 0n &&
+      rightIdentity.inode !== 0n &&
+      leftIdentity.device === rightIdentity.device &&
+      leftIdentity.inode === rightIdentity.inode)
   ) {
-    throw new ConfigurationError('Cache and catalog paths must be different');
+    throw new ConfigurationError(message);
   }
 }
 
@@ -162,6 +182,10 @@ function applyEnvironmentOverrides(
       ...(cachePath === undefined ? {} : { path: cachePath }),
       ...(cacheEnabled === undefined ? {} : { enabled: cacheEnabled }),
       ...(continueOnError === undefined ? {} : { continueOnError }),
+    },
+    history: {
+      ...application.history,
+      ...(environment.MCP_HISTORY_PATH === undefined ? {} : { path: environment.MCP_HISTORY_PATH }),
     },
     logging: {
       ...application.logging,

@@ -1,6 +1,6 @@
 application:
   name: mcp-search-net
-  version: 1.1.3
+  version: 1.1.4
   profile: development
 
 searxng:
@@ -23,6 +23,12 @@ cache:
   staleRetentionMs: 604800000
   maxEntries: 2000
   maxBytes: 268435456
+
+history:
+  enabled: true
+  path: ../.data/history.sqlite
+  retentionDays: 90
+  maxEntries: 20000
 
 limits:
   defaultSearchResults: 5

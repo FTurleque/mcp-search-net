@@ -1,11 +1,20 @@
 import { fork, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { Clock } from '../../src/application/ports/clock.js';
+import type { Logger } from '../../src/application/ports/logger.js';
 import {
   FileLeaseLock,
   FileLeaseLockError,
@@ -29,7 +38,7 @@ afterEach(async () => {
 });
 
 describe('FileLeaseLock', () => {
-  it('records ownership, renews its heartbeat and never removes a live owner by age alone', () => {
+  it('records ownership, renews its owner-scoped heartbeat and never removes a live owner by age alone', () => {
     const fixture = createFixture();
     const first = new FileLeaseLock(fixture.lockPath, {
       staleAfterMs: 1_000,
@@ -46,7 +55,9 @@ describe('FileLeaseLock', () => {
     ).toThrow(FileLeaseLockError);
 
     first.renew();
-    const metadata = JSON.parse(readFileSync(`${fixture.lockPath}.heartbeat`, 'utf8')) as {
+    const heartbeat = heartbeatFileForOwner(fixture.lockPath, 'first-owner');
+    expect(heartbeat).toBeDefined();
+    const metadata = JSON.parse(readFileSync(heartbeat ?? '', 'utf8')) as {
       readonly ownerToken: string;
       readonly pid: number;
       readonly heartbeatAt: string;
@@ -59,7 +70,297 @@ describe('FileLeaseLock', () => {
 
     first.release();
     expect(existsSync(fixture.lockPath)).toBe(false);
-    expect(existsSync(`${fixture.lockPath}.heartbeat`)).toBe(false);
+    expect(heartbeatFiles(fixture.lockPath)).toEqual([]);
+  });
+
+  it('rolls back the active lock when initial heartbeat creation fails', () => {
+    const fixture = createFixture();
+    const heartbeatError = new Error('HEARTBEAT_WRITE_FAILED');
+    const lock = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'failed-heartbeat-owner',
+      writeHeartbeatFile: () => {
+        throw heartbeatError;
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      lock.acquire();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(heartbeatError);
+    expect(existsSync(fixture.lockPath)).toBe(false);
+    expect(heartbeatFiles(fixture.lockPath)).toEqual([]);
+  });
+
+  it('quarantines a failed acquisition when direct rollback unlink is transiently blocked', () => {
+    const fixture = createFixture();
+    const heartbeatError = new Error('HEARTBEAT_WRITE_FAILED');
+    let lockUnlinkAttempts = 0;
+    const lock = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'failed-heartbeat-owner',
+      writeHeartbeatFile: (path, content) => {
+        writeFileSync(path, content.slice(0, 8), 'utf8');
+        throw heartbeatError;
+      },
+      unlinkFile: (path) => {
+        if (path === fixture.lockPath) {
+          lockUnlinkAttempts += 1;
+          throw fileSystemError('EPERM', 'transient acquire rollback unlink failure');
+        }
+        unlinkSync(path);
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      lock.acquire();
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(heartbeatError);
+    expect(lockUnlinkAttempts).toBe(1);
+    expect(heartbeatError.cause).toBeInstanceOf(Error);
+    expect(existsSync(fixture.lockPath)).toBe(false);
+    expect(heartbeatFiles(fixture.lockPath)).toEqual([]);
+
+    const next = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'next-owner',
+    }).acquire();
+    expect(next.metadata.ownerToken).toBe('next-owner');
+    next.release();
+    expect(existsSync(fixture.lockPath)).toBe(false);
+  });
+
+  it('isolates failed-acquire heartbeat cleanup from future owners', () => {
+    const fixture = createFixture();
+    const heartbeatError = new Error('HEARTBEAT_WRITE_FAILED');
+    const recording = createRecordingLogger();
+    let quarantineDeleteAttempts = 0;
+    const lock = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      logger: recording.logger,
+      ownerTokenFactory: () => 'cleanup-failure-owner',
+      writeHeartbeatFile: (path, content) => {
+        writeFileSync(path, content.slice(0, 8), 'utf8');
+        throw heartbeatError;
+      },
+      unlinkFile: (path) => {
+        if (path.includes('.heartbeat-')) {
+          throw fileSystemError('EBUSY', 'heartbeat cleanup busy');
+        }
+        if (path === fixture.lockPath) {
+          throw fileSystemError('EPERM', 'active lock cleanup denied');
+        }
+        if (path.includes('.failed-acquire-')) {
+          quarantineDeleteAttempts += 1;
+          throw fileSystemError('EBUSY', 'quarantine cleanup busy');
+        }
+        unlinkSync(path);
+      },
+    });
+
+    expect(() => lock.acquire()).toThrow(heartbeatError);
+    expect(heartbeatError.cause).toBeInstanceOf(AggregateError);
+    expect((heartbeatError.cause as AggregateError).errors).toHaveLength(3);
+    expect(quarantineDeleteAttempts).toBe(1);
+    expect(recording.warnings).toContain('file_lease_lock_acquire_quarantine_cleanup_failed');
+    expect(existsSync(fixture.lockPath)).toBe(false);
+    expect(heartbeatFiles(fixture.lockPath)).toHaveLength(1);
+
+    const next = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'replacement-owner',
+    }).acquire();
+    expect(heartbeatFileForOwner(fixture.lockPath, 'replacement-owner')).toBeDefined();
+    next.release();
+    expect(existsSync(fixture.lockPath)).toBe(false);
+    expect(heartbeatFileForOwner(fixture.lockPath, 'replacement-owner')).toBeUndefined();
+    // The intentionally undeletable failed-acquire heartbeat is isolated from future owners.
+    expect(heartbeatFiles(fixture.lockPath)).toHaveLength(1);
+  });
+
+  it('reports and preserves the active lock when every rollback primitive is unavailable', () => {
+    const fixture = createFixture();
+    const originalCause = new Error('ORIGINAL_HEARTBEAT_CAUSE');
+    const heartbeatError = new Error('HEARTBEAT_WRITE_FAILED', { cause: originalCause });
+    const recording = createRecordingLogger();
+    let renameAttempts = 0;
+    let unlinkAttempts = 0;
+    const lock = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      logger: recording.logger,
+      ownerTokenFactory: () => 'unrecoverable-owner',
+      writeHeartbeatFile: () => {
+        throw heartbeatError;
+      },
+      unlinkFile: (path) => {
+        if (path === fixture.lockPath) {
+          unlinkAttempts += 1;
+          throw fileSystemError('EPERM', 'active lock cleanup denied');
+        }
+        unlinkSync(path);
+      },
+      renameFile: () => {
+        renameAttempts += 1;
+        throw fileSystemError('EBUSY', 'active lock quarantine busy');
+      },
+    });
+
+    expect(() => lock.acquire()).toThrow(heartbeatError);
+    expect(unlinkAttempts).toBe(3);
+    expect(renameAttempts).toBe(3);
+    expect(heartbeatError.cause).toBeInstanceOf(AggregateError);
+    expect((heartbeatError.cause as AggregateError).errors[0]).toBe(originalCause);
+    expect(recording.errors).toContain('file_lease_lock_acquire_rollback_failed');
+    expect(existsSync(fixture.lockPath)).toBe(true);
+  });
+
+  it('does not delete a lock whose ownership changes during failed-acquire cleanup', () => {
+    const fixture = createFixture();
+    const heartbeatError = new Error('HEARTBEAT_WRITE_FAILED');
+    const timestamp = fixture.clock.now().toISOString();
+    const foreignMetadata = {
+      schemaVersion: '1.0',
+      ownerToken: 'foreign-owner',
+      pid: 123,
+      hostname: 'foreign-host',
+      createdAt: timestamp,
+      heartbeatAt: timestamp,
+    } as const;
+    const lock = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'initial-owner',
+      writeHeartbeatFile: (path, content) => {
+        writeFileSync(path, content, 'utf8');
+        throw heartbeatError;
+      },
+      unlinkFile: (path) => {
+        if (path.includes('.heartbeat-')) {
+          writeFileSync(fixture.lockPath, `${JSON.stringify(foreignMetadata)}\n`, 'utf8');
+        }
+        unlinkSync(path);
+      },
+    });
+
+    expect(() => lock.acquire()).toThrow(heartbeatError);
+    expect(JSON.parse(readFileSync(fixture.lockPath, 'utf8'))).toMatchObject({
+      ownerToken: 'foreign-owner',
+    });
+    expect(heartbeatError.cause).toBeUndefined();
+  });
+
+  it('accepts ENOENT when the active lock disappears during failed-acquire cleanup', () => {
+    const fixture = createFixture();
+    const heartbeatError = new Error('HEARTBEAT_WRITE_FAILED');
+    const lock = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'disappearing-owner',
+      writeHeartbeatFile: () => {
+        throw heartbeatError;
+      },
+      unlinkFile: (path) => {
+        if (path === fixture.lockPath) {
+          unlinkSync(path);
+          throw fileSystemError('ENOENT', 'lock disappeared after unlink');
+        }
+        unlinkSync(path);
+      },
+    });
+
+    expect(() => lock.acquire()).toThrow(heartbeatError);
+    expect(heartbeatError.cause).toBeUndefined();
+    expect(existsSync(fixture.lockPath)).toBe(false);
+  });
+
+  it('does not let a former owner release delete the replacement owner heartbeat', () => {
+    const fixture = createFixture();
+    let replacement: ReturnType<FileLeaseLock['acquire']> | undefined;
+    let replaced = false;
+    const first = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'first-owner',
+      unlinkFile: (path) => {
+        if (path === fixture.lockPath && !replaced) {
+          replaced = true;
+          unlinkSync(path);
+          replacement = new FileLeaseLock(fixture.lockPath, {
+            staleAfterMs: 1_000,
+            clock: fixture.clock,
+            ownerTokenFactory: () => 'replacement-owner',
+          }).acquire();
+          return;
+        }
+        unlinkSync(path);
+      },
+    }).acquire();
+
+    first.release();
+
+    expect(replacement).toBeDefined();
+    expect(heartbeatFileForOwner(fixture.lockPath, 'first-owner')).toBeUndefined();
+    expect(heartbeatFileForOwner(fixture.lockPath, 'replacement-owner')).toBeDefined();
+    expect(JSON.parse(readFileSync(fixture.lockPath, 'utf8'))).toMatchObject({
+      ownerToken: 'replacement-owner',
+    });
+
+    replacement?.release();
+    expect(existsSync(fixture.lockPath)).toBe(false);
+    expect(heartbeatFiles(fixture.lockPath)).toEqual([]);
+  });
+
+  it('does not let a stale former owner renew overwrite the replacement owner heartbeat', () => {
+    const fixture = createFixture();
+    let heartbeatWrites = 0;
+    let replacement: ReturnType<FileLeaseLock['acquire']> | undefined;
+    const first = new FileLeaseLock(fixture.lockPath, {
+      staleAfterMs: 1_000,
+      clock: fixture.clock,
+      ownerTokenFactory: () => 'first-owner',
+      processAlive: () => false,
+      writeHeartbeatFile: (path, content) => {
+        heartbeatWrites += 1;
+        if (heartbeatWrites === 2) {
+          replacement = new FileLeaseLock(fixture.lockPath, {
+            staleAfterMs: 1_000,
+            clock: fixture.clock,
+            ownerTokenFactory: () => 'replacement-owner',
+            processAlive: () => false,
+          }).acquire();
+        }
+        writeFileSync(path, content, { encoding: 'utf8', flag: 'w' });
+      },
+    }).acquire();
+
+    fixture.advance(10_000);
+    expect(() => first.renew()).toThrow('Lock ownership changed unexpectedly');
+
+    expect(replacement).toBeDefined();
+    expect(heartbeatFileForOwner(fixture.lockPath, 'first-owner')).toBeDefined();
+    expect(heartbeatFileForOwner(fixture.lockPath, 'replacement-owner')).toBeDefined();
+    expect(JSON.parse(readFileSync(fixture.lockPath, 'utf8'))).toMatchObject({
+      ownerToken: 'replacement-owner',
+    });
+
+    replacement?.release();
+    first.release();
+    expect(existsSync(fixture.lockPath)).toBe(false);
+    expect(heartbeatFiles(fixture.lockPath)).toEqual([]);
   });
 
   it('recovers only a stale local lock whose owner is confirmed dead', () => {
@@ -87,8 +388,10 @@ describe('FileLeaseLock', () => {
     });
     abandoned.release();
     expect(existsSync(fixture.lockPath)).toBe(true);
+    expect(heartbeatFileForOwner(fixture.lockPath, 'new-owner')).toBeDefined();
     recovered.release();
     expect(existsSync(fixture.lockPath)).toBe(false);
+    expect(heartbeatFiles(fixture.lockPath)).toEqual([]);
   });
 
   it('refuses to delete invalid or foreign-owner metadata automatically', () => {
@@ -144,6 +447,7 @@ describe('FileLeaseLock', () => {
     child.send('release');
     await waitForExit(child);
     expect(existsSync(ready.lockPath)).toBe(false);
+    expect(heartbeatFiles(ready.lockPath)).toEqual([]);
   });
 });
 
@@ -159,6 +463,52 @@ function createFixture() {
       now += milliseconds;
     },
   };
+}
+
+function heartbeatFiles(lockPath: string): string[] {
+  const directory = dirname(lockPath);
+  const prefix = `${basename(lockPath)}.heartbeat-`;
+  return readdirSync(directory)
+    .filter((name) => name.startsWith(prefix))
+    .map((name) => join(directory, name))
+    .sort();
+}
+
+function heartbeatFileForOwner(lockPath: string, ownerToken: string): string | undefined {
+  return heartbeatFiles(lockPath).find((path) => {
+    try {
+      const parsed = JSON.parse(readFileSync(path, 'utf8')) as { readonly ownerToken?: unknown };
+      return parsed.ownerToken === ownerToken;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function createRecordingLogger(): {
+  readonly logger: Logger;
+  readonly warnings: string[];
+  readonly errors: string[];
+} {
+  const warnings: string[] = [];
+  const errors: string[] = [];
+  return {
+    warnings,
+    errors,
+    logger: {
+      record: () => undefined,
+      debug: () => undefined,
+      info: () => undefined,
+      warning: (message) => warnings.push(message),
+      error: (message) => errors.push(message),
+    },
+  };
+}
+
+function fileSystemError(code: string, message: string): NodeJS.ErrnoException {
+  const error = new Error(message) as NodeJS.ErrnoException;
+  error.code = code;
+  return error;
 }
 
 async function waitForReady(child: ChildProcess): Promise<ChildReadyMessage> {

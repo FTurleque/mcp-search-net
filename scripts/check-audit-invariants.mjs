@@ -316,11 +316,19 @@ for (const invariant of [
 }
 for (const invariant of [
   'MAX_INGEST_TEXT_BYTES = 16 * 1024 * 1024',
-  'await stat(options.filePath)',
+  'const handle = await openFile(filePath)',
+  'const file = await handle.stat()',
+  'MAX_INGEST_TEXT_BYTES + 1 - totalBytes',
+  'if (totalBytes > MAX_INGEST_TEXT_BYTES)',
+  'await handle.close()',
   'WebUrl.createTransport(options.canonicalUrl)',
 ]) {
-  requireText(ingestText, invariant, `catalog ingest: borne locale absent ${invariant}`);
+  requireText(ingestText, invariant, `catalog ingest: lecture bornée absente ${invariant}`);
 }
+assert(
+  !ingestText.includes('readFile(options.filePath'),
+  'catalog ingest: la lecture ne doit pas rouvrir le pathname après validation',
+);
 for (const invariant of [
   'SQLITE_ID_BATCH_SIZE = 400',
   'for (const batch of chunkIds(versionIds))',

@@ -15,7 +15,13 @@ interface ToolResponse<T> {
     requestId: string;
   }>;
   metadata: {
-    tool: 'search_web' | 'fetch_url' | 'search_docs' | 'list_docs' | 'read_doc_section';
+    tool:
+      | 'search_web'
+      | 'fetch_url'
+      | 'search_docs'
+      | 'list_docs'
+      | 'read_doc_section'
+      | 'list_search_history';
     durationMs: number;
     cacheStatus: 'HIT' | 'MISS' | 'STALE_FALLBACK' | 'DISABLED';
     provider: string;
@@ -33,7 +39,8 @@ fournisseur, `STALE_FALLBACK` lorsqu'une entrée expirée remplace une panne tra
 réseau, HTTP 408/425/429 ou 5xx), et `DISABLED` lorsque le cache est désactivé ou que le mode
 dégradé poursuit après une panne SQLite. Un HTTP permanent comme 400, 401, 403, 404 ou 410 ne
 déclenche pas de stale fallback. Pour `search_docs`, le provider est `catalog` et le cache
-applicatif V1 est désactivé.
+applicatif V1 est désactivé. Pour `list_search_history`, le provider est `history` et
+`cacheStatus` vaut toujours `DISABLED`.
 
 Le champ textuel MCP est volontairement compact. Il ne doit pas recopier tout `structuredContent` afin de limiter la consommation de contexte dans Copilot.
 
@@ -175,6 +182,57 @@ Lit directement une section courante par `sectionId`, sans charger toutes les se
 catalogue. `maxCharacters` vaut 3 000 par défaut et accepte de 200 à 8 000 caractères. La sortie
 signale explicitement `found` et `truncated`.
 
+## `list_search_history`
+
+Liste l’historique local persistant des appels validés à `search_web` et `search_docs`. L’outil est
+read-only, idempotent, closed-world et n’effectue aucun appel Web. Il consulte uniquement
+`history.sqlite` via le port applicatif dédié.
+
+Entrées :
+
+| Champ           | Défaut | Contraintes                                                 |
+| --------------- | ------ | ----------------------------------------------------------- |
+| `tool`          | absent | `search_web` ou `search_docs`                               |
+| `status`        | absent | `success`, `partial` ou `failed`                            |
+| `cacheStatus`   | absent | `HIT`, `MISS`, `STALE_FALLBACK` ou `DISABLED`               |
+| `from`          | absent | date/heure ISO interprétable                                |
+| `to`            | absent | date/heure ISO interprétable, postérieure ou égale à `from` |
+| `queryContains` | absent | sous-chaîne insensible à la casse, 1 à 200 caractères       |
+| `limit`         | `20`   | de 1 à 50                                                   |
+| `beforeId`      | absent | curseur keyset positif retourné par la page précédente      |
+
+Sortie `data` :
+
+| Champ          | Description                                                     |
+| -------------- | --------------------------------------------------------------- |
+| `enabled`      | indique si l’historisation est activée                          |
+| `available`    | indique si le stockage d’historique est actuellement lisible    |
+| `count`        | nombre d’entrées retournées sur la page                         |
+| `total`        | nombre total d’entrées correspondant aux filtres, hors curseur  |
+| `nextBeforeId` | curseur de la page suivante ou `null`                           |
+| `searches`     | occurrences de recherche, de la plus récente à la plus ancienne |
+
+Chaque occurrence contient `id`, `requestId`, `tool`, `query`, les paramètres de recherche non
+secrets dans `request`, `executedAt`, `durationMs`, `status`, `cacheStatus`, `provider`,
+`resultCount`, `warningCodes` et `errorCode`.
+
+Deux appels strictement identiques restent deux occurrences distinctes. L’historique est séparé du
+cache : expiration ou éviction de `search_cache` ne supprime pas l’occurrence enregistrée. Une
+panne d’écriture d’historique n’échoue jamais la recherche principale. Si l’historique est désactivé
+ou indisponible, l’outil retourne une réponse bornée explicite avec respectivement
+`HISTORY_DISABLED` ou `HISTORY_UNAVAILABLE`.
+
+Exemple :
+
+```text
+list_search_history success: 2/42 entrie(s)
+enabled=true available=true nextBeforeId=103
+1. [search_web] SonarCloud GitHub Actions
+   2026-08-14T18:22:17.000Z · success · MISS · 5 result(s)
+2. [search_docs] architecture cache sqlite
+   2026-08-14T18:20:02.000Z · success · DISABLED · 3 result(s)
+```
+
 ## Resources MCP V2 et budget contexte
 
 Les resources V2 sont read-only. Les collections de sources, documents, versions et sections
@@ -238,6 +296,8 @@ Une erreur MCP expose son code et son `requestId` dans le contenu textuel. Sa st
 | `DATE_UNAVAILABLE`                | les moteurs actifs n’ont fourni aucune date             |
 | `UNVERIFIED_SOURCE`               | la page n’est pas reconnue comme officielle             |
 | `SEARCH_PROVIDER_PARTIAL_FAILURE` | au moins un moteur SearXNG était indisponible           |
+| `HISTORY_DISABLED`                | l’historique persistant est désactivé                   |
+| `HISTORY_UNAVAILABLE`             | l’historique persistant est temporairement indisponible |
 
 ### Erreurs stables
 

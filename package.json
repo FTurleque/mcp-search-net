@@ -1,6 +1,6 @@
 {
   "name": "mcp-search-net",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "license": "SEE LICENSE IN LICENSE",
   "author": "Fabrice Turleque",
   "private": true,
@@ -18,11 +18,15 @@
   "scripts": {
     "clean": "rimraf build dist",
     "check:runtime": "node scripts/check-node-version.mjs",
+    "check:utf8": "node scripts/check-utf8.mjs",
     "check:copilot": "node scripts/validate-copilot-config.mjs",
     "check:license": "node scripts/check-license.mjs",
     "check:ci-hygiene": "node scripts/check-ci-hygiene.mjs",
     "check:audit-invariants": "node scripts/check-audit-invariants.mjs",
-    "docs:check": "node scripts/check-docs.mjs",
+    "check:audit-release-boundary": "node scripts/check-audit-release-boundary.mjs",
+    "check:release-pr-contract": "node scripts/check-release-pr-contract.mjs",
+    "check:iana-ipv6": "node scripts/check-iana-ipv6-global-unicast.mjs --offline",
+    "docs:check": "node scripts/check-docs.mjs && node scripts/check-current-state-durability.mjs",
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "dev": "tsx src/bootstrap/main.ts",
     "start": "node build/bootstrap/main.js",
@@ -52,14 +56,14 @@
     "test:resilience": "node scripts/run-test-suite.mjs resilience tests/config/vitest.resilience.config.ts",
     "test:performance": "node scripts/run-test-suite.mjs performance tests/config/vitest.performance.config.ts",
     "test:integration": "node scripts/run-test-suite.mjs integration tests/config/vitest.integration.config.ts",
-    "test:e2e:deterministic": "vitest run --config tests/config/vitest.required.config.ts tests/e2e/mcp-stdio.test.ts",
+    "test:e2e:deterministic": "vitest run --no-file-parallelism --config tests/config/vitest.required.config.ts tests/e2e/mcp-stdio.test.ts tests/e2e/native-client-certification-wiring.test.ts",
     "test:e2e:live": "node scripts/run-live-tests.mjs",
     "test:e2e": "node scripts/run-live-tests.mjs",
     "test:release": "npm run check && npm run test:required && npm run test:unit && npm run test:contract && npm run test:security && npm run test:resilience && npm run test:performance && npm run test:integration && npm run test:e2e",
     "benchmark:v1": "node scripts/benchmark-v1.mjs",
     "install:user": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1",
     "install:user:run": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/install-user.ps1 -StartServices -RunAfterInstall",
-    "check": "npm run check:runtime && npm run check:copilot && npm run check:license && npm run check:supply-chain && npm run check:ci-hygiene && npm run check:audit-invariants && npm run docs:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run client:contract-report && npm run test:coverage"
+    "check": "npm run check:runtime && npm run check:utf8 && npm run check:copilot && npm run check:license && npm run check:supply-chain && npm run check:ci-hygiene && npm run check:audit-invariants && npm run check:audit-release-boundary && npm run check:release-pr-contract && npm run check:iana-ipv6 && npm run docs:check && npm run format:check && npm run lint && npm run typecheck && npm run build && npm run client:contract-report && npm run test:coverage"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

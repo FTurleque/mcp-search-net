@@ -29,3 +29,5 @@ config/*
 !migrations/**
 !catalog-migrations/
 !catalog-migrations/**
+!history-migrations/
+!history-migrations/**

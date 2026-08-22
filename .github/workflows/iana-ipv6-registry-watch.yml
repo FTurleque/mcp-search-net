@@ -1,0 +1,36 @@
+name: IANA IPv6 registry drift
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iana-ipv6-registry-watch
+  cancel-in-progress: false
+
+jobs:
+  verify-rir-allocations:
+    name: Verify fail-closed IPv6 allocation snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out develop
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: develop
+          persist-credentials: false
+
+      - name: Set up Node.js 24.18.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+
+      - name: Validate local snapshot structure
+        run: node scripts/check-iana-ipv6-global-unicast.mjs --offline
+
+      - name: Compare snapshot with IANA registry
+        run: node scripts/check-iana-ipv6-global-unicast.mjs

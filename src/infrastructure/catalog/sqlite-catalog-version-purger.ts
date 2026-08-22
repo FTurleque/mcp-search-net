@@ -2,11 +2,13 @@ import type Database from 'better-sqlite3';
 
 import type { Clock } from '../../application/ports/clock.js';
 import type { CatalogSearchIndexRebuildResult } from '../../domain/models/catalog.js';
+import { ConfigurationError } from '../../domain/errors/domain-errors.js';
 import type {
   CatalogVersionPurgeInput,
   CatalogVersionPurgeRepository,
   CatalogVersionPurgeResult,
 } from '../../application/use-cases/purge-catalog-versions.js';
+import { verifyCatalogIntegrity } from './catalog-integrity.js';
 import { openCatalogDatabase } from './catalog-database.js';
 import { CatalogMigrationRunner } from './catalog-migration-runner.js';
 import {
@@ -33,12 +35,14 @@ const SELECT_PURGEABLE_DOCUMENT_VERSION_IDS_SQL = `
   INNER JOIN catalog_sources
     ON catalog_sources.id = documents.source_id
   WHERE document_versions.is_current = 0
+    AND document_versions.pending_current = 0
     AND (? IS NULL OR catalog_sources.source_key = ?)
     AND (
       SELECT count(*)
       FROM document_versions AS newer_document_versions
       WHERE newer_document_versions.document_id = document_versions.document_id
         AND newer_document_versions.is_current = 0
+        AND newer_document_versions.pending_current = 0
         AND (
           newer_document_versions.fetched_at > document_versions.fetched_at
           OR (
@@ -66,7 +70,17 @@ export class SqliteCatalogVersionPurger implements CatalogVersionPurgeRepository
     private readonly clock: Clock,
   ) {
     this.database = openCatalogDatabase(path);
-    new CatalogMigrationRunner(this.database, this.clock).apply();
+    try {
+      new CatalogMigrationRunner(this.database, this.clock).apply();
+      const integrity = verifyCatalogIntegrity(this.database);
+      if (integrity.issues.length > 0) {
+        throw new ConfigurationError('Catalog integrity verification failed');
+      }
+    } catch (error) {
+      if (this.database.open) this.database.close();
+      if (error instanceof ConfigurationError) throw error;
+      throw new ConfigurationError('Catalog integrity verification failed', { cause: error });
+    }
   }
 
   public purgeOldDocumentVersions(
@@ -74,35 +88,29 @@ export class SqliteCatalogVersionPurger implements CatalogVersionPurgeRepository
   ): Promise<CatalogVersionPurgeResult> {
     return Promise.resolve().then(() => {
       const sourceKey = input.sourceKey ?? null;
-      const scannedDocuments = this.countScannedDocuments(sourceKey);
-      const versionIds = this.selectPurgeableDocumentVersionIds(
-        sourceKey,
-        input.keepPreviousVersions,
-      );
-      const candidateSections = this.countSectionsByVersionIds(versionIds);
-      const result: CatalogVersionPurgeResult = {
-        dryRun: input.dryRun,
-        keptPreviousVersions: input.keepPreviousVersions,
-        scannedDocuments,
-        candidateVersions: versionIds.length,
-        candidateSections,
-        purgedVersions: 0,
-        purgedSections: 0,
-      };
+      if (input.dryRun) return this.inspectPurgeCandidates(sourceKey, input);
 
-      if (input.dryRun || versionIds.length === 0) return result;
-
-      const transaction = this.database.transaction((): CatalogVersionPurgeResult => {
+      const purge = this.database.transaction((): CatalogVersionPurgeResult => {
+        const result = this.inspectPurgeCandidates(sourceKey, input);
+        if (result.candidateVersions === 0) return result;
+        const versionIds = this.selectPurgeableDocumentVersionIds(
+          sourceKey,
+          input.keepPreviousVersions,
+        );
         const purgedSections = this.deleteSectionsByVersionIds(versionIds);
         const purgedVersions = this.deleteVersionsByIds(versionIds);
         return {
           ...result,
+          candidateVersions: versionIds.length,
+          candidateSections: purgedSections,
           purgedVersions,
           purgedSections,
         };
       });
 
-      return transaction();
+      // Reserve the writer before candidate selection so a concurrent revision cannot
+      // promote one of the selected versions between the read and delete phases.
+      return purge.immediate();
     });
   }
 
@@ -121,6 +129,26 @@ export class SqliteCatalogVersionPurger implements CatalogVersionPurgeRepository
 
   public close(): void {
     if (this.database.open) this.database.close();
+  }
+
+  private inspectPurgeCandidates(
+    sourceKey: string | null,
+    input: CatalogVersionPurgeInput,
+  ): CatalogVersionPurgeResult {
+    const scannedDocuments = this.countScannedDocuments(sourceKey);
+    const versionIds = this.selectPurgeableDocumentVersionIds(
+      sourceKey,
+      input.keepPreviousVersions,
+    );
+    return {
+      dryRun: input.dryRun,
+      keptPreviousVersions: input.keepPreviousVersions,
+      scannedDocuments,
+      candidateVersions: versionIds.length,
+      candidateSections: this.countSectionsByVersionIds(versionIds),
+      purgedVersions: 0,
+      purgedSections: 0,
+    };
   }
 
   private countScannedDocuments(sourceKey: string | null): number {

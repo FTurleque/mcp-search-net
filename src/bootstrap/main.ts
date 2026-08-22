@@ -24,6 +24,7 @@ async function main(): Promise<void> {
     await container.mcpServer.close().catch(() => undefined);
     container.cache.close();
     container.catalog.close();
+    container.history.close();
     process.exitCode = exitCode;
   };
   process.once('SIGINT', () => {
@@ -50,6 +51,7 @@ async function main(): Promise<void> {
   process.once('exit', () => {
     container.cache.close();
     container.catalog.close();
+    container.history.close();
   });
 
   container.logger.record('server_started', {
