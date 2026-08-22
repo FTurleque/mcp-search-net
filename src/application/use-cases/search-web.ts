@@ -93,7 +93,7 @@ export class SearchWeb {
         ? strictOfficialDomains(normalizedRequest, this.officialSources)
         : undefined;
     try {
-      if (domainConstraints !== undefined && domainConstraints.length === 0) {
+      if (domainConstraints?.length === 0) {
         firstResponse = EMPTY_PROVIDER_RESPONSE;
         providerResponse = firstResponse;
         shouldFallback = false;
