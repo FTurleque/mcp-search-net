@@ -53,7 +53,7 @@ const httpUrlSchema = z
 const isoDateTimeSchema = z.iso.datetime();
 const sourceStatusSchema = z.enum([
   'VERIFIED_OFFICIAL',
-  'LIKELY_OFFICIAL',
+  'UNVERIFIED_DOCUMENTATION',
   'THIRD_PARTY',
   'UNKNOWN',
 ]);
