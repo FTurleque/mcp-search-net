@@ -1,6 +1,10 @@
 export type SearchTimeRange = 'day' | 'month' | 'year';
 export type SourcePolicy = 'strict' | 'prefer' | 'any';
-export type SourceStatus = 'VERIFIED_OFFICIAL' | 'LIKELY_OFFICIAL' | 'THIRD_PARTY' | 'UNKNOWN';
+export type SourceStatus =
+  | 'VERIFIED_OFFICIAL'
+  | 'UNVERIFIED_DOCUMENTATION'
+  | 'THIRD_PARTY'
+  | 'UNKNOWN';
 
 export interface SearchRequest {
   readonly query: string;

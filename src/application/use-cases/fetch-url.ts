@@ -393,7 +393,7 @@ function classifySource(url: string, registry: OfficialSourceRegistry): SourceSt
       .split('/')
       .some((part) => ['docs', 'documentation', 'reference'].includes(part.toLowerCase()))
   ) {
-    return 'LIKELY_OFFICIAL';
+    return 'UNVERIFIED_DOCUMENTATION';
   }
   return 'UNKNOWN';
 }

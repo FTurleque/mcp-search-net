@@ -1,7 +1,11 @@
 import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
-import type { CatalogPage, CatalogRepository } from '../../application/ports/catalog-repository.js';
-import { ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
+import {
+  MAX_CATALOG_PAGE_OFFSET,
+  type CatalogPage,
+  type CatalogRepository,
+} from '../../application/ports/catalog-repository.js';
+import { InvalidArgumentError, ResponseTooLargeError } from '../../domain/errors/domain-errors.js';
 import type {
   CatalogCurrentDocumentSection,
   CatalogDocument,
@@ -538,11 +542,15 @@ function parsePageOffset(uri: URL, collection: 'sources' | 'documents' | 'versio
   const marker = collection === 'versions' ? '/versions/page/' : `//${collection}/page/`;
   const markerIndex = uri.href.lastIndexOf(marker);
   if (markerIndex === -1) throw new Error(`Invalid ${collection} page resource URI`);
-  return parseStrictResourceInteger(
+  const offset = parseStrictResourceInteger(
     uri.href.slice(markerIndex + marker.length),
     `${collection} page offset`,
     true,
   );
+  if (offset > MAX_CATALOG_PAGE_OFFSET) {
+    throw new InvalidArgumentError(`Invalid ${collection} page offset`);
+  }
+  return offset;
 }
 
 function parseDocumentVersionResourceIds(uri: URL): {

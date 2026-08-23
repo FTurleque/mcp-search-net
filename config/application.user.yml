@@ -25,7 +25,8 @@ cache:
   maxBytes: 268435456
 
 history:
-  enabled: true
+  enabled: false
+  exposeTool: false
   path: ../data/history.sqlite
   retentionDays: 90
   maxEntries: 20000

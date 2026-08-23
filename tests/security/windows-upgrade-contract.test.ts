@@ -644,4 +644,128 @@ describe('Windows in-place upgrade contract', () => {
       }
     },
   );
+
+  it('migrates the inherited history.enabled default without disturbing a differing user edit', () => {
+    expect(updater).toContain('function Repair-InheritedHistoryDefault');
+    expect(updater).toContain("'config\\application.yml', 'config\\application.docker.yml'");
+    expect(updater.indexOf('function Repair-InheritedHistoryDefault')).toBeLessThan(
+      updater.indexOf('$configTemplates = @('),
+    );
+    expect(updater.indexOf('Repair-InheritedHistoryDefault `')).toBeLessThan(
+      updater.indexOf(
+        "Add-StagedFile -SourceRelativePath $template.source -TargetRelativePath ($template.target + '.default')",
+      ),
+    );
+    expect(updater).not.toContain('Remove-Item -LiteralPath $LiveConfigPath');
+  });
+
+  windowsRuntimeTest(
+    'flips an inherited history.enabled default to false while preserving an explicit user edit',
+    () => {
+      function extractFunction(name: string) {
+        const marker = `function ${name} {`;
+        const start = updater.indexOf(marker);
+        if (start < 0) throw new Error(`Function ${name} not found in update-installation.ps1`);
+        let depth = 0;
+        for (let i = start; i < updater.length; i++) {
+          if (updater[i] === '{') depth++;
+          else if (updater[i] === '}') {
+            depth--;
+            if (depth === 0) return updater.slice(start, i + 1);
+          }
+        }
+        throw new Error(`Unbalanced braces extracting function ${name}`);
+      }
+
+      const historyTemplate = (enabled: 'true' | 'false') =>
+        [
+          'searxng:',
+          '  baseUrl: http://127.0.0.1:8888',
+          '',
+          'history:',
+          `  enabled: ${enabled}`,
+          '  exposeTool: false',
+          '  path: ../.data/history.sqlite',
+          '  retentionDays: 90',
+          '  maxEntries: 20000',
+          '',
+        ].join('\n');
+
+      const preamble = [
+        '$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)',
+        '$MoveFileReplaceExisting = 0x1',
+        '$MoveFileWriteThrough = 0x8',
+        "if (-not ([System.Management.Automation.PSTypeName]'McpSearchNet.NativeFileOps').Type) {",
+        "  Add-Type -TypeDefinition @'",
+        'using System.Runtime.InteropServices;',
+        'namespace McpSearchNet {',
+        '    public static class NativeFileOps {',
+        '        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]',
+        '        public static extern bool MoveFileEx(string existingFileName, string newFileName, uint flags);',
+        '    }',
+        '}',
+        "'@",
+        '}',
+        extractFunction('Normalize-ComparablePath'),
+        extractFunction('Test-PathInsideRoot'),
+        extractFunction('Assert-NoReparsePointInExistingPathChain'),
+        extractFunction('Publish-DurableFile'),
+        extractFunction('Write-DurableUtf8File'),
+        extractFunction('Repair-InheritedHistoryDefault'),
+      ].join('\n\n');
+
+      const root = mkdtempSync(join(tmpdir(), 'mcp-history-default-migration-'));
+      try {
+        const installRoot = join(root, 'install');
+        mkdirSync(join(installRoot, 'config'), { recursive: true });
+
+        const identicalLive = join(installRoot, 'config', 'identical.yml');
+        const identicalDefault = join(installRoot, 'config', 'identical.yml.default');
+        writeFileSync(identicalLive, historyTemplate('true'), 'utf8');
+        writeFileSync(identicalDefault, historyTemplate('true'), 'utf8');
+
+        const editedLive = join(installRoot, 'config', 'edited.yml');
+        const editedDefault = join(installRoot, 'config', 'edited.yml.default');
+        writeFileSync(editedLive, historyTemplate('true').replace('20000', '99999'), 'utf8');
+        writeFileSync(editedDefault, historyTemplate('true'), 'utf8');
+
+        const noDefaultLive = join(installRoot, 'config', 'no-default.yml');
+        writeFileSync(noDefaultLive, historyTemplate('true'), 'utf8');
+
+        const alreadyDisabledLive = join(installRoot, 'config', 'already-disabled.yml');
+        const alreadyDisabledDefault = join(installRoot, 'config', 'already-disabled.yml.default');
+        writeFileSync(alreadyDisabledLive, historyTemplate('false'), 'utf8');
+        writeFileSync(alreadyDisabledDefault, historyTemplate('true'), 'utf8');
+
+        const script = [
+          `$InstallRoot = '${installRoot.replace(/'/g, "''")}'`,
+          preamble,
+          `Repair-InheritedHistoryDefault -LiveConfigPath '${identicalLive.replace(/'/g, "''")}' -PreviousDefaultConfigPath '${identicalDefault.replace(/'/g, "''")}'`,
+          `Repair-InheritedHistoryDefault -LiveConfigPath '${editedLive.replace(/'/g, "''")}' -PreviousDefaultConfigPath '${editedDefault.replace(/'/g, "''")}'`,
+          `Repair-InheritedHistoryDefault -LiveConfigPath '${noDefaultLive.replace(/'/g, "''")}' -PreviousDefaultConfigPath '${join(installRoot, 'config', 'missing.yml.default').replace(/'/g, "''")}'`,
+          `Repair-InheritedHistoryDefault -LiveConfigPath '${alreadyDisabledLive.replace(/'/g, "''")}' -PreviousDefaultConfigPath '${alreadyDisabledDefault.replace(/'/g, "''")}'`,
+          'Write-Output "MIGRATION_PROBE_COMPLETE"',
+        ].join('\n');
+
+        const result = spawnSync('powershell.exe', ['-NoProfile', '-Command', script], {
+          encoding: 'utf8',
+          windowsHide: true,
+        });
+
+        if (result.status !== 0) {
+          throw new Error(
+            `history default migration probe failed (status=${result.status}): stdout=${result.stdout} stderr=${result.stderr}`,
+          );
+        }
+        expect(result.stdout).toContain('MIGRATION_PROBE_COMPLETE');
+
+        expect(readFileSync(identicalLive, 'utf8')).toContain('enabled: false');
+        expect(readFileSync(editedLive, 'utf8')).toContain('enabled: true');
+        expect(readFileSync(noDefaultLive, 'utf8')).toContain('enabled: false');
+        expect(readFileSync(alreadyDisabledLive, 'utf8')).toBe(historyTemplate('false'));
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
 });

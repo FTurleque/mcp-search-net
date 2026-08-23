@@ -1,7 +1,11 @@
 import type { CacheRepository } from '../ports/cache-repository.js';
 import type { OperationContext, Telemetry } from '../ports/telemetry.js';
 import type { OfficialSourceRegistry } from '../ports/official-source-registry.js';
-import type { SearchProvider, SearchProviderResponse } from '../ports/search-provider.js';
+import type {
+  SearchDomainConstraint,
+  SearchProvider,
+  SearchProviderResponse,
+} from '../ports/search-provider.js';
 import {
   decodeSearchCacheValue,
   type SearchCacheValue,
@@ -13,6 +17,7 @@ import type {
   SearchResponse,
   SearchResult,
 } from '../../domain/models/search.js';
+import type { OfficialSource } from '../../domain/models/official-source.js';
 import type { ToolExecution, ToolWarningDescriptor } from '../../domain/models/tool-response.js';
 import {
   ApplicationError,
@@ -28,11 +33,17 @@ import {
 import { SearchQuery } from '../../domain/value-objects/search-query.js';
 import {
   matchesDomain,
+  normalizeResultUrl,
   rankAndDeduplicate,
   toSearchResult,
 } from '../../domain/services/result-ranking.js';
 
 const DEFAULT_PROVIDER_TIMEOUT_MS = 20_000;
+const EMPTY_PROVIDER_RESPONSE: SearchProviderResponse = {
+  results: [],
+  total: 0,
+  unresponsiveEngines: [],
+};
 
 export interface SearchWebOptions {
   readonly cacheTtlMs: number;
@@ -79,23 +90,16 @@ export class SearchWeb {
       staleAvailable: cached !== undefined,
     });
 
-    let firstResponse: SearchProviderResponse;
-    let providerResponse: SearchProviderResponse;
+    let responses: SearchProviderResponse[];
     let shouldFallback: boolean;
     const deadline = Date.now() + (this.options.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS);
     try {
-      firstResponse = await this.searchProvider(
-        normalizedRequest,
-        normalizedRequest.language,
-        context,
-        deadline,
-      );
-      shouldFallback =
-        firstResponse.results.length === 0 &&
-        !normalizedRequest.language.toLowerCase().startsWith('en');
-      providerResponse = shouldFallback
-        ? await this.searchProvider(normalizedRequest, 'en', context, deadline)
-        : firstResponse;
+      const outcome =
+        normalizedRequest.sourcePolicy === 'strict'
+          ? await this.collectStrictResponses(normalizedRequest, context, deadline)
+          : await this.collectNonStrictResponses(normalizedRequest, context, deadline);
+      responses = outcome.responses;
+      shouldFallback = outcome.shouldFallback;
     } catch (error) {
       if (cached !== undefined && isTransientProviderError(error)) {
         this.telemetry?.record('cache_hit', {
@@ -108,6 +112,7 @@ export class SearchWeb {
       }
       throw error;
     }
+    const providerResponse = mergeProviderResponses(responses);
     const candidates = providerResponse.results
       .map((result) => {
         const officialSource = this.officialSources.findByUrl(result.url);
@@ -133,7 +138,7 @@ export class SearchWeb {
     const policyCandidates = applySourcePolicy(candidates, normalizedRequest.sourcePolicy);
     const ranked = rankAndDeduplicate(policyCandidates);
     const results = ranked.slice(0, normalizedRequest.maxResults);
-    const unresponsiveEngines = mergeUnresponsiveEngines(firstResponse, providerResponse);
+    const unresponsiveEngines = providerResponse.unresponsiveEngines;
     const warnings = createWarnings({
       request: normalizedRequest,
       fallbackLanguageUsed: shouldFallback,
@@ -171,11 +176,94 @@ export class SearchWeb {
     return execution(value, stored ? 'MISS' : 'DISABLED');
   }
 
+  private async collectStrictResponses(
+    request: NormalizedSearchRequest,
+    context: OperationContext,
+    deadline: number,
+  ): Promise<{ responses: SearchProviderResponse[]; shouldFallback: boolean }> {
+    const collected: SearchProviderResponse[] = [];
+    const targetedSources = targetedOfficialSources(request, this.officialSources);
+    const targetedConstraints = toDomainConstraints(targetedSources);
+    const excludeIds = new Set(targetedSources.map((source) => source.id));
+    const fallbackSources = fallbackOfficialSources(request, this.officialSources, excludeIds);
+    const fallbackConstraints = toDomainConstraints(fallbackSources);
+    const noOfficialSourcesAvailable =
+      targetedConstraints.length === 0 && fallbackConstraints.length === 0;
+
+    if (noOfficialSourcesAvailable) {
+      return { responses: [EMPTY_PROVIDER_RESPONSE], shouldFallback: false };
+    }
+
+    if (targetedConstraints.length > 0) {
+      collected.push(
+        await this.searchProvider(
+          request,
+          request.language,
+          context,
+          deadline,
+          targetedConstraints,
+        ),
+      );
+    }
+    const hasVerifiedOfficialResult = this.hasVerifiedOfficialResult(collected);
+    const hasRemainingBudget = deadline - Date.now() > 0;
+    if (!hasVerifiedOfficialResult && fallbackConstraints.length > 0 && hasRemainingBudget) {
+      collected.push(
+        await this.searchProvider(
+          request,
+          request.language,
+          context,
+          deadline,
+          fallbackConstraints,
+        ),
+      );
+    }
+
+    const totalResultsSoFar = collected.reduce((sum, response) => sum + response.results.length, 0);
+    const shouldFallback =
+      totalResultsSoFar === 0 && !request.language.toLowerCase().startsWith('en');
+    if (shouldFallback) {
+      const languageConstraints = [...targetedConstraints, ...fallbackConstraints];
+      collected.push(
+        await this.searchProvider(request, 'en', context, deadline, languageConstraints),
+      );
+    }
+    return { responses: collected, shouldFallback };
+  }
+
+  private async collectNonStrictResponses(
+    request: NormalizedSearchRequest,
+    context: OperationContext,
+    deadline: number,
+  ): Promise<{ responses: SearchProviderResponse[]; shouldFallback: boolean }> {
+    const first = await this.searchProvider(request, request.language, context, deadline);
+    const shouldFallback =
+      first.results.length === 0 && !request.language.toLowerCase().startsWith('en');
+    const responses = shouldFallback
+      ? [first, await this.searchProvider(request, 'en', context, deadline)]
+      : [first];
+    return { responses, shouldFallback };
+  }
+
+  private hasVerifiedOfficialResult(responses: readonly SearchProviderResponse[]): boolean {
+    const seen = new Set<string>();
+    for (const response of responses) {
+      for (const result of response.results) {
+        const normalized = normalizeResultUrl(result.url);
+        if (normalized === undefined || seen.has(normalized)) continue;
+        seen.add(normalized);
+        if (this.officialSources.findByUrl(normalized) !== undefined) return true;
+      }
+    }
+    return false;
+  }
+
   private async searchProvider(
     request: NormalizedSearchRequest,
     language: string,
     context: OperationContext,
     deadline: number,
+    domainConstraints?: readonly SearchDomainConstraint[],
   ): Promise<SearchProviderResponse> {
     const startedAt = performance.now();
     try {
@@ -185,6 +273,7 @@ export class SearchWeb {
           language,
           ...(request.timeRange === undefined ? {} : { timeRange: request.timeRange }),
           maxResults: request.maxResults * this.options.providerOversampling,
+          ...(domainConstraints === undefined ? {} : { domainConstraints }),
           deadlineMs: deadline,
         }),
         deadline,
@@ -197,6 +286,7 @@ export class SearchWeb {
         status: 'success',
         resultCount: response.results.length,
         unresponsiveEngineCount: response.unresponsiveEngines.length,
+        constrainedDomainCount: domainConstraints?.length ?? 0,
       });
       return response;
     } catch (error) {
@@ -207,10 +297,82 @@ export class SearchWeb {
         durationMs: Number((performance.now() - startedAt).toFixed(3)),
         status: 'failed',
         code: error instanceof ApplicationError ? error.code : 'INTERNAL_ERROR',
+        constrainedDomainCount: domainConstraints?.length ?? 0,
       });
       throw error;
     }
   }
+}
+
+function isAllowedOfficialSource(
+  source: OfficialSource,
+  request: NormalizedSearchRequest,
+): boolean {
+  if (!source.enabled) return false;
+  const domain = source.domain.toLowerCase().replace(/\.$/u, '');
+  if (matchesDomain(domain, request.excludedDomains)) return false;
+  if (
+    request.allowedDomains.length > 0 &&
+    !matchesDomain(domain, request.allowedDomains) &&
+    !request.allowedDomains.some((allowed) => matchesDomain(allowed, [domain]))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Sources whose keywords match the query — the precise, uncrowded first discovery pass. */
+function targetedOfficialSources(
+  request: NormalizedSearchRequest,
+  registry: OfficialSourceRegistry,
+): readonly OfficialSource[] {
+  return registry
+    .findForQuery(request.query)
+    .filter((source) => isAllowedOfficialSource(source, request));
+}
+
+/** Remainder of the registry, used only as a fallback pass when the targeted pass is insufficient. */
+function fallbackOfficialSources(
+  request: NormalizedSearchRequest,
+  registry: OfficialSourceRegistry,
+  excludeIds: ReadonlySet<string>,
+): readonly OfficialSource[] {
+  return registry
+    .list()
+    .filter((source) => !excludeIds.has(source.id))
+    .filter((source) => isAllowedOfficialSource(source, request));
+}
+
+function toDomainConstraints(
+  sources: readonly OfficialSource[],
+): readonly SearchDomainConstraint[] {
+  const seen = new Set<string>();
+  const constraints: SearchDomainConstraint[] = [];
+  for (const source of sources) {
+    const domain = source.domain.toLowerCase().replace(/\.$/u, '');
+    const constraint: SearchDomainConstraint =
+      source.pathPrefix === undefined ? { domain } : { domain, pathPrefix: source.pathPrefix };
+    const key = `${domain}|${constraint.pathPrefix ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    constraints.push(constraint);
+  }
+  return constraints;
+}
+
+function mergeProviderResponses(
+  responses: readonly SearchProviderResponse[],
+): SearchProviderResponse {
+  if (responses.length === 0) return EMPTY_PROVIDER_RESPONSE;
+  const results = responses.flatMap((response) => response.results);
+  const unresponsiveEngines = [
+    ...new Set(responses.flatMap((response) => response.unresponsiveEngines)),
+  ].sort(compareText);
+  const totals = responses
+    .map((response) => response.total)
+    .filter((total): total is number => total !== undefined);
+  const total = totals.length === 0 ? undefined : totals.reduce((sum, value) => sum + value, 0);
+  return { results, ...(total === undefined ? {} : { total }), unresponsiveEngines };
 }
 
 function applySourcePolicy(
@@ -238,7 +400,7 @@ function createWarnings(context: {
     });
   }
   if (context.results.length === 0) {
-    if (context.request.sourcePolicy === 'strict' && context.candidates.length > 0) {
+    if (context.request.sourcePolicy === 'strict') {
       warnings.push({
         code: 'NO_VERIFIED_OFFICIAL_SOURCE',
         message: 'No verified official source matched the strict policy',
@@ -319,15 +481,6 @@ function isTransientProviderError(error: unknown): boolean {
     return error.status === undefined || isTransientHttpStatus(error.status);
   }
   return error instanceof ApplicationError && error.code === 'SEARCH_PROVIDER_UNAVAILABLE';
-}
-
-function mergeUnresponsiveEngines(
-  first: SearchProviderResponse,
-  final: SearchProviderResponse,
-): readonly string[] {
-  return [...new Set([...first.unresponsiveEngines, ...final.unresponsiveEngines])].sort(
-    compareText,
-  );
 }
 
 function compareText(left: string, right: string): number {

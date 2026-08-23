@@ -19,8 +19,8 @@ ici : GitHub reste l’autorité pour savoir si un candidat est ouvert, mergé o
   Docker/live E2E et le packaging/lifecycle Windows. Le job Sonar est ignoré sur les pushes
   `develop` par conception ; le head exact de la PR #108 avait passé le Quality Gate Sonar avec
   94,3 % de couverture sur le nouveau code, 0 nouvelle issue et 0 hotspot de sécurité.
-- L’issue #73 reste le tracker de clôture pour les preuves de certification native Claude Code,
-  Claude Desktop et Codex contre le SHA serveur finalement intégré.
+- Les certifications natives restent liées à leur SHA serveur exact. Une clôture historique de
+  tracker ou un smoke automatisé ne certifie jamais implicitement un HEAD ultérieur.
 
 Les jalons historiques/stratégiques encore suivis par les invariants automatisés restent :
 
@@ -51,11 +51,17 @@ ou de l’état d’une branche de correction :
    `rebuild-index` conservent un chemin administratif explicite capable de diagnostiquer/réparer une
    incohérence FTS ; `purge-versions` vérifie également l’intégrité avant toute suppression ;
 6. l’intégrité FTS contrôle à la fois la présence/orphelinité des rowids et l’égalité du payload
-   indexé (`title`, `heading`, `heading_path`, `content`) avec les tables catalogue autoritatives.
+   indexé (`title`, `heading`, `heading_path`, `content`) avec les tables catalogue autoritatives ;
+7. les offsets catalogue sont bornés à 1 000 000 avant préparation SQL afin d’empêcher les parcours
+   `OFFSET` pathologiques ;
+8. les entrypoints exécutés exclusivement en processus enfant sont couverts par des suites
+   STDIO/subprocess dédiées et sont séparés du compteur V8 in-process, qui ne fusionne pas la
+   couverture des processus enfants.
 
 ## Contrat MCP public
 
-Le serveur STDIO expose exactement six outils :
+Le profil de développement (`config/application.yml`) expose explicitement six outils pour conserver
+le contrat automatisé complet :
 
 - `search_web`
 - `fetch_url`
@@ -64,9 +70,19 @@ Le serveur STDIO expose exactement six outils :
 - `read_doc_section`
 - `list_search_history`
 
+Les profils de production Windows et Docker utilisent `history.enabled: false` et
+`history.exposeTool: false`; leur inventaire MCP par défaut contient donc cinq outils et n'enregistre
+aucun historique. `list_search_history` n'est enregistré que lorsque `history.exposeTool: true` est
+explicitement demandé. Une configuration ancienne qui ne possède pas ce champ hérite de `false`.
+
 `search_web`, `fetch_url` et `search_docs` ne sont pas annoncés read-only/idempotents, car ils peuvent
-écrire cache et/ou historique local. `list_docs`, `read_doc_section` et `list_search_history` sont des
-lectures read-only/idempotentes.
+écrire cache et, si l'historisation est activée, historique local. `list_docs`, `read_doc_section` et,
+lorsqu'il est exposé, `list_search_history` sont des lectures read-only/idempotentes.
+
+Pour `search_web`, `VERIFIED_OFFICIAL` provient uniquement du registre officiel. Une URL qui ressemble
+à de la documentation sans correspondre au registre est `UNVERIFIED_DOCUMENTATION`, jamais
+« probablement officielle ». En mode `strict`, les domaines officiels éligibles sont transmis à
+SearXNG comme contraintes `site:` avant le filtrage final `VERIFIED_OFFICIAL`.
 
 Les quatre resources statiques sont :
 
@@ -97,7 +113,7 @@ Trois bases ont des responsabilités distinctes :
 
 - `cache.sqlite` : cache Web ;
 - `catalog.db` : catalogue documentaire ;
-- `history.sqlite` : historique local des occurrences validées de recherche.
+- `history.sqlite` : historique local optionnel des occurrences validées de recherche.
 
 Les chemins doivent rester distincts, y compris après canonicalisation. Sous POSIX, les répertoires
 privés sont maintenus en `0700` et les fichiers SQLite/WAL/SHM en `0600`. Les connexions utilisent un
@@ -108,9 +124,10 @@ version courante et la cohérence FTS sur les chemins fail-closed. Cette cohére
 rowids attendus, les entrées orphelines et le contenu réellement indexé. Promotion de version,
 sections, FTS, pointeur courant et observation de synchronisation partagent une transaction SQLite.
 
-L’historique reste fail-open pour le résultat métier principal. La rétention est bornée, les lectures
-n’effectuent pas de purge physique et les formes évidentes de secrets sont expurgées avant
-persistance.
+Lorsque `history.enabled: true`, l’historique reste fail-open pour le résultat métier principal. La
+rétention est bornée, les lectures n’effectuent pas de purge physique et les formes évidentes de
+secrets sont expurgées avant persistance. Son exposition aux modèles reste contrôlée séparément par
+`history.exposeTool`.
 
 ## Migrations catalogue et historique
 
@@ -192,8 +209,9 @@ de workers de débordement : les demandes excédentaires attendent un slot dans 
 - `MCP_CRAWL4AI_TOKEN`
 - `MCP_ALLOWED_PUBLIC_PORTS`
 
-La validation de configuration est stricte. En profil production, le HTTP public est interdit et les
-jetons de développement connus sont refusés.
+La validation de configuration est stricte. En profil production, le HTTP public est interdit, les
+jetons de développement connus sont refusés, l'historique persistant est désactivé par défaut et son
+outil MCP n'est pas exposé.
 
 ## Qualification et release
 
@@ -202,6 +220,21 @@ politique SemVer impose l’égalité entre la version demandée, `package.json`
 version embarquée. Le packaging Windows vérifie le runtime Node et l’installateur Inno Setup avant
 exécution, préserve les intégrations MCP préexistantes non gérées et couvre clean install, upgrade,
 rollback et uninstall.
+
+Une **publication** Windows depuis `master` impose désormais trois preuves supplémentaires sur le
+candidat exact :
+
+1. un run manuel `Native client certification record` réussi sur le même SHA, avec Claude Code,
+   Claude Desktop et Codex tous en `PASS_NATIVE`, `nativeToolInvocationObserved: true` et égalité du
+   `sectionId` entre `search_docs` et `read_doc_section` ;
+2. une signature Authenticode valide et horodatée du setup Windows, produite à partir des secrets de
+   certificat configurés dans GitHub Actions ;
+3. une attestation GitHub de provenance pour les artefacts publiables, revérifiée dans le job de
+   publication avant `gh release create`.
+
+`validate_only` peut toujours qualifier techniquement un candidat sans ces secrets/preuves, mais ne
+publie rien. Aucun smoke, `mcp list`, état `connected` ou client STDIO de référence ne peut être
+promu automatiquement en certification native.
 
 Les tests ne doivent pas être affaiblis pour faire passer la CI. Les seuils de couverture, contrôles
 supply-chain, audits npm, suites security/resilience/integration et exact-head gates font partie de la

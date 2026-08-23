@@ -6,6 +6,15 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
+      // These executable process entrypoints are exercised through real subprocess/STDIO tests.
+      // Vitest's in-process V8 collector does not merge child-process coverage, so including them
+      // would report synthetic 0% coverage despite their dedicated end-to-end contracts.
+      exclude: [
+        'src/bootstrap/main.ts',
+        'src/cli/catalog.ts',
+        'src/cli/catalog-maintain.ts',
+        'src/cli/catalog-reranked-search.ts',
+      ],
       reporter: ['text', 'json-summary', 'html', 'lcov'],
       reportsDirectory: 'coverage',
       thresholds: {

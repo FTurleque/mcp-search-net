@@ -19,6 +19,7 @@ import type {
 } from '../../domain/models/catalog.js';
 
 export const MAX_CATALOG_PAGE_SIZE = 50;
+export const MAX_CATALOG_PAGE_OFFSET = 1_000_000;
 
 export interface CatalogPageQuery {
   readonly offset: number;

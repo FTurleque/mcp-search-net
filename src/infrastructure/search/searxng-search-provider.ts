@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 
 import type {
+  SearchDomainConstraint,
   SearchProvider,
   SearchProviderRequest,
   SearchProviderResponse,
@@ -24,6 +25,7 @@ import { fetchJson } from '../http/http-utils.js';
 
 const MAX_PROVIDER_SNIPPET_CHARACTERS = 4_096;
 const MAX_PROVIDER_ENGINES = 32;
+const MAX_DOMAIN_CONSTRAINTS = 32;
 
 const resultSchema = z
   .object({
@@ -66,7 +68,10 @@ export class SearxngSearchProvider implements SearchProvider {
         ? providerDeadline
         : Math.min(providerDeadline, request.deadlineMs);
     const endpoint = new URL('/search', ensureTrailingSlash(this.baseUrl));
-    endpoint.searchParams.set('q', request.query.value);
+    endpoint.searchParams.set(
+      'q',
+      withDomainConstraints(request.query.value, request.domainConstraints ?? []),
+    );
     endpoint.searchParams.set('format', 'json');
     endpoint.searchParams.set('categories', 'general');
     endpoint.searchParams.set('safesearch', '1');
@@ -147,6 +152,72 @@ export class SearxngSearchProvider implements SearchProvider {
 
 function ensureTrailingSlash(value: string): string {
   return value.endsWith('/') ? value : `${value}/`;
+}
+
+// A single, non-overlapping quantifier over each charset (no nested/alternating groups that
+// could each match the same characters) keeps these linear-time: there is only one way to
+// consume a run of allowed characters, so there is no ambiguous split for the engine to
+// backtrack over.
+const DOMAIN_CHARSET_PATTERN = /^[a-z0-9.-]+$/u;
+const PATH_PREFIX_CHARSET_PATTERN = /^\/[a-z0-9._/-]*$/iu;
+const ALPHANUMERIC_PATTERN = /^[a-z0-9]$/iu;
+
+function isValidDomain(domain: string): boolean {
+  const first = domain[0];
+  const last = domain.at(-1);
+  return (
+    first !== undefined &&
+    last !== undefined &&
+    ALPHANUMERIC_PATTERN.test(first) &&
+    ALPHANUMERIC_PATTERN.test(last) &&
+    DOMAIN_CHARSET_PATTERN.test(domain)
+  );
+}
+
+function isValidPathPrefix(value: string): boolean {
+  if (value.length < 2 || !value.startsWith('/')) return false;
+  const firstSegmentChar = value[1];
+  const last = value.at(-1);
+  return (
+    firstSegmentChar !== undefined &&
+    last !== undefined &&
+    ALPHANUMERIC_PATTERN.test(firstSegmentChar) &&
+    ALPHANUMERIC_PATTERN.test(last) &&
+    PATH_PREFIX_CHARSET_PATTERN.test(value)
+  );
+}
+
+function withDomainConstraints(
+  query: string,
+  constraints: readonly SearchDomainConstraint[],
+): string {
+  const seen = new Set<string>();
+  const scopes: string[] = [];
+  for (const constraint of constraints) {
+    const domain = constraint.domain.trim().toLowerCase().replace(/\.$/u, '');
+    if (!isValidDomain(domain)) continue;
+    const pathPrefix = sanitizePathPrefix(constraint.pathPrefix);
+    const key = pathPrefix === undefined ? domain : `${domain}${pathPrefix}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    scopes.push(pathPrefix === undefined ? `site:${domain}` : `site:${domain}${pathPrefix}`);
+    if (scopes.length >= MAX_DOMAIN_CONSTRAINTS) break;
+  }
+  if (scopes.length === 0) return query;
+  return `${query} (${scopes.join(' OR ')})`;
+}
+
+function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end -= 1;
+  return value.slice(0, end);
+}
+
+function sanitizePathPrefix(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = stripTrailingSlashes(value.trim());
+  if (trimmed === '' || !isValidPathPrefix(trimmed)) return undefined;
+  return trimmed;
 }
 
 function decodeSnippet(value: string): string {

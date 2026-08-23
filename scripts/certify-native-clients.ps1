@@ -330,11 +330,16 @@ if ($SmokeMode) {
     exit 0
 }
 
+$buildManifest = Read-JsonSafe (Join-Path $InstallRoot 'BUILD-MANIFEST.json')
 $profilePath = Resolve-CertificationWindowsProfilePath
 $report = [PSCustomObject][ordered]@{
     schemaVersion = '1.0'
     generatedAt = [datetime]::UtcNow.ToString('o')
     serverName = $ServerName
+    serverVersion = if (Get-PropertyExists $buildManifest 'version') { [string]$buildManifest.version } else { 'UNAVAILABLE' }
+    sourceRevision = if (Get-PropertyExists $buildManifest 'sourceRevision') { [string]$buildManifest.sourceRevision } else { 'UNAVAILABLE' }
+    sourceState = if (Get-PropertyExists $buildManifest 'sourceState') { [string]$buildManifest.sourceState } else { 'UNAVAILABLE' }
+    nodeVersion = if (Get-PropertyExists $buildManifest 'nodeVersion') { [string]$buildManifest.nodeVersion } else { 'UNAVAILABLE' }
     installRoot = (Normalize-PathForReport $InstallRoot)
     certificationScope = $CertificationClients
     excludedClients = $ExcludedCertificationClients

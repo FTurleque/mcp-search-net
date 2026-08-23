@@ -32,6 +32,9 @@ interface ToolResponse<T> {
 }
 ```
 
+`list_search_history` n'est enregistré dans le serveur MCP que lorsque `history.exposeTool: true` est
+explicitement configuré. Les profils de production Windows et Docker le désactivent par défaut.
+
 `durationMs` est mesuré avec une horloge monotone. Le même `requestId` relie la réponse, les avertissements et les événements structurés écrits sur `stderr`.
 
 `cacheStatus` vaut `HIT` pour une entrée fraîche ou revalidée en HTTP 304, `MISS` après appel
@@ -39,8 +42,8 @@ fournisseur, `STALE_FALLBACK` lorsqu'une entrée expirée remplace une panne tra
 réseau, HTTP 408/425/429 ou 5xx), et `DISABLED` lorsque le cache est désactivé ou que le mode
 dégradé poursuit après une panne SQLite. Un HTTP permanent comme 400, 401, 403, 404 ou 410 ne
 déclenche pas de stale fallback. Pour `search_docs`, le provider est `catalog` et le cache
-applicatif V1 est désactivé. Pour `list_search_history`, le provider est `history` et
-`cacheStatus` vaut toujours `DISABLED`.
+applicatif V1 est désactivé. Pour `list_search_history`, lorsqu'il est exposé, le provider est
+`history` et `cacheStatus` vaut toujours `DISABLED`.
 
 Le champ textuel MCP est volontairement compact. Il ne doit pas recopier tout `structuredContent` afin de limiter la consommation de contexte dans Copilot.
 
@@ -65,17 +68,25 @@ Entrées :
 | `maxResults`      | `5`      | de 1 à 10                                               |
 
 Les domaines sont comparés par frontière DNS : `docs.example.com` correspond à `example.com`,
-contrairement à `example.com.attacker.test`. `allowedDomains` filtre les résultats mais ne rend
-jamais un domaine officiel ; seul le registre `official-sources.yml`, pour une URL résultat HTTPS,
-peut produire `VERIFIED_OFFICIAL`.
+contrairement à `example.com.attacker.test`. `allowedDomains` ne rend jamais un domaine officiel ;
+seul le registre `official-sources.yml`, pour une URL résultat HTTPS, peut produire
+`VERIFIED_OFFICIAL`.
 
 Politiques :
 
-- `strict` conserve uniquement les sources `VERIFIED_OFFICIAL` ; une liste vide reste un succès accompagné de `NO_VERIFIED_OFFICIAL_SOURCE` ;
-- `prefer` classe les sources officielles en premier et signale l'inclusion de sources non vérifiées ;
+- `strict` découvre en deux passes hiérarchisées plutôt qu'en une seule requête mélangeant tout le
+  registre : une première passe ciblée interroge uniquement les sources dont les mots-clés
+  correspondent à la requête (`allowedDomains`/`excludedDomains` appliqués), en scopant les
+  sources GitHub avec organisation/chemin (`site:github.com/<org>/<repo>`) plutôt qu'un simple
+  `site:github.com` qui noierait le dépôt officiel parmi des résultats non officiels ; une seconde
+  passe de repli n'interroge le reste du registre officiel que si la première n'a produit aucun
+  résultat officiel vérifié ; les résultats des deux passes sont fusionnés et dédupliqués avant de
+  ne conserver que les résultats `VERIFIED_OFFICIAL` ; une liste vide reste un succès accompagné de
+  `NO_VERIFIED_OFFICIAL_SOURCE` ; le budget de délai global reste partagé entre toutes les passes ;
+- `prefer` utilise la recherche générale, classe les sources officielles en premier et signale l'inclusion de sources non vérifiées ;
 - `any` ne filtre aucun statut, tout en conservant les filtres de domaines et le classement local.
 
-Chaque résultat contient `title`, `url`, `domain`, `snippet`, `sourceStatus`, `score`, les moteurs et, uniquement lorsqu'elles existent, les dates et la langue détectée. Les statuts possibles sont `VERIFIED_OFFICIAL`, `LIKELY_OFFICIAL`, `THIRD_PARTY` et `UNKNOWN`. La métadonnée de données expose aussi `sourceProvider: searxng` et le vrai instant `retrievedAt`; une réponse de cache conserve l'instant de récupération initial.
+Chaque résultat contient `title`, `url`, `domain`, `snippet`, `sourceStatus`, `score`, les moteurs et, uniquement lorsqu'elles existent, les dates et la langue détectée. Les statuts possibles sont `VERIFIED_OFFICIAL`, `UNVERIFIED_DOCUMENTATION`, `THIRD_PARTY` et `UNKNOWN`. `UNVERIFIED_DOCUMENTATION` signifie uniquement que la forme de l'URL ressemble à une documentation ; ce statut ne constitue jamais une preuve d'officialité. La métadonnée de données expose aussi `sourceProvider: searxng` et le vrai instant `retrievedAt`; une réponse de cache conserve l'instant de récupération initial.
 
 Les URL sont normalisées avant déduplication : fragment et paramètres de suivi connus supprimés, port implicite et slash final harmonisés, paramètres fonctionnels conservés et triés. `search_web` ne télécharge jamais les pages trouvées.
 
@@ -84,10 +95,10 @@ Les URL sont normalisées avant déduplication : fragment et paramètres de suiv
 Le score est borné entre 0 et 1. Il combine :
 
 - un signal borné issu du score SearXNG ;
-- un bonus fort pour une source vérifiée, plus faible pour une source probablement officielle ;
+- un bonus fort uniquement pour une source `VERIFIED_OFFICIAL` ;
 - un malus pour les plateformes tierces reconnues ;
 - la correspondance des termes dans le titre et l'URL ;
-- un bonus d'URL documentaire et un petit bonus de priorité du registre.
+- un faible bonus de pertinence pour une URL de forme documentaire, sans bonus de confiance, et un petit bonus de priorité du registre pour une source vérifiée.
 
 Les égalités sont départagées par titre puis URL, sans dépendre de l'ordre du fournisseur. Ce score sert uniquement au classement local : **il ne constitue pas une probabilité de vérité**.
 
@@ -105,7 +116,7 @@ Entrées :
 | `maxSections`   | `5`      | de 1 à 10                                                   |
 | `renderMode`    | `static` | `static` ou `auto`                                          |
 
-La sortie contient `requestedUrl`, `finalUrl`, `canonicalUrl`, `domain`, `contentType`, `sourceStatus`, `fetchedAt`, `extractionMode`, `truncated`, `sectionCount`, `sections`, le Markdown assemblé et les liens publics validés. L'enveloppe identifie le provider effectif. Chaque section expose son titre, son Markdown, son score local et son état de troncature.
+La sortie contient `requestedUrl`, `finalUrl`, `canonicalUrl`, `domain`, `contentType`, `sourceStatus`, `fetchedAt`, `extractionMode`, `truncated`, `sectionCount`, `sections`, le Markdown assemblé et les liens publics validés. L'enveloppe identifie le provider effectif. Chaque section expose son titre, son Markdown, son score local et son état de troncature. Une URL de documentation qui n'appartient pas au registre officiel est étiquetée `UNVERIFIED_DOCUMENTATION` et déclenche toujours `UNVERIFIED_SOURCE`.
 
 Le sélecteur local utilise une pertinence lexicale déterministe bornée entre 0 et 1, renforce les correspondances dans les titres, les blocs de code et les versions demandées, limite chaque section à 5 000 caractères, puis applique les budgets globaux. Une requête sans correspondance renvoie une liste vide et `NO_RELEVANT_SECTION`, jamais les premières sections arbitraires.
 
@@ -169,12 +180,13 @@ exécutés en SQL avec un ordre stable par identifiant.
 | `language`  | absent | langue optionnelle                                          |
 | `status`    | absent | `ACTIVE`, `STALE`, `REDIRECTED`, `REMOVED` ou `UNAVAILABLE` |
 | `limit`     | `20`   | de 1 à 50                                                   |
-| `offset`    | `0`    | entier positif ou nul                                       |
+| `offset`    | `0`    | entier de 0 à 1 000 000                                     |
 
 La sortie expose `count`, `total`, `offset`, `limit`, `nextOffset`, `truncated` et une liste de
 documents compacts. Le champ `data` sérialisé est limité à 20 000 caractères, indépendamment de
 `limit`. Si ce budget coupe une page, `nextOffset` reprend exactement au premier document non
-retourné ; aucun identifiant, titre ou URL n'est tronqué silencieusement.
+retourné ; aucun identifiant, titre ou URL n'est tronqué silencieusement. Les offsets supérieurs à
+1 000 000 sont rejetés avant préparation/exécution SQL afin d'éviter les scans `OFFSET` pathologiques.
 
 ## `read_doc_section`
 
@@ -184,9 +196,20 @@ signale explicitement `found` et `truncated`.
 
 ## `list_search_history`
 
-Liste l’historique local persistant des appels validés à `search_web` et `search_docs`. L’outil est
-read-only, idempotent, closed-world et n’effectue aucun appel Web. Il consulte uniquement
-`history.sqlite` via le port applicatif dédié.
+L'outil est **opt-in**. Il n'est enregistré que lorsque `history.exposeTool: true`. Les profils de
+production Windows et Docker utilisent par défaut `history.enabled: false` et
+`history.exposeTool: false`; aucune recherche n'y est donc persistée ni exposée tant que
+l'utilisateur ne l'active pas explicitement. Une configuration qui omet entièrement la section
+`history:` hérite de `enabled: false` et `exposeTool: false` (défaut du schéma), sans supprimer un
+éventuel fichier `history.sqlite` existant. Une mise à jour Windows d'une installation antérieure à
+ce changement de défaut migre `history.enabled: true` vers `false` lorsque ce champ n'a jamais été
+modifié explicitement par l'utilisateur (fichier identique au `.default` précédemment livré, ou
+absence de tout `.default` de référence) ; une valeur détectée comme explicitement choisie par
+l'utilisateur est préservée telle quelle.
+
+Lorsqu'il est activé, `list_search_history` liste l’historique local persistant des appels validés à
+`search_web` et `search_docs`. L’outil est read-only, idempotent, closed-world et n’effectue aucun
+appel Web. Il consulte uniquement `history.sqlite` via le port applicatif dédié.
 
 Entrées :
 
@@ -218,11 +241,11 @@ secrets dans `request`, `executedAt`, `durationMs`, `status`, `cacheStatus`, `pr
 
 Deux appels strictement identiques restent deux occurrences distinctes. L’historique est séparé du
 cache : expiration ou éviction de `search_cache` ne supprime pas l’occurrence enregistrée. Une
-panne d’écriture d’historique n’échoue jamais la recherche principale. Si l’historique est désactivé
-ou indisponible, l’outil retourne une réponse bornée explicite avec respectivement
-`HISTORY_DISABLED` ou `HISTORY_UNAVAILABLE`.
+panne d’écriture d’historique n’échoue jamais la recherche principale. Si l’historique est activé
+mais indisponible, l’outil retourne une réponse bornée explicite avec `HISTORY_UNAVAILABLE`; si le
+stockage est volontairement désactivé tout en laissant l'outil exposé, il renvoie `HISTORY_DISABLED`.
 
-Exemple :
+Exemple avec stockage et exposition explicitement activés :
 
 ```text
 list_search_history success: 2/42 entrie(s)
@@ -236,8 +259,12 @@ enabled=true available=true nextBeforeId=103
 ## Resources MCP V2 et budget contexte
 
 Les resources V2 sont read-only. Les collections de sources, documents, versions et sections
-retournent 20 éléments au maximum et fournissent `nextOffset` et `nextUri`. Les templates paginés
-sont :
+retournent 20 éléments au maximum et fournissent `nextOffset` et `nextUri`. Les offsets de page
+sont bornés à 1 000 000 pour les quatre collections (sources incluse), via une constante unique
+partagée entre le parsing des URI de resources et les repositories SQLite ; un offset hors bornes
+est rejeté avant préparation SQL. Côté outil MCP (`list_docs`), le même plafond est en plus imposé
+au niveau du schéma Zod, ce qui garantit un code d'erreur public stable `INVALID_ARGUMENT` plutôt
+qu'une erreur interne générique. Les templates paginés sont :
 
 ```text
 mcp-search-net://sources/page/{offset}

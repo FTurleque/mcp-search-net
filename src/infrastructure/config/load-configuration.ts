@@ -11,6 +11,7 @@ import {
 import type { ApplicationConfig, ApplicationEnvironment } from './application-config.js';
 import { loadYaml } from './yaml-loader.js';
 import { OfficialSourceYamlRegistry } from './official-source-yaml-registry.js';
+import { isSafeProviderEndpoint } from './provider-endpoint-policy.js';
 import { ConfigurationError } from '../../domain/errors/domain-errors.js';
 
 const KNOWN_DEVELOPMENT_TOKEN_HASHES = new Set([
@@ -58,6 +59,7 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
     tokenFromEnvironment ??
     application.crawl4ai.apiToken;
   assertSafeSecretProfile(application.application.profile, crawl4aiApiToken);
+  assertSafeProviderTransport(application.crawl4ai.baseUrl, crawl4aiApiToken);
 
   return {
     application: {
@@ -210,6 +212,15 @@ function assertSafeSecretProfile(
       `A known development Crawl4AI token is forbidden in the ${profile} profile`,
     );
   }
+}
+
+function assertSafeProviderTransport(crawl4aiBaseUrl: string, token: string | undefined): void {
+  if (token === undefined) return;
+  if (isSafeProviderEndpoint(crawl4aiBaseUrl)) return;
+  throw new ConfigurationError(
+    'A Crawl4AI API token is configured but crawl4ai.baseUrl is a non-local HTTP endpoint; ' +
+      'this would send the token in plaintext to a remote host. Use HTTPS or a local/internal endpoint.',
+  );
 }
 
 function hashSecret(value: string): string {

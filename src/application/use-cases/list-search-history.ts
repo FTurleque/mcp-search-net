@@ -45,7 +45,10 @@ export interface ListSearchHistoryOutput {
 }
 
 export class ListSearchHistory {
-  public constructor(private readonly repository: SearchHistoryRepository) {}
+  public constructor(
+    private readonly repository: SearchHistoryRepository,
+    public readonly exposed = true,
+  ) {}
 
   public async execute(input: ListSearchHistoryInput): Promise<ListSearchHistoryOutput> {
     const page = await this.repository.list(toListQuery(input));

@@ -1,0 +1,251 @@
+name: Native client certification record
+
+on:
+  workflow_dispatch:
+    inputs:
+      claude_code_evidence:
+        description: 'JSON: schemaVersion/client/clientVersion/os/serverVersion/sourceRevision/sourceState/nodeVersion/searchRequestId/readRequestId/searchSectionId/readSectionId/sectionFound/truncated/characterCount/nativeToolInvocationObserved/observedAt/verdict'
+        required: true
+        type: string
+      claude_desktop_evidence:
+        description: 'JSON evidence for Claude Desktop with the same fields'
+        required: true
+        type: string
+      codex_evidence:
+        description: 'JSON evidence for Codex with the same fields'
+        required: true
+        type: string
+      collector_report_json:
+        description: 'Full JSON content of the local certify-native-clients.ps1 collector report (the actual bytes, not a caller-declared hash)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-client-certification-record-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: Record exact-head native certification
+    if: github.ref == 'refs/heads/master'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact certified head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate and materialize native evidence
+        shell: pwsh
+        env:
+          CLAUDE_CODE_EVIDENCE: ${{ inputs.claude_code_evidence }}
+          CLAUDE_DESKTOP_EVIDENCE: ${{ inputs.claude_desktop_evidence }}
+          CODEX_EVIDENCE: ${{ inputs.codex_evidence }}
+          COLLECTOR_REPORT_JSON: ${{ inputs.collector_report_json }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA) {
+            throw "Certification checkout mismatch: $(git rev-parse HEAD) != $env:GITHUB_SHA"
+          }
+
+          function Test-PropertyPresent($Object, [string] $Name) {
+            return $null -ne $Object -and (@($Object.PSObject.Properties.Name) -contains $Name)
+          }
+
+          function Read-NativeEvidence([string] $Raw, [string] $ExpectedClient) {
+            if ([string]::IsNullOrWhiteSpace($Raw)) {
+              throw "Invalid JSON evidence for $ExpectedClient : evidence input is empty"
+            }
+            try { $evidence = $Raw | ConvertFrom-Json }
+            catch { throw "Invalid JSON evidence for $ExpectedClient : $($_.Exception.Message)" }
+            if ($null -eq $evidence) {
+              throw "Invalid JSON evidence for $ExpectedClient : evidence parsed to null"
+            }
+
+            if ([string]$evidence.schemaVersion -ne '1.0') {
+              throw "Unexpected schemaVersion for $ExpectedClient : $($evidence.schemaVersion)"
+            }
+            if ([string]$evidence.client -ne $ExpectedClient) {
+              throw "Unexpected client name for $ExpectedClient : $($evidence.client)"
+            }
+            foreach ($field in @('clientVersion', 'os', 'serverVersion', 'nodeVersion', 'searchRequestId', 'readRequestId', 'observedAt')) {
+              if (-not (Test-PropertyPresent $evidence $field) -or [string]::IsNullOrWhiteSpace([string]$evidence.$field)) {
+                throw "Missing or empty $field for $ExpectedClient"
+              }
+            }
+            if ([string]$evidence.sourceState -ne 'CLEAN') {
+              throw "sourceState must be CLEAN for $ExpectedClient : $($evidence.sourceState)"
+            }
+
+            $sourceRevision = [string]$evidence.sourceRevision
+            if ($sourceRevision -notmatch '^[a-fA-F0-9]{40}$') {
+              throw "Invalid sourceRevision for $ExpectedClient : $sourceRevision"
+            }
+            if ($sourceRevision.ToLowerInvariant() -ne $env:GITHUB_SHA.ToLowerInvariant()) {
+              throw "sourceRevision for $ExpectedClient ($sourceRevision) does not match the certified head ($env:GITHUB_SHA)"
+            }
+
+            if ([string]::IsNullOrWhiteSpace([string]$evidence.searchRequestId) -or [string]::IsNullOrWhiteSpace([string]$evidence.readRequestId)) {
+              throw "Missing requestId for $ExpectedClient"
+            }
+            if ([string]$evidence.searchRequestId -eq [string]$evidence.readRequestId) {
+              throw "searchRequestId and readRequestId must differ for $ExpectedClient"
+            }
+
+            $searchSectionId = 0
+            $readSectionId = 0
+            if (-not [int]::TryParse([string]$evidence.searchSectionId, [ref]$searchSectionId) -or $searchSectionId -le 0) {
+              throw "Invalid searchSectionId for $ExpectedClient"
+            }
+            if (-not [int]::TryParse([string]$evidence.readSectionId, [ref]$readSectionId) -or $readSectionId -le 0) {
+              throw "Invalid readSectionId for $ExpectedClient"
+            }
+            if ($searchSectionId -ne $readSectionId) {
+              throw "sectionId mismatch for $ExpectedClient : search=$searchSectionId read=$readSectionId"
+            }
+
+            if (-not (Test-PropertyPresent $evidence 'sectionFound') -or [bool]$evidence.sectionFound -ne $true) {
+              throw "sectionFound must be true for $ExpectedClient"
+            }
+            if (-not (Test-PropertyPresent $evidence 'truncated')) {
+              throw "Missing truncated for $ExpectedClient"
+            }
+            $characterCount = -1
+            if (-not (Test-PropertyPresent $evidence 'characterCount') -or -not [int]::TryParse([string]$evidence.characterCount, [ref]$characterCount) -or $characterCount -lt 0) {
+              throw "Invalid characterCount for $ExpectedClient"
+            }
+            # Some PowerShell engines' ConvertFrom-Json (PowerShell 7, used by this workflow's
+            # `shell: pwsh`) silently coerce an ISO-8601-looking JSON string into a real
+            # [DateTime]; re-stringifying it then re-parsing it is culture-dependent and can
+            # fail on non-US hosts (observed: fr-FR formats as dd/MM/yyyy, which a
+            # culture-default TryParse of the US-formatted round-trip string then rejects).
+            # Accept an already-coerced [DateTime] directly, and parse a plain string with the
+            # invariant culture so this does not depend on the runner's locale.
+            $observedAtIsValid = $false
+            if ($evidence.observedAt -is [datetime]) {
+              $observedAtIsValid = $true
+            } else {
+              $observedAtParsed = [datetime]::MinValue
+              $observedAtIsValid = [datetime]::TryParse(
+                [string]$evidence.observedAt,
+                [System.Globalization.CultureInfo]::InvariantCulture,
+                [System.Globalization.DateTimeStyles]::RoundtripKind,
+                [ref]$observedAtParsed
+              )
+            }
+            if (-not $observedAtIsValid) {
+              throw "Invalid observedAt for $ExpectedClient"
+            }
+            $observedAtCanonical = if ($evidence.observedAt -is [datetime]) {
+              $evidence.observedAt.ToUniversalTime().ToString('o')
+            } else {
+              [string]$evidence.observedAt
+            }
+            if ([bool]$evidence.nativeToolInvocationObserved -ne $true) {
+              throw "Native tool invocation was not observed for $ExpectedClient"
+            }
+            if ([string]$evidence.verdict -ne 'PASS_NATIVE') {
+              throw "Native verdict must be PASS_NATIVE for $ExpectedClient"
+            }
+
+            return [ordered]@{
+              schemaVersion = '1.0'
+              client = $ExpectedClient
+              clientVersion = [string]$evidence.clientVersion
+              os = [string]$evidence.os
+              serverVersion = [string]$evidence.serverVersion
+              sourceRevision = $sourceRevision.ToLowerInvariant()
+              sourceState = 'CLEAN'
+              nodeVersion = [string]$evidence.nodeVersion
+              searchRequestId = [string]$evidence.searchRequestId
+              readRequestId = [string]$evidence.readRequestId
+              searchSectionId = $searchSectionId
+              readSectionId = $readSectionId
+              sectionFound = $true
+              truncated = [bool]$evidence.truncated
+              characterCount = $characterCount
+              nativeToolInvocationObserved = $true
+              observedAt = $observedAtCanonical
+              verdict = 'PASS_NATIVE'
+            }
+          }
+
+          $clients = @(
+            (Read-NativeEvidence $env:CLAUDE_CODE_EVIDENCE 'Claude Code'),
+            (Read-NativeEvidence $env:CLAUDE_DESKTOP_EVIDENCE 'Claude Desktop'),
+            (Read-NativeEvidence $env:CODEX_EVIDENCE 'Codex')
+          )
+
+          $expectedClientNames = @('Claude Code', 'Claude Desktop', 'Codex')
+          if (@($clients).Count -ne 3) {
+            throw "Native certification requires exactly 3 client records, got $(@($clients).Count)"
+          }
+          $actualClientNames = @($clients | ForEach-Object { [string]$_.client })
+          if (@($actualClientNames | Sort-Object -Unique).Count -ne 3) {
+            throw "Native certification requires 3 distinct clients, got: $($actualClientNames -join ', ')"
+          }
+          foreach ($name in $expectedClientNames) {
+            if ($actualClientNames -notcontains $name) {
+              throw "Native certification is missing required client: $name"
+            }
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:COLLECTOR_REPORT_JSON)) {
+            throw 'collector_report_json is required.'
+          }
+          try { $collectorReport = $env:COLLECTOR_REPORT_JSON | ConvertFrom-Json }
+          catch { throw "Invalid collector report JSON: $($_.Exception.Message)" }
+          foreach ($field in @('schemaVersion', 'serverName', 'serverVersion', 'sourceRevision', 'generatedAt')) {
+            if (-not (Test-PropertyPresent $collectorReport $field) -or [string]::IsNullOrWhiteSpace([string]$collectorReport.$field)) {
+              throw "Collector report is missing required field: $field"
+            }
+          }
+          if ([string]$collectorReport.serverName -ne 'mcp-search-net') {
+            throw "Collector report has an unexpected serverName: $($collectorReport.serverName)"
+          }
+          $collectorSourceRevision = [string]$collectorReport.sourceRevision
+          if ($collectorSourceRevision.ToLowerInvariant() -ne $env:GITHUB_SHA.ToLowerInvariant()) {
+            throw "Collector report sourceRevision ($collectorSourceRevision) does not match the certified head ($env:GITHUB_SHA)"
+          }
+
+          # The collector report's SHA-256 is always recomputed here from the actual bytes we
+          # just validated; a caller-declared hash is never trusted, closing AUD-01 (a bare
+          # `collector_report_sha256=<64 hex chars>` string used to be accepted with no way to
+          # verify it corresponded to any real bytes at all).
+          $collectorReportSha256 = [System.BitConverter]::ToString(
+            [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+              [System.Text.Encoding]::UTF8.GetBytes($env:COLLECTOR_REPORT_JSON)
+            )
+          ).Replace('-', '').ToLowerInvariant()
+
+          $report = [ordered]@{
+            schemaVersion = '1.0'
+            sourceRevision = $env:GITHUB_SHA
+            repository = $env:GITHUB_REPOSITORY
+            recordedBy = $env:GITHUB_ACTOR
+            recordedAt = [datetime]::UtcNow.ToString('o')
+            collectorReportSha256 = $collectorReportSha256
+            clients = $clients
+            verdict = 'PASS_NATIVE_3_OF_3'
+          }
+          $output = Join-Path $env:RUNNER_TEMP 'native-client-certification'
+          New-Item -ItemType Directory -Force -Path $output | Out-Null
+          $path = Join-Path $output 'native-client-certification.json'
+          $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding utf8
+          "NATIVE_CERTIFICATION_PATH=$path" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "NATIVE_CLIENT_CERTIFICATION_RECORDED sha=$env:GITHUB_SHA clients=3 verdict=PASS_NATIVE_3_OF_3 collectorReportSha256=$collectorReportSha256"
+
+      - name: Upload exact-head certification evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-client-certification-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 90
+          path: ${{ env.NATIVE_CERTIFICATION_PATH }}

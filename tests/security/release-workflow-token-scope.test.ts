@@ -39,9 +39,12 @@ describe('Windows release workflow token scope', () => {
 
     expect(qualifyJob).toContain('publish-windows-release.ps1');
     expect(qualifyJob).toContain('-ValidateOnly');
-    expect(tokenAssignments).toHaveLength(2);
+    expect(tokenAssignments).toHaveLength(3);
     expect(releaseWorkflow).toMatch(
       /- name: Vérifier la CI exact-head avant publication[\s\S]*?env:\s*\n\s*GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*?gh api/u,
+    );
+    expect(releaseWorkflow).toMatch(
+      /- name: Vérifier la certification native 3\/3 exact-head[\s\S]*?env:\s*\n\s*GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*?assert-native-client-certification\.ps1/u,
     );
     expect(publishJob).toMatch(
       /- name: Publier uniquement les artefacts déjà qualifiés[\s\S]*?env:\s*\n\s*GH_TOKEN: \$\{\{ github\.token \}\}[\s\S]*?gh run download/u,
