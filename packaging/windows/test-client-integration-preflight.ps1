@@ -73,9 +73,7 @@ try {
 
     $fakeBin = Join-Path $Root 'bin'
     $copilotCmd = Join-Path $fakeBin 'copilot.cmd'
-    New-FakeExecutable $copilotCmd '@echo off
-exit /b 0
-'
+    New-FakeExecutable $copilotCmd "@echo off`r`nexit /b 0`r`n"
     $env:PATH = $fakeBin + ';' + $OriginalPath
 
     $missing = Invoke-Detect 'missing'
