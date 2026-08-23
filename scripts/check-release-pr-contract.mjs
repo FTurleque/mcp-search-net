@@ -7,15 +7,12 @@ const body = process.env.RELEASE_PR_BODY ?? githubEvent?.pull_request?.body ?? '
 const headSha = (process.env.RELEASE_PR_HEAD_SHA ?? githubEvent?.pull_request?.head?.sha ?? '')
   .trim()
   .toLowerCase();
-const sourceBranch =
-  process.env.RELEASE_PR_HEAD_REF ?? githubEvent?.pull_request?.head?.ref ?? '';
-const targetBranch =
-  process.env.RELEASE_PR_BASE_REF ?? githubEvent?.pull_request?.base?.ref ?? '';
+const sourceBranch = process.env.RELEASE_PR_HEAD_REF ?? githubEvent?.pull_request?.head?.ref ?? '';
+const targetBranch = process.env.RELEASE_PR_BASE_REF ?? githubEvent?.pull_request?.base?.ref ?? '';
 const verifyTopology = process.env.RELEASE_PR_VERIFY_TOPOLOGY === '1';
 const POLICY_MARKER = '<!-- release-qualification-source: github-checks-current-head -->';
 const COMMIT_SHA_PATTERN = /\b[a-f0-9]{40}\b/giu;
-const PROMOTION_BRANCH_PATTERN =
-  /^release\/promote-develop-\d{8}-\d{6}(?:-[a-z0-9][a-z0-9-]*)?$/u;
+const PROMOTION_BRANCH_PATTERN = /^release\/promote-develop-\d{8}-\d{6}(?:-[a-z0-9][a-z0-9-]*)?$/u;
 
 if (targetBranch !== 'master') {
   writeStatus('RELEASE_PR_CONTRACT_NOT_APPLICABLE', { sourceBranch, targetBranch });
@@ -103,9 +100,7 @@ function verifyPromotionTopology(expectedHeadSha) {
 function gitOutput(args) {
   const result = spawnSync('git', args, { encoding: 'utf8' });
   if (result.status !== 0) {
-    throw new Error(
-      `RELEASE_PR_GIT_COMMAND_FAILED:${args.join(' ')}:${String(result.stderr).trim()}`,
-    );
+    throw new Error(`RELEASE_PR_GIT_COMMAND_FAILED:${args.join(' ')}:${String(result.stderr).trim()}`);
   }
   return String(result.stdout).trim();
 }
