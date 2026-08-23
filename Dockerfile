@@ -13,7 +13,7 @@ FROM node@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452
 ARG SOURCE_REVISION=UNAVAILABLE
 LABEL org.opencontainers.image.title="mcp-search-net" \
       org.opencontainers.image.description="Local MCP Web search and documentation catalog server with bounded local cache/history persistence" \
-      org.opencontainers.image.version="1.1.4" \
+      org.opencontainers.image.version="1.1.5" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.licenses="LicenseRef-mcp-search-net-Proprietary"
 ENV NODE_ENV=production

@@ -48,6 +48,12 @@ describe('native client certification wiring', () => {
     expect(validator).toContain('$managedEnvUses = $managedEnvDirectUses + $managedEnvSharedUses');
   });
 
+  it('defaults the collector InstallRoot to the real installer destination', () => {
+    expect(collector).not.toContain("(Join-Path $env:LOCALAPPDATA 'mcp-search-net')");
+    expect(collector).toContain("Join-Path $env:LOCALAPPDATA 'Programs\\mcp-search-net'");
+    expect(collector).toContain('if ($env:MCP_SEARCH_HOME)');
+  });
+
   it('reuses the same validator in the master promotion smoke workflow', () => {
     expect(workflow).toContain('scripts/validate-native-client-certification-wiring.ps1');
     expect(workflow).toContain('run: .\\scripts\\validate-native-client-certification-wiring.ps1');

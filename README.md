@@ -20,7 +20,7 @@ read-only `list_search_history` sont disponibles en **opt-in** ; les profils de 
 et Docker les désactivent par défaut. Le serveur n’embarque aucun LLM et ne requiert aucune API
 commerciale.
 
-La version de code courante est `1.1.4`. Une release n’est considérée qualifiée que si les checks
+La version de code courante est `1.1.5`. Une release n’est considérée qualifiée que si les checks
 sont attachés au SHA exact du candidat. Une publication Windows exige en plus une certification
 native 3/3 liée au SHA exact de `master`, une signature Authenticode valide du setup et une
 attestation GitHub de provenance. L’état courant autoritatif est décrit dans
