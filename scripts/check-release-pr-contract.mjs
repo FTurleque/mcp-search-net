@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
@@ -8,14 +9,18 @@ const headSha = (process.env.RELEASE_PR_HEAD_SHA ?? githubEvent?.pull_request?.h
   .toLowerCase();
 const sourceBranch = process.env.RELEASE_PR_HEAD_REF ?? githubEvent?.pull_request?.head?.ref ?? '';
 const targetBranch = process.env.RELEASE_PR_BASE_REF ?? githubEvent?.pull_request?.base?.ref ?? '';
+const verifyTopology = process.env.RELEASE_PR_VERIFY_TOPOLOGY === '1';
 const POLICY_MARKER = '<!-- release-qualification-source: github-checks-current-head -->';
 const COMMIT_SHA_PATTERN = /\b[a-f0-9]{40}\b/giu;
+const PROMOTION_BRANCH_PATTERN =
+  /^release\/promote-develop-\d{8}-\d{6}(?:-[a-z0-9][a-z0-9-]*)?$/u;
 
-if (sourceBranch !== 'develop' || targetBranch !== 'master') {
+if (targetBranch !== 'master') {
   writeStatus('RELEASE_PR_CONTRACT_NOT_APPLICABLE', { sourceBranch, targetBranch });
   process.exit(0);
 }
 
+assert(PROMOTION_BRANCH_PATTERN.test(sourceBranch), 'RELEASE_PR_SOURCE_BRANCH_INVALID');
 assert(/^[a-f0-9]{40}$/u.test(headSha), 'RELEASE_PR_HEAD_SHA_INVALID');
 assert(body.includes(POLICY_MARKER), 'RELEASE_PR_CURRENT_HEAD_POLICY_MARKER_MISSING');
 
@@ -55,7 +60,58 @@ assert(explicitAuthorization, 'RELEASE_PR_MERGE_AUTHORIZATION_RULE_MISSING');
 const exactHeadRule = mergeSection.includes('HEAD exact de la PR');
 assert(exactHeadRule, 'RELEASE_PR_EXACT_HEAD_RULE_MISSING');
 
-writeStatus('RELEASE_PR_CONTRACT_VALID', { headSha, sourceBranch, targetBranch });
+const topology = verifyTopology ? verifyPromotionTopology(headSha) : undefined;
+writeStatus('RELEASE_PR_CONTRACT_VALID', {
+  headSha,
+  sourceBranch,
+  targetBranch,
+  ...(topology === undefined ? {} : topology),
+});
+
+function verifyPromotionTopology(expectedHeadSha) {
+  const actualHeadSha = gitOutput(['rev-parse', 'HEAD']).toLowerCase();
+  assert(actualHeadSha === expectedHeadSha, 'RELEASE_PR_CHECKOUT_HEAD_MISMATCH');
+
+  const developSha = gitOutput(['rev-parse', 'origin/develop']).toLowerCase();
+  const masterSha = gitOutput(['rev-parse', 'origin/master']).toLowerCase();
+  const parentSha = gitOutput(['rev-parse', 'HEAD^']).toLowerCase();
+  const headTree = gitOutput(['rev-parse', 'HEAD^{tree}']).toLowerCase();
+  const developTree = gitOutput(['rev-parse', 'origin/develop^{tree}']).toLowerCase();
+
+  assert(parentSha === developSha, 'RELEASE_PR_HEAD_NOT_DIRECTLY_ON_CURRENT_DEVELOP');
+  assert(headTree === developTree, 'RELEASE_PR_HEAD_TREE_DIFFERS_FROM_DEVELOP');
+  assert(
+    gitSucceeds(['merge-base', '--is-ancestor', 'origin/master', 'origin/develop']),
+    'RELEASE_PR_MASTER_NOT_SYNCED_INTO_DEVELOP',
+  );
+
+  const commitsAboveDevelop = Number.parseInt(
+    gitOutput(['rev-list', '--count', 'origin/develop..HEAD']),
+    10,
+  );
+  assert(commitsAboveDevelop === 1, 'RELEASE_PR_PROMOTION_MARKER_COMMIT_COUNT_INVALID');
+  assert(
+    gitSucceeds(['diff', '--quiet', 'origin/develop', 'HEAD', '--']),
+    'RELEASE_PR_PROMOTION_MARKER_MUST_NOT_CHANGE_CONTENT',
+  );
+
+  return { developSha, masterSha, promotionMarkerCommits: commitsAboveDevelop };
+}
+
+function gitOutput(args) {
+  const result = spawnSync('git', args, { encoding: 'utf8' });
+  if (result.status !== 0) {
+    throw new Error(
+      `RELEASE_PR_GIT_COMMAND_FAILED:${args.join(' ')}:${String(result.stderr).trim()}`,
+    );
+  }
+  return String(result.stdout).trim();
+}
+
+function gitSucceeds(args) {
+  const result = spawnSync('git', args, { encoding: 'utf8' });
+  return result.status === 0;
+}
 
 function readGithubEvent() {
   if (process.env.GITHUB_EVENT_NAME !== 'pull_request') return undefined;
