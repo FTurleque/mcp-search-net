@@ -102,13 +102,14 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
       warningCount: execution.warnings.length,
       ...summarizeData(execution.data),
     });
-    const formattedText = options.formatText(validated);
     const text =
       options.tool === 'read_doc_section'
-        ? `requestId=${validated.requestId} cache=${validated.metadata.cacheStatus}\n${formattedText}`
-        : formattedText;
+        ? formatExternalContentText(
+            `requestId=${validated.requestId} cache=${validated.metadata.cacheStatus}\n${options.formatText(validated)}`,
+          )
+        : formatExternalContentText(options.formatText(validated));
     return {
-      content: [{ type: 'text', text: formatExternalContentText(text) }],
+      content: [{ type: 'text', text }],
       structuredContent: validated as unknown as Record<string, unknown>,
     };
   } catch (error) {
