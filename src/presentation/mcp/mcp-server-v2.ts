@@ -275,6 +275,7 @@ function formatSearchDocsText(response: ToolResponse<SearchDocsData>): string {
     const heading = result.headingPath ?? result.heading ?? result.title;
     lines.push(
       `${index + 1}. ${result.title} — ${heading}`,
+      `   sectionId=${result.sectionId}`,
       `   ${result.url}`,
       `   ${result.snippet}`,
     );
