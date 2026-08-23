@@ -147,9 +147,9 @@ Sortie `data` :
 | `resultCount` | nombre de résultats retournés              |
 | `results`     | sections documentaires classées localement |
 
-Chaque résultat contient `sourceKey`, `sourceName`, `documentPublicId`, `title`, `url`, `language`, `heading`, `headingPath`, `anchor`, `snippet` et `score`.
+Chaque résultat contient `sourceKey`, `sourceName`, `documentPublicId`, `sectionId`, `title`, `url`, `language`, `heading`, `headingPath`, `anchor`, `snippet` et `score`. `sectionId` est l'identifiant à transmettre tel quel à `read_doc_section` pour lire cette section précise.
 
-Le texte MCP de fallback reste compact : nombre de résultats, requestId, cache, puis pour chaque résultat le titre, la section, l'URL et le snippet. Le contenu complet des sections n'est pas renvoyé par `search_docs`.
+Le texte MCP de fallback reste compact : nombre de résultats, requestId, cache, puis pour chaque résultat le titre, la section, le `sectionId`, l'URL et le snippet. Le contenu complet des sections n'est pas renvoyé par `search_docs`. Un client qui n'exploite que le texte (`content[0].text`), sans lire `structuredContent`, peut ainsi tout de même relever `sectionId` et enchaîner avec `read_doc_section` sans donnée externe.
 
 Bonnes pratiques Copilot :
 
@@ -165,6 +165,7 @@ Exemple compact :
 search_docs success: 3 result(s)
 requestId=… cache=DISABLED
 1. Roadmap V2 — V2.4 — Exposition MCP V2
+   sectionId=3
    https://local.mcp-search-net/docs/planning/roadmap-v2-documentaire
    Outil MCP search_docs, resources read-only catalogue/sources/documents/sections…
 ```

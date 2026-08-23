@@ -1,12 +1,20 @@
 [CmdletBinding()]
 param(
-    [string] $InstallRoot = (Join-Path $env:LOCALAPPDATA 'mcp-search-net'),
+    [string] $InstallRoot = '',
     [string] $OutputDirectory = '',
     [switch] $SmokeMode
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if (-not $InstallRoot) {
+    $InstallRoot = if ($env:MCP_SEARCH_HOME) {
+        $env:MCP_SEARCH_HOME
+    } else {
+        Join-Path $env:LOCALAPPDATA 'Programs\mcp-search-net'
+    }
+}
 
 $ExpectedTools = @('search_web', 'fetch_url', 'search_docs', 'list_docs', 'read_doc_section', 'list_search_history')
 $CertificationClients = @('Claude Code', 'Claude Desktop', 'Codex')

@@ -98,6 +98,33 @@ describe('MCP V2 in-memory contracts', () => {
         status: 'success',
         data: { resultCount: 1, results: [{ documentPublicId: 'sample-guide' }] },
       });
+      const searchData = search.structuredContent as {
+        readonly data: { readonly results: readonly { readonly sectionId: number }[] };
+      };
+      const structuredSectionId = searchData.data.results[0]?.sectionId;
+      expect(structuredSectionId).toBeGreaterThan(0);
+
+      const searchContent = search.content;
+      if (!Array.isArray(searchContent)) throw new Error('Expected search_docs text content');
+      const searchText = searchContent[0];
+      if (searchText === undefined || searchText.type !== 'text') {
+        throw new Error('Expected a text block in search_docs content');
+      }
+      const sectionIdMatch = /sectionId=(\d+)/.exec(searchText.text);
+      if (sectionIdMatch === null) {
+        throw new Error('Expected the fallback text to expose sectionId');
+      }
+      const textSectionId = Number(sectionIdMatch[1]);
+      expect(textSectionId).toBe(structuredSectionId);
+
+      const chained = await client.callTool({
+        name: 'read_doc_section',
+        arguments: { sectionId: textSectionId },
+      });
+      expect(chained.structuredContent).toMatchObject({
+        status: 'success',
+        data: { found: true, sectionId: textSectionId },
+      });
 
       const documents = await client.callTool({ name: 'list_docs', arguments: { limit: 1 } });
       expect(documents.structuredContent).toMatchObject({
