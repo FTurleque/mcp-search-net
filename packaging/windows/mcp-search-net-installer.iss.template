@@ -240,11 +240,6 @@ begin
 
   ChkCopilotCli := TNewCheckBox.Create(IntegPage);
   LblCliStatus := TNewStaticText.Create(IntegPage);
-  ConfigureIntegRow(ChkCopilotCli, LblCopilotStatus, ScaleY(62), 'GitHub Copilot CLI');
-  LblCopilotStatus := LblCopilotStatus;
-
-  ChkCopilotCli := ChkCopilotCli;
-  LblCliStatus := TNewStaticText.Create(IntegPage);
   ConfigureIntegRow(ChkCopilotCli, LblCliStatus, ScaleY(62), 'GitHub Copilot CLI');
 
   ChkClaudeDesktop := TNewCheckBox.Create(IntegPage);
