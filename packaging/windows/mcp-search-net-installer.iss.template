@@ -206,7 +206,9 @@ begin
 
   PS := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   if (not Exec(PS,
-        '-NoProfile -ExecutionPolicy Bypass -File "' + TmpPs1 + '" -Out "' + IntegPreflightIni + '"',
+        '-NoProfile -ExecutionPolicy Bypass -File "' + TmpPs1 +
+        '" -Mode Detect -Out "' + IntegPreflightIni +
+        '" -InstallRoot "' + ExpandConstant('{app}') + '"',
         '', SW_HIDE, ewWaitUntilTerminated, ResultCode)) or
      (ResultCode <> 0) or (not FileExists(IntegPreflightIni)) then
   begin
@@ -230,7 +232,7 @@ begin
     wpSelectDir,
     'Clients IA à configurer',
     'SearXNG + Crawl4AI (Docker) démarrent automatiquement.' + #13#10 +
-    'Cochez les clients IA dans lesquels enregistrer mcp-search-net.');
+    'Seuls les clients installés dont l''intégration est absente ou différente sont sélectionnables.');
 
   ChkCopilotJB := TNewCheckBox.Create(IntegPage);
   LblCopilotStatus := TNewStaticText.Create(IntegPage);
@@ -346,6 +348,25 @@ begin
             and (ResultCode = 0);
 end;
 
+function RunClientIntegrationScript(Clients: String): Boolean;
+var
+  PowerShell: String;
+  ScriptPath: String;
+  LogPath: String;
+  Parameters: String;
+  ResultCode: Integer;
+begin
+  if Clients = '' then begin Result := True; exit; end;
+  PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  ScriptPath := ExpandConstant('{app}\scripts\detect-integrations.ps1');
+  LogPath := ExpandConstant('{app}\integration-postinstall.log');
+  Parameters := '-NoProfile -ExecutionPolicy Bypass -File "' + ScriptPath +
+                '" -Mode Apply -InstallRoot "' + ExpandConstant('{app}') +
+                '" -Clients "' + Clients + '" -LogPath "' + LogPath + '"';
+  Result := Exec(PowerShell, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+            and (ResultCode = 0);
+end;
+
 function BuildClientsParam: String;
 var
   Clients: String;
@@ -364,7 +385,6 @@ end;
 
 procedure RunConfigureInstall;
 var
-  ExtraParams: String;
   Clients: String;
 begin
   if IsSmokeBuild() then
@@ -372,20 +392,27 @@ begin
     RunConfigureScript('-SmokeMode');
     Exit;
   end;
-  if WizardSilent() then
+
+  if not RunConfigureScript('-FromInstaller -Clients "docker"') then
   begin
-    RunConfigureScript('');
+    MsgBox(
+      'La configuration locale de base n''a pas pu être complétée.' + #13#10 +
+      'Le programme a été mis à jour, mais la configuration Docker/secrets doit être relancée.' + #13#10 +
+      'Exécutez scripts\configure-install.ps1 -InstallRoot "' + ExpandConstant('{app}') + '" manuellement.',
+      mbError, MB_OK);
     Exit;
   end;
-  Clients := 'docker';
-  ExtraParams := BuildClientsParam;
-  if ExtraParams <> '' then Clients := Clients + ',' + ExtraParams;
-  ExtraParams := '-FromInstaller -Clients "' + Clients + '"';
-  if not RunConfigureScript(ExtraParams) then
+
+  if WizardSilent() then Exit;
+
+  Clients := BuildClientsParam;
+  if not RunClientIntegrationScript(Clients) then
     MsgBox(
-      'La configuration post-installation n''a pas pu être complétée.' + #13#10 +
-      'Le programme a été mis à jour, mais certaines intégrations doivent être relancées.' + #13#10 +
-      'Exécutez scripts\configure-install.ps1 -InstallRoot "' + ExpandConstant('{app}') + '" manuellement.',
+      'La configuration d''au moins un client IA n''a pas pu être complétée.' + #13#10 +
+      'Le runtime est installé, mais l''intégration cliente sélectionnée doit être vérifiée.' + #13#10 +
+      'Diagnostic : "' + ExpandConstant('{app}\integration-postinstall.log') + '"' + #13#10 +
+      'Relance manuelle : scripts\detect-integrations.ps1 -Mode Apply -InstallRoot "' +
+      ExpandConstant('{app}') + '" -Clients "' + Clients + '"',
       mbError, MB_OK);
 end;
 
@@ -458,6 +485,7 @@ begin
   DeleteFile(ExpandConstant('{app}\THIRD-PARTY-NOTICES.txt'));
   DeleteFile(ExpandConstant('{app}\mcp.json.example'));
   DeleteFile(ExpandConstant('{app}\mcp.container.json.example'));
+  DeleteFile(ExpandConstant('{app}\integration-postinstall.log'));
 end;
 
 procedure DeleteUserData;
