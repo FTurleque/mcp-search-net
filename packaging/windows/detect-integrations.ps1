@@ -1,7 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [ValidateSet('Detect', 'Apply')]
-    [string] $Mode = 'Detect',
+    [ValidateSet('Detect', 'Apply')] [string] $Mode = 'Detect',
     [string] $Out = '',
     [string] $InstallRoot = '',
     [string] $Clients = '',
@@ -52,11 +51,7 @@ function Write-Result([string] $Message) {
     }
 }
 
-function Write-AtomicText {
-    param(
-        [Parameter(Mandatory)] [string] $Path,
-        [Parameter(Mandatory)] [string] $Content
-    )
+function Write-AtomicText([string] $Path, [string] $Content) {
     $dir = Split-Path $Path -Parent
     if (-not (Test-Path -LiteralPath $dir -PathType Container)) {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -68,8 +63,8 @@ function Write-AtomicText {
         $flags = $MoveFileWriteThrough
         if (Test-Path -LiteralPath $Path -PathType Leaf) { $flags = $flags -bor $MoveFileReplaceExisting }
         if (-not [McpSearchNet.PreflightFileOps]::MoveFileEx($tmp, $Path, [uint32]$flags)) {
-            $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
-            throw (New-Object System.ComponentModel.Win32Exception($errorCode, "Publication atomique impossible vers '$Path'"))
+            $code = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            throw (New-Object System.ComponentModel.Win32Exception($code, "Publication atomique impossible vers '$Path'"))
         }
     }
     finally {
@@ -84,8 +79,7 @@ function Backup-ClientConfig([string] $Path) {
     New-Item -ItemType Directory -Force -Path $BackupRoot | Out-Null
     $stamp = [datetime]::UtcNow.ToString('yyyyMMddHHmmssfff')
     $suffix = [guid]::NewGuid().ToString('N').Substring(0, 8)
-    $backup = Join-Path $BackupRoot "$stamp-$suffix-$(Split-Path $Path -Leaf)"
-    Copy-Item -LiteralPath $Path -Destination $backup -Force
+    Copy-Item -LiteralPath $Path -Destination (Join-Path $BackupRoot "$stamp-$suffix-$(Split-Path $Path -Leaf)") -Force
 }
 
 function Get-BytesSha256([byte[]] $Bytes) {
@@ -95,8 +89,7 @@ function Get-BytesSha256([byte[]] $Bytes) {
 }
 
 function Get-ObjectFingerprint([object] $Value) {
-    $json = $Value | ConvertTo-Json -Depth 10 -Compress
-    return Get-BytesSha256 ($Utf8NoBom.GetBytes($json))
+    return Get-BytesSha256 ($Utf8NoBom.GetBytes(($Value | ConvertTo-Json -Depth 10 -Compress)))
 }
 
 function Read-JsonState([string] $Path) {
@@ -114,8 +107,7 @@ function Read-JsonState([string] $Path) {
 }
 
 function Write-JsonData([string] $Path, [object] $Data) {
-    $json = ($Data | ConvertTo-Json -Depth 10).TrimEnd() + "`r`n"
-    Write-AtomicText -Path $Path -Content $json
+    Write-AtomicText $Path (($Data | ConvertTo-Json -Depth 10).TrimEnd() + "`r`n")
 }
 
 function Get-PropertyExists([object] $Object, [string] $Name) {
@@ -140,39 +132,36 @@ function Test-PathEqual([string] $Left, [string] $Right) {
     catch { return $Left.Equals($Right, [System.StringComparison]::OrdinalIgnoreCase) }
 }
 
-function Test-ArgsExact([object] $ArgsValue) {
-    $values = @($ArgsValue)
-    if ($values.Count -ne 4) { return $false }
-    return ([string]$values[0] -ceq '/d') -and
-        ([string]$values[1] -ceq '/s') -and
-        ([string]$values[2] -ceq '/c') -and
-        (Test-PathEqual ([string]$values[3]) $BinLauncher)
+function Test-ArgsExact([object] $Value) {
+    $argsValue = @($Value)
+    return $argsValue.Count -eq 4 -and
+        [string]$argsValue[0] -ceq '/d' -and
+        [string]$argsValue[1] -ceq '/s' -and
+        [string]$argsValue[2] -ceq '/c' -and
+        (Test-PathEqual ([string]$argsValue[3]) $BinLauncher)
 }
 
-function Test-EnvExact([object] $EnvValue) {
-    if (-not (Test-PropertySet $EnvValue @('MCP_SEARCH_HOME', 'MCP_CONFIG_PATH', 'MCP_CATALOG_PATH'))) { return $false }
-    return (Test-PathEqual ([string]$EnvValue.MCP_SEARCH_HOME) $InstallRoot) -and
-        (Test-PathEqual ([string]$EnvValue.MCP_CONFIG_PATH) $ConfigPath) -and
-        (Test-PathEqual ([string]$EnvValue.MCP_CATALOG_PATH) $CatalogPath)
+function Test-EnvExact([object] $Value) {
+    if (-not (Test-PropertySet $Value @('MCP_SEARCH_HOME', 'MCP_CONFIG_PATH', 'MCP_CATALOG_PATH'))) { return $false }
+    return (Test-PathEqual ([string]$Value.MCP_SEARCH_HOME) $InstallRoot) -and
+        (Test-PathEqual ([string]$Value.MCP_CONFIG_PATH) $ConfigPath) -and
+        (Test-PathEqual ([string]$Value.MCP_CATALOG_PATH) $CatalogPath)
 }
 
 function Test-JsonEntryExact([object] $Entry, [string] $Kind) {
     if ($null -eq $Entry) { return $false }
     switch ($Kind) {
         'JetBrains' {
-            if (-not (Test-PropertySet $Entry @('type', 'command', 'args', 'env'))) { return $false }
-            if ([string]$Entry.type -cne 'stdio') { return $false }
+            if (-not (Test-PropertySet $Entry @('type', 'command', 'args', 'env')) -or [string]$Entry.type -cne 'stdio') { return $false }
         }
         'ClaudeDesktop' {
             if (-not (Test-PropertySet $Entry @('command', 'args', 'env'))) { return $false }
         }
         'ClaudeCode' {
-            if (-not (Test-PropertySet $Entry @('type', 'command', 'args', 'env'))) { return $false }
-            if ([string]$Entry.type -cne 'stdio') { return $false }
+            if (-not (Test-PropertySet $Entry @('type', 'command', 'args', 'env')) -or [string]$Entry.type -cne 'stdio') { return $false }
         }
         'CopilotCli' {
-            if (-not (Test-PropertySet $Entry @('type', 'command', 'args', 'env', 'tools'))) { return $false }
-            if ([string]$Entry.type -cne 'stdio') { return $false }
+            if (-not (Test-PropertySet $Entry @('type', 'command', 'args', 'env', 'tools')) -or [string]$Entry.type -cne 'stdio') { return $false }
             $tools = @($Entry.tools)
             if ($tools.Count -ne 1 -or [string]$tools[0] -cne '*') { return $false }
         }
@@ -189,20 +178,12 @@ function New-ExpectedEntry([string] $Kind) {
         MCP_CATALOG_PATH = $CatalogPath
     }
     switch ($Kind) {
-        'JetBrains' {
-            return [PSCustomObject][ordered]@{ type = 'stdio'; command = 'cmd.exe'; args = @('/d', '/s', '/c', $BinLauncher); env = $envValue }
-        }
-        'ClaudeDesktop' {
-            return [PSCustomObject][ordered]@{ command = 'cmd.exe'; args = @('/d', '/s', '/c', $BinLauncher); env = $envValue }
-        }
-        'ClaudeCode' {
-            return [PSCustomObject][ordered]@{ type = 'stdio'; command = 'cmd.exe'; args = @('/d', '/s', '/c', $BinLauncher); env = $envValue }
-        }
-        'CopilotCli' {
-            return [PSCustomObject][ordered]@{ type = 'stdio'; command = 'cmd.exe'; args = @('/d', '/s', '/c', $BinLauncher); env = $envValue; tools = @('*') }
-        }
+        'JetBrains' { return [PSCustomObject][ordered]@{ type = 'stdio'; command = 'cmd.exe'; args = @('/d', '/s', '/c', $BinLauncher); env = $envValue } }
+        'ClaudeDesktop' { return [PSCustomObject][ordered]@{ command = 'cmd.exe'; args = @('/d', '/s', '/c', $BinLauncher); env = $envValue } }
+        'ClaudeCode' { return [PSCustomObject][ordered]@{ type = 'stdio'; command = 'cmd.exe'; args = @('/d', '/s', '/c', $BinLauncher); env = $envValue } }
+        'CopilotCli' { return [PSCustomObject][ordered]@{ type = 'stdio'; command = 'cmd.exe'; args = @('/d', '/s', '/c', $BinLauncher); env = $envValue; tools = @('*') } }
+        default { throw "Type d'intégration inconnu : $Kind" }
     }
-    throw "Type d'intégration inconnu : $Kind"
 }
 
 function Resolve-RealCommand([string] $Name) {
@@ -219,10 +200,7 @@ function Test-VsCodeShim([string] $Path) {
 
 function Test-CommandCapability([string] $Path, [string[]] $Arguments) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
-    try {
-        & $Path @Arguments 2>&1 | Out-Null
-        return $LASTEXITCODE -eq 0
-    }
+    try { & $Path @Arguments 2>&1 | Out-Null; return $LASTEXITCODE -eq 0 }
     catch { return $false }
 }
 
@@ -255,39 +233,29 @@ function Resolve-ClaudeExe {
     return $null
 }
 
-function Get-JsonProbe {
-    param(
-        [bool] $Installed,
-        [string] $Label,
-        [string] $ConfigFile,
-        [string] $RootKey,
-        [string] $Kind,
-        [string[]] $LegacyRootKeys = @()
-    )
-    if (-not $Installed) {
-        return [PSCustomObject]@{ Installed = $false; State = 'Absent'; Reason = "$Label non installé"; ConfigPath = $ConfigFile; Kind = $Kind; RootKey = $RootKey; LegacyRootKeys = $LegacyRootKeys }
+function New-Probe([bool] $Installed, [string] $State, [string] $Reason, [string] $ClientKey, [string] $ConfigFile, [string] $Kind, [string] $RootKey, [string[]] $LegacyRootKeys = @()) {
+    return [PSCustomObject]@{
+        Installed = $Installed; State = $State; Reason = $Reason; ClientKey = $ClientKey;
+        ConfigPath = $ConfigFile; Kind = $Kind; RootKey = $RootKey; LegacyRootKeys = $LegacyRootKeys
     }
+}
+
+function Get-JsonProbe([bool] $Installed, [string] $Label, [string] $ClientKey, [string] $ConfigFile, [string] $RootKey, [string] $Kind, [string[]] $LegacyRootKeys = @()) {
+    if (-not $Installed) { return New-Probe $false 'Absent' "$Label non installé" $ClientKey $ConfigFile $Kind $RootKey $LegacyRootKeys }
     $snapshot = Read-JsonState $ConfigFile
-    if (-not $snapshot.Valid) {
-        return [PSCustomObject]@{ Installed = $true; State = 'Invalid'; Reason = "$Label : configuration JSON invalide — correction automatique désactivée"; ConfigPath = $ConfigFile; Kind = $Kind; RootKey = $RootKey; LegacyRootKeys = $LegacyRootKeys }
-    }
+    if (-not $snapshot.Valid) { return New-Probe $true 'Invalid' "$Label : configuration JSON invalide — correction automatique désactivée" $ClientKey $ConfigFile $Kind $RootKey $LegacyRootKeys }
     $data = $snapshot.Data
-    $entry = $null
     if ((Get-PropertyExists $data $RootKey) -and (Get-PropertyExists $data.$RootKey $ServerName)) {
         $entry = $data.$RootKey.$ServerName
+        if (Test-JsonEntryExact $entry $Kind) { return New-Probe $true 'Integrated' "$Label : mcp-search-net déjà intégré et conforme à cette version" $ClientKey $ConfigFile $Kind $RootKey $LegacyRootKeys }
+        return New-Probe $true 'Drift' "$Label : mcp-search-net présent mais configuration différente — mise à jour proposée" $ClientKey $ConfigFile $Kind $RootKey $LegacyRootKeys
     }
-    if ($null -eq $entry) {
-        foreach ($legacy in $LegacyRootKeys) {
-            if ((Get-PropertyExists $data $legacy) -and (Get-PropertyExists $data.$legacy $ServerName)) {
-                return [PSCustomObject]@{ Installed = $true; State = 'Drift'; Reason = "$Label : mcp-search-net présent dans un emplacement obsolète — mise à jour proposée"; ConfigPath = $ConfigFile; Kind = $Kind; RootKey = $RootKey; LegacyRootKeys = $LegacyRootKeys }
-            }
+    foreach ($legacy in $LegacyRootKeys) {
+        if ((Get-PropertyExists $data $legacy) -and (Get-PropertyExists $data.$legacy $ServerName)) {
+            return New-Probe $true 'Drift' "$Label : mcp-search-net présent dans un emplacement obsolète — mise à jour proposée" $ClientKey $ConfigFile $Kind $RootKey $LegacyRootKeys
         }
-        return [PSCustomObject]@{ Installed = $true; State = 'Missing'; Reason = "$Label détecté — mcp-search-net non intégré"; ConfigPath = $ConfigFile; Kind = $Kind; RootKey = $RootKey; LegacyRootKeys = $LegacyRootKeys }
     }
-    if (Test-JsonEntryExact $entry $Kind) {
-        return [PSCustomObject]@{ Installed = $true; State = 'Integrated'; Reason = "$Label : mcp-search-net déjà intégré et conforme à cette version"; ConfigPath = $ConfigFile; Kind = $Kind; RootKey = $RootKey; LegacyRootKeys = $LegacyRootKeys }
-    }
-    return [PSCustomObject]@{ Installed = $true; State = 'Drift'; Reason = "$Label : mcp-search-net présent mais configuration différente — mise à jour proposée"; ConfigPath = $ConfigFile; Kind = $Kind; RootKey = $RootKey; LegacyRootKeys = $LegacyRootKeys }
+    return New-Probe $true 'Missing' "$Label détecté — mcp-search-net non intégré" $ClientKey $ConfigFile $Kind $RootKey $LegacyRootKeys
 }
 
 function Get-TomlSectionMap([string] $Text, [string] $Header) {
@@ -300,9 +268,7 @@ function Get-TomlSectionMap([string] $Text, [string] $Header) {
         if (-not $trimmed -or $trimmed.StartsWith('#')) { continue }
         $separator = $trimmed.IndexOf('=')
         if ($separator -le 0) { return $null }
-        $key = $trimmed.Substring(0, $separator).Trim()
-        $value = $trimmed.Substring($separator + 1).Trim()
-        $map[$key] = $value
+        $map[$trimmed.Substring(0, $separator).Trim()] = $trimmed.Substring($separator + 1).Trim()
     }
     return $map
 }
@@ -316,8 +282,7 @@ function ConvertFrom-TomlQuoted([string] $Value) {
 function Test-CodexExact([string] $Text) {
     $main = Get-TomlSectionMap $Text 'mcp_servers.mcp-search-net'
     $envMap = Get-TomlSectionMap $Text 'mcp_servers.mcp-search-net.env'
-    if ($null -eq $main -or $null -eq $envMap) { return $false }
-    if ($main.Count -ne 3 -or $envMap.Count -ne 3) { return $false }
+    if ($null -eq $main -or $null -eq $envMap -or $main.Count -ne 3 -or $envMap.Count -ne 3) { return $false }
     if (-not $main.ContainsKey('command') -or (ConvertFrom-TomlQuoted $main['command']) -cne 'cmd.exe') { return $false }
     if (-not $main.ContainsKey('enabled') -or $main['enabled'].ToLowerInvariant() -ne 'true') { return $false }
     if (-not $main.ContainsKey('args')) { return $false }
@@ -328,9 +293,7 @@ function Test-CodexExact([string] $Text) {
         @{ Key = 'MCP_CONFIG_PATH'; Value = $ConfigPath },
         @{ Key = 'MCP_CATALOG_PATH'; Value = $CatalogPath }
     )) {
-        if (-not $envMap.ContainsKey($item.Key)) { return $false }
-        $actual = ConvertFrom-TomlQuoted $envMap[$item.Key]
-        if (-not (Test-PathEqual $actual $item.Value)) { return $false }
+        if (-not $envMap.ContainsKey($item.Key) -or -not (Test-PathEqual (ConvertFrom-TomlQuoted $envMap[$item.Key]) $item.Value)) { return $false }
     }
     return $true
 }
@@ -338,54 +301,37 @@ function Test-CodexExact([string] $Text) {
 function Get-CodexProbe {
     $configFile = Join-Path $env:USERPROFILE '.codex\config.toml'
     $installed = Test-Path -LiteralPath $configFile -PathType Leaf
+    if (-not $installed) { $installed = $null -ne (Resolve-RealCommand 'codex') }
     if (-not $installed) {
-        $installed = $null -ne (Resolve-RealCommand 'codex')
-    }
-    if (-not $installed) {
-        foreach ($candidate in @(
-            (Join-Path $env:LOCALAPPDATA 'Programs\Codex\Codex.exe'),
-            (Join-Path $env:LOCALAPPDATA 'Codex\Codex.exe')
-        )) {
+        foreach ($candidate in @((Join-Path $env:LOCALAPPDATA 'Programs\Codex\Codex.exe'), (Join-Path $env:LOCALAPPDATA 'Codex\Codex.exe'))) {
             if (Test-Path -LiteralPath $candidate -PathType Leaf) { $installed = $true; break }
         }
     }
-    if (-not $installed) {
-        return [PSCustomObject]@{ Installed = $false; State = 'Absent'; Reason = 'Codex Desktop non installé'; ConfigPath = $configFile; Kind = 'Codex'; RootKey = ''; LegacyRootKeys = @() }
-    }
-    if (-not (Test-Path -LiteralPath $configFile -PathType Leaf)) {
-        return [PSCustomObject]@{ Installed = $true; State = 'Missing'; Reason = 'Codex Desktop détecté — mcp-search-net non intégré'; ConfigPath = $configFile; Kind = 'Codex'; RootKey = ''; LegacyRootKeys = @() }
-    }
+    if (-not $installed) { return New-Probe $false 'Absent' 'Codex Desktop non installé' 'codex' $configFile 'Codex' '' }
+    if (-not (Test-Path -LiteralPath $configFile -PathType Leaf)) { return New-Probe $true 'Missing' 'Codex Desktop détecté — mcp-search-net non intégré' 'codex' $configFile 'Codex' '' }
     $text = [System.IO.File]::ReadAllText($configFile, [System.Text.Encoding]::UTF8)
-    if ($text -notmatch '(?m)^\s*\[mcp_servers\.mcp-search-net\]\s*(?:#.*)?$') {
-        return [PSCustomObject]@{ Installed = $true; State = 'Missing'; Reason = 'Codex Desktop détecté — mcp-search-net non intégré'; ConfigPath = $configFile; Kind = 'Codex'; RootKey = ''; LegacyRootKeys = @() }
-    }
-    if (Test-CodexExact $text) {
-        return [PSCustomObject]@{ Installed = $true; State = 'Integrated'; Reason = 'Codex Desktop : mcp-search-net déjà intégré et conforme à cette version'; ConfigPath = $configFile; Kind = 'Codex'; RootKey = ''; LegacyRootKeys = @() }
-    }
-    return [PSCustomObject]@{ Installed = $true; State = 'Drift'; Reason = 'Codex Desktop : mcp-search-net présent mais configuration différente — mise à jour proposée'; ConfigPath = $configFile; Kind = 'Codex'; RootKey = ''; LegacyRootKeys = @() }
+    if ($text -notmatch '(?m)^\s*\[mcp_servers\.mcp-search-net\]\s*(?:#.*)?$') { return New-Probe $true 'Missing' 'Codex Desktop détecté — mcp-search-net non intégré' 'codex' $configFile 'Codex' '' }
+    if (Test-CodexExact $text) { return New-Probe $true 'Integrated' 'Codex Desktop : mcp-search-net déjà intégré et conforme à cette version' 'codex' $configFile 'Codex' '' }
+    return New-Probe $true 'Drift' 'Codex Desktop : mcp-search-net présent mais configuration différente — mise à jour proposée' 'codex' $configFile 'Codex' ''
 }
 
 function Get-Probes {
     $jbDir = Join-Path $env:LOCALAPPDATA 'github-copilot\intellij'
     $copilotPath = Resolve-RealCommand 'copilot'
     $copilotInstalled = $false
-    if ($copilotPath -and -not (Test-VsCodeShim $copilotPath)) {
-        $copilotInstalled = Test-CommandCapability $copilotPath @('mcp', '--help')
-    }
+    if ($copilotPath -and -not (Test-VsCodeShim $copilotPath)) { $copilotInstalled = Test-CommandCapability $copilotPath @('mcp', '--help') }
     $desktopConfig = Resolve-ClaudeDesktopConfig
     $claudeExe = Resolve-ClaudeExe
-
     return [ordered]@{
-        CopilotJetBrains = Get-JsonProbe (Test-Path -LiteralPath $jbDir -PathType Container) 'Copilot JetBrains' (Join-Path $jbDir 'mcp.json') 'servers' 'JetBrains' @('mcpServers')
-        CopilotCli = Get-JsonProbe $copilotInstalled 'GitHub Copilot CLI' (Join-Path $env:USERPROFILE '.copilot\mcp-config.json') 'mcpServers' 'CopilotCli'
-        ClaudeDesktop = Get-JsonProbe ($null -ne $desktopConfig) 'Claude Desktop' ([string]$desktopConfig) 'mcpServers' 'ClaudeDesktop'
-        ClaudeCode = Get-JsonProbe ($null -ne $claudeExe) 'Claude Code CLI' (Join-Path $env:USERPROFILE '.claude.json') 'mcpServers' 'ClaudeCode'
+        CopilotJetBrains = Get-JsonProbe (Test-Path -LiteralPath $jbDir -PathType Container) 'Copilot JetBrains' 'copilot-jetbrains' (Join-Path $jbDir 'mcp.json') 'servers' 'JetBrains' @('mcpServers')
+        CopilotCli = Get-JsonProbe $copilotInstalled 'GitHub Copilot CLI' 'copilot-cli' (Join-Path $env:USERPROFILE '.copilot\mcp-config.json') 'mcpServers' 'CopilotCli'
+        ClaudeDesktop = Get-JsonProbe ($null -ne $desktopConfig) 'Claude Desktop' 'claude-desktop' ([string]$desktopConfig) 'mcpServers' 'ClaudeDesktop'
+        ClaudeCode = Get-JsonProbe ($null -ne $claudeExe) 'Claude Code CLI' 'claude-code' (Join-Path $env:USERPROFILE '.claude.json') 'mcpServers' 'ClaudeCode'
         CodexDesktop = Get-CodexProbe
     }
 }
 
-function Write-IniSection {
-    param([System.Collections.Generic.List[string]] $Lines, [string] $Name, [object] $Probe)
+function Write-IniSection([System.Collections.Generic.List[string]] $Lines, [string] $Name, [object] $Probe) {
     $selectable = $Probe.State -in @('Missing', 'Drift')
     $Lines.Add("[$Name]")
     $Lines.Add('Installed=' + $(if ($Probe.Installed) { '1' } else { '0' }))
@@ -398,54 +344,39 @@ function Write-IniSection {
 function Save-ManagedRecord([string] $Key, [string] $ClientConfigPath, [string] $Fingerprint) {
     $snapshot = Read-JsonState $IntegrationsFile
     if (-not $snapshot.Valid) { throw "Métadonnées d'intégration JSON invalides : $($snapshot.Error)" }
-    $data = $snapshot.Data
     $record = [PSCustomObject][ordered]@{
-        ownership = 'managed'
-        state = 'applied'
-        transactionId = [guid]::NewGuid().ToString('N')
-        configPath = $ClientConfigPath
-        entryFingerprint = $Fingerprint
-        configuredAt = [datetime]::UtcNow.ToString('o')
+        ownership = 'managed'; state = 'applied'; transactionId = [guid]::NewGuid().ToString('N');
+        configPath = $ClientConfigPath; entryFingerprint = $Fingerprint; configuredAt = [datetime]::UtcNow.ToString('o')
     }
-    $data | Add-Member -NotePropertyName $Key -NotePropertyValue $record -Force
-    Write-JsonData $IntegrationsFile $data
+    $snapshot.Data | Add-Member -NotePropertyName $Key -NotePropertyValue $record -Force
+    Write-JsonData $IntegrationsFile $snapshot.Data
 }
 
 function Set-JsonIntegration([object] $Probe) {
-    if ($Probe.State -eq 'Integrated') {
-        Write-Result "$($Probe.Kind) : déjà conforme, aucune modification."
-        return
-    }
+    if ($Probe.State -eq 'Integrated') { Write-Result "$($Probe.ClientKey) : déjà conforme, aucune modification."; return }
     if ($Probe.State -eq 'Invalid') { throw $Probe.Reason }
     if (-not $Probe.Installed) { throw $Probe.Reason }
     $snapshot = Read-JsonState $Probe.ConfigPath
     if (-not $snapshot.Valid) { throw "Configuration JSON invalide '$($Probe.ConfigPath)' : $($snapshot.Error)" }
     $data = $snapshot.Data
-    if (-not (Get-PropertyExists $data $Probe.RootKey)) {
-        $data | Add-Member -NotePropertyName $Probe.RootKey -NotePropertyValue ([PSCustomObject]@{}) -Force
-    }
+    if (-not (Get-PropertyExists $data $Probe.RootKey)) { $data | Add-Member -NotePropertyName $Probe.RootKey -NotePropertyValue ([PSCustomObject]@{}) -Force }
     foreach ($legacy in @($Probe.LegacyRootKeys)) {
-        if ((Get-PropertyExists $data $legacy) -and (Get-PropertyExists $data.$legacy $ServerName)) {
-            $data.$legacy.PSObject.Properties.Remove($ServerName)
-        }
+        if ((Get-PropertyExists $data $legacy) -and (Get-PropertyExists $data.$legacy $ServerName)) { $data.$legacy.PSObject.Properties.Remove($ServerName) }
     }
     $expected = New-ExpectedEntry $Probe.Kind
     $data.$($Probe.RootKey) | Add-Member -NotePropertyName $ServerName -NotePropertyValue $expected -Force
     Backup-ClientConfig $Probe.ConfigPath
     Write-JsonData $Probe.ConfigPath $data
     $verify = Read-JsonState $Probe.ConfigPath
-    if (-not $verify.Valid -or -not (Get-PropertyExists $verify.Data $Probe.RootKey) -or
-        -not (Get-PropertyExists $verify.Data.$($Probe.RootKey) $ServerName) -or
-        -not (Test-JsonEntryExact $verify.Data.$($Probe.RootKey).$ServerName $Probe.Kind)) {
+    if (-not $verify.Valid -or -not (Get-PropertyExists $verify.Data $Probe.RootKey) -or -not (Get-PropertyExists $verify.Data.$($Probe.RootKey) $ServerName) -or -not (Test-JsonEntryExact $verify.Data.$($Probe.RootKey).$ServerName $Probe.Kind)) {
         throw "La vérification post-écriture a échoué : $($Probe.ConfigPath)"
     }
-    Save-ManagedRecord "$($Probe.Kind.ToLowerInvariant()):$ServerName" $Probe.ConfigPath (Get-ObjectFingerprint $expected)
-    Write-Result "$($Probe.Kind) : mcp-search-net configuré et vérifié -> $($Probe.ConfigPath)"
+    Save-ManagedRecord "$($Probe.ClientKey):$ServerName" $Probe.ConfigPath (Get-ObjectFingerprint $expected)
+    Write-Result "$($Probe.ClientKey) : mcp-search-net configuré et vérifié -> $($Probe.ConfigPath)"
 }
 
 function Remove-TomlSection([string] $Text, [string] $Header) {
-    $pattern = '(?ms)^\s*\[' + [regex]::Escape($Header) + '\]\s*(?:\r?\n|$).*?(?=^\s*\[|\z)'
-    return [regex]::Replace($Text, $pattern, '')
+    return [regex]::Replace($Text, '(?ms)^\s*\[' + [regex]::Escape($Header) + '\]\s*(?:\r?\n|$).*?(?=^\s*\[|\z)', '')
 }
 
 function New-CodexBlock {
@@ -457,26 +388,20 @@ function New-CodexBlock {
 }
 
 function Set-CodexIntegration([object] $Probe) {
-    if ($Probe.State -eq 'Integrated') {
-        Write-Result 'Codex : déjà conforme, aucune modification.'
-        return
-    }
+    if ($Probe.State -eq 'Integrated') { Write-Result 'codex : déjà conforme, aucune modification.'; return }
     if (-not $Probe.Installed) { throw $Probe.Reason }
-    $text = if (Test-Path -LiteralPath $Probe.ConfigPath -PathType Leaf) {
-        [System.IO.File]::ReadAllText($Probe.ConfigPath, [System.Text.Encoding]::UTF8)
-    } else { '' }
+    $text = if (Test-Path -LiteralPath $Probe.ConfigPath -PathType Leaf) { [System.IO.File]::ReadAllText($Probe.ConfigPath, [System.Text.Encoding]::UTF8) } else { '' }
     Backup-ClientConfig $Probe.ConfigPath
     $cleaned = Remove-TomlSection $text 'mcp_servers.mcp-search-net.env'
     $cleaned = Remove-TomlSection $cleaned 'mcp_servers.mcp-search-net'
     $cleaned = [regex]::Replace($cleaned, '(?m)^\s*# (?:BEGIN|END) MCP-SEARCH-NET\s*\r?\n?', '')
-    $prefix = $cleaned.TrimEnd()
     $block = New-CodexBlock
+    $prefix = $cleaned.TrimEnd()
     $newText = if ($prefix) { $prefix + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }
     Write-AtomicText $Probe.ConfigPath $newText
-    $verify = [System.IO.File]::ReadAllText($Probe.ConfigPath, [System.Text.Encoding]::UTF8)
-    if (-not (Test-CodexExact $verify)) { throw "La vérification post-écriture Codex a échoué : $($Probe.ConfigPath)" }
+    if (-not (Test-CodexExact ([System.IO.File]::ReadAllText($Probe.ConfigPath, [System.Text.Encoding]::UTF8))) { throw "La vérification post-écriture Codex a échoué : $($Probe.ConfigPath)" }
     Save-ManagedRecord "codex:$ServerName" $Probe.ConfigPath (Get-BytesSha256 ($Utf8NoBom.GetBytes($block)))
-    Write-Result "Codex : mcp-search-net configuré et vérifié -> $($Probe.ConfigPath)"
+    Write-Result "codex : mcp-search-net configuré et vérifié -> $($Probe.ConfigPath)"
 }
 
 $probes = Get-Probes
@@ -484,23 +409,15 @@ $probes = Get-Probes
 if ($Mode -eq 'Detect') {
     if ([string]::IsNullOrWhiteSpace($Out)) { throw '-Out est requis en mode Detect.' }
     $lines = New-Object System.Collections.Generic.List[string]
-    foreach ($section in @('CopilotJetBrains', 'CopilotCli', 'ClaudeDesktop', 'ClaudeCode', 'CodexDesktop')) {
-        Write-IniSection $lines $section $probes[$section]
-    }
+    foreach ($section in @('CopilotJetBrains', 'CopilotCli', 'ClaudeDesktop', 'ClaudeCode', 'CodexDesktop')) { Write-IniSection $lines $section $probes[$section] }
     [System.IO.File]::WriteAllLines($Out, [string[]]$lines.ToArray(), [System.Text.Encoding]::Unicode)
     exit 0
 }
 
-if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
-    Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue
-}
-
+if (-not [string]::IsNullOrWhiteSpace($LogPath)) { Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue }
 $clientMap = @{
-    'copilot-jetbrains' = 'CopilotJetBrains'
-    'copilot-cli' = 'CopilotCli'
-    'claude-desktop' = 'ClaudeDesktop'
-    'claude-code' = 'ClaudeCode'
-    'codex' = 'CodexDesktop'
+    'copilot-jetbrains' = 'CopilotJetBrains'; 'copilot-cli' = 'CopilotCli'; 'claude-desktop' = 'ClaudeDesktop';
+    'claude-code' = 'ClaudeCode'; 'codex' = 'CodexDesktop'
 }
 $selected = @($Clients -split ',' | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
 $failures = New-Object System.Collections.Generic.List[string]
@@ -508,8 +425,7 @@ foreach ($client in $selected) {
     try {
         if (-not $clientMap.ContainsKey($client)) { throw "Client inconnu : $client" }
         $probe = $probes[$clientMap[$client]]
-        if ($probe.Kind -eq 'Codex') { Set-CodexIntegration $probe }
-        else { Set-JsonIntegration $probe }
+        if ($probe.Kind -eq 'Codex') { Set-CodexIntegration $probe } else { Set-JsonIntegration $probe }
     }
     catch {
         $failure = "$client : $($_.Exception.Message)"
@@ -517,11 +433,6 @@ foreach ($client in $selected) {
         Write-Result "ECHEC $failure"
     }
 }
-
-if ($failures.Count -gt 0) {
-    Write-Result "MCP_CLIENT_INTEGRATION_FAILURE count=$($failures.Count)"
-    exit 20
-}
-
+if ($failures.Count -gt 0) { Write-Result "MCP_CLIENT_INTEGRATION_FAILURE count=$($failures.Count)"; exit 20 }
 Write-Result "MCP_CLIENT_INTEGRATION_SUCCESS count=$($selected.Count)"
 exit 0
