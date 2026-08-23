@@ -276,6 +276,9 @@ jobs:
             }
           }
           Write-Host "POWERSHELL_PACKAGING_PARSE_VALID files=$($files.Count)"
+      - name: Validate client integration preflight and repair state machine
+        shell: powershell
+        run: .\packaging\windows\test-client-integration-preflight.ps1
       - run: npm run build
       - run: npm run test:e2e:deterministic
       - name: Validate clean install, upgrade, rollback and uninstall
