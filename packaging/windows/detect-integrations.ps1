@@ -399,7 +399,7 @@ function Set-CodexIntegration([object] $Probe) {
     $prefix = $cleaned.TrimEnd()
     $newText = if ($prefix) { $prefix + [Environment]::NewLine + [Environment]::NewLine + $block + [Environment]::NewLine } else { $block + [Environment]::NewLine }
     Write-AtomicText $Probe.ConfigPath $newText
-    if (-not (Test-CodexExact ([System.IO.File]::ReadAllText($Probe.ConfigPath, [System.Text.Encoding]::UTF8))) { throw "La vérification post-écriture Codex a échoué : $($Probe.ConfigPath)" }
+    if (-not (Test-CodexExact ([System.IO.File]::ReadAllText($Probe.ConfigPath, [System.Text.Encoding]::UTF8)))) { throw "La vérification post-écriture Codex a échoué : $($Probe.ConfigPath)" }
     Save-ManagedRecord "codex:$ServerName" $Probe.ConfigPath (Get-BytesSha256 ($Utf8NoBom.GetBytes($block)))
     Write-Result "codex : mcp-search-net configuré et vérifié -> $($Probe.ConfigPath)"
 }
