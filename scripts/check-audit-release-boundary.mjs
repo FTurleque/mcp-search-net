@@ -42,7 +42,7 @@ requireText(
 for (const invariant of [
   'authenticode:',
   'default: false',
-  "!inputs.validate_only && inputs.authenticode",
+  '!inputs.validate_only && inputs.authenticode',
   'WINDOWS_SIGNING_CERTIFICATE_BASE64',
   'WINDOWS_SIGNING_CERTIFICATE_PASSWORD',
   'WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT',
