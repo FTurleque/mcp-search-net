@@ -17,7 +17,7 @@ describe('Windows release signing policy', () => {
     const signingStep = releaseWorkflow.indexOf('Signer le setup Windows avec Authenticode');
     expect(signingStep).toBeGreaterThan(0);
     const signingBlock = releaseWorkflow.slice(signingStep, signingStep + 1300);
-    expect(signingBlock).toContain("!inputs.validate_only && inputs.authenticode");
+    expect(signingBlock).toContain('!inputs.validate_only && inputs.authenticode');
     expect(signingBlock).toContain('WINDOWS_SIGNING_CERTIFICATE_BASE64');
     expect(signingBlock).toContain('WINDOWS_SIGNING_CERTIFICATE_PASSWORD');
     expect(signingBlock).toContain('WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT');
