@@ -8,7 +8,7 @@ import { StructuredLogger } from '../../src/infrastructure/logging/structured-lo
 import { executeToolCall } from '../../src/presentation/mcp/tool-call.js';
 
 describe('read_doc_section text fallback correlation', () => {
-  it('exposes the real requestId to clients that only consume text content', async () => {
+  it('exposes the real requestId and characterCount to text-only clients', async () => {
     const requestId = '11111111-2222-4333-8444-555555555555';
     const result = await executeToolCall({
       tool: 'read_doc_section',
@@ -36,13 +36,16 @@ describe('read_doc_section text fallback correlation', () => {
         'read_doc_section success: Example\nsectionId=3 truncated=false\nExample content',
     });
 
-    expect(result.structuredContent).toMatchObject({ requestId });
+    expect(result.structuredContent).toMatchObject({
+      requestId,
+      data: { characterCount: 361 },
+    });
     expect(result.content).toEqual([
       {
         type: 'text',
         text:
           `[${EXTERNAL_CONTENT_TRUST}] ${EXTERNAL_CONTENT_SAFETY_NOTICE}\n\n` +
-          `requestId=${requestId} cache=DISABLED\n` +
+          `requestId=${requestId} cache=DISABLED characterCount=361\n` +
           'read_doc_section success: Example\nsectionId=3 truncated=false\nExample content',
       },
     ]);
