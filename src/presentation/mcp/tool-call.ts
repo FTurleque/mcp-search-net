@@ -105,7 +105,7 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
     const text =
       options.tool === 'read_doc_section'
         ? formatExternalContentText(
-            `requestId=${validated.requestId} cache=${validated.metadata.cacheStatus}\n${options.formatText(validated)}`,
+            `requestId=${validated.requestId} cache=${validated.metadata.cacheStatus}${formatReadDocSectionCharacterCount(validated.data)}\n${options.formatText(validated)}`,
           )
         : formatExternalContentText(options.formatText(validated));
     return {
@@ -143,6 +143,19 @@ export async function executeToolCall<T>(options: ToolCallOptions<T>): Promise<C
 
 function formatExternalContentText(text: string): string {
   return `[${EXTERNAL_CONTENT_TRUST}] ${EXTERNAL_CONTENT_SAFETY_NOTICE}\n\n${text}`;
+}
+
+function formatReadDocSectionCharacterCount(data: unknown): string {
+  if (data === null || typeof data !== 'object') return '';
+  const characterCount = (data as Record<string, unknown>)['characterCount'];
+  if (
+    typeof characterCount === 'number' &&
+    Number.isInteger(characterCount) &&
+    characterCount >= 0
+  ) {
+    return ` characterCount=${characterCount}`;
+  }
+  return '';
 }
 
 function isRetryable(error: unknown, code: ToolErrorCode): boolean {
