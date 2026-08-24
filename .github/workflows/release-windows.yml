@@ -16,6 +16,11 @@ on:
         type: boolean
         required: false
         default: false
+      authenticode:
+        description: 'Signer le setup avec Authenticode (optionnel ; laisser false sans certificat)'
+        type: boolean
+        required: false
+        default: false
 
 concurrency:
   group: windows-release-${{ github.ref }}-${{ inputs.version }}
@@ -183,7 +188,7 @@ jobs:
             -ValidateOnly
 
       - name: Signer le setup Windows avec Authenticode
-        if: github.ref == 'refs/heads/master' && !inputs.validate_only
+        if: github.ref == 'refs/heads/master' && !inputs.validate_only && inputs.authenticode
         shell: pwsh
         env:
           WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
@@ -235,6 +240,7 @@ jobs:
     env:
       RELEASE_VERSION: ${{ inputs.version }}
       TARGET_COMMIT: ${{ github.sha }}
+      AUTHENTICODE_ENABLED: ${{ inputs.authenticode }}
 
     steps:
       - name: Publier uniquement les artefacts déjà qualifiés
@@ -290,9 +296,14 @@ jobs:
           Verify-Sha256 $zip $zipChecksum
           Verify-Sha256 $notices $noticesChecksum
 
-          $signature = Get-AuthenticodeSignature -FilePath $setup
-          if ([string]$signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
-            throw "Setup Windows non signé ou signature Authenticode invalide : status=$($signature.Status)"
+          if ($env:AUTHENTICODE_ENABLED -eq 'true') {
+            $signature = Get-AuthenticodeSignature -FilePath $setup
+            if ([string]$signature.Status -ne 'Valid' -or $null -eq $signature.SignerCertificate) {
+              throw "Authenticode demandé mais signature invalide : status=$($signature.Status)"
+            }
+            Write-Host "Authenticode vérifié pour le setup Windows."
+          } else {
+            Write-Host "Publication volontaire du setup Windows sans Authenticode."
           }
 
           foreach ($artifact in @($setup, $zip, $notices)) {
@@ -341,4 +352,4 @@ jobs:
             throw "Publication GitHub Release $tag échouée (exit=$LASTEXITCODE)"
           }
 
-          Write-Host "GitHub Release $tag publiée depuis les artefacts qualifiés, signés et attestés du run $env:GITHUB_RUN_ID."
+          Write-Host "GitHub Release $tag publiée depuis les artefacts qualifiés, checksummés et attestés du run $env:GITHUB_RUN_ID."
