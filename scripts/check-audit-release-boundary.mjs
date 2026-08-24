@@ -39,20 +39,27 @@ requireText(
   'assert-native-client-certification.ps1',
   'release-windows: exact-head native certification gate missing',
 );
-requireText(
-  releaseWorkflow,
+for (const invariant of [
+  'authenticode:',
+  'default: false',
+  "!inputs.validate_only && inputs.authenticode",
   'WINDOWS_SIGNING_CERTIFICATE_BASE64',
-  'release-windows: Authenticode certificate secret missing',
-);
-requireText(
-  releaseWorkflow,
   'WINDOWS_SIGNING_CERTIFICATE_PASSWORD',
-  'release-windows: Authenticode password secret missing',
-);
+  'WINDOWS_SIGNING_CERTIFICATE_THUMBPRINT',
+  'AUTHENTICODE_ENABLED: ${{ inputs.authenticode }}',
+  "if ($env:AUTHENTICODE_ENABLED -eq 'true')",
+  'Publication volontaire du setup Windows sans Authenticode.',
+]) {
+  requireText(
+    releaseWorkflow,
+    invariant,
+    `release-windows: optional/default-off Authenticode contract missing: ${invariant}`,
+  );
+}
 requireText(
   releaseWorkflow,
-  'Get-AuthenticodeSignature -FilePath $setup',
-  'release-windows: publish-time Authenticode verification missing',
+  'Verify-Sha256 $setup $setupChecksum',
+  'release-windows: setup SHA-256 verification missing',
 );
 requireText(
   releaseWorkflow,
