@@ -148,9 +148,14 @@ function formatExternalContentText(text: string): string {
 function formatReadDocSectionCharacterCount(data: unknown): string {
   if (data === null || typeof data !== 'object') return '';
   const characterCount = (data as Record<string, unknown>)['characterCount'];
-  return typeof characterCount === 'number' && Number.isInteger(characterCount) && characterCount >= 0
-    ? ` characterCount=${characterCount}`
-    : '';
+  if (
+    typeof characterCount === 'number' &&
+    Number.isInteger(characterCount) &&
+    characterCount >= 0
+  ) {
+    return ` characterCount=${characterCount}`;
+  }
+  return '';
 }
 
 function isRetryable(error: unknown, code: ToolErrorCode): boolean {
