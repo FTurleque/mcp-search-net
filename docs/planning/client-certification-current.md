@@ -220,8 +220,9 @@ utilisable sans cette preuve pour construire et inspecter un candidat, mais aucu
 12. le gate de release télécharge et revalide cet artefact ;
 13. `Publish Windows Release` avec `validate_only=false` ;
 14. publication uniquement si CI exact-head PASS, certification exact-head
-    `PASS_NATIVE_3_OF_3`, signature Authenticode PASS (identité de certificat épinglée) et
-    provenance PASS.
+    `PASS_NATIVE_3_OF_3` et provenance PASS ; lorsque la signature Authenticode (optionnelle,
+    désactivée par défaut) est activée pour ce candidat, elle doit en plus être PASS (identité de
+    certificat épinglée) — une publication volontaire sans Authenticode reste supportée.
 
 **Ne jamais certifier `develop`. Ne jamais certifier un SHA intermédiaire. Ne jamais lancer les
 observations clientes avant que le SHA final de `master` soit figé.** Une certification produite
