@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { isSafeProviderEndpoint } from '../../src/infrastructure/config/provider-endpoint-policy.js';
+import {
+  hasUrlCredentials,
+  isSafeProviderEndpoint,
+} from '../../src/infrastructure/config/provider-endpoint-policy.js';
 
 describe('provider endpoint policy', () => {
   it.each([
@@ -50,5 +53,28 @@ describe('provider endpoint policy', () => {
   it('accepts the current Docker production configuration', () => {
     expect(isSafeProviderEndpoint('http://searxng:8080')).toBe(true);
     expect(isSafeProviderEndpoint('http://crawl4ai:11235')).toBe(true);
+  });
+
+  it.each([
+    'https://user:password@remote.example',
+    'https://token@remote.example',
+    'http://token@localhost',
+    'http://token@localhost:8888',
+    'http://user:password@searxng:8080',
+    'http://user:password@crawl4ai:11235',
+    'http://token@127.0.0.1:11235',
+  ])('rejects credentials embedded in the provider URL %s regardless of host trust', (url) => {
+    expect(isSafeProviderEndpoint(url)).toBe(false);
+  });
+
+  it.each([
+    ['https://user:password@remote.example', true],
+    ['https://token@remote.example', true],
+    ['http://token@localhost', true],
+    ['https://remote.example', false],
+    ['http://searxng:8080', false],
+    ['not a url', false],
+  ] as const)('hasUrlCredentials(%s) -> %s', (url, expected) => {
+    expect(hasUrlCredentials(url)).toBe(expected);
   });
 });

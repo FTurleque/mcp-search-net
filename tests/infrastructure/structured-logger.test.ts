@@ -32,6 +32,34 @@ describe('structured logger sanitization', () => {
     expect(sanitized).toContain('https://[redacted]@host/path');
   });
 
+  it.each([
+    ['https://single-userinfo-secret@example.com/', 'single-userinfo-secret'],
+    ['https://user:password@example.com/', 'password'],
+    ['http://token@localhost:8888/path', 'token'],
+    ['http://user:password@localhost:8888/', 'password'],
+  ])('redacts URL userinfo in %s without leaking the secret', (input, secret) => {
+    const sanitized = sanitizeLogValue(input) as string;
+    expect(sanitized).not.toContain(secret);
+    expect(sanitized).not.toContain('user:password');
+  });
+
+  it('preserves the scheme, host and path when redacting URL userinfo', () => {
+    expect(sanitizeLogValue('https://single-userinfo-secret@example.com/')).toBe(
+      'https://[redacted]@example.com/',
+    );
+    expect(sanitizeLogValue('http://token@localhost:8888/path')).toBe(
+      'http://[redacted]@localhost:8888/path',
+    );
+  });
+
+  it.each([
+    'https://example.com/@handle',
+    'contact us at user@example.com',
+    'see docs at https://example.com/docs#section@1',
+  ])('does not redact a bare "@" that is not URL userinfo in %s', (input) => {
+    expect(sanitizeLogValue(input)).toBe(input);
+  });
+
   it('redacts by key name regardless of nesting or case/separator variant', () => {
     const sanitized = sanitizeLogValue({
       Authorization: 'Bearer xxx',

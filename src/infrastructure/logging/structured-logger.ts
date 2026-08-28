@@ -102,9 +102,11 @@ const SENSITIVE_VALUE_KEYS = [
 const SENSITIVE_KEY_VALUE_PATTERNS = SENSITIVE_VALUE_KEYS.map(
   (key) => new RegExp(String.raw`(\b${key}\s*[=:]\s*)([^&\s]+)`, 'giu'),
 );
-// The two segments cannot both consume ':' or '@', so there is exactly one way to split the
-// match: linear time, no backtracking ambiguity.
-const URL_USERINFO = /(:\/\/)[^\s/?#@:]+:[^\s/?#@]+@/gu;
+// A single character class with one quantifier covers both `user@host` and `user:password@host`
+// userinfo forms without distinguishing them: linear time, no backtracking ambiguity. Excluding
+// '/' keeps a path segment containing '@' (e.g. `https://example.com/@handle`) from matching,
+// since the run stops at the '/' before ever reaching the '@'.
+const URL_USERINFO = /(:\/\/)[^\s/?#@]+@/gu;
 
 function sanitizeString(value: string): string {
   let sanitized = value
