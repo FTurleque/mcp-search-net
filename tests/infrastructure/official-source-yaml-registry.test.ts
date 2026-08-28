@@ -63,4 +63,32 @@ describe('OfficialSourceYamlRegistry', () => {
     expect(registry.findByUrl('http://docs.example.com/sdk/a')).toBeUndefined();
     expect(registry.findByUrl('http://v2.docs.example.com/sdk/a')).toBeUndefined();
   });
+
+  it('rejects a configured baseUrl containing userinfo credentials', () => {
+    const buildRegistry = (baseUrl: string) =>
+      new OfficialSourceYamlRegistry({
+        version: 1,
+        sources: [
+          {
+            id: 'example',
+            name: 'Example',
+            domain: 'example.com',
+            baseUrl,
+            includeSubdomains: false,
+            githubOrganizations: [],
+            keywords: ['example'],
+            priority: 1,
+            enabled: true,
+          },
+        ],
+      });
+
+    expect(() => buildRegistry('https://token@example.com/docs')).toThrow(
+      'must not contain userinfo credentials',
+    );
+    expect(() => buildRegistry('https://user:password@example.com/docs')).toThrow(
+      'must not contain userinfo credentials',
+    );
+    expect(() => buildRegistry('https://example.com/docs')).not.toThrow();
+  });
 });
