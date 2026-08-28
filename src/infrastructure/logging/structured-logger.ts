@@ -100,7 +100,7 @@ const SENSITIVE_VALUE_KEYS = [
 // One narrow pattern per key (instead of a single large alternation) keeps each regex's
 // cognitive complexity low and avoids any risk of catastrophic backtracking.
 const SENSITIVE_KEY_VALUE_PATTERNS = SENSITIVE_VALUE_KEYS.map(
-  (key) => new RegExp(`(\\b${key}\\s*[=:]\\s*)([^&\\s]+)`, 'giu'),
+  (key) => new RegExp(String.raw`(\b${key}\s*[=:]\s*)([^&\s]+)`, 'giu'),
 );
 // The two segments cannot both consume ':' or '@', so there is exactly one way to split the
 // match: linear time, no backtracking ambiguity.
