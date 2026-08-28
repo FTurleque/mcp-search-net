@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 
-import { isSafeProviderEndpoint } from './provider-endpoint-policy.js';
+import { hasUrlCredentials, isSafeProviderEndpoint } from './provider-endpoint-policy.js';
 
 const durationSchema = z.number().int().positive();
 const httpUrlSchema = z.url().refine((value) => {
@@ -158,6 +158,20 @@ export const applicationConfigSchema = z
         code: 'custom',
         path: ['limits', 'defaultFetchSections'],
         message: 'Must not exceed maxFetchSections',
+      });
+    }
+    if (hasUrlCredentials(config.searxng.baseUrl)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['searxng', 'baseUrl'],
+        message: 'searxng.baseUrl must not contain userinfo credentials',
+      });
+    }
+    if (hasUrlCredentials(config.crawl4ai.baseUrl)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['crawl4ai', 'baseUrl'],
+        message: 'crawl4ai.baseUrl must not contain userinfo credentials',
       });
     }
     if (config.application.profile === 'production' && config.security.allowHttp) {

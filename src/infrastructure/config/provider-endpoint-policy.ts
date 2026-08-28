@@ -26,9 +26,22 @@ export function isSafeProviderEndpoint(value: string): boolean {
   } catch {
     return false;
   }
+  // Credentials embedded in a provider URL would be sent in plaintext to the target host (or
+  // logged) instead of using the dedicated token mechanism; reject unconditionally, even for an
+  // otherwise-trusted local/internal host.
+  if (url.username !== '' || url.password !== '') return false;
   if (url.protocol === 'https:') return true;
   if (url.protocol !== 'http:') return false;
   return isLocalProviderHost(url.hostname);
+}
+
+export function hasUrlCredentials(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.username !== '' || url.password !== '';
+  } catch {
+    return false;
+  }
 }
 
 function isLocalProviderHost(hostname: string): boolean {
