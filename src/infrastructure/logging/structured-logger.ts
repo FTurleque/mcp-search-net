@@ -70,14 +70,48 @@ function sanitizeRecord(
   return sanitizeLogValue(data) as Readonly<Record<string, unknown>>;
 }
 
-const SENSITIVE_KEY_VALUE_PAIR =
-  /(\b(?:authorization|credential|password|passwd|secret|token|key|access[-_]?token|refresh[-_]?token|api[-_]?key|client[-_]?secret|auth[-_]?token|signature|sig)\s*[=:]\s*)("[^"]*"|'[^']*'|[^&\s'"]+)/giu;
-const URL_USERINFO = /(:\/\/)[^\s/?#@]+:[^\s/?#@]+@/gu;
+const SENSITIVE_VALUE_KEYS = [
+  'authorization',
+  'credential',
+  'password',
+  'passwd',
+  'secret',
+  'token',
+  'key',
+  'access-token',
+  'access_token',
+  'accesstoken',
+  'refresh-token',
+  'refresh_token',
+  'refreshtoken',
+  'api-key',
+  'api_key',
+  'apikey',
+  'client-secret',
+  'client_secret',
+  'clientsecret',
+  'auth-token',
+  'auth_token',
+  'authtoken',
+  'signature',
+  'sig',
+] as const;
+
+// One narrow pattern per key (instead of a single large alternation) keeps each regex's
+// cognitive complexity low and avoids any risk of catastrophic backtracking.
+const SENSITIVE_KEY_VALUE_PATTERNS = SENSITIVE_VALUE_KEYS.map(
+  (key) => new RegExp(`(\\b${key}\\s*[=:]\\s*)([^&\\s]+)`, 'giu'),
+);
+// The two segments cannot both consume ':' or '@', so there is exactly one way to split the
+// match: linear time, no backtracking ambiguity.
+const URL_USERINFO = /(:\/\/)[^\s/?#@:]+:[^\s/?#@]+@/gu;
 
 function sanitizeString(value: string): string {
-  return value
+  let sanitized = value
     .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/giu, 'Bearer [redacted]')
-    .replace(URL_USERINFO, '$1[redacted]@')
-    .replace(SENSITIVE_KEY_VALUE_PAIR, '$1[redacted]')
-    .slice(0, 1_000);
+    .replace(URL_USERINFO, '$1[redacted]@');
+  for (const pattern of SENSITIVE_KEY_VALUE_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '$1[redacted]');
+  }
+  return sanitized.slice(0, 1_000);
 }
