@@ -70,9 +70,14 @@ function sanitizeRecord(
   return sanitizeLogValue(data) as Readonly<Record<string, unknown>>;
 }
 
+const SENSITIVE_KEY_VALUE_PAIR =
+  /(\b(?:authorization|credential|password|passwd|secret|token|key|access[-_]?token|refresh[-_]?token|api[-_]?key|client[-_]?secret|auth[-_]?token|signature|sig)\s*[=:]\s*)("[^"]*"|'[^']*'|[^&\s'"]+)/giu;
+const URL_USERINFO = /(:\/\/)[^\s/?#@]+:[^\s/?#@]+@/gu;
+
 function sanitizeString(value: string): string {
   return value
     .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/giu, 'Bearer [redacted]')
-    .replace(/([?&](?:token|key|secret|password)=)[^&\s]+/giu, '$1[redacted]')
+    .replace(URL_USERINFO, '$1[redacted]@')
+    .replace(SENSITIVE_KEY_VALUE_PAIR, '$1[redacted]')
     .slice(0, 1_000);
 }
