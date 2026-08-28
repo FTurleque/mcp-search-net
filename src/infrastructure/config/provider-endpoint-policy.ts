@@ -26,7 +26,8 @@ export function isSafeProviderEndpoint(value: string): boolean {
   } catch {
     return false;
   }
-  if (url.protocol !== 'http:') return true;
+  if (url.protocol === 'https:') return true;
+  if (url.protocol !== 'http:') return false;
   return isLocalProviderHost(url.hostname);
 }
 

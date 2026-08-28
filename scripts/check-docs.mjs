@@ -30,6 +30,7 @@ validateVersionConsistency();
 validateEnvironmentInventory();
 validatePostMergeTruth();
 validateReleaseAndInstallerHardening();
+validateAuthenticodePolicyConsistency();
 
 if (failures.length > 0) {
   process.stderr.write(`DOCS_CHECK_FAILED (${failures.length})\n`);
@@ -519,6 +520,48 @@ function validateReleaseAndInstallerHardening() {
     'PUBLIC_TOOL_ERROR_MESSAGES[error.code]',
     'tool-call.ts: mapping public canonique des erreurs absent',
   );
+}
+
+function validateAuthenticodePolicyConsistency() {
+  const releaseWorkflow = readText('.github/workflows/release-windows.yml');
+  const readme = readText('README.md');
+  const docs = [
+    ['README.md', readme],
+    [currentStatePath, currentState],
+    [clientCertificationPath, clientCertification],
+  ];
+
+  requireText(
+    releaseWorkflow,
+    'default: false',
+    'release-windows.yml: authenticode input must default to false — docs assume unsigned-by-default policy',
+  );
+
+  const CANONICAL_PHRASE = 'Authenticode (optionnelle, désactivée par défaut)';
+  const BANNED_PHRASES = ['Authenticode obligatoire', 'exige...une signature Authenticode'];
+
+  for (const [file, text] of docs) {
+    const normalized = normalizeProseWhitespace(text);
+    requireText(
+      normalized,
+      CANONICAL_PHRASE,
+      `${file}: doit documenter la politique Authenticode optionnelle avec la formulation canonique "${CANONICAL_PHRASE}"`,
+    );
+    for (const banned of BANNED_PHRASES) {
+      assert(
+        !normalized.includes(banned),
+        `${file}: contradiction Authenticode obligatoire détectée ("${banned}") alors que le workflow la garde optionnelle par défaut`,
+      );
+    }
+  }
+}
+
+function normalizeProseWhitespace(text) {
+  return text.replace(/\s+/gu, ' ');
+}
+
+function assert(condition, message) {
+  if (!condition) failures.push(message);
 }
 
 function markdownAnchors(source) {

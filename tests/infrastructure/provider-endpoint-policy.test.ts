@@ -24,8 +24,22 @@ describe('provider endpoint policy', () => {
     ['http://8.8.8.8', false],
     ['http://mcp-search-net.example.com', false],
     ['not a url', false],
+    ['ftp://remote.example', false],
+    ['ftp://localhost', false],
+    ['file:///etc/passwd', false],
+    ['gopher://remote.example', false],
+    ['unknown-scheme://remote.example', false],
+    ['data:text/plain,hello', false],
+    ['javascript:alert(1)', false],
   ] as const)('%s -> safe=%s', (url, expected) => {
     expect(isSafeProviderEndpoint(url)).toBe(expected);
+  });
+
+  it('is fail-closed for every non-HTTPS scheme regardless of upstream Zod restrictions', () => {
+    for (const scheme of ['ftp', 'file', 'gopher', 'ws', 'wss', 'unknown-scheme']) {
+      expect(isSafeProviderEndpoint(`${scheme}://localhost`)).toBe(false);
+      expect(isSafeProviderEndpoint(`${scheme}://searxng`)).toBe(false);
+    }
   });
 
   it('accepts the current Windows production configuration', () => {
