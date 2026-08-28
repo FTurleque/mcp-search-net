@@ -130,18 +130,18 @@ function validateDocumentationIndex() {
 }
 
 function validatePublicContractInventory() {
-  const serverV1 = readText('src/presentation/mcp/mcp-server.ts');
-  const serverV2 = readText('src/presentation/mcp/mcp-server-v2.ts');
+  const webTools = readText('src/presentation/mcp/web-tools-registration.ts');
+  const catalogTools = readText('src/presentation/mcp/catalog-tools-registration.ts');
   const historyTool = readText('src/presentation/mcp/search-history-tool.ts');
   const resources = readText('src/presentation/mcp/catalog-resources.ts');
   const toolsReference = readText('docs/reference/tools.md');
   const readme = readText('README.md');
   const tools = [
-    ['search_web', serverV1],
-    ['fetch_url', serverV1],
-    ['search_docs', serverV2],
-    ['list_docs', serverV2],
-    ['read_doc_section', serverV2],
+    ['search_web', webTools],
+    ['fetch_url', webTools],
+    ['search_docs', catalogTools],
+    ['list_docs', catalogTools],
+    ['read_doc_section', catalogTools],
     ['list_search_history', historyTool],
   ];
   requireText(

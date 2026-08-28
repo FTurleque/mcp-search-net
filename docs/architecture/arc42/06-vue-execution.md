@@ -172,7 +172,7 @@ sequenceDiagram
     participant Guard as runtime-guard.ts
     participant Cfg as loadConfiguration()
     participant Cnt as createContainer()
-    participant Srv as McpServer (V2)
+    participant Srv as McpServer
 
     OS->>Main: node build/bootstrap/main.js
     Main->>Guard: assertSupportedNodeVersion(process.versions.node)
@@ -188,7 +188,7 @@ sequenceDiagram
     alt catalogue incohérent
         Cnt-->>Main: ConfigurationError (fail-closed)
     end
-    Cnt->>Cnt: createMcpServer() V1 + V2 tools + resources
+    Cnt->>Cnt: createMcpServer() : web tools + catalog tools + resources
     Cnt-->>Main: {cache, catalog, logger, mcpServer}
     Main->>Main: register SIGINT / SIGTERM / uncaughtException
     Main->>Srv: connectStdio() → StdioServerTransport
