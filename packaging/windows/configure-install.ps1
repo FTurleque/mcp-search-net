@@ -151,7 +151,11 @@ function Assert-FileSnapshotCurrent {
 function Write-DurableUtf8File {
     param(
         [Parameter(Mandatory)] [string] $Path,
-        [Parameter(Mandatory)] [string] $Content,
+        # Truncating a managed file to zero bytes (e.g. removing the only content it ever
+        # held) is a legitimate, intentional write -- PowerShell's default Mandatory
+        # validation otherwise rejects an empty string outright, which crashed here whenever
+        # a managed block was the file's only content.
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Content,
         [object] $ExpectedSnapshot = $null
     )
 
@@ -472,6 +476,276 @@ function Get-ManagedRecordState([object] $Record) {
 function Get-ManagedRecordFingerprint([object] $Record) {
     if ($null -eq $Record -or -not (Get-PropertyExists $Record 'entryFingerprint')) { return '' }
     return [string]$Record.entryFingerprint
+}
+
+# --- Global agent policy (user-scoped only; NEVER repository-scoped) --------------------
+#
+# Installs a short "use mcp-search-net automatically" policy into each supported agent's
+# GLOBAL, per-user instruction file (Claude Code's ~/.claude/CLAUDE.md, Codex's
+# $CODEX_HOME/AGENTS.md, Copilot CLI's $COPILOT_HOME/copilot-instructions.md, Copilot
+# JetBrains' global-copilot-instructions.md). This is deliberately separate from MCP
+# registration above: MCP registration wires up the tool; the policy tells the agent to
+# actually reach for it without the user typing "use mcp-search-net" every time.
+#
+# INVARIANT: mcp-search-net global policy is USER-SCOPED ONLY. These paths are resolved
+# exclusively from USERPROFILE / LOCALAPPDATA / CODEX_HOME / COPILOT_HOME and never from
+# the current working directory, a repository root, or any path under a project the user
+# has open. A future change must not redirect any of the four resolvers below toward a
+# path relative to an application repository -- tests/security/global-agent-policy.test.ts
+# asserts this and must fail if it is ever violated.
+$GlobalPolicyBeginMark = '<!-- BEGIN MCP-SEARCH-NET GLOBAL POLICY -->'
+$GlobalPolicyEndMark = '<!-- END MCP-SEARCH-NET GLOBAL POLICY -->'
+$GlobalPolicySourcePath = Join-Path $InstallRoot 'scripts\mcp-search-net-global-policy.md'
+
+function Resolve-ClaudeGlobalInstructionsPath {
+    return Join-Path $env:USERPROFILE '.claude\CLAUDE.md'
+}
+
+function Resolve-CodexGlobalInstructionsPath {
+    $codexHome = [string]$env:CODEX_HOME
+    if ([string]::IsNullOrWhiteSpace($codexHome)) { $codexHome = Join-Path $env:USERPROFILE '.codex' }
+    return Join-Path $codexHome 'AGENTS.md'
+}
+
+function Resolve-CopilotCliGlobalInstructionsPath {
+    $copilotHome = [string]$env:COPILOT_HOME
+    if ([string]::IsNullOrWhiteSpace($copilotHome)) { $copilotHome = Join-Path $env:USERPROFILE '.copilot' }
+    return Join-Path $copilotHome 'copilot-instructions.md'
+}
+
+function Resolve-CopilotJetBrainsGlobalInstructionsPath {
+    return Join-Path $env:LOCALAPPDATA 'github-copilot\intellij\global-copilot-instructions.md'
+}
+
+function Get-GlobalPolicyBlock {
+    if (-not (Test-Path -LiteralPath $GlobalPolicySourcePath -PathType Leaf)) {
+        throw "MCP_GLOBAL_POLICY_SOURCE_MISSING:$GlobalPolicySourcePath"
+    }
+    $content = [System.IO.File]::ReadAllText($GlobalPolicySourcePath, [System.Text.Encoding]::UTF8).Trim()
+    return ($GlobalPolicyBeginMark, '', $content, '', $GlobalPolicyEndMark) -join [Environment]::NewLine
+}
+
+function Count-MarkerOccurrences([string] $Text, [string] $Marker) {
+    if ([string]::IsNullOrEmpty($Text)) { return 0 }
+    $count = 0
+    $index = 0
+    while (($index = $Text.IndexOf($Marker, $index, [System.StringComparison]::Ordinal)) -ge 0) {
+        $count++
+        $index += $Marker.Length
+    }
+    return $count
+}
+
+function Test-ManagedPolicyMarkersValid([string] $Text) {
+    $beginCount = Count-MarkerOccurrences $Text $GlobalPolicyBeginMark
+    $endCount = Count-MarkerOccurrences $Text $GlobalPolicyEndMark
+    # BEGIN without END, END without BEGIN, several BEGIN/END pairs, or several managed
+    # blocks are all ambiguous: fail closed rather than guess which pair delimits "the"
+    # managed block.
+    return ($beginCount -eq $endCount) -and ($beginCount -le 1)
+}
+
+function Get-ManagedPolicyBlockText([string] $Text) {
+    if (-not (Test-ManagedPolicyMarkersValid $Text)) { return $null }
+    $pattern = '(?s)' + [regex]::Escape($GlobalPolicyBeginMark) + '.*?' + [regex]::Escape($GlobalPolicyEndMark)
+    $match = [regex]::Match($Text, $pattern)
+    if ($match.Success) { return $match.Value }
+    return ''
+}
+
+function Remove-ManagedPolicyBlockText([string] $Text) {
+    $pattern = '(?s)\s*' + [regex]::Escape($GlobalPolicyBeginMark) + '.*?' + [regex]::Escape($GlobalPolicyEndMark)
+    return [regex]::Replace($Text, $pattern, '')
+}
+
+function New-GlobalPolicyRecord {
+    param(
+        [Parameter(Mandatory)] [string] $State,
+        [string] $ConfigPath = '',
+        [string] $EntryFingerprint = '',
+        [Parameter(Mandatory)] [bool] $FileCreatedByInstaller,
+        [string] $TransactionId = ''
+    )
+    if ([string]::IsNullOrWhiteSpace($TransactionId)) { $TransactionId = [guid]::NewGuid().ToString('N') }
+    return [PSCustomObject]@{
+        ownership = 'managed'
+        state = $State
+        transactionId = $TransactionId
+        configPath = $ConfigPath
+        entryFingerprint = $EntryFingerprint
+        fileCreatedByInstaller = $FileCreatedByInstaller
+        configuredAt = [datetime]::UtcNow.ToString('o')
+    }
+}
+
+function Test-ManagedPolicyBlockOwnedByRecord {
+    param(
+        [Parameter(Mandatory)] [object] $Record,
+        [Parameter(Mandatory)] [string] $Block
+    )
+    $expectedFingerprint = Get-ManagedRecordFingerprint $Record
+    if (-not [string]::IsNullOrWhiteSpace($expectedFingerprint)) {
+        return (Get-BytesSha256 ($Utf8NoBom.GetBytes($Block))) -eq $expectedFingerprint
+    }
+    if ((Get-ManagedRecordState $Record) -eq 'prepared') { return $false }
+    return $Block.IndexOf($GlobalPolicyBeginMark, [System.StringComparison]::Ordinal) -ge 0
+}
+
+function Join-GlobalPolicyText([string] $Prefix, [string] $Block) {
+    $trimmedPrefix = $Prefix.TrimEnd()
+    if ($trimmedPrefix) { return $trimmedPrefix + [Environment]::NewLine + [Environment]::NewLine + $Block + [Environment]::NewLine }
+    return $Block + [Environment]::NewLine
+}
+
+function Install-ManagedGlobalPolicy {
+    param(
+        [Parameter(Mandatory)] [hashtable] $IntegrationTable,
+        [Parameter(Mandatory)] [string] $Key,
+        [Parameter(Mandatory)] [string] $ConfigPath,
+        [Parameter(Mandatory)] [string] $Block,
+        [Parameter(Mandatory)] [string] $ClientLabel
+    )
+    $blockFingerprint = Get-BytesSha256 ($Utf8NoBom.GetBytes($Block))
+    $alreadyManaged = $IntegrationTable.ContainsKey($Key) -and $IntegrationTable[$Key].ownership -eq 'managed'
+
+    for ($attempt = 1; $attempt -le $ClientConfigMaxRetries; $attempt++) {
+        $snapshot = Get-FileSnapshot $ConfigPath
+        $text = if ($snapshot.Exists) { [string]$snapshot.Content } else { '' }
+
+        if (-not (Test-ManagedPolicyMarkersValid $text)) {
+            throw "MCP_CONFIG_MANAGED_POLICY_MARKERS_INVALID:${ConfigPath}:$Key"
+        }
+
+        $managedBlock = Get-ManagedPolicyBlockText $text
+        $fileCreatedNow = -not $snapshot.Exists
+        $priorFileCreated = if ($IntegrationTable.ContainsKey($Key) -and (Get-PropertyExists $IntegrationTable[$Key] 'fileCreatedByInstaller')) {
+            [bool]$IntegrationTable[$Key].fileCreatedByInstaller
+        }
+        else { $fileCreatedNow }
+
+        if ($managedBlock) {
+            if (-not $alreadyManaged) {
+                Set-IntegrationRecordDurably -Table $IntegrationTable -Key $Key -Record (
+                    New-GlobalPolicyRecord -State 'prepared' -ConfigPath $ConfigPath -EntryFingerprint $blockFingerprint -FileCreatedByInstaller $priorFileCreated
+                )
+                $alreadyManaged = $true
+            }
+            $record = $IntegrationTable[$Key]
+            if ((Get-ManagedRecordState $record) -eq 'prepared' -and (Get-BytesSha256 ($Utf8NoBom.GetBytes($managedBlock))) -eq $blockFingerprint) {
+                Set-IntegrationRecordDurably -Table $IntegrationTable -Key $Key -Record (
+                    New-GlobalPolicyRecord -State 'applied' -ConfigPath $ConfigPath -EntryFingerprint $blockFingerprint -FileCreatedByInstaller $priorFileCreated -TransactionId $record.transactionId
+                )
+                Write-Host "  $ClientLabel : politique globale récupérée depuis un commit prepared -> $ConfigPath" -ForegroundColor Green
+                return
+            }
+            if ((Get-ManagedRecordState $record) -eq 'applied') {
+                if ((Get-BytesSha256 ($Utf8NoBom.GetBytes($managedBlock))) -eq $blockFingerprint) {
+                    Write-Host "  $ClientLabel : politique globale déjà à jour -> $ConfigPath" -ForegroundColor DarkGray
+                    return
+                }
+                if (-not (Test-ManagedPolicyBlockOwnedByRecord -Record $record -Block $managedBlock)) {
+                    throw "MCP_CONFIG_MANAGED_POLICY_DRIFT:${ConfigPath}:$Key"
+                }
+            }
+            $cleaned = Remove-ManagedPolicyBlockText $text
+            $newText = Join-GlobalPolicyText -Prefix $cleaned -Block $Block
+            Backup-ConfigFile $ConfigPath | Out-Null
+            try { Write-DurableUtf8File -Path $ConfigPath -Content $newText -ExpectedSnapshot $snapshot }
+            catch {
+                if ($_.Exception.Message -like 'MCP_CONFIG_CONCURRENT_MODIFICATION:*' -and $attempt -lt $ClientConfigMaxRetries) { continue }
+                throw
+            }
+            Set-IntegrationRecordDurably -Table $IntegrationTable -Key $Key -Record (
+                New-GlobalPolicyRecord -State 'applied' -ConfigPath $ConfigPath -EntryFingerprint $blockFingerprint -FileCreatedByInstaller $priorFileCreated -TransactionId $record.transactionId
+            )
+            Write-Host "  $ClientLabel : politique globale mise à jour -> $ConfigPath" -ForegroundColor Green
+            return
+        }
+
+        if (-not $alreadyManaged) {
+            Set-IntegrationRecordDurably -Table $IntegrationTable -Key $Key -Record (
+                New-GlobalPolicyRecord -State 'prepared' -ConfigPath $ConfigPath -EntryFingerprint $blockFingerprint -FileCreatedByInstaller $fileCreatedNow
+            )
+            $alreadyManaged = $true
+        }
+        $newText = Join-GlobalPolicyText -Prefix $text -Block $Block
+        Backup-ConfigFile $ConfigPath | Out-Null
+        try { Write-DurableUtf8File -Path $ConfigPath -Content $newText -ExpectedSnapshot $snapshot }
+        catch {
+            if ($_.Exception.Message -like 'MCP_CONFIG_CONCURRENT_MODIFICATION:*' -and $attempt -lt $ClientConfigMaxRetries) { continue }
+            throw
+        }
+        $record = $IntegrationTable[$Key]
+        Set-IntegrationRecordDurably -Table $IntegrationTable -Key $Key -Record (
+            New-GlobalPolicyRecord -State 'applied' -ConfigPath $ConfigPath -EntryFingerprint $blockFingerprint -FileCreatedByInstaller $fileCreatedNow -TransactionId $record.transactionId
+        )
+        Write-Host "  $ClientLabel : politique globale installée -> $ConfigPath" -ForegroundColor Green
+        return
+    }
+    throw "MCP_CONFIG_CONCURRENT_MODIFICATION_RETRY_EXHAUSTED:$ConfigPath"
+}
+
+function Remove-ManagedGlobalPolicy {
+    param(
+        [Parameter(Mandatory)] [hashtable] $IntegrationTable,
+        [Parameter(Mandatory)] [string] $Key,
+        [Parameter(Mandatory)] [string] $ClientLabel
+    )
+    if (-not $IntegrationTable.ContainsKey($Key)) { return }
+    $record = $IntegrationTable[$Key]
+    if ($record.ownership -ne 'managed') {
+        Remove-IntegrationRecordDurably -Table $IntegrationTable -Key $Key
+        return
+    }
+    $configPath = if (Get-PropertyExists $record 'configPath') { [string]$record.configPath } else { '' }
+    if (-not $configPath -or -not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
+        Remove-IntegrationRecordDurably -Table $IntegrationTable -Key $Key
+        return
+    }
+
+    for ($attempt = 1; $attempt -le $ClientConfigMaxRetries; $attempt++) {
+        $snapshot = Get-FileSnapshot $configPath
+        $text = [string]$snapshot.Content
+
+        if (-not (Test-ManagedPolicyMarkersValid $text)) {
+            Write-Host "  $ClientLabel : marqueurs de politique globale ambigus — fichier préservé sans modification." -ForegroundColor Cyan
+            Remove-IntegrationRecordDurably -Table $IntegrationTable -Key $Key
+            return
+        }
+        $managedBlock = Get-ManagedPolicyBlockText $text
+        if (-not $managedBlock) {
+            Remove-IntegrationRecordDurably -Table $IntegrationTable -Key $Key
+            return
+        }
+        if (-not (Test-ManagedPolicyBlockOwnedByRecord -Record $record -Block $managedBlock)) {
+            Write-Host "  $ClientLabel : bloc de politique globale modifié — préservé, non supprimé." -ForegroundColor Cyan
+            Remove-IntegrationRecordDurably -Table $IntegrationTable -Key $Key
+            return
+        }
+
+        $cleaned = Remove-ManagedPolicyBlockText $text
+        $fileCreatedByInstaller = (Get-PropertyExists $record 'fileCreatedByInstaller') -and [bool]$record.fileCreatedByInstaller
+        Backup-ConfigFile $configPath | Out-Null
+
+        if ($fileCreatedByInstaller -and [string]::IsNullOrWhiteSpace($cleaned.Trim())) {
+            try { Remove-Item -LiteralPath $configPath -Force }
+            catch { Write-DurableUtf8File -Path $configPath -Content '' -ExpectedSnapshot $snapshot }
+            Remove-IntegrationRecordDurably -Table $IntegrationTable -Key $Key
+            Write-Host "  $ClientLabel : politique globale retirée, fichier créé par l'installateur supprimé -> $configPath" -ForegroundColor Green
+            return
+        }
+
+        $newText = if ($cleaned.Trim()) { $cleaned.Trim() + [Environment]::NewLine } else { '' }
+        try { Write-DurableUtf8File -Path $configPath -Content $newText -ExpectedSnapshot $snapshot }
+        catch {
+            if ($_.Exception.Message -like 'MCP_CONFIG_CONCURRENT_MODIFICATION:*' -and $attempt -lt $ClientConfigMaxRetries) { continue }
+            throw
+        }
+        Remove-IntegrationRecordDurably -Table $IntegrationTable -Key $Key
+        Write-Host "  $ClientLabel : politique globale retirée -> $configPath" -ForegroundColor Green
+        return
+    }
+    throw "MCP_CONFIG_CONCURRENT_MODIFICATION_RETRY_EXHAUSTED:$configPath"
 }
 
 function Test-JsonEntryOwnedByRecord {
@@ -958,6 +1232,19 @@ elseif ($DoCopilotJB) {
     catch { Record-MaterialFailure 'Copilot JetBrains configuration' $_.Exception.Message }
 }
 
+$CopilotJBGlobalPolicyKey = 'copilot-jetbrains:global-policy'
+if ($Uninstall) {
+    try { Remove-ManagedGlobalPolicy -IntegrationTable $integrations -Key $CopilotJBGlobalPolicyKey -ClientLabel 'Copilot JetBrains' }
+    catch { Record-MaterialFailure 'Copilot JetBrains global policy uninstall' $_.Exception.Message }
+}
+elseif ($DoCopilotJB) {
+    try {
+        Install-ManagedGlobalPolicy -IntegrationTable $integrations -Key $CopilotJBGlobalPolicyKey `
+            -ConfigPath (Resolve-CopilotJetBrainsGlobalInstructionsPath) -Block (Get-GlobalPolicyBlock) -ClientLabel 'Copilot JetBrains'
+    }
+    catch { Record-MaterialFailure 'Copilot JetBrains global policy' $_.Exception.Message }
+}
+
 $ClaudeDesktopConfig = $null
 try { $ClaudeDesktopConfig = Resolve-ClaudeDesktopConfig }
 catch { if ($DoClaudeDesktop -or $Uninstall) { Record-MaterialFailure 'Claude Desktop detection' $_.Exception.Message } }
@@ -1068,6 +1355,21 @@ elseif ($DoClaudeCode) {
     catch { Record-MaterialFailure 'Claude Code configuration' $_.Exception.Message }
 }
 
+$ClaudeCodeGlobalPolicyKey = 'claude-code:global-policy'
+if ($Uninstall) {
+    try { Remove-ManagedGlobalPolicy -IntegrationTable $integrations -Key $ClaudeCodeGlobalPolicyKey -ClientLabel 'Claude Code' }
+    catch { Record-MaterialFailure 'Claude Code global policy uninstall' $_.Exception.Message }
+}
+elseif ($DoClaudeCode) {
+    # The global policy is a plain user file; it applies regardless of whether the `claude`
+    # CLI is currently resolvable (Claude Code may be installed after mcp-search-net).
+    try {
+        Install-ManagedGlobalPolicy -IntegrationTable $integrations -Key $ClaudeCodeGlobalPolicyKey `
+            -ConfigPath (Resolve-ClaudeGlobalInstructionsPath) -Block (Get-GlobalPolicyBlock) -ClientLabel 'Claude Code'
+    }
+    catch { Record-MaterialFailure 'Claude Code global policy' $_.Exception.Message }
+}
+
 $CopilotExe = $null
 try { $CopilotExe = Resolve-CopilotExe }
 catch { if ($DoCopilotCli) { Record-MaterialFailure 'Copilot CLI detection' $_.Exception.Message } }
@@ -1108,6 +1410,19 @@ elseif ($DoCopilotCli) {
         else { Write-Host 'Copilot CLI non détecté — configuration ignorée.' -ForegroundColor Yellow }
     }
     catch { Record-MaterialFailure 'Copilot CLI configuration' $_.Exception.Message }
+}
+
+$CopilotCliGlobalPolicyKey = 'copilot-cli:global-policy'
+if ($Uninstall) {
+    try { Remove-ManagedGlobalPolicy -IntegrationTable $integrations -Key $CopilotCliGlobalPolicyKey -ClientLabel 'Copilot CLI' }
+    catch { Record-MaterialFailure 'Copilot CLI global policy uninstall' $_.Exception.Message }
+}
+elseif ($DoCopilotCli) {
+    try {
+        Install-ManagedGlobalPolicy -IntegrationTable $integrations -Key $CopilotCliGlobalPolicyKey `
+            -ConfigPath (Resolve-CopilotCliGlobalInstructionsPath) -Block (Get-GlobalPolicyBlock) -ClientLabel 'Copilot CLI'
+    }
+    catch { Record-MaterialFailure 'Copilot CLI global policy' $_.Exception.Message }
 }
 
 $CodexConfigPath = Join-Path $env:USERPROFILE '.codex\config.toml'
@@ -1276,6 +1591,19 @@ elseif ($DoCodex) {
         }
     }
     catch { Record-MaterialFailure 'Codex configuration' $_.Exception.Message }
+}
+
+$CodexGlobalPolicyKey = 'codex:global-policy'
+if ($Uninstall) {
+    try { Remove-ManagedGlobalPolicy -IntegrationTable $integrations -Key $CodexGlobalPolicyKey -ClientLabel 'Codex' }
+    catch { Record-MaterialFailure 'Codex global policy uninstall' $_.Exception.Message }
+}
+elseif ($DoCodex) {
+    try {
+        Install-ManagedGlobalPolicy -IntegrationTable $integrations -Key $CodexGlobalPolicyKey `
+            -ConfigPath (Resolve-CodexGlobalInstructionsPath) -Block (Get-GlobalPolicyBlock) -ClientLabel 'Codex'
+    }
+    catch { Record-MaterialFailure 'Codex global policy' $_.Exception.Message }
 }
 
 # Preserve the old explicit metadata failure contract for installer runs that did not

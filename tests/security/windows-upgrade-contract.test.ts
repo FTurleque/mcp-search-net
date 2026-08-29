@@ -7,6 +7,19 @@ import { describe, expect, it } from 'vitest';
 
 const configureScript = resolve('packaging/windows/configure-install.ps1');
 
+function ensureGlobalPolicyFixture(installRoot: string) {
+  const scriptsDir = join(installRoot, 'scripts');
+  mkdirSync(scriptsDir, { recursive: true });
+  const fixturePath = join(scriptsDir, 'mcp-search-net-global-policy.md');
+  if (!existsSync(fixturePath)) {
+    writeFileSync(
+      fixturePath,
+      '## mcp-search-net\n\nUse mcp-search-net for external retrieval.\n',
+      'utf8',
+    );
+  }
+}
+
 function runConfigure(
   installRoot: string,
   localAppData: string,
@@ -14,6 +27,7 @@ function runConfigure(
   args: readonly string[],
   extraEnvironment: NodeJS.ProcessEnv = {},
 ) {
+  ensureGlobalPolicyFixture(installRoot);
   return spawnSync(
     'powershell.exe',
     [

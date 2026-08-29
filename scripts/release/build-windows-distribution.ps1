@@ -153,6 +153,7 @@ New-Item -ItemType Directory -Force -Path $ScriptsDist | Out-Null
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\configure-install.ps1') -Destination $ScriptsDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\detect-integrations.ps1') -Destination $ScriptsDist -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\update-installation.ps1') -Destination $ScriptsDist -Force
+Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\mcp-search-net-global-policy.md') -Destination $ScriptsDist -Force
 
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'packaging\windows\install.ps1') -Destination $DistRoot -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'LICENSE') -Destination $DistRoot -Force
