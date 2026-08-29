@@ -12,7 +12,7 @@ Dans le dépôt :
 
 Dans l’installation, modifier `%LOCALAPPDATA%\mcp-search-net\config`. L’installateur préserve ces fichiers et écrit les modèles récents sous `*.default`.
 
-Les trois profils applicatifs du candidat portent la version `1.1.5`. Cette valeur alimente les
+Les trois profils applicatifs du candidat portent la version `1.1.6`. Cette valeur alimente les
 informations serveur MCP.
 
 ## Variables d’environnement

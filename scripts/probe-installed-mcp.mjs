@@ -24,7 +24,7 @@ if (
 
 const requestTimeoutMs = 30_000;
 
-const client = new Client({ name: 'mcp-search-net-installed-probe', version: '1.1.5' });
+const client = new Client({ name: 'mcp-search-net-installed-probe', version: '1.1.6' });
 const transport = new StdioClientTransport({
   command: resolvedLauncher,
   cwd: resolvedInstallRoot,
