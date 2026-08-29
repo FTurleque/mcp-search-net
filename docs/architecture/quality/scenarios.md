@@ -47,7 +47,7 @@ Ce fichier complète la [section 10 — Exigences qualité](../arc42/10-exigence
 ### QC-02 — Ajout d'un sixième outil MCP
 
 **Contexte** : Nouvel outil `fetch_sitemap` ajouté.
-**Stimulus** : Enregistrement dans `mcp-server-v2.ts`.
+**Stimulus** : Enregistrement dans `catalog-tools-registration.ts` (composé par `mcp-server.ts`).
 **Impact attendu** : Nouveau use case dans `application/`, nouveau schéma Zod, mise à jour des tests E2E et de contrat.
 **Risque** : Rupture de `schemaVersion` si les annotations ou le contrat existant sont modifiés.
 

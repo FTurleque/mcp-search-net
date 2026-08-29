@@ -17,7 +17,7 @@ flowchart TB
     subgraph node["«node»\nProcessus Node.js 24 — mcp-search-net v1.1.0"]
         direction TB
         bootstrap["«Component»\nBootstrap\nmain.ts · container.ts"]
-        presentation["«Component»\nPrésentation MCP\nmcp-server.ts · mcp-server-v2.ts\ncatalog-resources.ts"]
+        presentation["«Component»\nPrésentation MCP\nmcp-server.ts · web-tools-registration.ts\ncatalog-tools-registration.ts · catalog-resources.ts"]
         application["«Component»\nApplication\nuse-cases/ · ports/"]
         domain["«Component»\nDomaine\nmodels/ · errors/ · services/ · value-objects/"]
         infra["«Component»\nInfrastructure\nsearxng · crawl4ai · sqlite · config · security · logging"]
@@ -183,19 +183,23 @@ classDiagram
 ```mermaid
 flowchart TB
     subgraph pres["«Component»\nPrésentation MCP — src/presentation/mcp/"]
-        v1["«adapter»\ncreateMcpServer (V1)\nmcp-server.ts\n\nregistre search_web\nregistre fetch_url"]
-        v2["«adapter»\ncreateMcpServer (V2)\nmcp-server-v2.ts\n\nregistre search_docs\nregistre list_docs\nregistre read_doc_section"]
+        canon["«adapter»\ncreateMcpServer\nmcp-server.ts\n\ncomposition canonique\nunique point d'entrée"]
+        web["«adapter»\nregisterWebTools\nweb-tools-registration.ts\n\nregistre search_web\nregistre fetch_url"]
+        cat["«adapter»\nregisterCatalogTools\ncatalog-tools-registration.ts\n\nregistre search_docs\nregistre list_docs\nregistre read_doc_section"]
         res["«adapter»\nregisterCatalogResources\ncatalog-resources.ts\n\n4 resources statiques\n9 resource templates"]
+        hist["«adapter»\nregisterSearchHistoryTool\nsearch-history-tool.ts\n\nregistre list_search_history (opt-in)"]
         tc["executeToolCall\ntool-call.ts\n\nlog · erreur · format texte"]
         schemas["«interface»\nschemas/\nZod input/output\npar outil"]
     end
 
-    v2 -- "extends" --> v1
-    v2 -- "registre resources" --> res
-    v1 -- "utilise" --> tc
-    v2 -- "utilise" --> tc
-    v1 -- "utilise" --> schemas
-    v2 -- "utilise" --> schemas
+    canon -- "compose" --> web
+    canon -- "compose" --> cat
+    canon -- "compose" --> res
+    canon -- "compose" --> hist
+    web -- "utilise" --> tc
+    cat -- "utilise" --> tc
+    web -- "utilise" --> schemas
+    cat -- "utilise" --> schemas
 ```
 
 ---
@@ -244,26 +248,27 @@ classDiagram
 
 ## 5.7 Référence des fichiers source par composant
 
-| Composant               | Fichier(s) principal(aux)                                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------------------------- |
-| Bootstrap               | `src/bootstrap/main.ts`, `src/bootstrap/container.ts`, `src/bootstrap/runtime-guard.ts`              |
-| MCP Server V1           | `src/presentation/mcp/mcp-server.ts`                                                                 |
-| MCP Server V2           | `src/presentation/mcp/mcp-server-v2.ts`                                                              |
-| Catalog Resources       | `src/presentation/mcp/catalog-resources.ts`                                                          |
-| Tool execution          | `src/presentation/mcp/tool-call.ts`                                                                  |
-| SearchWeb               | `src/application/use-cases/search-web.ts`                                                            |
-| FetchUrl                | `src/application/use-cases/fetch-url.ts`                                                             |
-| SearchCatalogDocuments  | `src/application/use-cases/search-catalog-documents.ts`                                              |
-| SyncCatalogDocuments    | `src/application/use-cases/sync-catalog-documents.ts`                                                |
-| Ports (interfaces)      | `src/application/ports/*.ts`                                                                         |
-| Domain models           | `src/domain/models/*.ts`, `src/domain/value-objects/*.ts`                                            |
-| Domain errors           | `src/domain/errors/domain-errors.ts`                                                                 |
-| SearxngSearchProvider   | `src/infrastructure/search/searxng-search-provider.ts`                                               |
-| Crawl4aiContentFetcher  | `src/infrastructure/fetch/crawl4ai-content-fetcher.ts`                                               |
-| SecureHttpGateway       | `src/infrastructure/fetch/secure-http-gateway.ts`                                                    |
-| PreparedHtmlSanitizer   | `src/infrastructure/fetch/prepared-html-sanitizer.ts`                                                |
-| PublicUrlSecurityPolicy | `src/infrastructure/security/public-url-security-policy.ts`                                          |
-| SqliteCacheRepository   | `src/infrastructure/cache/sqlite-cache-repository.ts`                                                |
-| SqliteCatalogRepository | `src/infrastructure/catalog/sqlite-catalog-repository.ts`                                            |
-| Configuration           | `src/infrastructure/config/application-config.ts`, `src/infrastructure/config/load-configuration.ts` |
-| StructuredLogger        | `src/infrastructure/logging/structured-logger.ts`                                                    |
+| Composant                | Fichier(s) principal(aux)                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Bootstrap                | `src/bootstrap/main.ts`, `src/bootstrap/container.ts`, `src/bootstrap/runtime-guard.ts`              |
+| MCP Server (canonique)   | `src/presentation/mcp/mcp-server.ts`                                                                 |
+| Web tools (search/fetch) | `src/presentation/mcp/web-tools-registration.ts`                                                     |
+| Catalog tools            | `src/presentation/mcp/catalog-tools-registration.ts`                                                 |
+| Catalog Resources        | `src/presentation/mcp/catalog-resources.ts`                                                          |
+| Tool execution           | `src/presentation/mcp/tool-call.ts`                                                                  |
+| SearchWeb                | `src/application/use-cases/search-web.ts`                                                            |
+| FetchUrl                 | `src/application/use-cases/fetch-url.ts`                                                             |
+| SearchCatalogDocuments   | `src/application/use-cases/search-catalog-documents.ts`                                              |
+| SyncCatalogDocuments     | `src/application/use-cases/sync-catalog-documents.ts`                                                |
+| Ports (interfaces)       | `src/application/ports/*.ts`                                                                         |
+| Domain models            | `src/domain/models/*.ts`, `src/domain/value-objects/*.ts`                                            |
+| Domain errors            | `src/domain/errors/domain-errors.ts`                                                                 |
+| SearxngSearchProvider    | `src/infrastructure/search/searxng-search-provider.ts`                                               |
+| Crawl4aiContentFetcher   | `src/infrastructure/fetch/crawl4ai-content-fetcher.ts`                                               |
+| SecureHttpGateway        | `src/infrastructure/fetch/secure-http-gateway.ts`                                                    |
+| PreparedHtmlSanitizer    | `src/infrastructure/fetch/prepared-html-sanitizer.ts`                                                |
+| PublicUrlSecurityPolicy  | `src/infrastructure/security/public-url-security-policy.ts`                                          |
+| SqliteCacheRepository    | `src/infrastructure/cache/sqlite-cache-repository.ts`                                                |
+| SqliteCatalogRepository  | `src/infrastructure/catalog/sqlite-catalog-repository.ts`                                            |
+| Configuration            | `src/infrastructure/config/application-config.ts`, `src/infrastructure/config/load-configuration.ts` |
+| StructuredLogger         | `src/infrastructure/logging/structured-logger.ts`                                                    |
