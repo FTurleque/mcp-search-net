@@ -1,4 +1,6 @@
-import { dirname, resolve } from 'node:path';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -248,5 +250,37 @@ describe('application configuration precedence and limits', () => {
     await expect(loadConfiguration(resolve('config/application.yml'))).rejects.toThrow(
       'Environment variable MCP_SEARCH_CACHE_ENABLED must be a boolean',
     );
+  });
+
+  it('reports the running package version instead of a stale value preserved from an older install', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'mcp-config-version-'));
+    try {
+      const configPath = join(root, 'application.yml');
+      const officialSourcesPath = resolve('config/official-sources.yml').replaceAll('\\', '/');
+      writeFileSync(
+        configPath,
+        [
+          'application:',
+          '  name: mcp-search-net',
+          '  version: 0.0.1-stale-from-a-previous-install',
+          '  profile: development',
+          '',
+          `officialSourcesPath: ${officialSourcesPath}`,
+          '',
+        ].join('\n'),
+      );
+
+      const loaded = await loadConfiguration(configPath);
+      const packageJson = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as {
+        readonly version: string;
+      };
+
+      expect(loaded.application.application.version).toBe(packageJson.version);
+      expect(loaded.application.application.version).not.toBe(
+        '0.0.1-stale-from-a-previous-install',
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

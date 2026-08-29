@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import type { OfficialSourceRegistry } from '../../application/ports/official-source-registry.js';
 import {
@@ -31,9 +32,18 @@ export async function loadConfiguration(configPath: string): Promise<LoadedConfi
   const absoluteConfigPath = resolve(configPath);
   const environment = applicationEnvironmentSchema.parse(process.env);
   const yamlApplication = await loadYaml(absoluteConfigPath, applicationConfigSchema);
-  const application = applicationConfigSchema.parse(
+  const parsedApplication = applicationConfigSchema.parse(
     applyEnvironmentOverrides(yamlApplication, environment),
   );
+  // application.yml is deliberately preserved across in-place upgrades so a user's own
+  // customizations survive, but that means any version string written into it goes stale
+  // forever the moment the running code moves on -- it is deployment metadata, not a user
+  // setting. Report the version of the code that is actually running instead of whatever a
+  // long-preserved config file happens to say.
+  const application = {
+    ...parsedApplication,
+    application: { ...parsedApplication.application, version: resolveRuntimePackageVersion() },
+  };
   const configurationDirectory = dirname(absoluteConfigPath);
   const cachePath = resolve(configurationDirectory, application.cache.path);
   const historyPath = resolve(configurationDirectory, application.history.path);
@@ -225,6 +235,28 @@ function assertSafeProviderTransport(crawl4aiBaseUrl: string, token: string | un
 
 function hashSecret(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
+let cachedRuntimePackageVersion: string | undefined;
+
+function resolveRuntimePackageVersion(): string {
+  if (cachedRuntimePackageVersion !== undefined) return cachedRuntimePackageVersion;
+  const currentModuleDirectory = dirname(fileURLToPath(import.meta.url));
+  const packageJsonPath = resolve(currentModuleDirectory, '../../../package.json');
+  const packageJson: unknown = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+  const version =
+    typeof packageJson === 'object' &&
+    packageJson !== null &&
+    'version' in packageJson &&
+    typeof packageJson.version === 'string' &&
+    packageJson.version.length > 0
+      ? packageJson.version
+      : undefined;
+  if (version === undefined) {
+    throw new ConfigurationError(`${packageJsonPath} is missing a valid "version" field`);
+  }
+  cachedRuntimePackageVersion = version;
+  return version;
 }
 
 function firstEnvironment(...names: readonly string[]): string | undefined {
