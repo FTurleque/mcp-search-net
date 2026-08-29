@@ -97,6 +97,23 @@ try {
         Assert-State $missing $section 'Missing' '1' '0'
     }
 
+    # Regression: a broken "copilot" shim earlier on PATH (observed in the wild -- an editor
+    # extension shipping its own copilot.ps1 proxy that references PowerShell 6+ automatic
+    # variables such as $IsWindows, unavailable under Windows PowerShell 5.1 + StrictMode) must
+    # not make a perfectly working CLI further down PATH look uninstalled.
+    $brokenShimDir = Join-Path $Root 'broken-copilot-shim'
+    New-FakeExecutable (Join-Path $brokenShimDir 'copilot.ps1') '$IsWindows | Out-Null'
+    $pathWithBrokenShim = $brokenShimDir + ';' + $env:PATH
+    $previousPath = $env:PATH
+    $env:PATH = $pathWithBrokenShim
+    try {
+        $shimmed = Invoke-Detect 'copilot-shim-regression'
+        Assert-State $shimmed 'CopilotCli' 'Missing' '1' '0'
+    }
+    finally {
+        $env:PATH = $previousPath
+    }
+
     $clients = 'copilot-jetbrains,copilot-cli,claude-desktop,claude-code,codex'
     $log = Join-Path $Root 'apply.log'
     & $ScriptUnderTest -Mode Apply -InstallRoot $InstallRoot -Clients $clients -LogPath $log

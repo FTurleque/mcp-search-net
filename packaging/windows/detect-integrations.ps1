@@ -192,6 +192,24 @@ function Resolve-RealCommand([string] $Name) {
     return $null
 }
 
+function Resolve-WorkingCopilotCommand {
+    # A real, working GitHub Copilot CLI can legitimately sit behind an earlier, broken or
+    # foreign "copilot" on PATH (e.g. an editor extension's own CLI proxy) -- picking only the
+    # first PATH match, as Resolve-RealCommand does for every other client, silently reports
+    # "not installed" even when a perfectly good CLI is one entry further down PATH. Try every
+    # candidate, in PATH order, and use the first one that actually answers.
+    $candidates = @(
+        Get-Command 'copilot' -All -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandType -in @('Application', 'ExternalScript') } |
+            Select-Object -ExpandProperty Source -Unique
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-VsCodeShim $candidate) { continue }
+        if (Test-CommandCapability $candidate @('mcp', '--help')) { return $candidate }
+    }
+    return $null
+}
+
 function Test-VsCodeShim([string] $Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
     $lower = $Path.ToLowerInvariant()
@@ -200,6 +218,11 @@ function Test-VsCodeShim([string] $Path) {
 
 function Test-CommandCapability([string] $Path, [string[]] $Arguments) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    # Some third-party wrapper scripts on PATH (observed: VS Code's Copilot Chat extension
+    # ships its own copilot.ps1 proxy) reference PowerShell 6+ automatic variables like
+    # $IsWindows that do not exist under Windows PowerShell 5.1. Under Set-StrictMode that
+    # becomes a terminating error rather than $false, which this try/catch must still treat
+    # as "this particular candidate doesn't work" -- not as "copilot isn't installed at all".
     try { & $Path @Arguments 2>&1 | Out-Null; return $LASTEXITCODE -eq 0 }
     catch { return $false }
 }
@@ -458,9 +481,7 @@ function Get-CodexProbe {
 
 function Get-Probes {
     $jbDir = Join-Path $env:LOCALAPPDATA 'github-copilot\intellij'
-    $copilotPath = Resolve-RealCommand 'copilot'
-    $copilotInstalled = $false
-    if ($copilotPath -and -not (Test-VsCodeShim $copilotPath)) { $copilotInstalled = Test-CommandCapability $copilotPath @('mcp', '--help') }
+    $copilotInstalled = $null -ne (Resolve-WorkingCopilotCommand)
     $desktopConfig = Resolve-ClaudeDesktopConfig
     $claudeExe = Resolve-ClaudeExe
 
