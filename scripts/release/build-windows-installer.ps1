@@ -75,6 +75,16 @@ if (-not $Smoke) {
     if ($LASTEXITCODE -ne 0) {
         throw "Qualification transactionnelle Windows échouée (exit=$LASTEXITCODE)."
     }
+
+    # detect-integrations.ps1 -- not configure-install.ps1's own client blocks -- is what the
+    # real Setup.exe wizard and install.ps1 actually invoke to wire up clients. A regression
+    # here (e.g. a new per-client feature added only to configure-install.ps1) can silently
+    # never reach a real end-user install/upgrade despite every other gate passing.
+    $ClientIntegrationPreflight = Join-Path $RepoRoot 'packaging\windows\test-client-integration-preflight.ps1'
+    & $ClientIntegrationPreflight
+    if ($LASTEXITCODE -ne 0) {
+        throw "Qualification de la détection/application client Windows échouée (exit=$LASTEXITCODE)."
+    }
     Write-Host 'WINDOWS_PRODUCTION_INSTALLER_TRANSACTION_GATES_VALID' -ForegroundColor Green
 }
 
