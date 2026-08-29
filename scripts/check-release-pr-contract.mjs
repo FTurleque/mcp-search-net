@@ -19,7 +19,13 @@ if (targetBranch !== 'master') {
   process.exit(0);
 }
 
-assert(PROMOTION_BRANCH_PATTERN.test(sourceBranch), 'RELEASE_PR_SOURCE_BRANCH_INVALID');
+// 'develop' is the original, historically-working promotion source (PRs #83/#115/#130 all
+// merged this way); the release/promote-develop-* marker-commit branch is an additional,
+// stricter path for whoever wants the extra topology guarantees below, not a replacement.
+assert(
+  sourceBranch === 'develop' || PROMOTION_BRANCH_PATTERN.test(sourceBranch),
+  'RELEASE_PR_SOURCE_BRANCH_INVALID',
+);
 assert(/^[a-f0-9]{40}$/u.test(headSha), 'RELEASE_PR_HEAD_SHA_INVALID');
 assert(body.includes(POLICY_MARKER), 'RELEASE_PR_CURRENT_HEAD_POLICY_MARKER_MISSING');
 
@@ -59,7 +65,13 @@ assert(explicitAuthorization, 'RELEASE_PR_MERGE_AUTHORIZATION_RULE_MISSING');
 const exactHeadRule = mergeSection.includes('HEAD exact de la PR');
 assert(exactHeadRule, 'RELEASE_PR_EXACT_HEAD_RULE_MISSING');
 
-const topology = verifyTopology ? verifyPromotionTopology(headSha) : undefined;
+// The marker-commit topology checks (single empty commit directly on develop, identical
+// tree) only make sense for a release/promote-develop-* branch; a direct 'develop' PR has
+// no marker commit to verify by construction, so there is nothing extra to check here.
+const topology =
+  verifyTopology && PROMOTION_BRANCH_PATTERN.test(sourceBranch)
+    ? verifyPromotionTopology(headSha)
+    : undefined;
 writeStatus('RELEASE_PR_CONTRACT_VALID', {
   headSha,
   sourceBranch,
