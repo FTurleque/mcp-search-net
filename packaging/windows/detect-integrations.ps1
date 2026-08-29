@@ -192,6 +192,24 @@ function Resolve-RealCommand([string] $Name) {
     return $null
 }
 
+function Resolve-WorkingCopilotCommand {
+    # A real, working GitHub Copilot CLI can legitimately sit behind an earlier, broken or
+    # foreign "copilot" on PATH (e.g. an editor extension's own CLI proxy) -- picking only the
+    # first PATH match, as Resolve-RealCommand does for every other client, silently reports
+    # "not installed" even when a perfectly good CLI is one entry further down PATH. Try every
+    # candidate, in PATH order, and use the first one that actually answers.
+    $candidates = @(
+        Get-Command 'copilot' -All -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandType -in @('Application', 'ExternalScript') } |
+            Select-Object -ExpandProperty Source -Unique
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-VsCodeShim $candidate) { continue }
+        if (Test-CommandCapability $candidate @('mcp', '--help')) { return $candidate }
+    }
+    return $null
+}
+
 function Test-VsCodeShim([string] $Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
     $lower = $Path.ToLowerInvariant()
@@ -200,6 +218,11 @@ function Test-VsCodeShim([string] $Path) {
 
 function Test-CommandCapability([string] $Path, [string[]] $Arguments) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    # Some third-party wrapper scripts on PATH (observed: VS Code's Copilot Chat extension
+    # ships its own copilot.ps1 proxy) reference PowerShell 6+ automatic variables like
+    # $IsWindows that do not exist under Windows PowerShell 5.1. Under Set-StrictMode that
+    # becomes a terminating error rather than $false, which this try/catch must still treat
+    # as "this particular candidate doesn't work" -- not as "copilot isn't installed at all".
     try { & $Path @Arguments 2>&1 | Out-Null; return $LASTEXITCODE -eq 0 }
     catch { return $false }
 }
@@ -238,6 +261,147 @@ function New-Probe([bool] $Installed, [string] $State, [string] $Reason, [string
         Installed = $Installed; State = $State; Reason = $Reason; ClientKey = $ClientKey;
         ConfigPath = $ConfigFile; Kind = $Kind; RootKey = $RootKey; LegacyRootKeys = $LegacyRootKeys
     }
+}
+
+# --- Global agent policy (user-scoped only; NEVER repository-scoped) --------------------
+#
+# This is the script the real Setup.exe wizard and `install.ps1` actually invoke to wire up
+# clients (see RunClientIntegrationScript in the .iss template) — configure-install.ps1's own
+# equivalent client blocks are a separate code path exercised only by direct/manual/test
+# invocation, never by a real end-user install or upgrade. The global policy must therefore be
+# applied here, independently of whether MCP registration itself needs any change, so that a
+# client whose MCP entry is already Integrated still gets the policy the first time it ships.
+#
+# INVARIANT: mcp-search-net global policy is USER-SCOPED ONLY. Resolved exclusively from
+# USERPROFILE / LOCALAPPDATA / CODEX_HOME / COPILOT_HOME, never from a repository-relative path.
+$GlobalPolicyBeginMark = '<!-- BEGIN MCP-SEARCH-NET GLOBAL POLICY -->'
+$GlobalPolicyEndMark = '<!-- END MCP-SEARCH-NET GLOBAL POLICY -->'
+$GlobalPolicySourcePath = Join-Path $InstallRoot 'scripts\mcp-search-net-global-policy.md'
+
+function Resolve-ClaudeGlobalInstructionsPath {
+    return Join-Path $env:USERPROFILE '.claude\CLAUDE.md'
+}
+
+function Resolve-CodexGlobalInstructionsPath {
+    $codexHome = [string]$env:CODEX_HOME
+    if ([string]::IsNullOrWhiteSpace($codexHome)) { $codexHome = Join-Path $env:USERPROFILE '.codex' }
+    return Join-Path $codexHome 'AGENTS.md'
+}
+
+function Resolve-CopilotCliGlobalInstructionsPath {
+    $copilotHome = [string]$env:COPILOT_HOME
+    if ([string]::IsNullOrWhiteSpace($copilotHome)) { $copilotHome = Join-Path $env:USERPROFILE '.copilot' }
+    return Join-Path $copilotHome 'copilot-instructions.md'
+}
+
+function Resolve-CopilotJetBrainsGlobalInstructionsPath {
+    return Join-Path $env:LOCALAPPDATA 'github-copilot\intellij\global-copilot-instructions.md'
+}
+
+$GlobalPolicyResolvers = [ordered]@{
+    'copilot-jetbrains' = @{ Label = 'Copilot JetBrains'; Resolve = ${function:Resolve-CopilotJetBrainsGlobalInstructionsPath} }
+    'copilot-cli'       = @{ Label = 'Copilot CLI'; Resolve = ${function:Resolve-CopilotCliGlobalInstructionsPath} }
+    'claude-code'       = @{ Label = 'Claude Code'; Resolve = ${function:Resolve-ClaudeGlobalInstructionsPath} }
+    'codex'             = @{ Label = 'Codex'; Resolve = ${function:Resolve-CodexGlobalInstructionsPath} }
+}
+
+function Get-GlobalPolicyBlock {
+    $content = [System.IO.File]::ReadAllText($GlobalPolicySourcePath, [System.Text.Encoding]::UTF8).Trim()
+    return ($GlobalPolicyBeginMark, '', $content, '', $GlobalPolicyEndMark) -join [Environment]::NewLine
+}
+
+function Count-GlobalPolicyMarkerOccurrences([string] $Text, [string] $Marker) {
+    if ([string]::IsNullOrEmpty($Text)) { return 0 }
+    $count = 0
+    $index = 0
+    while (($index = $Text.IndexOf($Marker, $index, [System.StringComparison]::Ordinal)) -ge 0) {
+        $count++
+        $index += $Marker.Length
+    }
+    return $count
+}
+
+function Test-GlobalPolicyMarkersValid([string] $Text) {
+    $beginCount = Count-GlobalPolicyMarkerOccurrences $Text $GlobalPolicyBeginMark
+    $endCount = Count-GlobalPolicyMarkerOccurrences $Text $GlobalPolicyEndMark
+    return ($beginCount -eq $endCount) -and ($beginCount -le 1)
+}
+
+function Get-GlobalPolicyBlockText([string] $Text) {
+    if (-not (Test-GlobalPolicyMarkersValid $Text)) { return $null }
+    $pattern = '(?s)' + [regex]::Escape($GlobalPolicyBeginMark) + '.*?' + [regex]::Escape($GlobalPolicyEndMark)
+    $match = [regex]::Match($Text, $pattern)
+    if ($match.Success) { return $match.Value }
+    return ''
+}
+
+function Remove-GlobalPolicyBlockText([string] $Text) {
+    $pattern = '(?s)\s*' + [regex]::Escape($GlobalPolicyBeginMark) + '.*?' + [regex]::Escape($GlobalPolicyEndMark)
+    return [regex]::Replace($Text, $pattern, '')
+}
+
+function Join-GlobalPolicyText([string] $Prefix, [string] $Block) {
+    $trimmedPrefix = $Prefix.TrimEnd()
+    if ($trimmedPrefix) { return $trimmedPrefix + [Environment]::NewLine + [Environment]::NewLine + $Block + [Environment]::NewLine }
+    return $Block + [Environment]::NewLine
+}
+
+function Get-GlobalPolicyRecordFingerprint([string] $ClientKey) {
+    $snapshot = Read-JsonState $IntegrationsFile
+    if (-not $snapshot.Valid) { return '' }
+    $key = "${ClientKey}:global-policy"
+    if (-not (Get-PropertyExists $snapshot.Data $key)) { return '' }
+    $record = $snapshot.Data.$key
+    if ([string]$record.ownership -ne 'managed') { return '' }
+    if (Get-PropertyExists $record 'entryFingerprint') { return [string]$record.entryFingerprint }
+    return ''
+}
+
+function Get-GlobalPolicyProbe([string] $ClientKey, [string] $ConfigPath) {
+    if (-not (Test-Path -LiteralPath $GlobalPolicySourcePath -PathType Leaf)) {
+        return [PSCustomObject]@{ State = 'SourceMissing'; ExpectedBlock = ''; ExpectedFingerprint = '' }
+    }
+    $expectedBlock = Get-GlobalPolicyBlock
+    $expectedFingerprint = Get-BytesSha256 ($Utf8NoBom.GetBytes($expectedBlock))
+    $text = if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) { [System.IO.File]::ReadAllText($ConfigPath, [System.Text.Encoding]::UTF8) } else { '' }
+    if (-not (Test-GlobalPolicyMarkersValid $text)) {
+        return [PSCustomObject]@{ State = 'Invalid'; ExpectedBlock = $expectedBlock; ExpectedFingerprint = $expectedFingerprint }
+    }
+    $existingBlock = Get-GlobalPolicyBlockText $text
+    if (-not $existingBlock) {
+        return [PSCustomObject]@{ State = 'Missing'; ExpectedBlock = $expectedBlock; ExpectedFingerprint = $expectedFingerprint }
+    }
+    $existingFingerprint = Get-BytesSha256 ($Utf8NoBom.GetBytes($existingBlock))
+    if ($existingFingerprint -eq $expectedFingerprint) {
+        return [PSCustomObject]@{ State = 'Current'; ExpectedBlock = $expectedBlock; ExpectedFingerprint = $expectedFingerprint }
+    }
+    $recordFingerprint = Get-GlobalPolicyRecordFingerprint $ClientKey
+    if ($recordFingerprint -and $recordFingerprint -eq $existingFingerprint) {
+        return [PSCustomObject]@{ State = 'Drift'; ExpectedBlock = $expectedBlock; ExpectedFingerprint = $expectedFingerprint }
+    }
+    return [PSCustomObject]@{ State = 'UserModified'; ExpectedBlock = $expectedBlock; ExpectedFingerprint = $expectedFingerprint }
+}
+
+function Set-GlobalPolicy([string] $ClientKey, [string] $ConfigPath, [string] $Label) {
+    $probe = Get-GlobalPolicyProbe $ClientKey $ConfigPath
+    switch ($probe.State) {
+        'Current' { Write-Result "$Label : politique globale déjà à jour."; return }
+        'SourceMissing' { Write-Result "$Label : politique globale indisponible dans cette distribution — ignorée."; return }
+        'Invalid' { throw "MCP_CONFIG_MANAGED_POLICY_MARKERS_INVALID:$ConfigPath" }
+        'UserModified' { throw "MCP_CONFIG_MANAGED_POLICY_DRIFT:$ConfigPath" }
+    }
+    $text = if (Test-Path -LiteralPath $ConfigPath -PathType Leaf) { [System.IO.File]::ReadAllText($ConfigPath, [System.Text.Encoding]::UTF8) } else { '' }
+    $cleaned = Remove-GlobalPolicyBlockText $text
+    $newText = Join-GlobalPolicyText -Prefix $cleaned -Block $probe.ExpectedBlock
+    Backup-ClientConfig $ConfigPath
+    Write-AtomicText $ConfigPath $newText
+    $verifyText = [System.IO.File]::ReadAllText($ConfigPath, [System.Text.Encoding]::UTF8)
+    $verifyBlock = Get-GlobalPolicyBlockText $verifyText
+    if (-not $verifyBlock -or (Get-BytesSha256 ($Utf8NoBom.GetBytes($verifyBlock))) -ne $probe.ExpectedFingerprint) {
+        throw "La vérification post-écriture de la politique globale a échoué : $ConfigPath"
+    }
+    Save-ManagedRecord "${ClientKey}:global-policy" $ConfigPath $probe.ExpectedFingerprint
+    Write-Result "$Label : politique globale installée -> $ConfigPath"
 }
 
 function Get-JsonProbe([bool] $Installed, [string] $Label, [string] $ClientKey, [string] $ConfigFile, [string] $RootKey, [string] $Kind, [string[]] $LegacyRootKeys = @()) {
@@ -317,28 +481,45 @@ function Get-CodexProbe {
 
 function Get-Probes {
     $jbDir = Join-Path $env:LOCALAPPDATA 'github-copilot\intellij'
-    $copilotPath = Resolve-RealCommand 'copilot'
-    $copilotInstalled = $false
-    if ($copilotPath -and -not (Test-VsCodeShim $copilotPath)) { $copilotInstalled = Test-CommandCapability $copilotPath @('mcp', '--help') }
+    $copilotInstalled = $null -ne (Resolve-WorkingCopilotCommand)
     $desktopConfig = Resolve-ClaudeDesktopConfig
     $claudeExe = Resolve-ClaudeExe
+
+    $jbProbe = Get-JsonProbe (Test-Path -LiteralPath $jbDir -PathType Container) 'Copilot JetBrains' 'copilot-jetbrains' (Join-Path $jbDir 'mcp.json') 'servers' 'JetBrains' @('mcpServers')
+    $cliProbe = Get-JsonProbe $copilotInstalled 'GitHub Copilot CLI' 'copilot-cli' (Join-Path $env:USERPROFILE '.copilot\mcp-config.json') 'mcpServers' 'CopilotCli'
+    $desktopProbe = Get-JsonProbe ($null -ne $desktopConfig) 'Claude Desktop' 'claude-desktop' ([string]$desktopConfig) 'mcpServers' 'ClaudeDesktop'
+    $codeProbe = Get-JsonProbe ($null -ne $claudeExe) 'Claude Code CLI' 'claude-code' (Join-Path $env:USERPROFILE '.claude.json') 'mcpServers' 'ClaudeCode'
+    $codexProbe = Get-CodexProbe
+
+    if ($jbProbe.Installed) { $jbProbe | Add-Member -NotePropertyName PolicyProbe -NotePropertyValue (Get-GlobalPolicyProbe 'copilot-jetbrains' (Resolve-CopilotJetBrainsGlobalInstructionsPath)) }
+    if ($cliProbe.Installed) { $cliProbe | Add-Member -NotePropertyName PolicyProbe -NotePropertyValue (Get-GlobalPolicyProbe 'copilot-cli' (Resolve-CopilotCliGlobalInstructionsPath)) }
+    if ($codeProbe.Installed) { $codeProbe | Add-Member -NotePropertyName PolicyProbe -NotePropertyValue (Get-GlobalPolicyProbe 'claude-code' (Resolve-ClaudeGlobalInstructionsPath)) }
+    if ($codexProbe.Installed) { $codexProbe | Add-Member -NotePropertyName PolicyProbe -NotePropertyValue (Get-GlobalPolicyProbe 'codex' (Resolve-CodexGlobalInstructionsPath)) }
+
     return [ordered]@{
-        CopilotJetBrains = Get-JsonProbe (Test-Path -LiteralPath $jbDir -PathType Container) 'Copilot JetBrains' 'copilot-jetbrains' (Join-Path $jbDir 'mcp.json') 'servers' 'JetBrains' @('mcpServers')
-        CopilotCli = Get-JsonProbe $copilotInstalled 'GitHub Copilot CLI' 'copilot-cli' (Join-Path $env:USERPROFILE '.copilot\mcp-config.json') 'mcpServers' 'CopilotCli'
-        ClaudeDesktop = Get-JsonProbe ($null -ne $desktopConfig) 'Claude Desktop' 'claude-desktop' ([string]$desktopConfig) 'mcpServers' 'ClaudeDesktop'
-        ClaudeCode = Get-JsonProbe ($null -ne $claudeExe) 'Claude Code CLI' 'claude-code' (Join-Path $env:USERPROFILE '.claude.json') 'mcpServers' 'ClaudeCode'
-        CodexDesktop = Get-CodexProbe
+        CopilotJetBrains = $jbProbe
+        CopilotCli = $cliProbe
+        ClaudeDesktop = $desktopProbe
+        ClaudeCode = $codeProbe
+        CodexDesktop = $codexProbe
     }
 }
 
 function Write-IniSection([System.Collections.Generic.List[string]] $Lines, [string] $Name, [object] $Probe) {
-    $selectable = $Probe.State -in @('Missing', 'Drift')
+    $mcpSelectable = $Probe.State -in @('Missing', 'Drift')
+    $policyProbe = if (Get-PropertyExists $Probe 'PolicyProbe') { $Probe.PolicyProbe } else { $null }
+    $policySelectable = ($null -ne $policyProbe) -and ($policyProbe.State -in @('Missing', 'Drift'))
+    $selectable = $mcpSelectable -or $policySelectable
+    $reason = [string]$Probe.Reason
+    if (-not $mcpSelectable -and $policySelectable) {
+        $reason = $reason + ' — politique globale d''agent à ajouter'
+    }
     $Lines.Add("[$Name]")
     $Lines.Add('Installed=' + $(if ($Probe.Installed) { '1' } else { '0' }))
     $Lines.Add('Available=' + $(if ($selectable) { '1' } else { '0' }))
     $Lines.Add('AlreadyIntegrated=' + $(if ($Probe.State -eq 'Integrated') { '1' } else { '0' }))
     $Lines.Add('State=' + [string]$Probe.State)
-    $Lines.Add('Reason=' + [string]$Probe.Reason)
+    $Lines.Add('Reason=' + $reason)
 }
 
 function Save-ManagedRecord([string] $Key, [string] $ClientConfigPath, [string] $Fingerprint) {
@@ -426,6 +607,10 @@ foreach ($client in $selected) {
         if (-not $clientMap.ContainsKey($client)) { throw "Client inconnu : $client" }
         $probe = $probes[$clientMap[$client]]
         if ($probe.Kind -eq 'Codex') { Set-CodexIntegration $probe } else { Set-JsonIntegration $probe }
+        if ($GlobalPolicyResolvers.Contains($client)) {
+            $resolver = $GlobalPolicyResolvers[$client]
+            Set-GlobalPolicy $client (& $resolver.Resolve) $resolver.Label
+        }
     }
     catch {
         $failure = "$client : $($_.Exception.Message)"

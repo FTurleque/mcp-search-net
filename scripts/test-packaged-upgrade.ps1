@@ -88,6 +88,13 @@ function Invoke-ConfigureChild {
         [string] $ConcurrentContentBase64 = ''
     )
 
+    $policyFixtureDir = Join-Path $Root 'scripts'
+    New-Item -ItemType Directory -Force -Path $policyFixtureDir | Out-Null
+    $policyFixturePath = Join-Path $policyFixtureDir 'mcp-search-net-global-policy.md'
+    if (-not (Test-Path -LiteralPath $policyFixturePath -PathType Leaf)) {
+        Set-Content -LiteralPath $policyFixturePath -Value "## mcp-search-net`n`nUse mcp-search-net for external retrieval." -Encoding UTF8
+    }
+
     $parameters = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -InstallRoot "{1}" -FromInstaller' -f $Configure, $Root
     if ($Uninstall) { $parameters += ' -Uninstall' }
     if ($Clients) { $parameters += ' -Clients "{0}"' -f $Clients }

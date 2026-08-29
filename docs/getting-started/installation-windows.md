@@ -69,6 +69,44 @@ Le post-install peut configurer les clients MCP détectés. Les règles d’owne
 
 L’état d’ownership est conservé dans `mcp-client-integrations.json`.
 
+## Politique globale d'agent (Global Agent Policy)
+
+En complément de l'enregistrement MCP ci-dessus, le post-install installe une courte politique
+« utilise mcp-search-net automatiquement quand c'est pertinent » dans le fichier d'instructions
+**global, propre à l'utilisateur Windows**, de chaque client pris en charge. Cette politique est
+strictement additive : elle ne remplace jamais l'enregistrement MCP existant et ne modifie aucun
+paramètre de sécurité (permissions, sandbox, autorisation d'outils) des clients concernés.
+
+**mcp-search-net n'installe jamais cette politique dans un dépôt applicatif.** Aucun fichier
+`CLAUDE.md`, `AGENTS.md`, `.github\copilot-instructions.md` ou `.github\instructions\` d'un dépôt
+ouvert par l'utilisateur n'est jamais créé ni modifié par cette fonctionnalité — uniquement les
+chemins globaux ci-dessous, résolus depuis `USERPROFILE` / `LOCALAPPDATA` / `CODEX_HOME` /
+`COPILOT_HOME`, jamais depuis le répertoire courant ou un dépôt Git.
+
+| Client                   | Fichier global                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------------------------- |
+| Claude Code              | `%USERPROFILE%\.claude\CLAUDE.md`                                                               |
+| Codex                    | `$CODEX_HOME\AGENTS.md`, sinon `%USERPROFILE%\.codex\AGENTS.md`                                 |
+| GitHub Copilot CLI       | `$COPILOT_HOME\copilot-instructions.md`, sinon `%USERPROFILE%\.copilot\copilot-instructions.md` |
+| GitHub Copilot JetBrains | `%LOCALAPPDATA%\github-copilot\intellij\global-copilot-instructions.md`                         |
+
+Claude Desktop n'est pas concerné par cette fonctionnalité : seul son enregistrement MCP existant
+est géré.
+
+Le contenu géré est délimité par les marqueurs `<!-- BEGIN MCP-SEARCH-NET GLOBAL POLICY -->` et
+`<!-- END MCP-SEARCH-NET GLOBAL POLICY -->`, identiques dans les quatre fichiers. Les mêmes règles
+d'ownership que pour l'enregistrement MCP s'appliquent au bloc géré :
+
+- le contenu de l'utilisateur en dehors du bloc n'est jamais modifié ;
+- une réinstallation identique est un NO-OP (bloc strictement identique, aucune écriture) ;
+- une modification manuelle du contenu à l'intérieur du bloc est détectée par empreinte et bloque
+  la mise à jour de ce fichier (`MCP_CONFIG_MANAGED_POLICY_DRIFT`) plutôt que de l'écraser ;
+- des marqueurs ambigus (BEGIN sans END, blocs multiples, etc.) font échouer la configuration de ce
+  fichier sans tenter de le réparer (`MCP_CONFIG_MANAGED_POLICY_MARKERS_INVALID`) ;
+- la désinstallation retire uniquement le bloc géré, et ne supprime le fichier entier que si
+  mcp-search-net l'avait lui-même créé et qu'il ne resterait aucun contenu utilisateur après retrait
+  du bloc.
+
 ## Mise à jour sur place
 
 Pour passer d’une version installée à une version plus récente, **il n’est pas nécessaire de
