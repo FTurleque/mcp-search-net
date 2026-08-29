@@ -21,8 +21,8 @@ const BEGIN_MARK = '<!-- BEGIN MCP-SEARCH-NET GLOBAL POLICY -->';
 const END_MARK = '<!-- END MCP-SEARCH-NET GLOBAL POLICY -->';
 
 function windowsRuntimeTest(name: string, body: () => void) {
-  it(name, () => {
-    if (process.platform !== 'win32') return;
+  it(name, (context) => {
+    context.skip(process.platform !== 'win32', 'Windows-only test');
     body();
   });
 }
