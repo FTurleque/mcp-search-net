@@ -45,6 +45,7 @@ foreach ($Required in @(
     'config\application.yml',
     'scripts\configure-install.ps1',
     'scripts\update-installation.ps1',
+    'scripts\mcp-search-net-global-policy.md',
     'install.ps1',
     'BUILD-MANIFEST.json',
     'LICENSE',

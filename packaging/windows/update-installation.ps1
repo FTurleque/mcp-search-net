@@ -172,7 +172,7 @@ function Publish-DurableFile {
 function Write-DurableUtf8File {
     param(
         [Parameter(Mandatory)] [string] $Path,
-        [Parameter(Mandatory)] [string] $Content
+        [Parameter(Mandatory)] [AllowEmptyString()] [string] $Content
     )
 
     Assert-NoReparsePointInExistingPathChain -Path $Path -Root $InstallRoot
