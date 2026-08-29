@@ -132,6 +132,51 @@ describe('application configuration precedence and limits', () => {
     ).toBe(true);
   });
 
+  it.each(['development', 'production'] as const)(
+    'rejects userinfo credentials in provider endpoints regardless of profile (%s)',
+    (profile) => {
+      expect(
+        applicationConfigSchema.safeParse({
+          application: { name: 'x', version: '1', profile },
+          security: { allowHttp: true },
+          searxng: { baseUrl: 'http://user:password@searxng:8080' },
+        }).success,
+      ).toBe(false);
+      expect(
+        applicationConfigSchema.safeParse({
+          application: { name: 'x', version: '1', profile },
+          security: { allowHttp: true },
+          crawl4ai: { baseUrl: 'http://token@crawl4ai:11235' },
+        }).success,
+      ).toBe(false);
+      expect(
+        applicationConfigSchema.safeParse({
+          application: { name: 'x', version: '1', profile },
+          security: { allowHttp: true },
+          searxng: { baseUrl: 'https://token@remote.example' },
+        }).success,
+      ).toBe(false);
+      expect(
+        applicationConfigSchema.safeParse({
+          application: { name: 'x', version: '1', profile },
+          security: { allowHttp: true },
+          searxng: { baseUrl: 'https://user:password@remote.example' },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it('accepts provider endpoints without userinfo in the development profile', () => {
+    expect(
+      applicationConfigSchema.safeParse({
+        application: { name: 'x', version: '1', profile: 'development' },
+        security: { allowHttp: true },
+        searxng: { baseUrl: 'http://searxng:8080' },
+        crawl4ai: { baseUrl: 'http://crawl4ai:11235' },
+      }).success,
+    ).toBe(true);
+  });
+
   it('refuses to start when a Crawl4AI token would be sent to a remote plaintext endpoint', async () => {
     process.env['MCP_CRAWL4AI_TOKEN'] = 'unique-remote-token-value';
     process.env['MCP_CRAWL4AI_URL'] = 'http://remote-host.example:11235';

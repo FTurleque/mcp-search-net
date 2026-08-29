@@ -94,11 +94,11 @@ export default defineConfig({
           functions: 100,
           lines: 90,
         },
-        'src/presentation/mcp/mcp-server-v2.ts': {
-          statements: 85,
-          branches: 45,
-          functions: 90,
-          lines: 88,
+        'src/presentation/mcp/catalog-tools-registration.ts': {
+          statements: 90,
+          branches: 65,
+          functions: 95,
+          lines: 95,
         },
         'src/presentation/mcp/catalog-resources.ts': {
           statements: 90,

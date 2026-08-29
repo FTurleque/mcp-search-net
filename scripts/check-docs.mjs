@@ -30,6 +30,7 @@ validateVersionConsistency();
 validateEnvironmentInventory();
 validatePostMergeTruth();
 validateReleaseAndInstallerHardening();
+validateAuthenticodePolicyConsistency();
 
 if (failures.length > 0) {
   process.stderr.write(`DOCS_CHECK_FAILED (${failures.length})\n`);
@@ -129,18 +130,18 @@ function validateDocumentationIndex() {
 }
 
 function validatePublicContractInventory() {
-  const serverV1 = readText('src/presentation/mcp/mcp-server.ts');
-  const serverV2 = readText('src/presentation/mcp/mcp-server-v2.ts');
+  const webTools = readText('src/presentation/mcp/web-tools-registration.ts');
+  const catalogTools = readText('src/presentation/mcp/catalog-tools-registration.ts');
   const historyTool = readText('src/presentation/mcp/search-history-tool.ts');
   const resources = readText('src/presentation/mcp/catalog-resources.ts');
   const toolsReference = readText('docs/reference/tools.md');
   const readme = readText('README.md');
   const tools = [
-    ['search_web', serverV1],
-    ['fetch_url', serverV1],
-    ['search_docs', serverV2],
-    ['list_docs', serverV2],
-    ['read_doc_section', serverV2],
+    ['search_web', webTools],
+    ['fetch_url', webTools],
+    ['search_docs', catalogTools],
+    ['list_docs', catalogTools],
+    ['read_doc_section', catalogTools],
     ['list_search_history', historyTool],
   ];
   requireText(
@@ -519,6 +520,48 @@ function validateReleaseAndInstallerHardening() {
     'PUBLIC_TOOL_ERROR_MESSAGES[error.code]',
     'tool-call.ts: mapping public canonique des erreurs absent',
   );
+}
+
+function validateAuthenticodePolicyConsistency() {
+  const releaseWorkflow = readText('.github/workflows/release-windows.yml');
+  const readme = readText('README.md');
+  const docs = [
+    ['README.md', readme],
+    [currentStatePath, currentState],
+    [clientCertificationPath, clientCertification],
+  ];
+
+  requireText(
+    releaseWorkflow,
+    'default: false',
+    'release-windows.yml: authenticode input must default to false — docs assume unsigned-by-default policy',
+  );
+
+  const CANONICAL_PHRASE = 'Authenticode (optionnelle, désactivée par défaut)';
+  const BANNED_PHRASES = ['Authenticode obligatoire', 'exige...une signature Authenticode'];
+
+  for (const [file, text] of docs) {
+    const normalized = normalizeProseWhitespace(text);
+    requireText(
+      normalized,
+      CANONICAL_PHRASE,
+      `${file}: doit documenter la politique Authenticode optionnelle avec la formulation canonique "${CANONICAL_PHRASE}"`,
+    );
+    for (const banned of BANNED_PHRASES) {
+      assert(
+        !normalized.includes(banned),
+        `${file}: contradiction Authenticode obligatoire détectée ("${banned}") alors que le workflow la garde optionnelle par défaut`,
+      );
+    }
+  }
+}
+
+function normalizeProseWhitespace(text) {
+  return text.replace(/\s+/gu, ' ');
+}
+
+function assert(condition, message) {
+  if (!condition) failures.push(message);
 }
 
 function markdownAnchors(source) {

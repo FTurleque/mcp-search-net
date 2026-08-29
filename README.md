@@ -20,10 +20,14 @@ read-only `list_search_history` sont disponibles en **opt-in** ; les profils de 
 et Docker les désactivent par défaut. Le serveur n’embarque aucun LLM et ne requiert aucune API
 commerciale.
 
-La version de code courante est `1.1.5`. Une release n’est considérée qualifiée que si les checks
+La version de code courante est `1.1.6`. Une release n’est considérée qualifiée que si les checks
 sont attachés au SHA exact du candidat. Une publication Windows exige en plus une certification
-native 3/3 liée au SHA exact de `master`, une signature Authenticode valide du setup et une
-attestation GitHub de provenance. L’état courant autoritatif est décrit dans
+native 3/3 liée au SHA exact de `master` et une attestation GitHub de provenance. La signature
+Authenticode (optionnelle, désactivée par défaut) reste une protection disponible : lorsqu'elle est
+activée via les secrets de certificat configurés dans GitHub Actions, une signature valide et
+horodatée est exigée avant publication ; une publication volontaire sans Authenticode reste
+supportée mais n'offre pas la même preuve d'identité d'éditeur qu'un setup signé. L’état courant
+autoritatif est décrit dans
 [`docs/status/current-state.md`](docs/status/current-state.md).
 
 ## Architecture
@@ -247,8 +251,9 @@ hashé n’a pas montré de gain et n’est pas généralisé.
   l’activer ;
 - la release Windows refuse toute divergence entre la version demandée et la version du dépôt ;
 - une publication Windows depuis `master` exige une certification native `PASS_NATIVE_3_OF_3`
-  correspondant au SHA exact, signe le setup avec Authenticode et horodatage RFC 3161, puis produit
-  et revérifie une attestation GitHub de provenance avant la création de la release ;
+  correspondant au SHA exact, puis produit et revérifie une attestation GitHub de provenance avant
+  la création de la release ; la signature Authenticode (optionnelle, désactivée par défaut) avec
+  horodatage RFC 3161 est appliquée et vérifiée lorsque le candidat l'active ;
 - secrets, chemins internes et stacks ne sont pas renvoyés.
 
 ## Diagnostic rapide

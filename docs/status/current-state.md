@@ -8,7 +8,7 @@ ici : GitHub reste l’autorité pour savoir si un candidat est ouvert, mergé o
 
 ## Version, branches et qualification
 
-- Version SemVer : `1.1.5`.
+- Version SemVer : `1.1.6`.
 - Branche de release et source de vérité publiée : `master`.
 - Branche d’intégration courante : `develop`.
 - Intégration V2 : PR #8 mergée.
@@ -221,16 +221,20 @@ version embarquée. Le packaging Windows vérifie le runtime Node et l’install
 exécution, préserve les intégrations MCP préexistantes non gérées et couvre clean install, upgrade,
 rollback et uninstall.
 
-Une **publication** Windows depuis `master` impose désormais trois preuves supplémentaires sur le
-candidat exact :
+Une **publication** Windows depuis `master` impose désormais deux preuves supplémentaires sur le
+candidat exact, plus une troisième conditionnelle :
 
 1. un run manuel `Native client certification record` réussi sur le même SHA, avec Claude Code,
    Claude Desktop et Codex tous en `PASS_NATIVE`, `nativeToolInvocationObserved: true` et égalité du
    `sectionId` entre `search_docs` et `read_doc_section` ;
-2. une signature Authenticode valide et horodatée du setup Windows, produite à partir des secrets de
-   certificat configurés dans GitHub Actions ;
-3. une attestation GitHub de provenance pour les artefacts publiables, revérifiée dans le job de
-   publication avant `gh release create`.
+2. une attestation GitHub de provenance pour les artefacts publiables, revérifiée dans le job de
+   publication avant `gh release create` ;
+3. la signature Authenticode (optionnelle, désactivée par défaut) : si l'input `authenticode` du
+   workflow est activé pour ce candidat, une signature valide et horodatée du setup Windows,
+   produite à partir des secrets de certificat configurés dans GitHub Actions, est exigée avant
+   publication ; si elle reste désactivée (comportement par défaut), la publication procède
+   volontairement sans signature Authenticode — un choix de release supporté, mais qui offre une
+   preuve d'identité d'éditeur moindre qu'un setup signé.
 
 `validate_only` peut toujours qualifier techniquement un candidat sans ces secrets/preuves, mais ne
 publie rien. Aucun smoke, `mcp list`, état `connected` ou client STDIO de référence ne peut être

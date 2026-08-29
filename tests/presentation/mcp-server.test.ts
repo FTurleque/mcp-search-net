@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { createContainer } from '../../src/bootstrap/container.js';
 import { loadConfiguration } from '../../src/infrastructure/config/load-configuration.js';
 
-describe('MCP V2 in-memory contracts', () => {
+describe('MCP server in-memory contracts', () => {
   it('exposes compact catalog tools and resources through the real server', async () => {
     const root = mkdtempSync(join(tmpdir(), 'mcp-search-in-memory-'));
     const loaded = await loadConfiguration(resolve('config/application.yml'));
@@ -124,6 +124,36 @@ describe('MCP V2 in-memory contracts', () => {
       expect(chained.structuredContent).toMatchObject({
         status: 'success',
         data: { found: true, sectionId: textSectionId },
+      });
+
+      const missingSection = await client.callTool({
+        name: 'read_doc_section',
+        arguments: { sectionId: 999_999_999 },
+      });
+      expect(missingSection.isError).not.toBe(true);
+      expect(missingSection.structuredContent).toMatchObject({
+        status: 'success',
+        data: { found: false, sectionId: 999_999_999, document: null },
+      });
+      const missingSectionContent = missingSection.content;
+      if (!Array.isArray(missingSectionContent)) {
+        throw new Error('Expected read_doc_section text content');
+      }
+      const missingSectionText = missingSectionContent[0];
+      if (missingSectionText === undefined || missingSectionText.type !== 'text') {
+        throw new Error('Expected a text block in read_doc_section content');
+      }
+      expect(missingSectionText.text).toContain('no section found for 999999999');
+
+      const emptySearch = await client.callTool({
+        name: 'search_docs',
+        arguments: { query: 'zzz-no-catalog-document-matches-zzz' },
+      });
+      expect(emptySearch.isError).not.toBe(true);
+      expect(emptySearch.structuredContent).toMatchObject({
+        status: 'success',
+        data: { resultCount: 0, results: [] },
+        warnings: [{ code: 'NO_RESULTS' }],
       });
 
       const documents = await client.callTool({ name: 'list_docs', arguments: { limit: 1 } });

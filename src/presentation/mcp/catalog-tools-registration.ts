@@ -6,7 +6,6 @@ import {
   type CatalogRepository,
 } from '../../application/ports/catalog-repository.js';
 import type { Logger } from '../../application/ports/logger.js';
-import type { ListSearchHistory } from '../../application/use-cases/list-search-history.js';
 import type {
   SearchCatalogDocumentsInput,
   SearchCatalogDocumentsOutput,
@@ -24,27 +23,24 @@ import {
   MAX_EXTERNAL_TITLE_CHARACTERS,
   truncateUnicode,
 } from '../../domain/services/bounded-text.js';
-import { registerCatalogResources } from './catalog-resources.js';
-import type { McpServerDependencies as V1McpServerDependencies } from './mcp-server.js';
-import { createMcpServer as createV1McpServer } from './mcp-server.js';
-import { registerSearchHistoryTool } from './search-history-tool.js';
+import type { McpPresentationConfig } from './mcp-server.js';
 import { isInvalidToolInput } from './schemas/invalid-tool-input.js';
 import { createSearchDocsSchemas } from './schemas/search-docs-schema.js';
 import { createToolResponseSchema } from './schemas/tool-response-schema.js';
 import { unicodeBoundedString } from './schemas/unicode-bounded-string.js';
 import { executeToolCall } from './tool-call.js';
 
-interface SearchCatalogDocumentsExecutor {
+export interface SearchCatalogDocumentsExecutor {
   execute(
     input: SearchCatalogDocumentsInput,
     context?: { readonly requestId?: string },
   ): Promise<SearchCatalogDocumentsOutput>;
 }
 
-export interface McpServerV2Dependencies extends V1McpServerDependencies {
+export interface CatalogToolsDependencies {
   readonly catalogRepository: CatalogRepository;
   readonly searchCatalogDocuments: SearchCatalogDocumentsExecutor;
-  readonly listSearchHistory: ListSearchHistory;
+  readonly config: McpPresentationConfig;
   readonly logger: Logger;
 }
 
@@ -128,10 +124,10 @@ const readDocSectionOutputSchema = createToolResponseSchema(
 
 type ReadDocSectionData = z.infer<typeof readDocSectionDataSchema>;
 
-export function createMcpServer(dependencies: McpServerV2Dependencies): McpServer {
-  const server = createV1McpServer(dependencies);
-  registerCatalogResources(server, dependencies.catalogRepository);
-  registerSearchHistoryTool(server, dependencies.listSearchHistory, dependencies.logger);
+export function registerCatalogTools(
+  server: McpServer,
+  dependencies: CatalogToolsDependencies,
+): void {
   const schemas = createSearchDocsSchemas(
     dependencies.config.limits.defaultSearchResults,
     dependencies.config.limits.maxSearchResults,
@@ -262,8 +258,6 @@ export function createMcpServer(dependencies: McpServerV2Dependencies): McpServe
       });
     },
   );
-
-  return server;
 }
 
 function formatSearchDocsText(response: ToolResponse<SearchDocsData>): string {

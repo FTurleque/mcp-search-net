@@ -70,9 +70,50 @@ function sanitizeRecord(
   return sanitizeLogValue(data) as Readonly<Record<string, unknown>>;
 }
 
+const SENSITIVE_VALUE_KEYS = [
+  'authorization',
+  'credential',
+  'password',
+  'passwd',
+  'secret',
+  'token',
+  'key',
+  'access-token',
+  'access_token',
+  'accesstoken',
+  'refresh-token',
+  'refresh_token',
+  'refreshtoken',
+  'api-key',
+  'api_key',
+  'apikey',
+  'client-secret',
+  'client_secret',
+  'clientsecret',
+  'auth-token',
+  'auth_token',
+  'authtoken',
+  'signature',
+  'sig',
+] as const;
+
+// One narrow pattern per key (instead of a single large alternation) keeps each regex's
+// cognitive complexity low and avoids any risk of catastrophic backtracking.
+const SENSITIVE_KEY_VALUE_PATTERNS = SENSITIVE_VALUE_KEYS.map(
+  (key) => new RegExp(String.raw`(\b${key}\s*[=:]\s*)([^&\s]+)`, 'giu'),
+);
+// A single character class with one quantifier covers both `user@host` and `user:password@host`
+// userinfo forms without distinguishing them: linear time, no backtracking ambiguity. Excluding
+// '/' keeps a path segment containing '@' (e.g. `https://example.com/@handle`) from matching,
+// since the run stops at the '/' before ever reaching the '@'.
+const URL_USERINFO = /(:\/\/)[^\s/?#@]+@/gu;
+
 function sanitizeString(value: string): string {
-  return value
+  let sanitized = value
     .replace(/Bearer\s+[A-Za-z0-9._~+/-]+=*/giu, 'Bearer [redacted]')
-    .replace(/([?&](?:token|key|secret|password)=)[^&\s]+/giu, '$1[redacted]')
-    .slice(0, 1_000);
+    .replace(URL_USERINFO, '$1[redacted]@');
+  for (const pattern of SENSITIVE_KEY_VALUE_PATTERNS) {
+    sanitized = sanitized.replace(pattern, '$1[redacted]');
+  }
+  return sanitized.slice(0, 1_000);
 }

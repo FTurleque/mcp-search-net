@@ -4,6 +4,7 @@ import type { OfficialSourceRegistry } from '../../application/ports/official-so
 import type { OfficialSource } from '../../domain/models/official-source.js';
 import { ConfigurationError } from '../../domain/errors/domain-errors.js';
 import type { OfficialSourcesFile } from './application-config.js';
+import { hasUrlCredentials } from './provider-endpoint-policy.js';
 
 export class OfficialSourceYamlRegistry implements OfficialSourceRegistry {
   private readonly sources: readonly OfficialSource[];
@@ -21,6 +22,11 @@ export class OfficialSourceYamlRegistry implements OfficialSourceRegistry {
       const baseUrl = new URL(source.baseUrl);
       if (baseUrl.protocol !== 'https:') {
         throw new ConfigurationError(`Official source ${source.id} must use HTTPS`);
+      }
+      if (hasUrlCredentials(source.baseUrl)) {
+        throw new ConfigurationError(
+          `Official source ${source.id} baseUrl must not contain userinfo credentials`,
+        );
       }
       if (!domainMatches(baseUrl.hostname, domain, source.includeSubdomains)) {
         throw new ConfigurationError(

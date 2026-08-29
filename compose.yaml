@@ -82,7 +82,7 @@ services:
       dockerfile: Dockerfile
       args:
         SOURCE_REVISION: ${MCP_BUILD_REVISION:-UNAVAILABLE}
-    image: mcp-search-net:1.1.5
+    image: mcp-search-net:1.1.6
     user: node
     stdin_open: true
     tty: false

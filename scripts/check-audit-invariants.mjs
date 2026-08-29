@@ -501,6 +501,7 @@ const catalogSourceStore = readText('src/infrastructure/catalog/sqlite-catalog-s
 const signWindowsSetup = readText('scripts/release/sign-windows-setup.ps1');
 const providerEndpointPolicy = readText('src/infrastructure/config/provider-endpoint-policy.ts');
 const loadConfiguration = readText('src/infrastructure/config/load-configuration.ts');
+const structuredLogger = readText('src/infrastructure/logging/structured-logger.ts');
 
 // AUD-01: release native certification cannot be accepted from artifact existence only.
 for (const invariant of [
@@ -621,6 +622,34 @@ requireText(
   loadConfiguration,
   'assertSafeProviderTransport',
   'AUD-06 regression: startup no longer refuses a Crawl4AI token over a remote plaintext endpoint',
+);
+
+// AUD-07: URL userinfo credentials cannot silently be re-accepted in provider endpoints,
+// official-source URLs, or log output.
+requireText(
+  providerEndpointPolicy,
+  'export function hasUrlCredentials',
+  'AUD-07 regression: provider endpoint userinfo-credential predicate removed',
+);
+requireText(
+  providerEndpointPolicy,
+  "url.username !== '' || url.password !== ''",
+  'AUD-07 regression: isSafeProviderEndpoint no longer rejects userinfo credentials',
+);
+requireText(
+  applicationConfig,
+  'hasUrlCredentials',
+  'AUD-07 regression: application config no longer rejects userinfo credentials in provider endpoints',
+);
+requireText(
+  officialSourceRegistry,
+  'hasUrlCredentials',
+  'AUD-07 regression: official-source registry no longer rejects userinfo credentials',
+);
+requireText(
+  structuredLogger,
+  'URL_USERINFO',
+  'AUD-07 regression: structured logger no longer redacts URL userinfo',
 );
 
 if (failures.length > 0) {
