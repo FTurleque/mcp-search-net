@@ -30,11 +30,28 @@ afterEach(() => {
 });
 
 describe('release promotion governance', () => {
-  it('rejects a direct develop to master pull request', () => {
+  it('accepts a direct develop to master pull request', () => {
+    // 'develop' is the original, historically-working promotion source (PRs #83/#115/#130
+    // all merged this way). The release/promote-develop-* marker-commit branch tested below
+    // is an additional, stricter path for whoever wants the extra topology guarantees --
+    // never a replacement that locks out the direct-develop flow.
     const result = runContract(process.cwd(), {
       RELEASE_PR_BODY: validBody,
       RELEASE_PR_HEAD_SHA: 'a'.repeat(40),
       RELEASE_PR_HEAD_REF: 'develop',
+      RELEASE_PR_BASE_REF: 'master',
+      RELEASE_PR_VERIFY_TOPOLOGY: '0',
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('RELEASE_PR_CONTRACT_VALID');
+  });
+
+  it('rejects an arbitrary branch that is neither develop nor a release promotion branch', () => {
+    const result = runContract(process.cwd(), {
+      RELEASE_PR_BODY: validBody,
+      RELEASE_PR_HEAD_SHA: 'a'.repeat(40),
+      RELEASE_PR_HEAD_REF: 'feature/unrelated-branch',
       RELEASE_PR_BASE_REF: 'master',
       RELEASE_PR_VERIFY_TOPOLOGY: '0',
     });
