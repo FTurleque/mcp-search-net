@@ -7,8 +7,8 @@ description: >
   des findings ordonnés par criticité avec fichier:ligne, scénario d'exploitation,
   impact et remédiation.
 owner: mcp-search-net
-version: 1.1.2
-lastReviewed: '2026-06-21'
+version: 1.2.0
+lastReviewed: '2026-08-30'
 tools:
   [
     'read_file',
@@ -47,7 +47,7 @@ Vérifier :
 - Rejet des protocoles non-HTTPS (`file://`, `ftp://`, `data://`, etc.)
 - Rejet des credentials dans l'URL
 - Rejet des ports non standard (22, 25, 3306, 5432, 6379, etc.)
-- Rejet des adresses privées/loopback/link-local résolues (`127.x`, `10.x`, `172.16-31.x`, `192.168.x`, `169.254.x`, `::1`, etc.)
+- Rejet des adresses privées/loopback/link-local résolues (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `::1`, etc.)
 - Limites de redirects non contournables par configuration ou arguments outil
 - Tests prouvant que la cible bloquée **n'est jamais contactée** (pas seulement rejetée après contact)
 

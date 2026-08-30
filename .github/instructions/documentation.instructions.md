@@ -6,8 +6,8 @@ description: >
   relatifs valides, et roadmap avec preuves reproductibles.
 applyTo: 'docs/**/*.md,README.md'
 owner: mcp-search-net
-version: 1.1.2
-lastReviewed: '2026-06-21'
+version: 1.2.0
+lastReviewed: '2026-08-30'
 ---
 
 # Documentation — mcp-search-net
@@ -114,12 +114,34 @@ Voir [configuration](https://github.com/user/mcp-search-net/blob/main/docs/refer
 
 ## Mise à jour obligatoire
 
-| Modification du code              | Documentation à mettre à jour                                                        |
-| --------------------------------- | ------------------------------------------------------------------------------------ |
-| Nouveau paramètre outil           | `docs/reference/tools.md`                                                            |
-| Nouveau champ de configuration    | `docs/reference/configuration.md`                                                    |
-| Nouveau code d'erreur public      | `docs/reference/tools.md#codes-derreur`                                              |
-| Nouveau service ou container      | `docs/reference/architecture.md`                                                     |
-| Nouvelle variable d'environnement | `docs/reference/configuration.md`                                                    |
-| Nouvelle limitation de sécurité   | `docs/reference/security.md`                                                         |
-| Phase roadmap complétée           | `docs/planning/roadmap-v1-operationnelle.md` + `docs/planning/validation-phase-X.md` |
+| Modification du code              | Documentation à mettre à jour                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Nouveau paramètre outil           | `docs/reference/tools.md`                                                                                           |
+| Nouveau champ de configuration    | `docs/reference/configuration.md`                                                                                   |
+| Nouveau code d'erreur public      | `docs/reference/tools.md#codes-derreur`                                                                             |
+| Nouveau service ou container      | `docs/reference/architecture.md`                                                                                    |
+| Nouvelle variable d'environnement | `docs/reference/configuration.md`                                                                                   |
+| Nouvelle limitation de sécurité   | `docs/reference/security.md`                                                                                        |
+| Phase roadmap complétée           | `docs/planning/roadmap-v1-operationnelle.md` + `docs/planning/validation-phase-X.md`                                |
+| Nouvel outil/resource MCP public  | `docs/reference/tools.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md` (simultanément) |
+
+## Garde-fous non contournables
+
+- **Inventaire d'outils publics** : tout outil MCP présent dans le code doit apparaître, au même
+  moment, dans `docs/reference/tools.md`, `README.md`, `docs/status/current-state.md`,
+  `docs/planning/client-certification-current.md`, `AGENTS.md`, `CLAUDE.md` et
+  `.github/copilot-instructions.md`. Vérifié par `node scripts/check-docs.mjs` →
+  `validatePublicContractInventory` (échoue immédiatement si un fichier est oublié).
+- **Liens et ancres valides** : tout lien relatif et toute ancre `#titre` sont vérifiés
+  automatiquement par `validateMarkdownLinks` dans `scripts/check-docs.mjs` — jamais de
+  vérification manuelle seule.
+- **Cohérence de version** : le numéro de version dans `package.json`, `package-lock.json`,
+  `config/application*.yml`, `compose.yaml`, `sonar-project.properties` et
+  `docs/status/current-state.md` doit être strictement identique — vérifié par
+  `validateVersionConsistency`.
+- **Roadmap** : ne jamais marquer un item `[x]` sans que `npm run docs:check` confirme la
+  présence d'une preuve reproductible dans `docs/planning/validation-*.md`.
+
+Ne jamais désactiver, ignorer ou contourner `npm run docs:check` pour faire passer une
+modification de documentation — c'est le seul filet qui empêche la documentation de diverger
+silencieusement du code.

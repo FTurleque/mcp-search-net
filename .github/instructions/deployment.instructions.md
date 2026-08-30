@@ -6,8 +6,8 @@ description: >
   loopback-bound, least-privilege Docker, et stdout propre depuis le launcher.
 applyTo: 'Dockerfile,compose.yaml,config/**/*.yml,scripts/**/*.ps1,scripts/**/*.cmd,.github/workflows/**/*.yml'
 owner: mcp-search-net
-version: 1.1.2
-lastReviewed: '2026-06-21'
+version: 1.2.0
+lastReviewed: '2026-08-30'
 ---
 
 # Déploiement, configuration et automation — mcp-search-net
@@ -168,3 +168,20 @@ docker compose config --quiet
 # Après tout changement de scripts installation
 # Tester sur une machine propre : première install + réinstall
 ```
+
+## Garde-fous non contournables
+
+| Règle                                                                                             | Vérification automatisée                                                       |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Node 24 figé (`.nvmrc`, `.node-version`, Dockerfile, CI, release workflow)                        | `node scripts/check-audit-invariants.mjs` (version exacte, digest SHA256 figé) |
+| Images Docker pinnées avec digest SHA256, jamais un tag seul                                      | `check-audit-invariants.mjs` + revue du `Dockerfile`/`compose.yaml`            |
+| Crawl4AI isolé sur réseau interne, aucun port publié directement                                  | `check-audit-invariants.mjs` (`crawl4aiBlock`) + CI (`crawl4ai_network_count`) |
+| Actions GitHub pinnées par hash de commit, permissions CI minimales                               | Revue manuelle + `scripts/check-ci-hygiene.mjs`                                |
+| Certificat de signature Windows épinglé par empreinte                                             | `check-audit-invariants.mjs` (AUD-05 : `ExpectedCertificateThumbprint`)        |
+| Installateur/scripts préservent les données utilisateur existantes                                | `check-audit-invariants.mjs` (invariants Inno Setup, `configure-install.ps1`)  |
+| Launcher MCP : aucun texte informatif sur stdout                                                  | Revue manuelle du `.cmd`/script de lancement + tests d'installation            |
+| Métadonnées `owner`/`version`/`lastReviewed` valides sur agents/prompts/instructions/skills/hooks | `node scripts/validate-copilot-config.mjs`                                     |
+
+Ne jamais publier une release ou fusionner un changement de déploiement si l'une de ces
+vérifications automatisées échoue, même temporairement — corriger la cause plutôt que
+contourner le check.

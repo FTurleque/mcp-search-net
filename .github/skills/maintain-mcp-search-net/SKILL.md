@@ -8,8 +8,8 @@ description: >
   investigations SSRF/cache/provider, la readiness de release, les échecs CI, les
   problèmes d'installation Docker/Windows et l'alignement de la documentation.
 owner: mcp-search-net
-version: 1.1.2
-lastReviewed: '2026-06-21'
+version: 1.2.0
+lastReviewed: '2026-08-30'
 ---
 
 # Maintenir mcp-search-net
@@ -27,6 +27,13 @@ lastReviewed: '2026-06-21'
    - release/sécurité : utiliser les checklists plus strictes ci-dessous.
 
 Lire [project-map.md](references/project-map.md) pour l'architecture, les commandes et la propriété. Lire [security-checklist.md](references/security-checklist.md) pour tout travail lié aux URLs, HTTP, Crawl4AI, Docker, cache, journalisation, dépendances ou secrets.
+
+**Anti-dérive** : `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md` et `docs/reference/tools.md`
+sont des sources de vérité redondantes pour l'inventaire des outils/resources publics et le tableau
+des boundaries de couches. Toute modification de contrat public doit toucher les quatre en une
+seule fois, validée par `npm run docs:check` (fonctions `validatePublicContractInventory` et
+`validateAgentInstructionConsistency` dans `scripts/check-docs.mjs`). Ne jamais modifier un seul
+de ces fichiers isolément.
 
 ## Implémenter les changements
 

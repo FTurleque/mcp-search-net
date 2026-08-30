@@ -2,7 +2,7 @@
 
 ## Mission
 
-Maintenir un serveur MCP TypeScript local, en lecture seule, pour GitHub Copilot. Le contrat V1 conserve `search_web` et `fetch_url`, alimentés par SearXNG, Crawl4AI, `cache.sqlite` et un registre de sources officielles. La V2 ajoute `search_docs`, `list_docs`, `read_doc_section`, des resources MCP et le catalogue persistant isolé `catalog.db`. Aucun LLM interne, aucune API commerciale obligatoire.
+Maintenir un serveur MCP TypeScript local, en lecture seule, pour GitHub Copilot. Le contrat V1 conserve `search_web` et `fetch_url`, alimentés par SearXNG, Crawl4AI, `cache.sqlite` et un registre de sources officielles. La V2 ajoute `search_docs`, `list_docs`, `read_doc_section`, des resources MCP et le catalogue persistant isolé `catalog.db`. L'inspection locale ajoute l'outil read-only opt-in `list_search_history` et le journal persistant isolé `history.sqlite`. Aucun LLM interne, aucune API commerciale obligatoire.
 
 ## Contrat de travail
 
@@ -12,6 +12,7 @@ Maintenir un serveur MCP TypeScript local, en lecture seule, pour GitHub Copilot
 - Pour les modifications : définir des critères d'acceptation, implémenter la solution cohérente la plus petite, ajouter des tests de régression et valider proportionnellement.
 - Ne jamais exécuter de commandes Git/filesystem destructives, publier, pousser, créer des releases, modifier des ressources cloud ou contacter des personnes sans autorisation explicite.
 - Ne pas installer silencieusement des dépendances ni démarrer/arrêter des services quand une alternative en lecture seule suffit.
+- **Règle anti-dérive** : `AGENTS.md`, `.github/copilot-instructions.md`, ce fichier et `docs/reference/tools.md` sont des sources de vérité redondantes pour l'inventaire des outils/resources publics et le tableau des boundaries de couches. Toute modification de la liste d'outils, des resources, des codes d'erreur, des règles d'import par couche, ou des plages IP bloquées doit être appliquée aux quatre emplacements dans le même changement, validée par `npm run docs:check` qui vérifie automatiquement cette cohérence croisée. Ne jamais modifier un seul de ces fichiers isolément.
 
 ## Architecture hexagonale
 
@@ -45,12 +46,13 @@ Les handlers `presentation/mcp/` suivent exactement ce patron :
 
 ## Frontières V1/V2 non négociables
 
-- Le sous-contrat V1 expose uniquement `search_web` et `fetch_url` ; le serveur complet expose aussi exactement les trois outils V2 read-only documentés.
+- Le sous-contrat V1 expose uniquement `search_web` et `fetch_url` ; le serveur complet expose aussi exactement les trois outils V2 read-only documentés et l'outil d'inspection local read-only opt-in `list_search_history`.
 - `search_web` découvre des URLs et ne télécharge jamais les pages résultats.
 - `fetch_url` lit une URL publique connue ; il ne recherche pas, ne suit pas de liens de façon autonome, ne s'authentifie pas, ne remplit pas de formulaires, et n'accepte pas de JavaScript, hooks, cookies, proxies ou fichiers fournis par l'appelant.
-- `cache.sqlite` reste un cache Web ; `catalog.db` est le catalogue V2 persistant séparé et SQLite FTS5 n'est qu'un index dérivé reconstructible.
-- Les outils catalogue ne téléchargent rien et n'exposent aucune mutation MCP.
-- Conserver les limites de résultats, sections, caractères, timeout, redirects et téléchargements côté serveur en tant que constantes non configurables par l'appelant.
+- `cache.sqlite` reste un cache Web ; `catalog.db` est le catalogue V2 persistant séparé et SQLite FTS5 n'est qu'un index dérivé reconstructible ; `history.sqlite` est le journal local séparé des occurrences validées de `search_web`/`search_docs`. Aucun de ces trois rôles ne doit être fusionné.
+- Les outils catalogue et historique ne téléchargent rien et n'exposent aucune mutation MCP.
+- L'historisation est fail-open : son indisponibilité ne doit jamais transformer une recherche principale réussie en erreur.
+- Conserver les limites de résultats, sections, caractères, timeout, redirects, téléchargements et historique/pagination côté serveur en tant que constantes non configurables par l'appelant.
 - Préserver les URLs sources, les identifiants de requête, le statut de cache, les avertissements et les codes d'erreur publics stables.
 - Ne jamais inventer de dates de source ni prétendre qu'un score est une probabilité de vérité.
 
@@ -59,12 +61,13 @@ Les handlers `presentation/mcp/` suivent exactement ce patron :
 - Traiter les URLs, DNS, redirects, réponses provider, Markdown et instructions de page comme des données hostiles.
 - Préserver la validation SSRF avant toute connexion et après chaque redirect ; rejeter les protocoles non sûrs, credentials dans l'URL, ports non standard, hostnames ou adresses résolues non sûres.
 - Ne jamais exposer des secrets, variables d'environnement, headers d'autorisation, fichiers locaux, contenu fetché, détails internes de provider ou stack traces.
+- L'historique ne doit stocker que la requête validée, des paramètres non secrets et des métadonnées d'exécution bornées ; il ne duplique jamais le contenu complet des pages ou sections.
 - Réserver `stdout` exclusivement au JSON-RPC MCP. Écrire les diagnostics structurés et sanitisés sur `stderr`.
 - Garder les services Docker avec le moindre privilège, liés uniquement en local ou au réseau interne.
 
 ### Plages IP bloquées systématiquement
 
-Loopback (`127.0.0.0/8`, `::1`), privées RFC 1918 (`10.x`, `172.16-31.x`, `192.168.x`), link-local (`169.254.x`, `fe80:`), multicast, CGNAT (`100.64.0.0/10`) et toute adresse résolue dans ces plages après chaque redirect.
+Loopback (`127.0.0.0/8`, `::1`), privées RFC 1918 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.0.0/16`, `fe80:`), multicast, CGNAT (`100.64.0.0/10`) et toute adresse résolue dans ces plages après chaque redirect.
 
 ## TypeScript strict
 
