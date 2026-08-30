@@ -15,6 +15,7 @@ Maintenir un serveur MCP TypeScript local, en lecture seule, pour GitHub Copilot
 - Pour les modifications : définir des critères d'acceptation, implémenter la solution cohérente la plus petite, ajouter des tests de régression et valider proportionnellement.
 - Ne jamais exécuter de commandes Git/filesystem destructives, publier, pousser, créer des releases, modifier des ressources cloud ou contacter des personnes sans autorisation explicite.
 - Ne pas installer silencieusement des dépendances ni démarrer/arrêter des services quand une alternative en lecture seule suffit.
+- **Règle anti-dérive** : ce fichier, `.github/copilot-instructions.md`, `CLAUDE.md` et `docs/reference/tools.md` sont des sources de vérité redondantes pour l'inventaire des outils/resources publics et le tableau des boundaries de couches. Toute modification de la liste d'outils, des resources, des codes d'erreur, des règles d'import par couche, ou des plages IP bloquées doit être appliquée aux quatre emplacements dans le même changement, validée par `npm run docs:check` qui vérifie automatiquement cette cohérence croisée. Ne jamais modifier un seul de ces fichiers isolément.
 
 ## Architecture hexagonale
 

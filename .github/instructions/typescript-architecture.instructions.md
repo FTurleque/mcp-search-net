@@ -6,8 +6,8 @@ description: >
   stables, et déterminisme du domaine. S'applique à tout fichier src/**/*.ts.
 applyTo: 'src/**/*.ts'
 owner: mcp-search-net
-version: 1.1.2
-lastReviewed: '2026-06-21'
+version: 1.2.0
+lastReviewed: '2026-08-30'
 ---
 
 # Architecture TypeScript — mcp-search-net
@@ -141,3 +141,19 @@ export function isExpired(entry: CacheEntry): boolean {
   return Date.now() > entry.expiresAt;
 }
 ```
+
+## Garde-fous non contournables
+
+Ces règles ne sont pas déclaratives seulement : chacune est vérifiée automatiquement et fait
+échouer le build en cas de dérive. Ne jamais désactiver ou contourner le check associé.
+
+| Règle                                                                                | Vérification automatisée                                                                 |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Aucun import `infrastructure`/`presentation` depuis `domain`                         | `grep -r "from.*infrastructure" src/domain/` (doit retourner vide) ; `npm run typecheck` |
+| Le tableau des boundaries de couches reste identique dans `AGENTS.md` et `CLAUDE.md` | `scripts/check-docs.mjs` → `validateAgentInstructionConsistency`                         |
+| `strict: true` / `exactOptionalPropertyTypes: true` actifs                           | `npm run typecheck` (échoue si `tsconfig.json` régresse)                                 |
+| Handlers MCP fins (parse → use case unique → format)                                 | Revue de code + `tests/presentation/` (mapping schéma → use case → réponse)              |
+| Codes d'erreur publics stables, jamais de détails infra exposés                      | `tests/presentation/` + `scripts/check-audit-invariants.mjs` (AUD-\* regressions)        |
+
+Si une modification nécessite de contredire une de ces lignes, cela doit être discuté
+explicitement avec l'utilisateur avant tout changement — ce n'est jamais une décision implicite.

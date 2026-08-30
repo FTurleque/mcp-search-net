@@ -6,8 +6,8 @@ description: >
   et non-disclosure. Toute donnée externe est considérée hostile par défaut.
 applyTo: 'src/infrastructure/security/**/*.ts,src/infrastructure/http/**/*.ts,src/infrastructure/fetch/**/*.ts'
 owner: mcp-search-net
-version: 1.1.2
-lastReviewed: '2026-06-21'
+version: 1.2.0
+lastReviewed: '2026-08-30'
 ---
 
 # Infrastructure security-sensitive — mcp-search-net
@@ -132,3 +132,21 @@ throw new Error(`Crawl4AI returned: ${JSON.stringify(body)} for ${url}`);
 - [ ] Aucun détail provider, secret, ou stack trace dans les erreurs publiques
 - [ ] DNS rebinding couvert (résolution au moment de la connexion, pas avant)
 - [ ] `npm run check` propre après toute modification
+
+## Garde-fous non contournables
+
+Chaque ligne de la checklist ci-dessus est vérifiée par un mécanisme automatisé — aucune n'est
+une simple convention orale :
+
+| Garde-fou                                                                                                                                                                                      | Vérification automatisée                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Plages IP bloquées (`127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`) cohérentes entre ce fichier, `CLAUDE.md` et `security-auditor.agent.md` | `scripts/check-docs.mjs` → `validateAgentInstructionConsistency`                        |
+| Limites (taille, timeout, redirects, concurrence) définies comme constantes non paramétrables                                                                                                  | `scripts/check-audit-invariants.mjs` (budgets `secure-http-gateway.ts`, `fetch-url.ts`) |
+| Preuve que la cible bloquée n'est jamais contactée                                                                                                                                             | `tests/security/` avec spy sur `fetch`/`net.connect` — jamais un simple test de rejet   |
+| Aucun secret/stack trace/corps provider dans les erreurs publiques                                                                                                                             | Revue de code + `tests/presentation/` sur le mapping d'erreurs stables                  |
+| Endpoint provider distant ne peut pas être en clair                                                                                                                                            | `scripts/check-audit-invariants.mjs` (AUD-06 : `isSafeProviderEndpoint`)                |
+| Credentials dans une URL (`user:pass@`) toujours rejetés                                                                                                                                       | `scripts/check-audit-invariants.mjs` (AUD-07 : `hasUrlCredentials`)                     |
+
+Si un de ces checks doit être modifié (nouvelle plage IP, nouvelle limite), la modification doit
+être faite simultanément dans le code, ce fichier, `CLAUDE.md`, `security-auditor.agent.md`, et
+`scripts/check-audit-invariants.mjs`/`scripts/check-docs.mjs` — jamais un seul de ces emplacements.

@@ -31,6 +31,7 @@ validateEnvironmentInventory();
 validatePostMergeTruth();
 validateReleaseAndInstallerHardening();
 validateAuthenticodePolicyConsistency();
+validateAgentInstructionConsistency();
 
 if (failures.length > 0) {
   process.stderr.write(`DOCS_CHECK_FAILED (${failures.length})\n`);
@@ -136,6 +137,9 @@ function validatePublicContractInventory() {
   const resources = readText('src/presentation/mcp/catalog-resources.ts');
   const toolsReference = readText('docs/reference/tools.md');
   const readme = readText('README.md');
+  const agentsGuide = readText('AGENTS.md');
+  const claudeGuide = readText('CLAUDE.md');
+  const copilotInstructions = readText('.github/copilot-instructions.md');
   const tools = [
     ['search_web', webTools],
     ['fetch_url', webTools],
@@ -154,6 +158,15 @@ function validatePublicContractInventory() {
     'history.exposeTool: true',
     'docs/reference/tools.md: caractère opt-in de list_search_history absent',
   );
+  // Anti-drift guard: the agent-facing instruction files (AGENTS.md, CLAUDE.md,
+  // .github/copilot-instructions.md) are redundant sources of truth for the public tool
+  // inventory. A tool present in the code/docs contract but missing from any of these files is a
+  // documented drift and must fail the build — see copilot-instructions.md#working-contract.
+  const agentInstructionDocs = [
+    ['AGENTS.md', agentsGuide],
+    ['CLAUDE.md', claudeGuide],
+    ['.github/copilot-instructions.md', copilotInstructions],
+  ];
   for (const [tool, implementation] of tools) {
     requireText(implementation, `'${tool}'`, `outil absent du serveur: ${tool}`);
     requireText(toolsReference, `\`${tool}\``, `docs/reference/tools.md: outil absent ${tool}`);
@@ -164,6 +177,12 @@ function validatePublicContractInventory() {
       `\`${tool}\``,
       `${clientCertificationPath}: outil absent ${tool}`,
     );
+    for (const [file, text] of agentInstructionDocs) {
+      requireText(text, `\`${tool}\``, `${file}: dérive détectée — outil absent ${tool}`);
+    }
+  }
+  for (const [file, text] of agentInstructionDocs) {
+    requireText(text, 'history.sqlite', `${file}: dérive détectée — history.sqlite absent`);
   }
   for (const option of ['maxSnippetChars', 'compact']) {
     requireText(
@@ -558,6 +577,52 @@ function validateAuthenticodePolicyConsistency() {
 
 function normalizeProseWhitespace(text) {
   return text.replace(/\s+/gu, ' ');
+}
+
+function validateAgentInstructionConsistency() {
+  // Anti-drift guard: AGENTS.md and CLAUDE.md maintain a duplicated hexagonal layer-import table
+  // and a duplicated blocked-IP-range summary. Both are redundant by design (different assistants
+  // read different files), so any edit to one without the other is a silent drift that this check
+  // must catch — see copilot-instructions.md#working-contract.
+  const agentsGuide = readText('AGENTS.md');
+  const claudeGuide = readText('CLAUDE.md');
+  const securitySensitive = readText('.github/instructions/security-sensitive.instructions.md');
+  const securityAuditorAgent = readText('.github/agents/security-auditor.agent.md');
+
+  const layerBoundaryVerification =
+    'grep -r "from.*infrastructure" src/domain/` doit retourner vide.';
+  for (const [file, text] of [
+    ['AGENTS.md', agentsGuide],
+    ['CLAUDE.md', claudeGuide],
+  ]) {
+    requireText(
+      text,
+      layerBoundaryVerification,
+      `${file}: dérive détectée — vérification des boundaries de couches absente ou reformulée`,
+    );
+  }
+
+  // Canonical CIDR anchors for the systematically blocked address ranges. These must appear,
+  // verbatim, everywhere the blocklist is summarized in prose so a reviewer can grep one figure
+  // and trust it is consistent across every instruction surface.
+  const canonicalBlockedRanges = [
+    '127.0.0.0/8',
+    '10.0.0.0/8',
+    '172.16.0.0/12',
+    '192.168.0.0/16',
+    '169.254.0.0/16',
+    '100.64.0.0/10',
+  ];
+  const ipRangeDocs = [
+    ['CLAUDE.md', claudeGuide],
+    ['.github/instructions/security-sensitive.instructions.md', securitySensitive],
+    ['.github/agents/security-auditor.agent.md', securityAuditorAgent],
+  ];
+  for (const range of canonicalBlockedRanges) {
+    for (const [file, text] of ipRangeDocs) {
+      requireText(text, range, `${file}: dérive détectée — plage IP bloquée absente ${range}`);
+    }
+  }
 }
 
 function assert(condition, message) {

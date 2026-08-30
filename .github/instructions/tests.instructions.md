@@ -6,8 +6,8 @@ description: >
   S'applique à tous les fichiers tests/**/*.ts.
 applyTo: 'tests/**/*.ts'
 owner: mcp-search-net
-version: 1.1.2
-lastReviewed: '2026-06-21'
+version: 1.2.0
+lastReviewed: '2026-08-30'
 ---
 
 # Tests — mcp-search-net
@@ -137,3 +137,16 @@ for (const chunk of stdoutChunks) {
 | Un fichier test        | `npx vitest run tests/<path>`   |
 | Une couche             | `npx vitest run tests/<layer>/` |
 | Changement cross-layer | `npm run check` sous Node 24    |
+
+## Garde-fous non contournables
+
+| Règle                                                     | Vérification automatisée                                                                         |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Tests ordinaires déterministes, offline, sans Docker      | CI (`npm run check`) exécute sans réseau ni service ; jamais de skip silencieux                  |
+| Tests live gatedés par variable d'environnement explicite | `it.skipIf(!RUN_LIVE_...)` — grep du code, jamais de gate implicite                              |
+| Preuve de non-contact pour toute cible SSRF bloquée       | `tests/security/` avec spy sur `fetch`/`net.connect` — voir `security-sensitive.instructions.md` |
+| Séparation stdout (JSON-RPC)/stderr (diagnostics)         | `tests/presentation/` capture `process.stdout.write` et parse en JSON-RPC                        |
+| Régression d'un audit passé ne doit jamais réapparaître   | `node scripts/check-audit-invariants.mjs` (invariants AUD-01..AUD-07)                            |
+
+Ne jamais marquer un test comme « temporairement ignoré » sans justification documentée dans le
+code et sans qu'un ticket/roadmap explicite le couvre.
