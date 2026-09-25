@@ -17,7 +17,11 @@ if errorlevel 1 (
 
 if not defined MCP_SEARCH_COMPOSE_PROJECT set "MCP_SEARCH_COMPOSE_PROJECT=mcp-search-net"
 
-docker compose --env-file "%MCP_SEARCH_HOME%\.env" -p "%MCP_SEARCH_COMPOSE_PROJECT%" -f "%MCP_SEARCH_HOME%\compose.yaml" up -d --wait searxng crawl4ai 1>&2
+rem Meme projet Compose que le lanceur local : conserver les ports loopback de compose.hybrid.yaml.
+set "MCP_SEARCH_COMPOSE_FILES=-f "%MCP_SEARCH_HOME%\compose.yaml""
+if exist "%MCP_SEARCH_HOME%\compose.hybrid.yaml" set "MCP_SEARCH_COMPOSE_FILES=%MCP_SEARCH_COMPOSE_FILES% -f "%MCP_SEARCH_HOME%\compose.hybrid.yaml""
+
+docker compose --env-file "%MCP_SEARCH_HOME%\.env" -p "%MCP_SEARCH_COMPOSE_PROJECT%" %MCP_SEARCH_COMPOSE_FILES% up -d --wait searxng crawl4ai 1>&2
 if errorlevel 1 exit /b %ERRORLEVEL%
-docker compose --env-file "%MCP_SEARCH_HOME%\.env" -p "%MCP_SEARCH_COMPOSE_PROJECT%" -f "%MCP_SEARCH_HOME%\compose.yaml" --profile stdio run --rm --no-deps -T mcp-search-net
+docker compose --env-file "%MCP_SEARCH_HOME%\.env" -p "%MCP_SEARCH_COMPOSE_PROJECT%" %MCP_SEARCH_COMPOSE_FILES% --profile stdio run --rm --no-deps -T mcp-search-net
 exit /b %ERRORLEVEL%

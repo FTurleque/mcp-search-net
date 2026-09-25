@@ -208,6 +208,23 @@ describe('Windows installer runtime integrity', () => {
     expect(installationRecipe).not.toMatch(/[‘’]/u);
   });
 
+  it('always starts the providers with the loopback ports required by the local launcher', () => {
+    // Regression: compose.yaml alone publishes no host port, so bin\mcp-search-net.cmd could not
+    // reach SearXNG (127.0.0.1:8888) or Crawl4AI (127.0.0.1:11235) after an .exe installation.
+    const portableInstaller = readFileSync('packaging/windows/install.ps1', 'utf8');
+    expect(configureInstall).toContain(
+      "Join-Path (Split-Path -Parent $composePath) 'compose.hybrid.yaml'",
+    );
+    expect(configureInstall).toContain('-p mcp-search-net @composeFiles up -d searxng crawl4ai');
+    expect(configureInstall).toContain('-p mcp-search-net @composeFiles down --remove-orphans');
+    expect(configureInstall).not.toMatch(/-f \$composePath (up|down)/u);
+    expect(containerLauncher).toContain('-f "%MCP_SEARCH_HOME%\\compose.hybrid.yaml"');
+    expect(containerLauncher).toContain('%MCP_SEARCH_COMPOSE_FILES% up -d --wait searxng crawl4ai');
+    expect(containerLauncher).toContain('%MCP_SEARCH_COMPOSE_FILES% --profile stdio run');
+    expect(portableInstaller).toContain('-f compose.yaml -f compose.hybrid.yaml up');
+    expect(portableInstaller).not.toContain("'  docker compose up -d searxng crawl4ai'");
+  });
+
   it('loads the generated Crawl4AI token through the real Windows launcher', () => {
     if (process.platform !== 'win32') {
       expect(launcher).toContain('for /f "tokens=1,* delims=="');

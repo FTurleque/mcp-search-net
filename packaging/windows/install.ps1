@@ -50,4 +50,4 @@ Write-Host "Config MCP   : $(Join-Path $InstallRoot 'mcp.json.example')"
 Write-Host 'Configuration et données existantes conservées automatiquement.'
 Write-Host "Démarrer les fournisseurs Docker avec :"
 Write-Host "  cd '$InstallRoot'"
-Write-Host '  docker compose up -d searxng crawl4ai'
+Write-Host '  docker compose --env-file .env -p mcp-search-net -f compose.yaml -f compose.hybrid.yaml up -d --wait searxng crawl4ai'

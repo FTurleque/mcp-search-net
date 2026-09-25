@@ -32,8 +32,8 @@ const expected = {
   },
   overrides: {
     '@hono/node-server': '2.1.0',
-    'fast-uri': '3.1.5',
-    hono: '4.12.34',
+    'fast-uri': '3.1.8',
+    hono: '4.13.9',
   },
   developmentOverrides: {
     'brace-expansion': '5.0.9',
