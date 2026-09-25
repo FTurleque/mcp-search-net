@@ -1148,21 +1148,34 @@ if (-not $Uninstall) {
     Write-JsonFile (Join-Path $InstallRoot 'mcp.container.json.example') $containerExample
 }
 
+function Get-ComposeFileArguments {
+    # Le lanceur local (bin\mcp-search-net.cmd) joint SearXNG et Crawl4AI sur 127.0.0.1 :
+    # compose.hybrid.yaml publie ces ports en loopback et doit toujours accompagner compose.yaml.
+    $composePath = @(
+        (Join-Path $InstallRoot 'compose.yaml'),
+        (Join-Path $InstallRoot 'docker\compose.yaml')
+    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if (-not $composePath) { return @() }
+    $hybridPath = Join-Path (Split-Path -Parent $composePath) 'compose.hybrid.yaml'
+    if (-not (Test-Path -LiteralPath $hybridPath -PathType Leaf)) {
+        Write-Host 'compose.hybrid.yaml absent : SearXNG et Crawl4AI ne seront pas joignables par le lanceur local.' -ForegroundColor Yellow
+        return @('-f', $composePath)
+    }
+    return @('-f', $composePath, '-f', $hybridPath)
+}
+
 if ($DoDocker) {
     try {
-        $composePath = @(
-            (Join-Path $InstallRoot 'compose.yaml'),
-            (Join-Path $InstallRoot 'docker\compose.yaml')
-        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        $composeFiles = @(Get-ComposeFileArguments)
         $docker = Get-Command docker -ErrorAction SilentlyContinue
-        if ($docker -and $composePath) {
+        if ($docker -and $composeFiles.Count -gt 0) {
             $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
             $null = & $docker.Source info 2>&1
             $running = $LASTEXITCODE -eq 0
             $ErrorActionPreference = $previous
             if ($running) {
                 $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-                & $docker.Source compose --env-file $EnvFile -p mcp-search-net -f $composePath up -d searxng crawl4ai 2>&1 |
+                & $docker.Source compose --env-file $EnvFile -p mcp-search-net @composeFiles up -d searxng crawl4ai 2>&1 |
                     ForEach-Object { Write-Host "  $_" }
                 $dockerExit = $LASTEXITCODE
                 $ErrorActionPreference = $previous
@@ -1178,19 +1191,16 @@ if ($DoDocker) {
 
 if ($Uninstall) {
     try {
-        $composePath = @(
-            (Join-Path $InstallRoot 'compose.yaml'),
-            (Join-Path $InstallRoot 'docker\compose.yaml')
-        ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+        $composeFiles = @(Get-ComposeFileArguments)
         $docker = Get-Command docker -ErrorAction SilentlyContinue
-        if ($docker -and $composePath) {
+        if ($docker -and $composeFiles.Count -gt 0) {
             $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
             $null = & $docker.Source info 2>&1
             $running = $LASTEXITCODE -eq 0
             $ErrorActionPreference = $previous
             if ($running) {
                 $previous = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-                & $docker.Source compose -p mcp-search-net -f $composePath down --remove-orphans 2>&1 |
+                & $docker.Source compose -p mcp-search-net @composeFiles down --remove-orphans 2>&1 |
                     ForEach-Object { Write-Host "  $_" }
                 $dockerExit = $LASTEXITCODE
                 $ErrorActionPreference = $previous

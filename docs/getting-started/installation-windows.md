@@ -196,10 +196,21 @@ SearXNG écoute uniquement sur `127.0.0.1:8888` et Crawl4AI sur `127.0.0.1:11235
 hybride.
 
 Le projet Compose canonique de l’installation utilisateur est `mcp-search-net`. Les conteneurs
-attendus sont donc `mcp-search-net-searxng-1` et `mcp-search-net-crawl4ai-1`.
+attendus sont donc `mcp-search-net-searxng-1`, `mcp-search-net-crawl4ai-1` et le relais
+`mcp-search-net-crawl4ai-loopback-1`.
+
+Le setup, `install-user.ps1 -StartServices` et les lanceurs démarrent toujours les fournisseurs avec
+`compose.yaml` **et** `compose.hybrid.yaml`. Avec `compose.yaml` seul, aucun port n’est publié sur
+l’hôte : `bin\mcp-search-net.cmd` répond alors `SEARCH_PROVIDER_UNAVAILABLE`. Pour réparer une
+installation dans cet état, depuis le dossier d’installation :
+
+```powershell
+docker compose --env-file .env -p mcp-search-net -f compose.yaml -f compose.hybrid.yaml up -d --wait searxng crawl4ai
+```
 
 La désinstallation du setup arrête explicitement la stack avec
-`docker compose -p mcp-search-net down --remove-orphans` lorsque Docker est disponible.
+`docker compose -p mcp-search-net -f compose.yaml -f compose.hybrid.yaml down --remove-orphans`
+lorsque Docker est disponible.
 
 ## Posture Docker
 
